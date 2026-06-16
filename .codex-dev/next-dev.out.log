@@ -1,0 +1,77 @@
+
+> intersection-rebrand-mockup@0.1.0 dev
+> next dev -p 3000
+
+   ▲ Next.js 15.5.19
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.92:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1381ms
+ ○ Compiling / ...
+ ✓ Compiled / in 3.5s (770 modules)
+ GET / 200 in 3901ms
+ ✓ Compiled in 162ms (303 modules)
+ GET / 200 in 43ms
+ GET / 200 in 46ms
+ GET / 200 in 43ms
+ ✓ Compiled in 150ms (303 modules)
+ GET / 200 in 26ms
+ ○ Compiling /details ...
+ ✓ Compiled /details in 1622ms (1532 modules)
+ GET /details 307 in 1865ms
+ GET / 200 in 101ms
+ GET / 200 in 44ms
+ GET / 200 in 37ms
+ GET / 200 in 59ms
+ ✓ Compiled in 339ms (1156 modules)
+ GET /?code=test-oauth-code 307 in 210ms
+ ✓ Compiled in 193ms (689 modules)
+ ✓ Compiled in 196ms (689 modules)
+ GET /?code=test-oauth-code 307 in 82ms
+ GET / 200 in 95ms
+ GET /?error=invalid_request&error_code=flow_state_already_used&error_description=State+has+already+been+used 200 in 34ms
+ ✓ Compiled in 278ms (1156 modules)
+ ✓ Compiled in 94ms (689 modules)
+ GET /?error=invalid_request&error_code=flow_state_already_used&error_description=State+has+already+been+used 307 in 199ms
+ ✓ Compiled /auth/callback in 247ms (1162 modules)
+ GET /auth/callback?error=invalid_request&error_code=flow_state_already_used 307 in 371ms
+ ✓ Compiled /middleware in 290ms (115 modules)
+ ✓ Compiled in 178ms (690 modules)
+ ✓ Compiled in 109ms (688 modules)
+ ✓ Compiled in 67ms (789 modules)
+ ✓ Compiled in 104ms (688 modules)
+ ✓ Compiled in 73ms (789 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 573ms (1076 modules)
+ GET / 200 in 790ms
+ ✓ Compiled in 236ms (1078 modules)
+ ✓ Compiled in 295ms (693 modules)
+ ✓ Compiled in 289ms (693 modules)
+ ✓ Compiled in 113ms (693 modules)
+ ✓ Compiled in 171ms (1193 modules)
+ ✓ Compiled in 168ms (693 modules)
+ ✓ Compiled in 103ms (1193 modules)
+ ✓ Compiled in 91ms (679 modules)
+ ✓ Compiled in 180ms (693 modules)
+ ✓ Compiled in 206ms (1193 modules)
+   Reload env: .env.local
+ ✓ Compiled in 93ms (1193 modules)
+ ✓ Compiled in 199ms (693 modules)
+ ✓ Compiled in 306ms (1193 modules)
+ ✓ Compiled in 113ms (693 modules)
+ ✓ Compiled in 94ms (1193 modules)
+ ✓ Compiled in 114ms (693 modules)
+ GET / 200 in 100ms
+ ○ Compiling /browse ...
+ ✓ Compiled /browse in 757ms (1517 modules)
+ GET /browse 307 in 980ms
+ GET / 200 in 61ms
+ ✓ Compiled in 206ms (698 modules)
+ ✓ Compiled in 257ms (698 modules)
+ ✓ Compiled in 95ms (698 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 935ms (1430 modules)
+ GET / 500 in 2682ms
+[?25h

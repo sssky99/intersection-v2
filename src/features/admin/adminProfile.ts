@@ -1,0 +1,55 @@
+import {
+  displayMembershipStatus,
+  type MembershipStatus,
+} from "@/features/membership/membershipTypes";
+
+export type AdminProfile = {
+  user_id: string;
+  name: string | null;
+  gender: string | null;
+  birth_year: string | number | null;
+  mbti: string | null;
+  phone: string | null;
+  photo_url: string | null;
+  public_intro: string | null;
+  launch_notification_requested?: boolean | null;
+  launch_notification_requested_at?: string | null;
+  created_at: string | null;
+  profile_completed: boolean | null;
+  questions_completed: boolean | null;
+  membership_status?: MembershipStatus | null;
+  membership_plan?: string | null;
+  membership_start_date?: string | null;
+  membership_end_date?: string | null;
+  membership_purchase_clicked_at?: string | null;
+  membership_updated_at?: string | null;
+  active_membership?: boolean;
+  expired_membership?: boolean;
+};
+
+export function hasActiveMembership(profile: AdminProfile) {
+  // TODO: 실제 membership 테이블이 생기면 profiles 컬럼 대신 그 연결 기준으로 수정.
+  return (
+    displayMembershipStatus({
+      status: profile.membership_status,
+      endDate: profile.membership_end_date,
+    }) === "active"
+  );
+}
+
+export function hasExpiredMembership(profile: AdminProfile) {
+  return (
+    displayMembershipStatus({
+      status: profile.membership_status,
+      endDate: profile.membership_end_date,
+    }) === "expired"
+  );
+}
+
+export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
+  return {
+    ...profile,
+    active_membership: hasActiveMembership(profile),
+    expired_membership: hasExpiredMembership(profile),
+  };
+}

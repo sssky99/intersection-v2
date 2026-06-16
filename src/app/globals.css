@@ -1,0 +1,66 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
+@import url("https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #121212;
+  --accent: #7eb3c7;
+  --outer-background: #f7f7f5;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--outer-background);
+  color: var(--foreground);
+  font-family:
+    "Pretendard Variable",
+    Pretendard,
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    Arial,
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.ticket-ratio {
+  aspect-ratio: 1 / 1.62;
+}
+
+.font-ticket-serif {
+  font-family: "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
