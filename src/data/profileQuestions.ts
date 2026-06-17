@@ -1,4 +1,3 @@
-import { sampleMeetingTicketQuestions } from "@/features/onboarding/sampleMeetingTickets";
 import type { ProfileQuestion } from "@/types/question";
 
 export const questionCategories = [
@@ -11,7 +10,7 @@ export const questionCategories = [
   { key: "관계 기대", label: "관계 기대", icon: "Heart" },
   { key: "회피 조건", label: "회피 조건", icon: "X" },
   { key: "나이 조건", label: "나이 조건", icon: "Users" },
-  { key: "샘플 모임", label: "샘플 모임", icon: "Ticket" },
+  { key: "모임 취향", label: "모임 취향", icon: "Ticket" },
   { key: "자기소개", label: "자기소개", icon: "PenLine" },
 ] as const;
 
@@ -208,13 +207,9 @@ const baseQuestions: ProfileQuestion[] = [
       { value: "age_flexible", label: "분위기가 맞으면 나이는 거의 상관 없어요." },
     ],
   },
-  ...sampleMeetingTicketQuestions.map((question) => ({
-    ...question,
-    id: question.order,
-  })),
   {
-    id: 16,
-    order: 16,
+    id: 10,
+    order: 10,
     category: "자기소개",
     type: "text",
     question:
@@ -226,4 +221,4 @@ const baseQuestions: ProfileQuestion[] = [
   },
 ];
 
-export const mockQuestions: ProfileQuestion[] = baseQuestions;
+export const profileQuestions: ProfileQuestion[] = baseQuestions;

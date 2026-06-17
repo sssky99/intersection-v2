@@ -78,7 +78,7 @@ export function DevOnboardingActions({
         onClick={() => void resetQuestions(10)}
         className="mt-2 h-10 w-full rounded-xl border border-black/10 bg-white text-xs font-semibold text-black/55 disabled:opacity-40"
       >
-        10번 샘플 모임부터 보기
+        10번 모임 취향부터 보기
       </button>
       {error && (
         <p className="mt-2 text-center text-[11px] font-semibold text-red-600">

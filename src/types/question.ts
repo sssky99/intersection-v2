@@ -14,7 +14,7 @@ export type QuestionCategory =
   | "관계 기대"
   | "회피 조건"
   | "나이 조건"
-  | "샘플 모임"
+  | "모임 취향"
   | "자기소개";
 
 export type QuestionOption = {

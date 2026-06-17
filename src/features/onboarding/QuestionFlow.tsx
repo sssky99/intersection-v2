@@ -5,12 +5,11 @@ import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
-import { mockQuestions, questionCategories } from "@/data/mockQuestions";
+import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
   parseTicketRatingAnswer,
-  sampleMeetingTicketQuestions,
   ticketRatingOptions,
-} from "@/features/onboarding/sampleMeetingTickets";
+} from "@/features/onboarding/ticketRating";
 import { createClient } from "@/lib/supabase/client";
 import type {
   ProfileQuestion,
@@ -124,9 +123,6 @@ function templateToTicketQuestion(
   template: TicketQuestionTemplate,
 ): ProfileQuestion {
   const order = TICKET_QUESTION_BASE_ORDER + template.questionOrder;
-  const fallback =
-    sampleMeetingTicketQuestions.find((question) => question.order === order) ??
-    sampleMeetingTicketQuestions[0];
   const signalTags = [
     template.activityType,
     template.recommendationCopy,
@@ -138,14 +134,13 @@ function templateToTicketQuestion(
   return {
     id: order,
     order,
-    category: fallback.category,
+    category: "모임 취향",
     type: "ticket_rating",
-    question: fallback.question,
+    question: "이런 자리는 어떠세요?",
     ticket: {
       id: template.id,
       title: template.title,
       imageUrl: template.imageUrl ?? "",
-      fallbackImageUrl: fallback.ticket.fallbackImageUrl,
       dateLabel: "",
       timeLabel: template.defaultTime ?? "",
       locationLabel: template.defaultRegion ?? "",
@@ -155,22 +150,22 @@ function templateToTicketQuestion(
       template.recommendationCopy ??
       template.activityType ??
       template.shortDescription ??
-      fallback.intent,
-    signalTags: signalTags.length > 0 ? signalTags : fallback.signalTags,
+      "모임 취향 선호 파악",
+    signalTags: signalTags.length > 0 ? signalTags : ["모임 취향"],
   };
 }
 
 function questionsWithTicketTemplates(
   ticketQuestionTemplates: TicketQuestionTemplate[],
 ) {
-  if (ticketQuestionTemplates.length === 0) return mockQuestions;
+  if (ticketQuestionTemplates.length === 0) return profileQuestions;
 
   const dynamicTicketQuestions = ticketQuestionTemplates
     .map(templateToTicketQuestion)
     .sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
 
   return [
-    ...mockQuestions.filter((question) => question.type !== "ticket_rating"),
+    ...profileQuestions.filter((question) => question.type !== "ticket_rating"),
     ...dynamicTicketQuestions,
   ].sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
 }

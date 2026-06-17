@@ -143,7 +143,7 @@ const scoreFields: Array<{
   },
 ];
 
-const sampleScoreGuide = [
+const scoreGuideExamples = [
   "화덕피자: 온3 / 결2 / 톤2 / 리듬3 / 술2 / 설렘3",
   "일 얘기 밤: 온2 / 결4 / 톤4 / 리듬2 / 술2 / 설렘2",
   "전시+카페: 온2 / 결4 / 톤2 / 리듬2 / 술1 / 설렘2",
@@ -1125,7 +1125,7 @@ function ScoreEditor({
           </p>
         </div>
         <div className="rounded-xl bg-[#f7f7f5] px-3 py-2 text-[10px] font-semibold leading-4 text-black/42">
-          {sampleScoreGuide.slice(0, 2).map((item) => (
+          {scoreGuideExamples.slice(0, 2).map((item) => (
             <p key={item}>{item}</p>
           ))}
         </div>
@@ -1188,10 +1188,10 @@ function ScoreEditor({
 
       <details className="mt-4 rounded-xl bg-[#f7f7f5] px-4 py-3 text-xs leading-5 text-black/50">
         <summary className="cursor-pointer font-bold text-black/55">
-          샘플 모임 점수 참고표
+          모임 점수 참고표
         </summary>
         <div className="mt-2 grid gap-1 sm:grid-cols-2">
-          {sampleScoreGuide.map((item) => (
+          {scoreGuideExamples.map((item) => (
             <p key={item}>{item}</p>
           ))}
         </div>

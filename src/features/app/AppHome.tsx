@@ -18,14 +18,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
-import { mockQuestions, questionCategories } from "@/data/mockQuestions";
+import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
   ticketImage,
 } from "@/features/meetings/MeetingRecommendation";
 import {
   parseTicketRatingAnswer,
-} from "@/features/onboarding/sampleMeetingTickets";
+} from "@/features/onboarding/ticketRating";
 import {
   MembershipFloatingButton,
   MembershipModal,
@@ -93,7 +93,7 @@ const categoryIcons: Partial<Record<QuestionCategory, LucideIcon>> = {
   "관계 기대": Heart,
   "회피 조건": X,
   "나이 조건": Users,
-  "샘플 모임": TicketIcon,
+  "모임 취향": TicketIcon,
   자기소개: PenLine,
 };
 
@@ -130,7 +130,7 @@ function questionOptionMeta(question: ProfileQuestion, value: string) {
 }
 
 function rowToAnswer(row: AnswerRow): QuestionAnswer {
-  const question = mockQuestions.find(
+  const question = profileQuestions.find(
     (item) => (item.order ?? item.id) === row.question_order,
   );
   const value = question
@@ -747,11 +747,11 @@ function ProfileTab({
     useState<QuestionCategory | null>(null);
   const questionGroups = useMemo(
     () =>
-      mockQuestions
+      profileQuestions
         .filter(
           (question) =>
             question.type !== "ticket_rating" &&
-            question.category !== "샘플 모임",
+            question.category !== "모임 취향",
         )
         .reduce(
         (groups, question) => {

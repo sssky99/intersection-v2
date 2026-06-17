@@ -1,5 +1,5 @@
-import { mockQuestions } from "@/data/mockQuestions";
-import { parseTicketRatingAnswer } from "@/features/onboarding/sampleMeetingTickets";
+import { profileQuestions } from "@/data/profileQuestions";
+import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import { isCorruptText } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionOption } from "@/types/question";
@@ -16,7 +16,7 @@ function getOptionLabel(
   questionOrder: number,
   value: string,
 ): string | undefined {
-  const question = mockQuestions.find(
+  const question = profileQuestions.find(
     (item) => (item.order ?? item.id) === questionOrder,
   );
   const option = question?.options?.find((item) =>
@@ -175,7 +175,7 @@ export function buildProfileInput(
   const resolvedAnswers = answers
     .filter((answer) => answer.question_order <= 16)
     .map((answer) => {
-      const question = mockQuestions.find(
+      const question = profileQuestions.find(
         (item) => (item.order ?? item.id) === answer.question_order,
       );
       const values = answer.answer_values

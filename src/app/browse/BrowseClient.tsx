@@ -4,10 +4,21 @@ import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { samplePublicProfiles } from "@/data/samplePublicProfiles";
 import { createClient } from "@/lib/supabase/client";
 
-export function BrowseClient({ userId }: { userId: string }) {
+export type BrowseProfile = {
+  id: string;
+  displayName: string;
+  intro: string;
+};
+
+export function BrowseClient({
+  userId,
+  profiles,
+}: {
+  userId: string;
+  profiles: BrowseProfile[];
+}) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +64,7 @@ export function BrowseClient({ userId }: { userId: string }) {
       </header>
 
       <div className="mt-7 space-y-4">
-        {samplePublicProfiles.map((profile, index) => (
+        {profiles.map((profile, index) => (
           <motion.article
             key={profile.id}
             initial={{ opacity: 0, y: 12 }}
@@ -83,6 +94,11 @@ export function BrowseClient({ userId }: { userId: string }) {
             </p>
           </motion.article>
         ))}
+        {profiles.length === 0 && (
+          <p className="rounded-[24px] border border-black/10 bg-white px-5 py-8 text-center text-sm font-semibold leading-6 text-black/45">
+            아직 공개 가능한 실제 프로필이 없어요.
+          </p>
+        )}
       </div>
 
       {error && (

@@ -6,13 +6,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
-import { availableDates } from "@/data/mockTickets";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 type Screen = "calendar" | "drawing" | "waitlisted";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
-type MonthKey = "2026-06" | "2026-07";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -50,10 +48,42 @@ export function MeetingRecommendation({
     useState<GatheringTicket | null>(null);
   const [waitlistStatus, setWaitlistStatus] =
     useState<RecommendationWaitlistStatus>("waitlisted");
+  const [ticketDates, setTicketDates] = useState<AvailableDate[]>([]);
+  const [loadingDates, setLoadingDates] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
+
+  useEffect(() => {
+    let alive = true;
+
+    fetch("/api/meetings/tickets", { cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => null)) as
+          | { dates?: AvailableDate[]; error?: string }
+          | null;
+        if (!response.ok || !data) {
+          throw new Error(data?.error ?? "tickets-load-failed");
+        }
+        if (alive) {
+          setTicketDates(data.dates ?? []);
+          setNotice(null);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setError("초대장 날짜를 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+        }
+      })
+      .finally(() => {
+        if (alive) setLoadingDates(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const selectDate = (date: AvailableDate) => {
     setNotice(null);
@@ -156,11 +186,15 @@ export function MeetingRecommendation({
               </p>
             </header>
 
-            <CalendarSelector onSelect={selectDate} />
+            <CalendarSelector
+              dates={ticketDates}
+              loading={loadingDates}
+              onSelect={selectDate}
+            />
 
-            {notice && (
+            {(notice || error) && (
               <p className="mt-4 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-black/55">
-                {notice}
+                {notice ?? error}
               </p>
             )}
           </motion.div>
@@ -425,52 +459,55 @@ function TicketDrawingCard({
 }
 
 function CalendarSelector({
+  dates,
+  loading,
   onSelect,
 }: {
+  dates: AvailableDate[];
+  loading: boolean;
   onSelect: (date: AvailableDate) => void;
 }) {
-  const [month, setMonth] = useState<MonthKey>("2026-06");
-  const monthNumber = month === "2026-06" ? "06" : "07";
-  const daysInMonth = month === "2026-06" ? 30 : 31;
-  const leadingBlanks = month === "2026-06" ? 0 : 2;
+  const months = dates.length
+    ? Array.from(new Set(dates.map((date) => date.date.slice(0, 7)))).sort()
+    : [new Date().toISOString().slice(0, 7)];
+  const [month, setMonth] = useState(months[0]);
   const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
 
+  useEffect(() => {
+    if (!months.includes(month)) setMonth(months[0]);
+  }, [month, months]);
+
+  const [yearNumber, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(yearNumber, monthNumber, 0).getDate();
+  const firstWeekday = new Date(Date.UTC(yearNumber, monthNumber - 1, 1)).getUTCDay();
+  const leadingBlanks = (firstWeekday + 6) % 7;
+  const dateMap = new Map(dates.map((date) => [date.date, date]));
+
   const dateForDay = (day: number) => {
-    const date = `2026-${monthNumber}-${String(day).padStart(2, "0")}`;
-    return availableDates.find((item) => item.date === date);
+    const date = `${month}-${String(day).padStart(2, "0")}`;
+    return dateMap.get(date);
   };
 
   return (
     <section className="mt-7 rounded-[24px] border border-black/10 bg-white p-5 shadow-[0_8px_30px_rgba(0,0,0,0.01)]">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold text-black">
-          {month === "2026-06" ? "2026년 6월" : "2026년 7월"}
+          {yearNumber}년 {monthNumber}월
         </h2>
         <div className="flex rounded-full bg-black/[0.04] p-1 text-[10px] font-bold">
-          <button
-            type="button"
-            onClick={() => setMonth("2026-06")}
-            className={cn(
-              "rounded-full px-3 py-1 transition-all",
-              month === "2026-06"
-                ? "bg-white text-black shadow-sm"
-                : "text-black/40",
-            )}
-          >
-            6월
-          </button>
-          <button
-            type="button"
-            onClick={() => setMonth("2026-07")}
-            className={cn(
-              "rounded-full px-3 py-1 transition-all",
-              month === "2026-07"
-                ? "bg-white text-black shadow-sm"
-                : "text-black/40",
-            )}
-          >
-            7월
-          </button>
+          {months.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMonth(value)}
+              className={cn(
+                "rounded-full px-3 py-1 transition-all",
+                month === value ? "bg-white text-black shadow-sm" : "text-black/40",
+              )}
+            >
+              {Number(value.slice(5, 7))}월
+            </button>
+          ))}
         </div>
       </div>
 
@@ -517,7 +554,11 @@ function CalendarSelector({
       </div>
 
       <p className="mt-6 text-center text-[10px] font-medium leading-relaxed text-black/35">
-        * 파란 점이 있는 날짜를 택하면 교집합이 초대장을 준비해드려요.
+        {loading
+          ? "초대장 날짜를 불러오고 있어요."
+          : dates.length
+            ? "* 파란 점이 있는 날짜를 택하면 교집합이 초대장을 준비해드려요."
+            : "현재 공개된 초대장 날짜가 없어요."}
       </p>
     </section>
   );
