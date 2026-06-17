@@ -34,19 +34,57 @@ const profileSelect = [
   "birth_year",
   "mbti",
   "phone",
-  "photo_url",
-  "public_intro",
-  "launch_notification_requested",
-  "launch_notification_requested_at",
-  "created_at",
-  "profile_completed",
-  "questions_completed",
   "membership_status",
   "membership_plan",
   "membership_start_date",
   "membership_end_date",
   "membership_purchase_clicked_at",
   "membership_updated_at",
+].join(",");
+
+const templateSelect = [
+  "id",
+  "title",
+  "short_description",
+  "image_url",
+  "mood_tags",
+  "activity_type",
+  "recommendation_copy",
+  "default_region",
+  "default_time",
+  "visibility",
+  "question_order",
+  "score_temperature",
+  "score_texture",
+  "score_tone",
+  "score_rhythm",
+  "score_alcohol",
+  "score_romance",
+  "created_at",
+  "updated_at",
+].join(",");
+
+const instanceSelect = [
+  "id",
+  "template_id",
+  "title",
+  "event_date",
+  "event_time",
+  "region",
+  "place_name",
+  "address",
+  "place_visibility",
+  "visibility",
+  "remaining_seat_label_count",
+  "created_at",
+  "updated_at",
+].join(",");
+
+const assignmentSelect = [
+  "id",
+  "ticket_instance_id",
+  "profile_id",
+  "assigned_at",
 ].join(",");
 
 function isAdminRequest(request: NextRequest) {
@@ -87,7 +125,39 @@ function remainingSeatCount(value: unknown) {
   return Math.max(0, Math.min(6, Math.trunc(number)));
 }
 
+function questionOrder(value: unknown) {
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : null;
+  if (number === null || !Number.isFinite(number)) return null;
+  return Math.max(1, Math.min(5, Math.trunc(number)));
+}
+
+function scoreValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : null;
+  if (number === null || !Number.isFinite(number)) return null;
+  return Math.max(1, Math.min(5, Math.trunc(number)));
+}
+
+function operationalVisibility(value: unknown) {
+  const visibility = isTicketVisibility(value)
+    ? value
+    : ("draft" as TicketVisibility);
+  return visibility === "question" ? "public" : visibility;
+}
+
 function templatePayload(body: Record<string, unknown>) {
+  const visibility = operationalVisibility(body.visibility);
+
   return {
     title: text(body.title),
     short_description: text(body.shortDescription),
@@ -97,9 +167,14 @@ function templatePayload(body: Record<string, unknown>) {
     recommendation_copy: text(body.recommendationCopy),
     default_region: text(body.defaultRegion),
     default_time: text(body.defaultTime),
-    visibility: isTicketVisibility(body.visibility)
-      ? body.visibility
-      : ("draft" as TicketVisibility),
+    visibility,
+    question_order: questionOrder(body.questionOrder),
+    score_temperature: scoreValue(body.scoreTemperature),
+    score_texture: scoreValue(body.scoreTexture),
+    score_tone: scoreValue(body.scoreTone),
+    score_rhythm: scoreValue(body.scoreRhythm),
+    score_alcohol: scoreValue(body.scoreAlcohol),
+    score_romance: scoreValue(body.scoreRomance),
     updated_at: new Date().toISOString(),
   };
 }
@@ -115,9 +190,7 @@ function instancePayload(body: Record<string, unknown>) {
     place_visibility: isPlaceVisibility(body.placeVisibility)
       ? body.placeVisibility
       : ("confirmed_only" as PlaceVisibility),
-    visibility: isTicketVisibility(body.visibility)
-      ? body.visibility
-      : ("draft" as TicketVisibility),
+    visibility: operationalVisibility(body.visibility),
     remaining_seat_label_count: remainingSeatCount(
       body.remainingSeatLabelCount,
     ),
@@ -131,14 +204,14 @@ async function loadTicketData() {
     await Promise.all([
       supabase
         .from("ticket_templates")
-        .select("*")
+        .select(templateSelect)
         .order("updated_at", { ascending: false }),
       supabase
         .from("ticket_instances")
-        .select("*")
+        .select(instanceSelect)
         .order("event_date", { ascending: true, nullsFirst: false })
         .order("event_time", { ascending: true, nullsFirst: false }),
-      supabase.from("ticket_assignments").select("*"),
+      supabase.from("ticket_assignments").select(assignmentSelect),
       supabase.from("profiles").select(profileSelect).order("name"),
       supabase
         .from("meeting_waitlist")
@@ -158,7 +231,7 @@ async function loadTicketData() {
     normalizeAdminProfile(profile as unknown as AdminProfile),
   );
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
-  const assignments = (assignmentsResult.data ?? []) as AssignmentRow[];
+  const assignments = (assignmentsResult.data ?? []) as unknown as AssignmentRow[];
   const waitlistCounts = new Map<string, number>();
 
   for (const row of waitlistResult.data ?? []) {
@@ -166,7 +239,7 @@ async function loadTicketData() {
     if (key) waitlistCounts.set(key, (waitlistCounts.get(key) ?? 0) + 1);
   }
 
-  const instances = ((instancesResult.data ?? []) as InstanceRow[]).map(
+  const instances = ((instancesResult.data ?? []) as unknown as InstanceRow[]).map(
     (instance): AdminTicketInstance => {
       const instanceAssignments = assignments
         .filter((assignment) => assignment.ticket_instance_id === instance.id)
@@ -184,7 +257,7 @@ async function loadTicketData() {
     },
   );
 
-  const templates = ((templatesResult.data ?? []) as TemplateRow[]).map(
+  const templates = ((templatesResult.data ?? []) as unknown as TemplateRow[]).map(
     (template): AdminTicketTemplate => {
       const templateInstances = instances.filter(
         (instance) => instance.template_id === template.id,
@@ -215,7 +288,7 @@ export async function GET(request: NextRequest) {
   try {
     return NextResponse.json(await loadTicketData());
   } catch (error) {
-    console.error("Admin tickets load failed:", error);
+    console.error("[admin tickets]", error);
     return NextResponse.json(
       { error: "티켓 정보를 불러오지 못했습니다." },
       { status: 500 },
@@ -251,23 +324,34 @@ export async function POST(request: NextRequest) {
 
       const { data: source, error: sourceError } = await supabase
         .from("ticket_templates")
-        .select("*")
+        .select(templateSelect)
         .eq("id", templateId)
         .single();
       if (sourceError) throw sourceError;
+      const sourceTemplate = source as unknown as TemplateRow;
 
       const { data: copy, error: copyError } = await supabase
         .from("ticket_templates")
         .insert({
-          title: `${source.title} 복사본`,
-          short_description: source.short_description,
-          image_url: source.image_url,
-          mood_tags: source.mood_tags,
-          activity_type: source.activity_type,
-          recommendation_copy: source.recommendation_copy,
-          default_region: source.default_region,
-          default_time: source.default_time,
-          visibility: source.visibility,
+          title: `${sourceTemplate.title} 복사본`,
+          short_description: sourceTemplate.short_description,
+          image_url: sourceTemplate.image_url,
+          mood_tags: sourceTemplate.mood_tags,
+          activity_type: sourceTemplate.activity_type,
+          recommendation_copy: sourceTemplate.recommendation_copy,
+          default_region: sourceTemplate.default_region,
+          default_time: sourceTemplate.default_time,
+          visibility:
+            sourceTemplate.visibility === "question"
+              ? "public"
+              : sourceTemplate.visibility,
+          question_order: null,
+          score_temperature: sourceTemplate.score_temperature ?? null,
+          score_texture: sourceTemplate.score_texture ?? null,
+          score_tone: sourceTemplate.score_tone ?? null,
+          score_rhythm: sourceTemplate.score_rhythm ?? null,
+          score_alcohol: sourceTemplate.score_alcohol ?? null,
+          score_romance: sourceTemplate.score_romance ?? null,
         })
         .select("id")
         .single();
@@ -276,12 +360,14 @@ export async function POST(request: NextRequest) {
       if (body?.includeInstances === true) {
         const { data: sourceInstances, error: instancesError } = await supabase
           .from("ticket_instances")
-          .select("*")
+          .select(instanceSelect)
           .eq("template_id", templateId);
         if (instancesError) throw instancesError;
-        if (sourceInstances?.length) {
+        const sourceInstanceRows =
+          (sourceInstances ?? []) as unknown as InstanceRow[];
+        if (sourceInstanceRows.length) {
           const { error } = await supabase.from("ticket_instances").insert(
-            sourceInstances.map((instance) => ({
+            sourceInstanceRows.map((instance) => ({
               template_id: copy.id,
               title: `${instance.title} 복사본`,
               event_date: instance.event_date,
@@ -315,21 +401,22 @@ export async function POST(request: NextRequest) {
       if (!instanceId) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
       const { data: source, error: sourceError } = await supabase
         .from("ticket_instances")
-        .select("*")
+        .select(instanceSelect)
         .eq("id", instanceId)
         .single();
       if (sourceError) throw sourceError;
+      const sourceInstance = source as unknown as InstanceRow;
       const { error } = await supabase.from("ticket_instances").insert({
-        template_id: source.template_id,
-        title: `${source.title} 복사본`,
-        event_date: source.event_date,
-        event_time: source.event_time,
-        region: source.region,
-        place_name: source.place_name,
-        address: source.address,
-        place_visibility: source.place_visibility,
-        visibility: source.visibility,
-        remaining_seat_label_count: source.remaining_seat_label_count ?? 0,
+        template_id: sourceInstance.template_id,
+        title: `${sourceInstance.title} 복사본`,
+        event_date: sourceInstance.event_date,
+        event_time: sourceInstance.event_time,
+        region: sourceInstance.region,
+        place_name: sourceInstance.place_name,
+        address: sourceInstance.address,
+        place_visibility: sourceInstance.place_visibility,
+        visibility: sourceInstance.visibility,
+        remaining_seat_label_count: sourceInstance.remaining_seat_label_count ?? 0,
       });
       if (error) throw error;
     } else if (action === "add_assignment") {
@@ -349,7 +436,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
-    console.error("Admin ticket create action failed:", { action, error });
+    console.error("[admin tickets]", { action, error });
     return NextResponse.json(
       { error: "티켓 작업을 처리하지 못했습니다." },
       { status: 500 },
@@ -390,7 +477,7 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
-    console.error("Admin ticket update failed:", { entity, id, error });
+    console.error("[admin tickets]", { entity, id, error });
     return NextResponse.json(
       { error: "티켓 정보를 저장하지 못했습니다." },
       { status: 500 },
@@ -401,8 +488,27 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   if (!isAdminRequest(request)) return unauthorized();
 
+  const templateId = request.nextUrl.searchParams.get("templateId");
   const instanceId = request.nextUrl.searchParams.get("instanceId");
   const profileId = request.nextUrl.searchParams.get("profileId");
+  if (templateId) {
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from("ticket_templates")
+        .delete()
+        .eq("id", templateId);
+      if (error) throw error;
+      return NextResponse.json(await loadTicketData());
+    } catch (error) {
+      console.error("[admin tickets]", error);
+      return NextResponse.json(
+        { error: "티켓 템플릿을 삭제하지 못했습니다." },
+        { status: 500 },
+      );
+    }
+  }
+
   if (!instanceId || !profileId) {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
   }
@@ -417,7 +523,7 @@ export async function DELETE(request: NextRequest) {
     if (error) throw error;
     return NextResponse.json(await loadTicketData());
   } catch (error) {
-    console.error("Admin ticket assignment removal failed:", error);
+    console.error("[admin tickets]", error);
     return NextResponse.json(
       { error: "멤버를 제거하지 못했습니다." },
       { status: 500 },

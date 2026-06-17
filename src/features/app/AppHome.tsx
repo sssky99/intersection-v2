@@ -2,9 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Briefcase,
   CalendarDays,
-  Camera,
   Check,
   Coffee,
   Heart,
@@ -25,7 +23,9 @@ import {
   MeetingRecommendation,
   ticketImage,
 } from "@/features/meetings/MeetingRecommendation";
-import { parseTicketPreferenceResults } from "@/features/onboarding/onboardingTicketSamples";
+import {
+  parseTicketRatingAnswer,
+} from "@/features/onboarding/sampleMeetingTickets";
 import {
   MembershipFloatingButton,
   MembershipModal,
@@ -83,17 +83,18 @@ const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "profile", label: "프로필", Icon: UserRound },
 ];
 
-const categoryIcons: Record<QuestionCategory, LucideIcon> = {
-  Communication: MessageCircle,
-  Lifestyle: Coffee,
-  Preference: X,
-  Relationship: Users,
-  Values: Sparkles,
-  Background: Briefcase,
-  Interests: Heart,
-  TicketPreference: TicketIcon,
-  Story: PenLine,
-  Picture: Camera,
+const categoryIcons: Partial<Record<QuestionCategory, LucideIcon>> = {
+  온도: Coffee,
+  결: MessageCircle,
+  톤: Heart,
+  리듬: Sparkles,
+  "모임 역할": Users,
+  "모임 역할 - 상대": Users,
+  "관계 기대": Heart,
+  "회피 조건": X,
+  "나이 조건": Users,
+  "샘플 모임": TicketIcon,
+  자기소개: PenLine,
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -133,16 +134,12 @@ function rowToAnswer(row: AnswerRow): QuestionAnswer {
     (item) => (item.order ?? item.id) === row.question_order,
   );
   const value = question
-    ? question.type === "ticket_preference"
-      ? row.answer_text ?? ""
-      : question.type === "photo_upload"
-        ? row.answer_value?.startsWith("http")
-          ? row.answer_value
-          : ""
-        : row.answer_values ??
-          (question.type === "text"
-            ? row.answer_text ?? row.answer_value ?? ""
-            : row.answer_value ?? "")
+    ? question.type === "ticket_rating"
+      ? parseTicketRatingAnswer(row.answer_text) ?? ""
+      : row.answer_values ??
+        (question.type === "text"
+          ? row.answer_text ?? row.answer_value ?? ""
+          : row.answer_value ?? "")
     : "";
 
   return {
@@ -154,16 +151,19 @@ function rowToAnswer(row: AnswerRow): QuestionAnswer {
 
 function isAnswerComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
   if (!answer) return false;
-  if (question.type === "ticket_preference") {
+  if (question.type === "ticket_rating") {
     return (
-      typeof answer.value === "string" &&
-      parseTicketPreferenceResults(answer.value).length === 5
+      typeof answer.value === "object" &&
+      !Array.isArray(answer.value) &&
+      Boolean(answer.value.ticket_id && answer.value.rating)
     );
   }
 
   const value = answer.value;
   const hasValue = Array.isArray(value)
     ? value.length > 0
+    : typeof value === "object"
+      ? false
     : Boolean(String(value).trim());
 
   if (!hasValue) return false;
@@ -174,38 +174,6 @@ function isAnswerComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
       Boolean(questionOptionMeta(question, value)?.hasTextInput);
 
   return !needsOther || Boolean(answer.otherText?.trim());
-}
-
-function answerPayload(question: ProfileQuestion, answer: QuestionAnswer) {
-  if (question.type === "ticket_preference") {
-    return {
-      answer_value: null,
-      answer_values: null,
-      answer_text: String(answer.value),
-    };
-  }
-
-  if (Array.isArray(answer.value)) {
-    return {
-      answer_value: null,
-      answer_values: answer.value,
-      answer_text: null,
-    };
-  }
-
-  if (question.type === "text") {
-    return {
-      answer_value: null,
-      answer_values: null,
-      answer_text: String(answer.value),
-    };
-  }
-
-  return {
-    answer_value: String(answer.value),
-    answer_values: null,
-    answer_text: null,
-  };
 }
 
 function profileName(profile: ProfileRow) {
@@ -372,35 +340,6 @@ export function AppHome({
     window.location.replace("/");
   };
 
-  const saveQuestionAnswer = async (
-    question: ProfileQuestion,
-    answer: QuestionAnswer,
-  ) => {
-    setAnswers((current) => ({
-      ...current,
-      [question.id]: answer,
-    }));
-
-    const { error } = await createClient()
-      .from("user_answers")
-      .upsert(
-        {
-          user_id: userId,
-          question_order: question.order ?? question.id,
-          category: question.category,
-          question_type: question.type,
-          ...answerPayload(question, answer),
-          other_text: answer.otherText?.trim() || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,question_order" },
-      );
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  };
-
   return (
     <section className="flex h-dvh flex-col bg-white md:h-[calc(100dvh-32px)]">
       <MembershipFloatingButton
@@ -488,7 +427,6 @@ export function AppHome({
               key="profile"
               profile={currentProfile}
               answers={answers}
-              onSaveAnswer={saveQuestionAnswer}
               loggingOut={loggingOut}
               logoutError={logoutError}
               onLogout={logout}
@@ -795,17 +733,12 @@ function StoredTicketCard({ ticket }: { ticket: GatheringTicket }) {
 function ProfileTab({
   profile,
   answers,
-  onSaveAnswer,
   loggingOut,
   logoutError,
   onLogout,
 }: {
   profile: ProfileRow;
   answers: AnswerMap;
-  onSaveAnswer: (
-    question: ProfileQuestion,
-    answer: QuestionAnswer,
-  ) => Promise<void>;
   loggingOut: boolean;
   logoutError: string | null;
   onLogout: () => Promise<void>;
@@ -814,7 +747,13 @@ function ProfileTab({
     useState<QuestionCategory | null>(null);
   const questionGroups = useMemo(
     () =>
-      mockQuestions.reduce(
+      mockQuestions
+        .filter(
+          (question) =>
+            question.type !== "ticket_rating" &&
+            question.category !== "샘플 모임",
+        )
+        .reduce(
         (groups, question) => {
           groups[question.category] = groups[question.category] ?? [];
           groups[question.category].push(question);
@@ -838,7 +777,7 @@ function ProfileTab({
             {profileInitial(profile)}님의 질문 카드첩
           </h1>
           <p className="mt-2 text-sm leading-6 text-black/48">
-            카드를 열어 답변을 확인하거나 수정할 수 있어요.
+            카드를 열어 내가 남긴 답변을 확인할 수 있어요.
           </p>
         </header>
 
@@ -856,7 +795,7 @@ function ProfileTab({
 
         <div className="mt-5 grid grid-cols-3 gap-2.5">
           {categories.map((category) => {
-            const Icon = categoryIcons[category];
+            const Icon = categoryIcons[category] ?? Sparkles;
             const questions = questionGroups[category];
             const meta = questionCategories.find((item) => item.key === category);
             const label = meta?.label ?? category;
@@ -869,8 +808,8 @@ function ProfileTab({
               <button
                 key={category}
                 type="button"
-                title={`${label} 답변 수정`}
-                aria-label={`${label} 답변 수정`}
+                title={`${label} 답변 보기`}
+                aria-label={`${label} 답변 보기`}
                 onClick={() => setEditingCategory(selected ? null : category)}
                 className={cn(
                   "flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border bg-white text-xs font-semibold transition-all",
@@ -915,12 +854,11 @@ function ProfileTab({
 
               <div className="mt-4 space-y-3">
                 {questionGroups[editingCategory].map((question, index) => (
-                  <QuestionCardEditor
+                  <QuestionAnswerCard
                     key={question.id}
                     index={index}
                     question={question}
                     answer={answers[question.id]}
-                    onSaveAnswer={onSaveAnswer}
                   />
                 ))}
               </div>
@@ -958,97 +896,61 @@ function ProfileTab({
   );
 }
 
-function QuestionCardEditor({
+function answerDisplayItems(question: ProfileQuestion, answer?: QuestionAnswer) {
+  if (!answer) return [];
+
+  if (question.type === "text") {
+    return typeof answer.value === "string" && answer.value.trim()
+      ? [answer.value.trim()]
+      : [];
+  }
+
+  if (question.type === "multi_choice") {
+    if (!Array.isArray(answer.value)) return [];
+
+    return answer.value
+      .map((value) => {
+        const option = questionOptionMeta(question, value);
+        const label = option?.label ?? value;
+        if (option?.hasTextInput && answer.otherText?.trim()) {
+          return `${label}: ${answer.otherText.trim()}`;
+        }
+        return label;
+      })
+      .filter(Boolean);
+  }
+
+  if (question.type === "single_choice") {
+    const value =
+      typeof answer.value === "string" || typeof answer.value === "number"
+        ? String(answer.value)
+        : "";
+    if (!value) return [];
+
+    const option = questionOptionMeta(question, value);
+    const label = option?.label ?? value;
+    if (option?.hasTextInput && answer.otherText?.trim()) {
+      return [`${label}: ${answer.otherText.trim()}`];
+    }
+    return [label];
+  }
+
+  return [];
+}
+
+function QuestionAnswerCard({
   question,
   answer,
   index,
-  onSaveAnswer,
 }: {
   question: ProfileQuestion;
   answer?: QuestionAnswer;
   index: number;
-  onSaveAnswer: (
-    question: ProfileQuestion,
-    answer: QuestionAnswer,
-  ) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState<QuestionAnswer>(
-    answer ?? { questionId: question.id, value: question.type === "multi_choice" ? [] : "" },
-  );
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const selectedValues = Array.isArray(draft.value) ? draft.value : [];
   const categoryLabel =
     questionCategories.find((item) => item.key === question.category)?.label ??
     question.category;
-
-  useEffect(() => {
-    setDraft(
-      answer ?? {
-        questionId: question.id,
-        value: question.type === "multi_choice" ? [] : "",
-      },
-    );
-  }, [answer, question.id, question.type]);
-
-  const save = async (nextAnswer = draft) => {
-    if (saving) return;
-
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-    try {
-      await onSaveAnswer(question, nextAnswer);
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 1300);
-    } catch {
-      setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const selectSingle = (value: string | number) => {
-    const nextAnswer = { questionId: question.id, value };
-    setDraft(nextAnswer);
-    void save(nextAnswer);
-  };
-
-  const toggleMultiple = (value: string) => {
-    const selectedOption = questionOptionMeta(question, value);
-    const exclusiveValues =
-      question.options
-        ?.filter((option) => typeof option !== "string" && option.exclusive)
-        .map(questionOptionValue) ?? [];
-
-    let nextValues: string[];
-    if (selectedOption?.exclusive) {
-      nextValues = [value];
-    } else {
-      const withoutExclusive = selectedValues.filter(
-        (item) => !exclusiveValues.includes(item),
-      );
-      nextValues = withoutExclusive.includes(value)
-        ? withoutExclusive.filter((item) => item !== value)
-        : [...withoutExclusive, value];
-    }
-
-    setDraft({
-      questionId: question.id,
-      value: nextValues,
-      otherText: nextValues.some(
-        (item) => questionOptionMeta(question, item)?.hasTextInput,
-      )
-        ? draft.otherText
-        : undefined,
-    });
-  };
-
-  const showOtherInput = Array.isArray(draft.value)
-    ? draft.value.some((item) => questionOptionMeta(question, item)?.hasTextInput)
-    : typeof draft.value === "string" &&
-      Boolean(questionOptionMeta(question, draft.value)?.hasTextInput);
+  const items = answerDisplayItems(question, answer);
 
   return (
     <article className="rounded-[22px] border border-black/10 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.01)]">
@@ -1063,192 +965,32 @@ function QuestionCardEditor({
           <h3 className="mt-0.5 whitespace-pre-line text-xs font-bold leading-5 text-black/85">
             {question.question}
           </h3>
-          {question.description && (
-            <p className="mt-1 text-[10px] leading-relaxed text-black/40">
-              {question.description}
-            </p>
-          )}
         </div>
       </div>
 
-      {question.type === "single_choice" && (
-        <div className="flex flex-wrap gap-1.5">
-          {(question.options ?? []).map((option) => {
-            const value = questionOptionValue(option);
-            const selected = draft.value === value;
-
-            return (
-              <ChipButton
-                key={value}
-                selected={selected}
-                disabled={saving}
-                onClick={() => selectSingle(value)}
-              >
-                {questionOptionLabel(option)}
-              </ChipButton>
-            );
-          })}
-        </div>
-      )}
-
-      {question.type === "ticket_preference" &&
-        typeof draft.value === "string" && (
-          <div className="space-y-3">
-            {(["yes", "no"] as const).map((choice) => {
-              const results = parseTicketPreferenceResults(
-                String(draft.value),
-              ).filter((result) => result.answer === choice);
-
-              return (
-                <div
-                  key={choice}
-                  className="rounded-2xl bg-black/[0.035] px-3.5 py-3"
-                >
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                    {choice}
-                  </p>
-                  {results.length > 0 ? (
-                    <ul className="mt-2 space-y-1.5 text-[11px] leading-5 text-black/58">
-                      {results.map((result) => (
-                        <li key={result.ticket_id}>- {result.title}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-[11px] text-black/35">없음</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-      {question.type === "multi_choice" && (
-        <div className="space-y-3">
+      {items.length > 0 ? (
+        question.type === "text" ? (
+          <p className="whitespace-pre-line rounded-2xl bg-[#f7f7f5] px-4 py-3 text-xs font-medium leading-6 text-black/65">
+            {items[0]}
+          </p>
+        ) : (
           <div className="flex flex-wrap gap-1.5">
-            {(question.options ?? []).map((option) => {
-              const value = questionOptionValue(option);
-              const selected = selectedValues.includes(value);
-
-              return (
-                <ChipButton
-                  key={value}
-                  selected={selected}
-                  disabled={saving}
-                  onClick={() => toggleMultiple(value)}
-                >
-                  {questionOptionLabel(option)}
-                </ChipButton>
-              );
-            })}
+            {items.map((item) => (
+              <span
+                key={item}
+                className="rounded-full border border-black/10 bg-[#f7f7f5] px-3 py-1.5 text-[10px] font-semibold leading-4 text-black/65"
+              >
+                {item}
+              </span>
+            ))}
           </div>
-
-          {showOtherInput && (
-            <input
-              type="text"
-              placeholder="답변을 직접 적어주세요."
-              value={draft.otherText ?? ""}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  otherText: event.target.value,
-                }))
-              }
-              className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-xs outline-none focus:border-accent"
-            />
-          )}
-
-          <SaveButton
-            saving={saving}
-            saved={saved}
-            onClick={() => void save()}
-          />
-        </div>
-      )}
-
-      {question.type === "text" && (
-        <div className="space-y-3">
-          <textarea
-            value={typeof draft.value === "string" ? draft.value : ""}
-            placeholder={question.placeholder ?? "편하게 적어주세요."}
-            onChange={(event) =>
-              setDraft({
-                questionId: question.id,
-                value: event.target.value,
-              })
-            }
-            className="min-h-[120px] w-full resize-none rounded-[16px] border border-black/10 bg-white px-3 py-2.5 text-xs leading-5 outline-none placeholder:text-black/25 focus:border-accent"
-          />
-          <SaveButton
-            saving={saving}
-            saved={saved}
-            onClick={() => void save()}
-          />
-        </div>
-      )}
-
-      {question.type === "photo_upload" && (
-        <div className="rounded-[16px] border border-black/10 bg-black/[0.02] px-3.5 py-3 text-[11px] font-semibold leading-5 text-black/50">
-          사진 답변은 현재 프로필 탭에서 수정하지 않아요. 필요하면 온보딩 사진
-          업로드 흐름에서 다시 다룰 수 있게 열어둘게요.
-        </div>
-      )}
-
-      {error && (
-        <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-          {error}
+        )
+      ) : (
+        <p className="rounded-2xl bg-[#f7f7f5] px-4 py-3 text-xs font-semibold text-black/35">
+          아직 저장된 답변이 없어요.
         </p>
       )}
     </article>
-  );
-}
-
-function ChipButton({
-  selected,
-  disabled,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.button
-      whileTap={!disabled ? { scale: 0.95 } : undefined}
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "rounded-full border px-3 py-1.5 text-[10px] font-semibold transition-all disabled:cursor-wait disabled:opacity-60",
-        selected
-          ? "border-black bg-black text-white shadow-sm"
-          : "border-black/10 bg-white text-black/50 hover:border-black/20",
-      )}
-    >
-      {children}
-    </motion.button>
-  );
-}
-
-function SaveButton({
-  saving,
-  saved,
-  onClick,
-}: {
-  saving: boolean;
-  saved: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={saving}
-      onClick={onClick}
-      className="h-10 w-full rounded-full bg-black text-xs font-semibold text-white disabled:bg-black/[0.08] disabled:text-black/35"
-    >
-      {saving ? "저장 중..." : saved ? "저장됐어요" : "답변 저장"}
-    </button>
   );
 }
 

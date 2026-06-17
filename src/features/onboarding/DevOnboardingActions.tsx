@@ -2,7 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function DevOnboardingActions({
   enabled,
@@ -10,12 +10,19 @@ export function DevOnboardingActions({
   enabled: boolean;
 }) {
   const router = useRouter();
+  const [isLocalHost, setIsLocalHost] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!enabled) return null;
+  useEffect(() => {
+    setIsLocalHost(window.location.hostname === "localhost");
+  }, []);
 
-  const resetQuestions = async () => {
+  const isLocal = enabled || isLocalHost;
+
+  if (!isLocal) return null;
+
+  const resetQuestions = async (startQuestion?: number) => {
     if (resetting) return;
 
     setResetting(true);
@@ -26,7 +33,11 @@ export function DevOnboardingActions({
       });
       if (!response.ok) throw new Error("reset-failed");
 
-      router.replace("/onboarding/questions");
+      router.replace(
+        startQuestion
+          ? `/onboarding/questions?start=${startQuestion}`
+          : "/onboarding/questions",
+      );
       router.refresh();
     } catch {
       setError("온보딩 상태를 초기화하지 못했어요.");
@@ -58,9 +69,17 @@ export function DevOnboardingActions({
             aria-hidden
             className={resetting ? "animate-spin" : ""}
           />
-          {resetting ? "초기화 중..." : "질문 다시하기"}
+          {resetting ? "초기화 중..." : "질문 다시보기"}
         </button>
       </div>
+      <button
+        type="button"
+        disabled={resetting}
+        onClick={() => void resetQuestions(10)}
+        className="mt-2 h-10 w-full rounded-xl border border-black/10 bg-white text-xs font-semibold text-black/55 disabled:opacity-40"
+      >
+        10번 샘플 모임부터 보기
+      </button>
       {error && (
         <p className="mt-2 text-center text-[11px] font-semibold text-red-600">
           {error}

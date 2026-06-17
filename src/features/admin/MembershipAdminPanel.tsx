@@ -2,6 +2,7 @@
 
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AdminMemberName } from "@/features/admin/adminDisplay";
 import {
   calculateMembershipEndDate,
   displayMembershipStatus,
@@ -24,6 +25,9 @@ type AdminMembership = {
   membership_updated_at: string | null;
   display_status: MembershipStatus | null;
 };
+
+let membershipCache: AdminMembership[] | null = null;
+let membershipRequest: Promise<AdminMembership[]> | null = null;
 
 type MembershipStatusFilter = "all" | "active" | "expired" | "pending";
 
@@ -51,32 +55,12 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-function profileName(row: AdminMembership) {
-  return row.name?.trim() || "이름 없음";
-}
-
 function statusForDisplay(row: AdminMembership) {
   return (
     displayMembershipStatus({
       status: row.membership_status,
       endDate: row.membership_end_date,
     }) ?? row.display_status
-  );
-}
-
-function membershipName(row: AdminMembership) {
-  const status = statusForDisplay(row);
-
-  return (
-    <span className="inline-flex items-center gap-1.5 font-bold text-black">
-      <span>{profileName(row)}</span>
-      {status === "active" && <span aria-label="멤버십 적용중">💎</span>}
-      {status === "expired" && (
-        <span className="text-sm font-black text-red-500" aria-label="멤버십 만료">
-          ♦
-        </span>
-      )}
-    </span>
   );
 }
 
@@ -97,6 +81,34 @@ function initialDraft(row: AdminMembership): Draft {
   };
 }
 
+async function fetchMemberships(force = false) {
+  if (!force && membershipCache) return membershipCache;
+  if (!force && membershipRequest) return membershipRequest;
+
+  membershipRequest = fetch("/api/admin/memberships", {
+    cache: "no-store",
+  })
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as {
+        memberships?: AdminMembership[];
+        error?: string;
+      } | null;
+
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "memberships-load-failed");
+      }
+
+      const rows = data.memberships ?? [];
+      membershipCache = rows;
+      return rows;
+    })
+    .finally(() => {
+      membershipRequest = null;
+    });
+
+  return membershipRequest;
+}
+
 export function MembershipAdminPanel() {
   const [memberships, setMemberships] = useState<AdminMembership[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -114,21 +126,12 @@ export function MembershipAdminPanel() {
     );
   };
 
-  const loadMemberships = useCallback(async () => {
+  const loadMemberships = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/admin/memberships", {
-        cache: "no-store",
-      });
-
-      if (!response.ok) throw new Error("memberships-load-failed");
-
-      const data = (await response.json()) as {
-        memberships?: AdminMembership[];
-      };
-      const rows = data.memberships ?? [];
+      const rows = await fetchMemberships(force);
       setMemberships(rows);
       hydrateDrafts(rows);
     } catch {
@@ -165,13 +168,16 @@ export function MembershipAdminPanel() {
       display_status: statusForDisplay(row),
     };
 
-    setMemberships((current) =>
-      normalizedRow.membership_status === "cancelled"
-        ? current.filter((item) => item.user_id !== normalizedRow.user_id)
-        : current.map((item) =>
-            item.user_id === normalizedRow.user_id ? normalizedRow : item,
-          ),
-    );
+    setMemberships((current) => {
+      const nextRows =
+        normalizedRow.membership_status === "cancelled"
+          ? current.filter((item) => item.user_id !== normalizedRow.user_id)
+          : current.map((item) =>
+              item.user_id === normalizedRow.user_id ? normalizedRow : item,
+            );
+      membershipCache = nextRows;
+      return nextRows;
+    });
     setDrafts((current) => {
       const next = { ...current };
 
@@ -272,11 +278,17 @@ export function MembershipAdminPanel() {
               결제 확인 전, 적용중, 만료 상태를 운영자가 직접 관리합니다.
               취소 상태는 저장 후 목록에서 제외됩니다.
             </p>
+            {loading && memberships.length > 0 && (
+              <p className="mt-1 text-[11px] font-semibold text-accent">
+                새로고침 중입니다.
+              </p>
+            )}
           </div>
           <button
             type="button"
-            onClick={loadMemberships}
-            className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
+            disabled={loading}
+            onClick={() => void loadMemberships(true)}
+            className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
           >
             새로고침
           </button>
@@ -324,12 +336,17 @@ export function MembershipAdminPanel() {
             {notice}
           </p>
         )}
+        {error && memberships.length > 0 && (
+          <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
+            {error}
+          </p>
+        )}
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {loading ? (
+        {loading && memberships.length === 0 ? (
           <StateMessage message="멤버십 목록을 불러오는 중입니다." />
-        ) : error ? (
+        ) : error && memberships.length === 0 ? (
           <StateMessage tone="error" message={error} />
         ) : filteredMemberships.length === 0 ? (
           <StateMessage message="관리할 멤버십 내역이 없습니다." />
@@ -354,7 +371,13 @@ export function MembershipAdminPanel() {
                     className="border-b border-black/5 align-top transition hover:bg-accent/10"
                   >
                     <td className="border-b border-black/5 px-5 py-4">
-                      {membershipName(row)}
+                      <AdminMemberName
+                        profile={{
+                          name: row.name,
+                          membership_status: statusForDisplay(row),
+                          membership_end_date: row.membership_end_date,
+                        }}
+                      />
                       {row.phone && (
                         <p className="mt-1 text-xs font-semibold text-black/38">
                           {row.phone}

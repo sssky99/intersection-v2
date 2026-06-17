@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import {
+  AdminMemberName,
+  profileName,
+} from "@/features/admin/adminDisplay";
 import type { AdminProfile } from "@/features/admin/adminProfile";
 import { membershipStatusLabels } from "@/features/membership/membershipTypes";
 import {
@@ -30,6 +34,9 @@ type TicketData = {
   profiles: AdminProfile[];
 };
 
+let ticketDataCache: TicketData | null = null;
+let ticketDataRequest: Promise<TicketData> | null = null;
+
 type TemplateDraft = {
   title: string;
   shortDescription: string;
@@ -40,6 +47,13 @@ type TemplateDraft = {
   defaultRegion: string;
   defaultTime: string;
   visibility: TicketVisibility;
+  questionOrder: string;
+  scoreTemperature: string;
+  scoreTexture: string;
+  scoreTone: string;
+  scoreRhythm: string;
+  scoreAlcohol: string;
+  scoreRomance: string;
 };
 
 type InstanceDraft = {
@@ -55,6 +69,110 @@ type InstanceDraft = {
 };
 
 type ListMode = "templates" | "dates";
+type TemplateScoreDraftKey =
+  | "scoreTemperature"
+  | "scoreTexture"
+  | "scoreTone"
+  | "scoreRhythm"
+  | "scoreAlcohol"
+  | "scoreRomance";
+
+const questionOrders = [1, 2, 3, 4, 5] as const;
+const scoreValues = [1, 2, 3, 4, 5] as const;
+const templateTicketVisibilities = ticketVisibilities.filter(
+  (visibility) => visibility !== "question",
+);
+const instanceTicketVisibilities = ticketVisibilities.filter(
+  (visibility) => visibility !== "question",
+);
+
+const scoreFields: Array<{
+  key: TemplateScoreDraftKey;
+  column:
+    | "score_temperature"
+    | "score_texture"
+    | "score_tone"
+    | "score_rhythm"
+    | "score_alcohol"
+    | "score_romance";
+  label: string;
+  shortLabel: string;
+  guide: string;
+}> = [
+  {
+    key: "scoreTemperature",
+    column: "score_temperature",
+    label: "온도",
+    shortLabel: "온",
+    guide: "조용함 1 ↔ 활기참 5",
+  },
+  {
+    key: "scoreTexture",
+    column: "score_texture",
+    label: "결",
+    shortLabel: "결",
+    guide: "현실·경험 1 ↔ 의미·아이디어 5",
+  },
+  {
+    key: "scoreTone",
+    column: "score_tone",
+    label: "톤",
+    shortLabel: "톤",
+    guide: "공감 1 ↔ 분석·해결 5",
+  },
+  {
+    key: "scoreRhythm",
+    column: "score_rhythm",
+    label: "리듬",
+    shortLabel: "리듬",
+    guide: "계획적 1 ↔ 즉흥적 5",
+  },
+  {
+    key: "scoreAlcohol",
+    column: "score_alcohol",
+    label: "술",
+    shortLabel: "술",
+    guide: "술 거의 없음 1 ↔ 술 중심 5",
+  },
+  {
+    key: "scoreRomance",
+    column: "score_romance",
+    label: "설렘",
+    shortLabel: "설렘",
+    guide: "편한 관계 1 ↔ 설렘 가능성 5",
+  },
+];
+
+const sampleScoreGuide = [
+  "화덕피자: 온3 / 결2 / 톤2 / 리듬3 / 술2 / 설렘3",
+  "일 얘기 밤: 온2 / 결4 / 톤4 / 리듬2 / 술2 / 설렘2",
+  "전시+카페: 온2 / 결4 / 톤2 / 리듬2 / 술1 / 설렘2",
+  "볼링: 온5 / 결1 / 톤2 / 리듬4 / 술2 / 설렘3",
+  "망한 연애 썰: 온4 / 결3 / 톤1 / 리듬4 / 술3 / 설렘4",
+  "트레일러닝: 온5 / 결2 / 톤3 / 리듬3 / 술1 / 설렘2",
+];
+
+async function fetchTicketData(force = false) {
+  if (!force && ticketDataCache) return ticketDataCache;
+  if (!force && ticketDataRequest) return ticketDataRequest;
+
+  ticketDataRequest = fetch("/api/admin/tickets", { cache: "no-store" })
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as
+        | (TicketData & { error?: string })
+        | null;
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "tickets-load-failed");
+      }
+      ticketDataCache = data;
+      return data;
+    })
+    .finally(() => {
+      ticketDataRequest = null;
+    });
+
+  return ticketDataRequest;
+}
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -70,7 +188,20 @@ function templateDraft(template: AdminTicketTemplate): TemplateDraft {
     recommendationCopy: template.recommendation_copy ?? "",
     defaultRegion: template.default_region ?? "",
     defaultTime: template.default_time?.slice(0, 5) ?? "",
-    visibility: template.visibility,
+    visibility: template.visibility === "question" ? "public" : template.visibility,
+    questionOrder:
+      template.question_order == null ? "" : String(template.question_order),
+    scoreTemperature:
+      template.score_temperature == null ? "" : String(template.score_temperature),
+    scoreTexture:
+      template.score_texture == null ? "" : String(template.score_texture),
+    scoreTone: template.score_tone == null ? "" : String(template.score_tone),
+    scoreRhythm:
+      template.score_rhythm == null ? "" : String(template.score_rhythm),
+    scoreAlcohol:
+      template.score_alcohol == null ? "" : String(template.score_alcohol),
+    scoreRomance:
+      template.score_romance == null ? "" : String(template.score_romance),
   };
 }
 
@@ -102,6 +233,13 @@ function requestBody(draft: TemplateDraft) {
     defaultRegion: draft.defaultRegion,
     defaultTime: draft.defaultTime,
     visibility: draft.visibility,
+    questionOrder: draft.questionOrder || null,
+    scoreTemperature: draft.scoreTemperature || null,
+    scoreTexture: draft.scoreTexture || null,
+    scoreTone: draft.scoreTone || null,
+    scoreRhythm: draft.scoreRhythm || null,
+    scoreAlcohol: draft.scoreAlcohol || null,
+    scoreRomance: draft.scoreRomance || null,
   };
 }
 
@@ -134,10 +272,6 @@ function dateTimeText(instance: AdminTicketInstance) {
     .join(" ") || "일정 미정";
 }
 
-function profileName(profile: AdminProfile) {
-  return profile.name?.trim() || "이름 없음";
-}
-
 function membershipText(profile: AdminProfile) {
   return membershipStatusLabels[profile.membership_status ?? "none"];
 }
@@ -153,18 +287,15 @@ function updatedDate(value: string) {
   }).format(date);
 }
 
-function MemberName({ profile }: { profile: AdminProfile }) {
-  return (
-    <span className="inline-flex items-center gap-1 font-bold text-black">
-      {profile.active_membership && <span aria-label="멤버십 적용중">💎</span>}
-      {profile.expired_membership && (
-        <span className="font-black text-red-500" aria-label="멤버십 만료">
-          ♦
-        </span>
-      )}
-      <span>{profileName(profile)}</span>
-    </span>
-  );
+function scoreSummary(template: AdminTicketTemplate) {
+  const items = scoreFields
+    .map((field) => {
+      const value = template[field.column];
+      return value == null ? null : `${field.shortLabel}${value}`;
+    })
+    .filter(Boolean);
+
+  return items.length ? items.join(" · ") : "성향 점수 미입력";
 }
 
 export function TicketAdminPanel() {
@@ -187,6 +318,7 @@ export function TicketAdminPanel() {
   const [error, setError] = useState<string | null>(null);
 
   const hydrate = useCallback((data: TicketData) => {
+    ticketDataCache = data;
     setTemplates(data.templates ?? []);
     setProfiles(data.profiles ?? []);
     setSelectedTemplateId((current) => {
@@ -197,17 +329,11 @@ export function TicketAdminPanel() {
     });
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/admin/tickets", { cache: "no-store" });
-      const data = (await response.json().catch(() => null)) as
-        | (TicketData & { error?: string })
-        | null;
-      if (!response.ok || !data) {
-        throw new Error(data?.error ?? "tickets-load-failed");
-      }
+      const data = await fetchTicketData(force);
       hydrate(data);
     } catch {
       setError("티켓 정보를 불러오지 못했습니다.");
@@ -324,6 +450,22 @@ export function TicketAdminPanel() {
       },
       "템플릿을 복제했습니다.",
     );
+  };
+
+  const deleteTemplate = async () => {
+    if (!selectedTemplate) return;
+    const confirmed = window.confirm(
+      `"${selectedTemplate.title}" 템플릿을 삭제할까요?\n연결된 세부 티켓과 배정 정보도 함께 삭제됩니다.`,
+    );
+    if (!confirmed) return;
+
+    const deleted = await runAction(
+      "DELETE",
+      null,
+      "템플릿을 삭제했습니다.",
+      `?templateId=${encodeURIComponent(selectedTemplate.id)}`,
+    );
+    if (deleted) setSelectedInstanceId(null);
   };
 
   const createInstance = async () => {
@@ -464,6 +606,11 @@ export function TicketAdminPanel() {
             <p className="mt-1 text-xs text-black/45">
               템플릿과 실제 운영 티켓, 배정 멤버를 한곳에서 관리합니다.
             </p>
+            {loading && templates.length > 0 && (
+              <p className="mt-1 text-[11px] font-semibold text-accent">
+                새로고침 중입니다.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-xl bg-[#f2f3f1] p-1">
@@ -480,6 +627,14 @@ export function TicketAdminPanel() {
                 날짜별 보기
               </ModeButton>
             </div>
+            <button
+              type="button"
+              disabled={loading || saving}
+              onClick={() => void load(true)}
+              className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
+            >
+              새로고침
+            </button>
             <button
               type="button"
               disabled={saving}
@@ -521,7 +676,7 @@ export function TicketAdminPanel() {
           </label>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-            {loading ? (
+            {loading && templates.length === 0 ? (
               <PanelMessage>티켓 정보를 불러오는 중입니다.</PanelMessage>
             ) : listMode === "templates" ? (
               filteredTemplates.length ? (
@@ -619,6 +774,7 @@ export function TicketAdminPanel() {
               onDraftChange={setTemplateForm}
               onSave={() => void saveTemplate()}
               onDuplicate={() => void duplicateTemplate()}
+              onDelete={() => void deleteTemplate()}
               onCreateInstance={() => void createInstance()}
               onSelectInstance={setSelectedInstanceId}
               onUploadImage={(file) => void uploadImage(file)}
@@ -670,6 +826,9 @@ function TemplateListCard({
         <p className="mt-2 text-[11px] font-semibold text-accent">
           {ticketVisibilityLabels[template.visibility]}
         </p>
+        <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
+          {scoreSummary(template)}
+        </p>
         <p className="mt-1 text-[10px] text-black/38">
           세부 {template.instance_count} · 배정 {template.assignment_count} · 대기열{" "}
           {template.waitlist_count}
@@ -689,6 +848,7 @@ function TemplateEditor({
   onDraftChange,
   onSave,
   onDuplicate,
+  onDelete,
   onCreateInstance,
   onSelectInstance,
   onUploadImage,
@@ -699,6 +859,7 @@ function TemplateEditor({
   onDraftChange: (draft: TemplateDraft) => void;
   onSave: () => void;
   onDuplicate: () => void;
+  onDelete: () => void;
   onCreateInstance: () => void;
   onSelectInstance: (id: string) => void;
   onUploadImage: (file: File) => void;
@@ -714,6 +875,9 @@ function TemplateEditor({
             <h3 className="mt-1 text-xl font-bold">템플릿 상세</h3>
           </div>
           <div className="flex gap-2">
+            <ActionButton disabled={saving} onClick={onDelete} icon={Trash2}>
+              삭제
+            </ActionButton>
             <ActionButton disabled={saving} onClick={onDuplicate} icon={Copy}>
               복제
             </ActionButton>
@@ -753,6 +917,56 @@ function TemplateEditor({
                 }}
               />
             </label>
+            <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-xs font-bold text-black/60">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.questionOrder)}
+                disabled={saving}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    questionOrder: event.target.checked
+                      ? draft.questionOrder || "1"
+                      : "",
+                  })
+                }
+                className="h-4 w-4 accent-black disabled:opacity-40"
+              />
+              질문 샘플 티켓 사용
+            </label>
+            {draft.questionOrder ? (
+              <div className="mt-3 rounded-2xl border border-accent/20 bg-accent/[0.06] p-3">
+                <p className="text-[11px] font-bold text-black/55">
+                  질문 노출 순서
+                </p>
+                <div className="mt-2 grid grid-cols-5 gap-1.5">
+                  {questionOrders.map((order) => {
+                    const selected = draft.questionOrder === String(order);
+                    return (
+                      <button
+                        key={order}
+                        type="button"
+                        disabled={saving}
+                        onClick={() =>
+                          onDraftChange({
+                            ...draft,
+                            questionOrder: String(order),
+                          })
+                        }
+                        className={cn(
+                          "flex h-8 items-center justify-center rounded-lg border text-sm font-bold transition",
+                          selected
+                            ? "border-accent bg-accent text-white"
+                            : "border-black/10 bg-white text-black/55 hover:border-accent/50",
+                        )}
+                      >
+                        {order}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <p className="mt-2 text-[10px] leading-4 text-black/35">
               원본 파일을 리사이즈 없이 `ticket-images`에 저장합니다.
             </p>
@@ -784,7 +998,7 @@ function TemplateEditor({
             <SelectField
               label="공개 범위"
               value={draft.visibility}
-              options={ticketVisibilities.map((value) => ({
+              options={templateTicketVisibilities.map((value) => ({
                 value,
                 label: ticketVisibilityLabels[value],
               }))}
@@ -830,6 +1044,8 @@ function TemplateEditor({
           </div>
         </div>
       </section>
+
+      <ScoreEditor draft={draft} saving={saving} onDraftChange={onDraftChange} />
 
       <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between gap-4">
@@ -886,6 +1102,101 @@ function TemplateEditor({
         </div>
       </section>
     </div>
+  );
+}
+
+function ScoreEditor({
+  draft,
+  saving,
+  onDraftChange,
+}: {
+  draft: TemplateDraft;
+  saving: boolean;
+  onDraftChange: (draft: TemplateDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="font-bold">모임 성향 점수</h3>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-black/45">
+            이 점수는 사람과 모임을 같은 기준으로 비교하기 위한 운영용
+            점수입니다. 사용자에게 직접 노출되지 않습니다.
+          </p>
+        </div>
+        <div className="rounded-xl bg-[#f7f7f5] px-3 py-2 text-[10px] font-semibold leading-4 text-black/42">
+          {sampleScoreGuide.slice(0, 2).map((item) => (
+            <p key={item}>{item}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3">
+        {scoreFields.map((field) => {
+          const selectedValue = draft[field.key];
+
+          return (
+            <div
+              key={field.key}
+              className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-black/8 px-3 py-3"
+            >
+              <div>
+                <p className="text-sm font-bold text-black">{field.label}</p>
+                <p className="mt-0.5 text-[10px] font-semibold text-black/38">
+                  {field.guide}
+                </p>
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {scoreValues.map((value) => {
+                  const selected = selectedValue === String(value);
+
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={saving}
+                      onClick={() =>
+                        onDraftChange({
+                          ...draft,
+                          [field.key]: selected ? "" : String(value),
+                        })
+                      }
+                      className={cn(
+                        "flex h-9 items-center justify-center rounded-lg border text-sm font-bold transition disabled:opacity-45",
+                        selected
+                          ? "border-black bg-black text-white"
+                          : "border-black/10 bg-white text-black/55 hover:border-accent/50 hover:text-black",
+                      )}
+                    >
+                      {value}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                disabled={saving || !selectedValue}
+                onClick={() => onDraftChange({ ...draft, [field.key]: "" })}
+                className="h-9 rounded-lg border border-black/10 px-3 text-xs font-bold text-black/42 transition hover:border-black/20 hover:text-black disabled:opacity-30"
+              >
+                비움
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <details className="mt-4 rounded-xl bg-[#f7f7f5] px-4 py-3 text-xs leading-5 text-black/50">
+        <summary className="cursor-pointer font-bold text-black/55">
+          샘플 모임 점수 참고표
+        </summary>
+        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+          {sampleScoreGuide.map((item) => (
+            <p key={item}>{item}</p>
+          ))}
+        </div>
+      </details>
+    </section>
   );
 }
 
@@ -995,7 +1306,7 @@ function InstanceEditor({
           <SelectField
             label="공개 범위"
             value={draft.visibility}
-            options={ticketVisibilities.map((value) => ({
+            options={instanceTicketVisibilities.map((value) => ({
               value,
               label: ticketVisibilityLabels[value],
             }))}
@@ -1044,7 +1355,7 @@ function InstanceEditor({
                     className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
                   >
                     <div className="min-w-0">
-                      <MemberName profile={profile} />
+                      <AdminMemberName profile={profile} />
                       <p className="mt-1 truncate text-[11px] text-black/42">
                         {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
                         {profile.mbti ?? "-"} · {profile.phone ?? "-"}
@@ -1097,7 +1408,7 @@ function InstanceEditor({
                   className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
                 >
                   <div>
-                    <MemberName profile={profile} />
+                    <AdminMemberName profile={profile} />
                     <p className="mt-0.5 text-[10px] text-black/40">
                       {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
                       {profile.mbti ?? "-"} · {profile.phone ?? "-"}

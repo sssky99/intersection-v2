@@ -18,8 +18,6 @@ const baseProfileSelect = [
   "phone",
   "photo_url",
   "public_intro",
-  "launch_notification_requested",
-  "launch_notification_requested_at",
   "created_at",
   "profile_completed",
   "questions_completed",

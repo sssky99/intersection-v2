@@ -4,10 +4,20 @@ export type TicketVisibility =
   | "draft"
   | "test_only"
   | "public"
+  | "question"
   | "closed"
   | "archived";
 
 export type PlaceVisibility = "hidden" | "confirmed_only" | "public";
+
+export type TicketTemplateScores = {
+  score_temperature: number | null;
+  score_texture: number | null;
+  score_tone: number | null;
+  score_rhythm: number | null;
+  score_alcohol: number | null;
+  score_romance: number | null;
+};
 
 export type TicketAssignment = {
   id: string;
@@ -36,7 +46,7 @@ export type AdminTicketInstance = {
   assignments: TicketAssignment[];
 };
 
-export type AdminTicketTemplate = {
+export type AdminTicketTemplate = TicketTemplateScores & {
   id: string;
   title: string;
   short_description: string | null;
@@ -47,6 +57,7 @@ export type AdminTicketTemplate = {
   default_region: string | null;
   default_time: string | null;
   visibility: TicketVisibility;
+  question_order: number | null;
   created_at: string;
   updated_at: string;
   instances: AdminTicketInstance[];
@@ -59,6 +70,7 @@ export const ticketVisibilities: TicketVisibility[] = [
   "draft",
   "test_only",
   "public",
+  "question",
   "closed",
   "archived",
 ];
@@ -67,6 +79,7 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
   draft: "미공개",
   test_only: "테스트 유저에게만 공개",
   public: "전체 공개",
+  question: "질문",
   closed: "마감",
   archived: "보관",
 };

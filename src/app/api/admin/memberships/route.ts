@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ memberships });
   } catch (error) {
-    console.error("Admin memberships load failed:", error);
+    console.error("[admin memberships]", error);
     return NextResponse.json(
       { error: "멤버십 목록을 불러오지 못했습니다." },
       { status: 500 },
@@ -187,7 +187,7 @@ export async function PATCH(request: NextRequest) {
       membership: normalizeMembership(data as unknown as AdminMembershipRow),
     });
   } catch (error) {
-    console.error("Admin membership save failed:", error);
+    console.error("[admin memberships]", error);
     return NextResponse.json(
       { error: "멤버십 상태를 저장하지 못했습니다." },
       { status: 500 },

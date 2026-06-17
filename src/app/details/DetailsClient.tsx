@@ -5,8 +5,7 @@ import { Check, Hand, MoveHorizontal, ShieldCheck, Sparkles } from "lucide-react
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
-import { TicketDrawingBorder } from "@/components/TicketDrawingBorder";
+import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { createClient } from "@/lib/supabase/client";
 
 type DetailsClientProps = {
@@ -638,56 +637,20 @@ function DetailPageExampleCard({
       data-testid="ticket-example-card"
       className="rounded-[28px] border border-black/[0.06] bg-black/[0.018] px-3 py-4"
     >
-      <div className="relative mx-auto aspect-[1/1.62] w-full max-w-[330px] overflow-hidden rounded-[28px]">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={card.title}
-            initial={reducedMotion ? false : { opacity: 0 }}
-            animate={reducedMotion ? undefined : { opacity: 1 }}
-            exit={reducedMotion ? undefined : { opacity: 0 }}
-            transition={{ duration: 0.24, ease: "easeOut" }}
-            className="absolute inset-0"
-          >
-            <div className="absolute inset-2 overflow-hidden rounded-[24px]">
-              <IntersectionTicketCard
-                title={card.title}
-                imageUrl={card.image}
-                date={card.date}
-                time={card.time}
-                location={card.location}
-                tags={card.tags}
-                remainingSeatCount={card.remainingSeatCount}
-                contentVisible={drawn}
-                imageVisible={imageVisible}
-                className="h-full !aspect-auto !rounded-[24px] shadow-none"
-              />
-            </div>
-
-            <motion.div
-              initial={false}
-              animate={
-                drawn && !reducedMotion
-                  ? { x: "135%", opacity: 0 }
-                  : { x: "-120%", opacity: 0.22 }
-              }
-              transition={{ duration: 0.7, ease: "easeOut" }}
-              className="pointer-events-none absolute inset-y-0 -left-1/3 z-10 w-1/2 rotate-12 bg-black/25 blur-xl"
-            />
-
-            <TicketDrawingBorder reducedMotion={reducedMotion} />
-
-            {!drawn && (
-              <motion.div
-                initial={reducedMotion ? false : { opacity: 0 }}
-                animate={reducedMotion ? undefined : { opacity: 1 }}
-                exit={reducedMotion ? undefined : { opacity: 0 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
-                className="pointer-events-none absolute inset-0 z-20"
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      <TicketDrawingFrame
+        motionKey={card.title}
+        title={card.title}
+        imageUrl={card.image}
+        date={card.date}
+        time={card.time}
+        location={card.location}
+        tags={card.tags}
+        remainingSeatCount={card.remainingSeatCount}
+        drawn={drawn}
+        imageVisible={imageVisible}
+        reducedMotion={reducedMotion}
+        className="!w-full"
+      />
     </article>
   );
 }

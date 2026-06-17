@@ -38,9 +38,18 @@ export function formatTicketDateLabel(value?: string | null) {
 
 function normalizeTags(tags?: string[] | null) {
   return (tags ?? [])
-    .map((tag) => tag.trim().replace(/^#/, ""))
+    .flatMap((tag) =>
+      tag
+        .trim()
+        .split(/(?=#)|[\s,]+/)
+        .map((item) => item.trim().replace(/^#/, "")),
+    )
     .filter(Boolean)
     .slice(0, 3);
+}
+
+function inlineLocation(value?: string | null) {
+  return value?.replace(/\s*\n\s*/g, " ").trim() ?? "";
 }
 
 export function IntersectionTicketCard({
@@ -58,12 +67,15 @@ export function IntersectionTicketCard({
   const tagItems = normalizeTags(tags);
   const hasImage = Boolean(imageUrl);
   const imageSurfaceVisible = hasImage ? imageVisible : true;
+  const dateTimeLabel = [dateLabel, time].filter(Boolean).join(" ");
+  const locationLabel = inlineLocation(location);
+  const metaLabel = [dateTimeLabel, locationLabel].filter(Boolean).join(" · ");
 
   return (
     <article
       data-testid="intersection-ticket-card"
       className={cn(
-        "font-ticket-serif relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] bg-white text-white shadow-[0_18px_45px_rgba(0,0,0,0.16)]",
+        "relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] bg-white text-white shadow-[0_18px_45px_rgba(0,0,0,0.16)]",
         className,
       )}
     >
@@ -100,25 +112,26 @@ export function IntersectionTicketCard({
           contentVisible ? "opacity-100" : "opacity-0",
         )}
       >
-        <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 text-center">
-          <h3 className="whitespace-pre-line text-[30px] font-extrabold leading-[1.28] tracking-tight text-[#fff8e8] [text-shadow:0_2px_18px_rgba(0,0,0,0.72)]">
+        <div className="absolute inset-x-5 bottom-7 text-left">
+          <h3 className="whitespace-pre-line text-[32px] font-extrabold leading-[1.12] tracking-normal text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.72)]">
             {title}
           </h3>
-          <div className="mt-7 grid grid-cols-2 gap-6 text-[13px] font-bold leading-6 text-[#fff8e8]/82 [text-shadow:0_2px_12px_rgba(0,0,0,0.68)]">
-            <span className="whitespace-pre-line text-right">
-              {[dateLabel, time].filter(Boolean).join("\n")}
-            </span>
-            <span className="whitespace-pre-line text-left">{location}</span>
-          </div>
-        </div>
-
-        {tagItems.length > 0 && (
-          <div className="absolute inset-x-5 bottom-6 flex flex-wrap justify-center gap-x-2 gap-y-1.5 text-[12px] font-bold leading-5 text-[#fff8e8]/78">
+          {metaLabel && (
+            <p className="mt-3 text-[13px] font-extrabold leading-5 text-white [text-shadow:0_2px_12px_rgba(0,0,0,0.68)]">
+              {metaLabel}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {tagItems.map((tag) => (
-              <span key={tag}>#{tag}</span>
+              <span
+                key={tag}
+                className="rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
+              >
+                {tag}
+              </span>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
     </article>

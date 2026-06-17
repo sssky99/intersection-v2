@@ -1,10 +1,11 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Check } from "lucide-react";
+import { Camera, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import { createClient } from "@/lib/supabase/client";
 import type { Gender } from "@/types/user";
 
@@ -26,11 +27,13 @@ export function BasicInfoForm({
     gender: Gender;
     birthYear: string;
     mbti: string;
+    photoUrl: string;
   };
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState(initialValues);
   const [saving, setSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canSave = useMemo(
     () =>
@@ -38,9 +41,34 @@ export function BasicInfoForm({
       normalizePhone(draft.phone).length >= 10 &&
       (draft.gender === "여성" || draft.gender === "남성") &&
       /^\d{4}$/.test(draft.birthYear) &&
-      mbtiOptions.includes(draft.mbti.toUpperCase()),
+      mbtiOptions.includes(draft.mbti.toUpperCase()) &&
+      Boolean(draft.photoUrl),
     [draft],
   );
+
+  const uploadPhoto = async (file: File | null) => {
+    if (!file || photoUploading) return;
+
+    setPhotoUploading(true);
+    setError(null);
+    try {
+      const photoUrl = await uploadProfilePhoto(userId, file);
+      const { error: profileError } = await createClient()
+        .from("profiles")
+        .update({ photo_url: photoUrl })
+        .eq("user_id", userId);
+
+      if (profileError) throw new Error(profileError.message);
+
+      setDraft((current) => ({ ...current, photoUrl }));
+    } catch {
+      setError(
+        "사진 업로드에 실패했어요. 파일과 profile-photos 버킷 설정을 확인해주세요.",
+      );
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   const save = async () => {
     if (!canSave || saving) return;
@@ -56,6 +84,7 @@ export function BasicInfoForm({
         gender: draft.gender,
         birth_year: draft.birthYear,
         mbti: draft.mbti.toUpperCase(),
+        photo_url: draft.photoUrl,
         profile_completed: true,
       })
       .eq("user_id", userId);
@@ -152,6 +181,54 @@ export function BasicInfoForm({
             />
           </div>
         </div>
+
+        <div>
+          <p className="text-xs font-semibold text-black/45">사진 업로드</p>
+          <p className="mt-1 text-xs leading-5 text-black/45">
+            나중에 함께 자리한 분들이 얼굴과 이름을 헷갈리지 않도록 사진을
+            올려주세요.
+          </p>
+          <p className="mt-1 text-[11px] leading-5 text-black/35">
+            정면 사진이 아니어도 괜찮아요. 나를 알아보기 쉬운 사진이면 충분해요.
+          </p>
+
+          <input
+            id="onboarding-basic-photo"
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            disabled={photoUploading || saving}
+            onChange={(event) => void uploadPhoto(event.target.files?.[0] ?? null)}
+          />
+          <label
+            htmlFor="onboarding-basic-photo"
+            className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-black/16 bg-black/[0.02] px-4 py-4"
+          >
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-black">
+                {photoUploading
+                  ? "사진을 올리고 있어요..."
+                  : draft.photoUrl
+                    ? "사진 변경하기"
+                    : "사진 선택하기"}
+              </span>
+              <span className="mt-1 block truncate text-xs text-black/45">
+                {draft.photoUrl ? "사진이 저장됐어요." : "JPG, PNG 이미지를 선택해주세요."}
+              </span>
+            </span>
+            <span className="ml-3 flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-white text-black/45">
+              {draft.photoUrl ? (
+                <img
+                  src={draft.photoUrl}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <Camera size={20} aria-hidden />
+              )}
+            </span>
+          </label>
+        </div>
       </div>
 
       {error && (
@@ -163,7 +240,7 @@ export function BasicInfoForm({
       <motion.button
         type="button"
         whileTap={canSave && !saving ? { scale: 0.98 } : undefined}
-        disabled={!canSave || saving}
+        disabled={!canSave || saving || photoUploading}
         onClick={() => void save()}
         className={`mt-auto flex h-14 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
           canSave && !saving
@@ -172,7 +249,7 @@ export function BasicInfoForm({
         }`}
       >
         <Check size={16} aria-hidden />
-        {saving ? "저장 중..." : "프로필 완성하기"}
+        {saving ? "저장 중..." : photoUploading ? "사진 업로드 중..." : "프로필 완성하기"}
       </motion.button>
     </section>
   );

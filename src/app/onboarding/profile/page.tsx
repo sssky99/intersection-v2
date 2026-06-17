@@ -24,6 +24,7 @@ export default async function OnboardingProfilePage() {
           birthYear:
             profile.birth_year == null ? "" : String(profile.birth_year),
           mbti: profile.mbti?.toUpperCase() ?? "",
+          photoUrl: profile.photo_url ?? "",
         }}
       />
     </MobileFrame>

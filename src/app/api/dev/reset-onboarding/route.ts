@@ -38,8 +38,6 @@ export async function POST() {
       public_intro: null,
       public_intro_generated_at: null,
       public_intro_model: null,
-      launch_notification_requested: false,
-      launch_notification_requested_at: null,
     })
     .eq("user_id", user.id);
 

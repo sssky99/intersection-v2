@@ -16,6 +16,13 @@ type WaitlistRequest = {
   ticket?: Partial<GatheringTicket>;
 };
 
+type MembershipStatus =
+  | "none"
+  | "active"
+  | "expired"
+  | "pending"
+  | "cancelled";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -44,6 +51,36 @@ function isTicket(value: WaitlistRequest["ticket"]): value is GatheringTicket {
       value.peopleHint &&
       value.reason,
   );
+}
+
+function todayKoreaDateString() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function membershipStatusForWaitlist(
+  status: string | null,
+  endDate: string | null,
+): MembershipStatus | null {
+  if (
+    status !== "none" &&
+    status !== "active" &&
+    status !== "expired" &&
+    status !== "pending" &&
+    status !== "cancelled"
+  ) {
+    return null;
+  }
+
+  if (status === "active" && endDate && endDate < todayKoreaDateString()) {
+    return "expired";
+  }
+
+  return status;
 }
 
 Deno.serve(async (request) => {
@@ -86,11 +123,36 @@ Deno.serve(async (request) => {
     return json({ error: "Invalid ticket payload." }, 400);
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("membership_status,membership_end_date")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return json({ error: "Profile membership state is not available." }, 400);
+  }
+
+  const membershipStatus = membershipStatusForWaitlist(
+    profile.membership_status,
+    profile.membership_end_date,
+  );
+
+  if (membershipStatus !== "active" && membershipStatus !== "pending") {
+    return json(
+      { error: "Membership is required.", code: "membership_required" },
+      402,
+    );
+  }
+
+  const waitlistStatus =
+    membershipStatus === "active" ? "waitlisted" : "payment_pending";
+
   const { error } = await supabase.from("meeting_waitlist").insert({
     user_id: user.id,
     ticket_id: ticket.id,
     meeting_date: ticket.date,
-    status: "waitlisted",
+    status: waitlistStatus,
     ticket_snapshot: ticket,
   });
 
@@ -107,7 +169,7 @@ Deno.serve(async (request) => {
 
   return json({
     ticket,
-    status: "waitlisted",
+    status: waitlistStatus,
     duplicate: error?.code === "23505",
   });
 });

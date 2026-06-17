@@ -1,5 +1,5 @@
 import { mockQuestions } from "@/data/mockQuestions";
-import { parseTicketPreferenceResults } from "@/features/onboarding/onboardingTicketSamples";
+import { parseTicketRatingAnswer } from "@/features/onboarding/sampleMeetingTickets";
 import { isCorruptText } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionOption } from "@/types/question";
@@ -36,6 +36,11 @@ function getAnswerText(
     (answer) => answer.question_order === questionOrder,
   );
   if (!row) return "";
+
+  const ticketRating = parseTicketRatingAnswer(row.answer_text);
+  if (ticketRating) {
+    return `${ticketRating.title.replace(/\n/g, " ")} · ${ticketRating.rating}점`;
+  }
 
   const values = row.answer_values
     ? row.answer_values.map(
@@ -121,16 +126,22 @@ function buildConversationParagraph(answers: PromptAnswerRow[]) {
 }
 
 function buildInterestParagraph(answers: PromptAnswerRow[]) {
-  const recentThought = cleanSentence(getAnswerText(answers, 13)).replace(
+  const selfIntro = cleanSentence(getAnswerText(answers, 16));
+  const recentThought = cleanSentence(getAnswerText(answers, 16)).replace(
     /^요즘은\s*/,
     "",
   );
-  const labels = parseTicketPreferenceResults(
-    answers.find((answer) => answer.question_order === 15)?.answer_text,
-  )
-    .filter((result) => result.answer === "yes")
-    .map((result) => result.title)
+  const labels = answers
+    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 15)
+    .map((answer) => parseTicketRatingAnswer(answer.answer_text))
+    .filter((answer): answer is NonNullable<typeof answer> => Boolean(answer))
+    .filter((answer) => Number(answer.rating) >= 4)
+    .map((answer) => answer.title.replace(/\n/g, " "))
     .slice(0, 3);
+
+  if (selfIntro && labels.length > 0) {
+    return `${selfIntro}. ${labels.join(", ")} 같은 자리에도 마음이 가는 편이에요.`;
+  }
 
   if (recentThought && labels.length > 0) {
     return `요즘은 ${recentThought}. ${labels.join(", ")}에도 관심이 많고, 좋아하는 것을 편안하게 나누는 시간을 좋아해요.`;
@@ -157,11 +168,12 @@ export function buildProfileInput(
   profile: ProfileRow,
   answers: PromptAnswerRow[],
 ) {
-  const ticketResults = parseTicketPreferenceResults(
-    answers.find((answer) => answer.question_order === 15)?.answer_text,
-  );
+  const ticketRatings = answers
+    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 15)
+    .map((answer) => parseTicketRatingAnswer(answer.answer_text))
+    .filter((answer): answer is NonNullable<typeof answer> => Boolean(answer));
   const resolvedAnswers = answers
-    .filter((answer) => answer.question_order <= 15)
+    .filter((answer) => answer.question_order <= 16)
     .map((answer) => {
       const question = mockQuestions.find(
         (item) => (item.order ?? item.id) === answer.question_order,
@@ -181,17 +193,8 @@ export function buildProfileInput(
         order: answer.question_order,
         question: question?.question ?? "",
         answer:
-          (answer.question_order === 15
-            ? [
-                `사용자가 YES를 누른 활동: ${ticketResults
-                  .filter((result) => result.answer === "yes")
-                  .map((result) => result.title)
-                  .join(", ") || "없음"}`,
-                `사용자가 NO를 누른 활동: ${ticketResults
-                  .filter((result) => result.answer === "no")
-                  .map((result) => result.title)
-                  .join(", ") || "없음"}`,
-              ].join("\n")
+          (answer.question_order >= 10 && answer.question_order <= 15
+            ? getAnswerText(answers, answer.question_order)
             : answer.answer_text?.trim()) ||
           values.join(", ") ||
           answer.other_text?.trim() ||
@@ -207,19 +210,17 @@ export function buildProfileInput(
     birthYear:
       profile.birth_year == null ? "" : String(profile.birth_year),
     mbti: profile.mbti ?? "",
-    workAnswer: resolvedAnswers.find((answer) => answer.order === 12) ?? null,
+    workAnswer: null,
     conversationAnswers: resolvedAnswers.filter(
-      (answer) => answer.order >= 1 && answer.order <= 11,
+      (answer) => answer.order >= 1 && answer.order <= 9,
     ),
-    recentInterestAnswers: resolvedAnswers.filter((answer) =>
-      [13, 15].includes(answer.order),
-    ),
+    recentInterestAnswers: resolvedAnswers.filter((answer) => answer.order === 16),
     ticketPreferences: {
-      yes: ticketResults
-        .filter((result) => result.answer === "yes")
+      yes: ticketRatings
+        .filter((result) => Number(result.rating) >= 4)
         .map((result) => result.title),
-      no: ticketResults
-        .filter((result) => result.answer === "no")
+      no: ticketRatings
+        .filter((result) => Number(result.rating) <= 2)
         .map((result) => result.title),
     },
   };
@@ -230,18 +231,15 @@ export const profileInstructions = `
 
 공개 프로필은 반드시 빈 줄로 구분된 정확히 3문단으로 작성한다.
 
-1문단은 반드시 직업 또는 현재 일하고 있는 분야로 시작한다.
-첫 문장은 반드시 입력에 있는 publicDisplayName 값 뒤에 "님은"을 붙여 시작하며, 이 사람이 어떤 일을 하는지 먼저 설명한다.
-질문 12의 주관식 답변에서 직업 또는 일하는 분야를 가장 먼저 추출한다.
-직업이 명확하면 실제 직업명을 자연스럽게 언급한다.
-대화 스타일, 성격, 분위기를 첫 문단의 첫 내용으로 쓰지 않는다.
-직업 또는 일하는 분야가 두 번째 문단 이후로 밀리면 안 된다.
+1문단은 반드시 입력에 있는 publicDisplayName 값 뒤에 "님은"을 붙여 시작한다.
+사용자가 직접 적은 자기소개와 기본정보를 바탕으로 이 사람의 전반적인 분위기를 자연스럽게 설명한다.
+직업 또는 일하는 분야가 답변에 명확히 있을 때만 자연스럽게 언급한다.
 
-2문단은 질문 1~11번 답변을 참고해 대화 스타일을 설명한다.
+2문단은 질문 1~9번 답변을 참고해 대화 스타일과 모임에서 편안함을 느끼는 조건을 설명한다.
 사용자의 답변에 맞게 표현을 달리하며 예시 문장을 고정 템플릿처럼 반복하지 않는다.
 
-3문단은 질문 13번과 질문 15번의 티켓 YES/NO 답변을 참고해 최근 관심사를 설명한다.
-관심사와 함께 요즘 어떤 시간을 보내고 있는지 자연스럽게 연결한다.
+3문단은 질문 10~15번의 티켓 1~5단계 반응과 질문 16번 자기소개를 참고해 좋아할 만한 자리와 관심사를 설명한다.
+티켓 반응을 직접 점수처럼 나열하지 말고 자연스러운 취향으로 풀어쓴다.
 
 사용자의 전체 실명 대신 publicDisplayName만 사용할 수 있다.
 
@@ -273,7 +271,6 @@ export function isValidGeneratedIntro(
     .filter(Boolean);
   const forbidden =
     /입니다|합니다|보여요|인 것 같아요|일 가능성이 있어요|느껴져요|어울려요|분석 결과|성향상/;
-  const workLanguage = /일|직업|분야|업무|공부|배우|활동|운영|만들|지키/;
   const conversationLanguage = /대화|이야기|말|소통/;
   const interestLanguage = /요즘|최근|관심|취미|즐겨|좋아/;
 
@@ -281,7 +278,6 @@ export function isValidGeneratedIntro(
     !isCorruptText(intro) &&
     paragraphs.length === 3 &&
     paragraphs[0].startsWith(`${publicDisplayName(profile.name)}님은`) &&
-    workLanguage.test(paragraphs[0]) &&
     conversationLanguage.test(paragraphs[1]) &&
     interestLanguage.test(paragraphs[2]) &&
     !forbidden.test(intro)
@@ -293,7 +289,7 @@ export function buildFallbackIntro(
   answers: PromptAnswerRow[],
 ) {
   const name = publicDisplayName(profile.name);
-  const work = extractWorkDescription(getAnswerText(answers, 12));
+  const work = extractWorkDescription(getAnswerText(answers, 16));
   const conversation = buildConversationParagraph(answers);
   const interests = buildInterestParagraph(answers);
 

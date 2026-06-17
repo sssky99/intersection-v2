@@ -12,8 +12,6 @@ export type AdminProfile = {
   phone: string | null;
   photo_url: string | null;
   public_intro: string | null;
-  launch_notification_requested?: boolean | null;
-  launch_notification_requested_at?: string | null;
   created_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;

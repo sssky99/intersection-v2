@@ -10,6 +10,12 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
+import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
+import {
+  AdminMemberName,
+  GenderBadge,
+  formatAgeAndBirthYear,
+} from "@/features/admin/adminDisplay";
 import {
   normalizeAdminProfile,
   type AdminProfile,
@@ -67,11 +73,6 @@ function display(value: string | number | null | undefined) {
   return String(value);
 }
 
-function birthYearNumber(profile: AdminProfile) {
-  const value = Number(profile.birth_year);
-  return Number.isFinite(value) ? value : null;
-}
-
 function formatCreatedAt(value: string | null) {
   if (!value) return "-";
 
@@ -80,39 +81,36 @@ function formatCreatedAt(value: string | null) {
   return dateFormatter.format(date);
 }
 
-function formatOptionalDateTime(value: string | null | undefined) {
-  return value ? formatCreatedAt(value) : "-";
-}
+function formatCreatedAtCompact(value: string | null) {
+  if (!value) return "-";
 
-function formatAgeAndBirthYear(profile: AdminProfile) {
-  const year = birthYearNumber(profile);
-  if (!year) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
 
-  const age = new Date().getFullYear() - year + 1;
-  return `${age}세 · ${year}년생`;
-}
-
-function profileName(profile: AdminProfile) {
-  return profile.name?.trim() || "이름 없음";
-}
-
-function memberName(profile: AdminProfile) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1 font-bold text-black">
-      {profile.active_membership && (
-        <span aria-label="멤버십 적용중">💎</span>
-      )}
-      {profile.expired_membership && (
-        <span
-          className="text-sm font-black leading-none text-red-500"
-          aria-label="멤버십 만료"
-        >
-          ♦
-        </span>
-      )}
-      <span className="truncate">{profileName(profile)}</span>
-    </span>
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
   );
+
+  return `${parts.month}.${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function formatPhoneCompact(value: string | null | undefined) {
+  if (!value) return "-";
+
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 8) return value;
+
+  const tail = digits.slice(-8);
+  return `${tail.slice(0, 4)} - ${tail.slice(4)}`;
 }
 
 function completionText(value: boolean | null) {
@@ -139,6 +137,7 @@ export function AdminPageClient({
     null,
   );
   const [profilesLoading, setProfilesLoading] = useState(false);
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [membershipSaveError, setMembershipSaveError] = useState<string | null>(
     null,
@@ -152,9 +151,14 @@ export function AdminPageClient({
     useState<MembershipFilter>("all");
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
+  const [visitedTabs, setVisitedTabs] = useState<
+    Partial<Record<AdminTab, boolean>>
+  >({ applicants: true });
 
-  const loadProfiles = useCallback(async () => {
+  const loadProfiles = useCallback(async (force = false) => {
     if (!authenticated) return;
+    if (profilesLoading) return;
+    if (!force && profilesLoaded) return;
 
     setProfilesLoading(true);
     setProfilesError(null);
@@ -167,6 +171,7 @@ export function AdminPageClient({
       if (response.status === 401) {
         setAuthenticated(false);
         setProfiles([]);
+        setProfilesLoaded(false);
         setSelectedProfileId(null);
         return;
       }
@@ -178,17 +183,26 @@ export function AdminPageClient({
       const data = (await response.json()) as { profiles?: AdminProfile[] };
       const nextProfiles = data.profiles ?? [];
       setProfiles(nextProfiles);
+      setProfilesLoaded(true);
       setSelectedProfileId((current) => current ?? nextProfiles[0]?.user_id ?? null);
     } catch {
       setProfilesError("신청자 목록을 불러오지 못했습니다.");
     } finally {
       setProfilesLoading(false);
     }
-  }, [authenticated]);
+  }, [authenticated, profilesLoaded, profilesLoading]);
 
   useEffect(() => {
+    if (activeTab !== "applicants" || profilesLoaded || profilesLoading) return;
     void loadProfiles();
-  }, [loadProfiles]);
+  }, [activeTab, loadProfiles, profilesLoaded, profilesLoading]);
+
+  const selectTab = (tabId: AdminTab) => {
+    setActiveTab(tabId);
+    setVisitedTabs((current) =>
+      current[tabId] ? current : { ...current, [tabId]: true },
+    );
+  };
 
   const changeMembershipStatus = async (
     userId: string,
@@ -229,6 +243,7 @@ export function AdminPageClient({
       if (response.status === 401) {
         setAuthenticated(false);
         setProfiles([]);
+        setProfilesLoaded(false);
         setSelectedProfileId(null);
         return;
       }
@@ -326,6 +341,8 @@ export function AdminPageClient({
 
       setAccessKey("");
       setAuthenticated(true);
+      setActiveTab("applicants");
+      setVisitedTabs({ applicants: true });
     } catch {
       setAuthError("관리자 인증 중 오류가 발생했습니다.");
     } finally {
@@ -337,7 +354,10 @@ export function AdminPageClient({
     await fetch("/api/admin/session", { method: "DELETE" }).catch(() => null);
     setAuthenticated(false);
     setProfiles([]);
+    setProfilesLoaded(false);
     setSelectedProfileId(null);
+    setActiveTab("applicants");
+    setVisitedTabs({ applicants: true });
   };
 
   if (!authenticated) {
@@ -416,7 +436,7 @@ export function AdminPageClient({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 className={cn(
                   "h-10 rounded-xl px-4 text-sm font-semibold transition",
                   activeTab === tab.id
@@ -431,36 +451,50 @@ export function AdminPageClient({
         </header>
 
         <section className="mt-5 min-h-0 flex-1">
-          {activeTab === "applicants" ? (
-            <ApplicantsPanel
-              profiles={filteredProfiles}
-              totalCount={profiles.length}
-              selectedProfile={selectedProfile}
-              selectedProfileId={selectedProfileId}
-              viewMode={viewMode}
-              loading={profilesLoading}
-              error={profilesError}
-              search={search}
-              genderFilter={genderFilter}
-              membershipFilter={membershipFilter}
-              completionFilter={completionFilter}
-              membershipSaveError={membershipSaveError}
-              savingMembershipUserId={savingMembershipUserId}
-              onViewModeChange={setViewMode}
-              onSearchChange={setSearch}
-              onGenderFilterChange={setGenderFilter}
-              onMembershipFilterChange={setMembershipFilter}
-              onCompletionFilterChange={setCompletionFilter}
-              onSelectProfile={setSelectedProfileId}
-              onCloseDetail={() => setSelectedProfileId(null)}
-              onReload={loadProfiles}
-              onMembershipStatusChange={changeMembershipStatus}
-            />
-          ) : activeTab === "membership" ? (
-            <MembershipAdminPanel />
-          ) : activeTab === "tickets" ? (
-            <TicketAdminPanel />
-          ) : (
+          {visitedTabs.applicants && (
+            <div className={cn(activeTab === "applicants" ? "block" : "hidden")}>
+              <ApplicantsPanel
+                profiles={filteredProfiles}
+                totalCount={profiles.length}
+                selectedProfile={selectedProfile}
+                selectedProfileId={selectedProfileId}
+                viewMode={viewMode}
+                loading={profilesLoading}
+                error={profilesError}
+                search={search}
+                genderFilter={genderFilter}
+                membershipFilter={membershipFilter}
+                completionFilter={completionFilter}
+                membershipSaveError={membershipSaveError}
+                savingMembershipUserId={savingMembershipUserId}
+                onViewModeChange={setViewMode}
+                onSearchChange={setSearch}
+                onGenderFilterChange={setGenderFilter}
+                onMembershipFilterChange={setMembershipFilter}
+                onCompletionFilterChange={setCompletionFilter}
+                onSelectProfile={setSelectedProfileId}
+                onCloseDetail={() => setSelectedProfileId(null)}
+                onReload={() => void loadProfiles(true)}
+                onMembershipStatusChange={changeMembershipStatus}
+              />
+            </div>
+          )}
+          {visitedTabs.membership && (
+            <div className={cn(activeTab === "membership" ? "block" : "hidden")}>
+              <MembershipAdminPanel />
+            </div>
+          )}
+          {visitedTabs.tickets && (
+            <div className={cn(activeTab === "tickets" ? "block" : "hidden")}>
+              <TicketAdminPanel />
+            </div>
+          )}
+          {visitedTabs.waitlist && (
+            <div className={cn(activeTab === "waitlist" ? "block" : "hidden")}>
+              <WaitlistAdminPanel />
+            </div>
+          )}
+          {(activeTab === "rooms" || activeTab === "feedback") && (
             <div className="flex h-[calc(100dvh-190px)] items-center justify-center rounded-2xl border border-dashed border-black/15 bg-white text-sm font-semibold text-black/45">
               준비 중입니다.
             </div>
@@ -532,6 +566,11 @@ function ApplicantsPanel({
                 전체 {totalCount.toLocaleString()}명 · 표시{" "}
                 {profiles.length.toLocaleString()}명
               </p>
+              {loading && totalCount > 0 && (
+                <p className="mt-1 text-[11px] font-semibold text-accent">
+                  새로고침 중입니다.
+                </p>
+              )}
             </div>
 
             <div className="flex rounded-xl bg-[#f2f3f1] p-1">
@@ -626,12 +665,17 @@ function ApplicantsPanel({
               {membershipSaveError}
             </p>
           )}
+          {error && totalCount > 0 && (
+            <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {loading ? (
+          {loading && profiles.length === 0 ? (
             <StateMessage message="신청자 목록을 불러오는 중입니다." />
-          ) : error ? (
+          ) : error && profiles.length === 0 ? (
             <StateMessage tone="error" message={error} />
           ) : profiles.length === 0 ? (
             <StateMessage message="아직 신청자가 없습니다." />
@@ -684,16 +728,16 @@ function ApplicantTable({
 }) {
   return (
     <div className="h-full overflow-auto">
-      <table className="min-w-[1120px] w-full border-separate border-spacing-0 text-left text-sm">
+      <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
           <tr>
-            <TableHead className="w-40 px-3">이름</TableHead>
+            <TableHead className="w-[120px] px-3">이름</TableHead>
             <TableHead className="w-20 px-3">성별</TableHead>
-            <TableHead>출생연도</TableHead>
-            <TableHead>MBTI</TableHead>
-            <TableHead>전화번호</TableHead>
-            <TableHead>가입일</TableHead>
-            <TableHead>멤버십 상태</TableHead>
+            <TableHead className="w-24">출생연도</TableHead>
+            <TableHead className="w-20">MBTI</TableHead>
+            <TableHead className="w-32">전화번호</TableHead>
+            <TableHead className="w-28">가입일</TableHead>
+            <TableHead className="w-44">멤버십 상태</TableHead>
           </tr>
         </thead>
         <tbody>
@@ -709,9 +753,9 @@ function ApplicantTable({
                   selected && "bg-accent/15",
                 )}
               >
-                <TableCell className="w-40 px-3">
-                  <span className="font-bold text-black">
-                    {memberName(profile)}
+                <TableCell className="w-[120px] px-3">
+                  <span className="block min-w-0 font-bold text-black">
+                    <AdminMemberName profile={profile} />
                   </span>
                 </TableCell>
                 <TableCell className="w-20 px-3">
@@ -719,9 +763,9 @@ function ApplicantTable({
                 </TableCell>
                 <TableCell>{display(profile.birth_year)}</TableCell>
                 <TableCell>{display(profile.mbti)}</TableCell>
-                <TableCell>{display(profile.phone)}</TableCell>
-                <TableCell>{formatCreatedAt(profile.created_at)}</TableCell>
-                <TableCell>
+                <TableCell>{formatPhoneCompact(profile.phone)}</TableCell>
+                <TableCell>{formatCreatedAtCompact(profile.created_at)}</TableCell>
+                <TableCell className="w-44">
                   <MembershipStatusSelect
                     value={membershipStatusValue(profile)}
                     disabled={savingMembershipUserId === profile.user_id}
@@ -772,14 +816,15 @@ function ApplicantCards({
               />
               <div className="space-y-2 p-4">
                 <h3 className="truncate text-base font-bold">
-                  {memberName(profile)}
+                  <AdminMemberName profile={profile} />
                 </h3>
-                <p className="text-sm font-semibold text-black/55">
-                  {formatAgeAndBirthYear(profile)}
-                </p>
+                <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-black/55">
+                  <span>{formatAgeAndBirthYear(profile)}</span>
+                  <GenderBadge gender={profile.gender} />
+                </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-black/50">
                   <InfoPill label="MBTI" value={display(profile.mbti)} />
-                  <InfoPill label="전화" value={display(profile.phone)} />
+                  <InfoPill label="전화" value={formatPhoneCompact(profile.phone)} />
                 </div>
               </div>
             </button>
@@ -820,7 +865,9 @@ function ProfileDetailPanel({
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
             applicant detail
           </p>
-          <h2 className="mt-1 text-xl font-bold">{memberName(profile)}</h2>
+          <h2 className="mt-1 text-xl font-bold">
+            <AdminMemberName profile={profile} />
+          </h2>
         </div>
         <button
           type="button"
@@ -865,17 +912,6 @@ function ProfileDetailPanel({
           <DetailItem
             label="질문 완료"
             value={completionText(profile.questions_completed)}
-          />
-          <DetailItem
-            label="오픈 알림 신청"
-            value={profile.launch_notification_requested ? "완료" : "미신청"}
-            highlight={Boolean(profile.launch_notification_requested)}
-          />
-          <DetailItem
-            label="알림 신청 시각"
-            value={formatOptionalDateTime(
-              profile.launch_notification_requested_at,
-            )}
           />
         </div>
 

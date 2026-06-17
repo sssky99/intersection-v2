@@ -5,8 +5,7 @@ import {
   Check,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
-import { TicketDrawingBorder } from "@/components/TicketDrawingBorder";
+import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { availableDates } from "@/data/mockTickets";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
@@ -330,7 +329,20 @@ function TicketDrawingCard({
         </motion.h1>
       </div>
 
-      <div className="relative mx-auto mt-6 aspect-[1/1.62] w-[88%] max-w-[330px]">
+      <TicketDrawingFrame
+        motionKey={ticket.id}
+        title={ticket.title}
+        imageUrl={ticket.imageUrl ?? ticketImage(ticket.id)}
+        date={ticket.date}
+        time={ticket.time}
+        location={`서울\n${ticket.area}`}
+        tags={ticket.moodTags}
+        remainingSeatCount={ticket.remainingSeatCount}
+        drawn={isDrawn}
+        imageVisible={isImageVisible}
+        className="mt-6"
+      />
+      {/*
         <div className="absolute inset-2 overflow-hidden rounded-[24px]">
           <IntersectionTicketCard
             title={ticket.title}
@@ -347,7 +359,7 @@ function TicketDrawingCard({
         </div>
         <TicketDrawingBorder />
 
-      </div>
+      */}
 
       <AnimatePresence mode="wait">
         {isDrawn ? (

@@ -1,32 +1,45 @@
 export type QuestionType =
-  | "scale"
-  | "single"
-  | "multiple"
-  | "singleWithOther"
-  | "multipleWithOther"
   | "single_choice"
   | "multi_choice"
-  | "ticket_preference"
   | "text"
-  | "photo_upload";
+  | "ticket_rating";
 
 export type QuestionCategory =
-  | "Communication"
-  | "Lifestyle"
-  | "Relationship"
-  | "Values"
-  | "Background"
-  | "Interests"
-  | "Preference"
-  | "TicketPreference"
-  | "Story"
-  | "Picture";
+  | "온도"
+  | "결"
+  | "톤"
+  | "리듬"
+  | "모임 역할"
+  | "모임 역할 - 상대"
+  | "관계 기대"
+  | "회피 조건"
+  | "나이 조건"
+  | "샘플 모임"
+  | "자기소개";
 
 export type QuestionOption = {
   value: string;
   label: string;
   exclusive?: boolean;
   hasTextInput?: boolean;
+};
+
+export type TicketRatingQuestionTicket = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  fallbackImageUrl?: string;
+  dateLabel: string;
+  timeLabel: string;
+  locationLabel: string;
+  tags: string[];
+};
+
+export type TicketRatingAnswer = {
+  ticket_id: string;
+  rating: string;
+  title: string;
+  signal_tags: string[];
 };
 
 export type ProfileQuestion = {
@@ -38,16 +51,21 @@ export type ProfileQuestion = {
   placeholder?: string;
   type: QuestionType;
   options?: Array<string | QuestionOption>;
+  maxSelections?: number;
+  scaleLabel?: string;
+  ticket?: TicketRatingQuestionTicket;
+  intent?: string;
+  signalTags?: string[];
   allowPrivate?: boolean;
   allowOther?: boolean;
 };
 
 export type QuestionAnswer = {
   questionId: number;
-  value: string | string[] | number;
+  value: ProfileAnswerValue;
   otherText?: string;
 };
 
-export type ProfileAnswerValue = string | string[] | number;
+export type ProfileAnswerValue = string | string[] | number | TicketRatingAnswer;
 
 export type ProfileAnswers = Record<number, QuestionAnswer>;

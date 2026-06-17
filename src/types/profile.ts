@@ -18,8 +18,6 @@ export type ProfileRow = {
   public_intro: string | null;
   public_intro_generated_at: string | null;
   public_intro_model: string | null;
-  launch_notification_requested: boolean | null;
-  launch_notification_requested_at: string | null;
   meeting_guidelines_agreed: boolean | null;
   meeting_guidelines_agreed_at: string | null;
   membership_status: string | null;
