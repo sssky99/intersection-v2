@@ -1,8 +1,7 @@
 export const postLoginPath = "/details";
-const productionOAuthOrigin =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://interv2.netlify.app";
+const defaultProductionOrigin = "https://interv2.netlify.app";
 
-function isNetlifyBranchDeploy(origin: string) {
+export function isNetlifyBranchDeploy(origin: string) {
   try {
     const hostname = new URL(origin).hostname;
     return hostname.endsWith(".netlify.app") && hostname.includes("--");
@@ -11,8 +10,18 @@ function isNetlifyBranchDeploy(origin: string) {
   }
 }
 
+export function productionOAuthOrigin() {
+  const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL;
+
+  if (!configuredOrigin || isNetlifyBranchDeploy(configuredOrigin)) {
+    return defaultProductionOrigin;
+  }
+
+  return configuredOrigin;
+}
+
 function oauthOrigin(origin: string) {
-  return isNetlifyBranchDeploy(origin) ? productionOAuthOrigin : origin;
+  return isNetlifyBranchDeploy(origin) ? productionOAuthOrigin() : origin;
 }
 
 export function createOAuthRedirectUrl(

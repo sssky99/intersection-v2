@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { postLoginPath, safeInternalPath } from '@/lib/authRedirect';
+import {
+  isNetlifyBranchDeploy,
+  postLoginPath,
+  productionOAuthOrigin,
+  safeInternalPath,
+} from '@/lib/authRedirect';
 
 function hasOAuthParams(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -30,12 +35,36 @@ function redirectToAuthCallback(request: NextRequest) {
   return NextResponse.redirect(callbackUrl);
 }
 
+function requestOrigin(request: NextRequest) {
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const host = forwardedHost ?? request.headers.get('host');
+
+  if (!host) {
+    return request.nextUrl.origin;
+  }
+
+  const forwardedProtocol = request.headers.get('x-forwarded-proto');
+  const protocol = forwardedProtocol ?? request.nextUrl.protocol.replace(':', '');
+
+  return `${protocol}://${host}`;
+}
+
 export function middleware(request: NextRequest) {
   const { nextUrl } = request;
+  const origin = requestOrigin(request);
   const hasOAuthError =
     nextUrl.searchParams.has('error') ||
     nextUrl.searchParams.has('error_code') ||
     nextUrl.searchParams.has('error_description');
+
+  if (isNetlifyBranchDeploy(origin)) {
+    const productionUrl = new URL(
+      `${nextUrl.pathname}${nextUrl.search}`,
+      productionOAuthOrigin(),
+    );
+
+    return NextResponse.redirect(productionUrl);
+  }
 
   if (nextUrl.pathname === '/auth/callback') {
     if (hasOAuthError) {
