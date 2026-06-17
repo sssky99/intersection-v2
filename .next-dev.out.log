@@ -8,68 +8,14 @@
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 1380ms
- ○ Compiling /details ...
- ✓ Compiled /details in 4.4s (1497 modules)
- GET /details?view=local 200 in 5038ms
- GET /details?view=local 200 in 586ms
- GET /details?view=local 200 in 211ms
- GET /details?view=local 200 in 206ms
- GET /details?view=local 200 in 852ms
- ✓ Compiled in 467ms (1497 modules)
- GET /details?view=local 200 in 148ms
- GET /details?view=local 200 in 161ms
- ○ Compiling /_error ...
- ✓ Compiled /_error in 1068ms (1830 modules)
- GET /details?view=local 200 in 643ms
- GET /details?view=local 200 in 644ms
- GET /details?view=local 200 in 43ms
- GET /details?view=local 200 in 63ms
- GET /details?view=local 500 in 3184ms
- GET /details?view=local 200 in 302ms
- GET /details?view=local 200 in 220ms
- ✓ Compiled in 360ms (1844 modules)
- GET /details?view=local 200 in 125ms
- GET /details?view=local 200 in 127ms
- GET /details?view=local 500 in 2846ms
- GET /details?view=local 200 in 1103ms
- ✓ Compiled in 452ms (1844 modules)
- GET /details?view=local 200 in 178ms
- GET /details?view=local 200 in 178ms
- GET /details?view=local 200 in 1499ms
- ✓ Compiled in 262ms (1844 modules)
- GET /details?view=local 200 in 143ms
- GET /details?view=local 200 in 146ms
- ✓ Compiled in 345ms (1844 modules)
- GET /details?view=local 200 in 101ms
- GET /details?view=local 200 in 100ms
- ✓ Compiled in 375ms (1844 modules)
- GET /details?view=local 200 in 135ms
- GET /details?view=local 200 in 136ms
- ✓ Compiled in 418ms (1844 modules)
- GET /details?view=local 200 in 113ms
- GET /details?view=local 200 in 114ms
- ✓ Compiled in 435ms (1844 modules)
- GET /details?view=local 200 in 122ms
- GET /details?view=local 200 in 135ms
- GET /details?view=local 200 in 787ms
- ✓ Compiled in 370ms (1844 modules)
- GET /details?view=local 200 in 196ms
- GET /details?view=local 200 in 197ms
- GET /details?view=local 200 in 614ms
- GET /details?view=local 200 in 331ms
- ✓ Compiled in 377ms (1844 modules)
- GET /details?view=local 200 in 193ms
- GET /details?view=local 200 in 196ms
- GET /details?view=local 200 in 1485ms
- GET /details?view=local 500 in 1472ms
- GET /details?view=local 500 in 41ms
- GET /details?view=local 500 in 1567ms
- GET /details?view=local 500 in 27ms
- GET /details?view=local 500 in 1503ms
- GET /details?view=local 500 in 27ms
- ✓ Compiled in 361ms (1844 modules)
- GET /details?view=local 200 in 117ms
- GET /details?view=local 500 in 1723ms
- GET /details?view=local 500 in 40ms
-[?25h
+ ✓ Ready in 1455ms
+ ○ Compiling /middleware ...
+ ✓ Compiled /middleware in 897ms (802 modules)
+ GET /?code=dummy&next=%2Fdetails 200 in 1243ms
+ ○ Compiling /auth/callback ...
+ ✓ Compiled /auth/callback in 564ms (770 modules)
+ GET /auth/callback?next=%2Fdetails 307 in 1016ms
+ ○ Compiling /meetings ...
+ ✓ Compiled /meetings in 1162ms (1564 modules)
+ GET /meetings?tab=profile 307 in 1497ms
+ GET /admin 200 in 1526ms
