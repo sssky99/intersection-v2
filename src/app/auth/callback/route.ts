@@ -17,47 +17,50 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL('/', requestUrl.origin));
   }
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (!code) {
+    return NextResponse.redirect(new URL('/', requestUrl.origin));
+  }
 
-    if (!error) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+  const supabase = await createClient();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-      if (user) {
-        const kakaoIdentity = user.identities?.find(
-          (identity) => identity.provider === 'kakao',
-        );
+  if (error) {
+    console.error('Supabase auth callback error:', error.message);
+    return NextResponse.redirect(new URL('/', requestUrl.origin));
+  }
 
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-        if (existingProfile) {
-          await supabase
-            .from('profiles')
-            .update({
-              provider: 'kakao',
-              kakao_id: kakaoIdentity?.id ?? null,
-            })
-            .eq('user_id', user.id);
-        } else {
-          await supabase.from('profiles').insert({
-            user_id: user.id,
-            provider: 'kakao',
-            kakao_id: kakaoIdentity?.id ?? null,
-            profile_completed: false,
-            questions_completed: false,
-            meeting_guidelines_agreed: false,
-          });
-        }
-      }
+  if (user) {
+    const kakaoIdentity = user.identities?.find(
+      (identity) => identity.provider === 'kakao',
+    );
+
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingProfile) {
+      await supabase
+        .from('profiles')
+        .update({
+          provider: 'kakao',
+          kakao_id: kakaoIdentity?.id ?? null,
+        })
+        .eq('user_id', user.id);
     } else {
-      console.error('Supabase auth callback error:', error.message);
+      await supabase.from('profiles').insert({
+        user_id: user.id,
+        provider: 'kakao',
+        kakao_id: kakaoIdentity?.id ?? null,
+        profile_completed: false,
+        questions_completed: false,
+        meeting_guidelines_agreed: false,
+      });
     }
   }
 

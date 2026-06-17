@@ -14,7 +14,7 @@ export default function KakaoLoginButton({
   const handleLogin = async () => {
     const supabase = createClient();
     const origin = window.location.origin;
-    const redirectTo = createOAuthRedirectUrl(origin);
+    const redirectTo = createOAuthRedirectUrl(origin, '/details');
     setLoading(true);
 
     const { error } = await supabase.auth.signInWithOAuth({

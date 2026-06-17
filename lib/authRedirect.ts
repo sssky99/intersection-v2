@@ -1,11 +1,28 @@
 export const postLoginPath = "/details";
-const localOAuthOrigin = "http://localhost:3000";
+const productionOAuthOrigin =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://interv2.netlify.app";
 
-export function createOAuthRedirectUrl(origin: string) {
-  const callbackOrigin =
-    process.env.NODE_ENV === "development" ? localOAuthOrigin : origin;
+function isNetlifyBranchDeploy(origin: string) {
+  try {
+    const hostname = new URL(origin).hostname;
+    return hostname.endsWith(".netlify.app") && hostname.includes("--");
+  } catch {
+    return false;
+  }
+}
 
-  return new URL("/auth/callback", callbackOrigin).toString();
+function oauthOrigin(origin: string) {
+  return isNetlifyBranchDeploy(origin) ? productionOAuthOrigin : origin;
+}
+
+export function createOAuthRedirectUrl(
+  origin: string,
+  nextPath = postLoginPath,
+) {
+  const redirectUrl = new URL("/auth/callback", oauthOrigin(origin));
+  redirectUrl.searchParams.set("next", safeInternalPath(nextPath));
+
+  return redirectUrl.toString();
 }
 
 export function safeInternalPath(
