@@ -794,15 +794,25 @@ export function QuestionFlow({
                 {typeof answer?.value === "string" ? answer.value.length : 0}/300
               </p>
               {question.examples && question.examples.length > 0 && (
-                <div className="mt-4 rounded-[18px] border border-[#eadfc8] bg-[#fff8ea] px-4 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.035)]">
-                  {question.examples.map((example) => (
-                    <p
-                      key={example}
-                      className="border-b border-[#eadfc8]/70 py-2 text-[11px] font-semibold leading-5 text-black/48 last:border-b-0"
-                    >
-                      {example}
-                    </p>
-                  ))}
+                <div className="mt-5 space-y-2">
+                  {question.examples.map((example, index) => {
+                    const exampleText = example.replace(/^예:\s*/, "");
+
+                    return (
+                      <div
+                        key={example}
+                        className={cn(
+                          "grid grid-cols-[22px_1fr] gap-2 border-l-[3px] border-accent/55 bg-[#fffaf0] px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 shadow-[0_1px_0_rgba(0,0,0,0.06)]",
+                          index % 2 === 1 && "ml-3 border-black/18 bg-[#fffdf7]",
+                        )}
+                      >
+                        <span className="pt-px text-[10px] font-black tracking-[0.08em] text-accent/72">
+                          예
+                        </span>
+                        <p>{exampleText}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
