@@ -4,9 +4,26 @@ import type { ReactNode } from "react";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
 import type { GatheringTicket } from "@/types/ticket";
 
+export type TicketDetailSectionKey =
+  | "summary"
+  | "activities"
+  | "vibe"
+  | "goodFor"
+  | "flow"
+  | "notice";
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
+
+const defaultSections: TicketDetailSectionKey[] = [
+  "summary",
+  "activities",
+  "vibe",
+  "goodFor",
+  "flow",
+  "notice",
+];
 
 const flowSteps = [
   "가볍게 인사하고 자리에 앉아요.",
@@ -30,83 +47,109 @@ function cleanList(items: string[] | undefined) {
 export function TicketDetailContent({
   ticket,
   className,
+  sections = defaultSections,
+  startWithBorder = false,
 }: {
   ticket: GatheringTicket;
   className?: string;
+  sections?: TicketDetailSectionKey[];
+  startWithBorder?: boolean;
 }) {
   const activities = cleanList(ticket.detailActivities);
   const goodFor = cleanList(ticket.detailGoodFor);
   const customNotice = ticket.detailNotice?.trim();
+  const visibleSections = new Set(sections);
 
   return (
     <div className={cn("mt-5", className)}>
-      {ticket.detailSummary?.trim() && (
-        <p className="pb-5 text-[15px] font-bold leading-7 text-black">
+      {visibleSections.has("summary") && ticket.detailSummary?.trim() && (
+        <p className="mb-5 rounded-2xl bg-black/[0.04] px-4 py-3 text-[15px] font-semibold leading-7 text-black/72">
           {ticket.detailSummary.trim()}
         </p>
       )}
 
-      {activities.length > 0 && (
-        <TicketDetailSection title="이 자리에서는 이런 걸 해요">
+      {visibleSections.has("activities") && activities.length > 0 && (
+        <TicketDetailSection
+          title="이 자리에서는 이런 걸 해요"
+          startWithBorder={startWithBorder}
+        >
           <BulletList items={activities} />
         </TicketDetailSection>
       )}
 
-      {goodFor.length > 0 && (
-        <TicketDetailSection title="이런 분들에게 잘 맞아요">
+      {visibleSections.has("vibe") && (
+        <VibeGraph
+          title="자리 분위기"
+          description="이 초대장의 분위기를 가볍게 참고해보세요."
+          scores={ticket.vibeScores}
+          visibleAxes={[
+            "temperature",
+            "texture",
+            "tone",
+            "rhythm",
+            "alcohol",
+            "romance",
+          ]}
+          showAxisHeader={false}
+          axisLabelOverrides={{
+            alcohol: {
+              leftLabel: "술이 없는",
+              rightLabel: "술이 있는",
+            },
+            romance: {
+              leftLabel: "편한",
+              rightLabel: "설레는",
+            },
+          }}
+          className="rounded-none border-x-0 border-b-0 border-t border-black/8 bg-transparent px-0 py-5 shadow-none"
+        />
+      )}
+
+      {visibleSections.has("goodFor") && goodFor.length > 0 && (
+        <TicketDetailSection
+          title="이런 분들에게 잘 맞아요"
+          startWithBorder={startWithBorder}
+        >
           <BulletList items={goodFor} />
         </TicketDetailSection>
       )}
 
-      <VibeGraph
-        title="자리 분위기"
-        description="이 초대장의 분위기를 가볍게 참고해보세요."
-        scores={ticket.vibeScores}
-        visibleAxes={[
-          "temperature",
-          "texture",
-          "tone",
-          "rhythm",
-          "alcohol",
-          "romance",
-        ]}
-        showAxisHeader={false}
-        axisLabelOverrides={{
-          alcohol: {
-            leftLabel: "술이 없는",
-            rightLabel: "술이 있는",
-          },
-          romance: {
-            leftLabel: "편한",
-            rightLabel: "설레는",
-          },
-        }}
-        className="rounded-none border-x-0 border-b-0 border-t border-black/8 bg-transparent px-0 py-5 shadow-none"
-      />
+      {visibleSections.has("flow") && (
+        <TicketDetailSection
+          title="이렇게 진행돼요"
+          startWithBorder={startWithBorder}
+        >
+          <ol className="space-y-2.5">
+            {flowSteps.map((step, index) => (
+              <li
+                key={step}
+                className="grid grid-cols-[28px_minmax(0,1fr)] gap-3"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-[11px] font-black text-white">
+                  {index + 1}
+                </span>
+                <span className="pt-1 text-sm font-semibold leading-6 text-black/62">
+                  {step}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </TicketDetailSection>
+      )}
 
-      <TicketDetailSection title="이렇게 진행돼요">
-        <ol className="space-y-2.5">
-          {flowSteps.map((step, index) => (
-            <li key={step} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-[11px] font-black text-white">
-                {index + 1}
-              </span>
-              <span className="pt-1 text-sm font-semibold leading-6 text-black/62">
-                {step}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </TicketDetailSection>
-
-      <TicketDetailSection title="알아두면 좋아요">
-        {customNotice && (
-          <p className="mb-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-sm font-semibold leading-6 text-black/62">
-            {customNotice}
-          </p>
-        )}
-        <BulletList items={commonNotices} />
-      </TicketDetailSection>
+      {visibleSections.has("notice") && (
+        <TicketDetailSection
+          title="알아두면 좋아요"
+          startWithBorder={startWithBorder}
+        >
+          {customNotice && (
+            <p className="mb-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-sm font-semibold leading-6 text-black/62">
+              {customNotice}
+            </p>
+          )}
+          <BulletList items={commonNotices} />
+        </TicketDetailSection>
+      )}
     </div>
   );
 }
@@ -114,12 +157,19 @@ export function TicketDetailContent({
 function TicketDetailSection({
   title,
   children,
+  startWithBorder = false,
 }: {
   title: string;
   children: ReactNode;
+  startWithBorder?: boolean;
 }) {
   return (
-    <section className="border-t border-black/8 py-5 first:border-t-0">
+    <section
+      className={cn(
+        "border-t border-black/8 py-5",
+        !startWithBorder && "first:border-t-0",
+      )}
+    >
       <h2 className="text-[15px] font-black text-black">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>

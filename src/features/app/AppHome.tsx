@@ -31,7 +31,10 @@ import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
-import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import {
+  TicketDetailContent,
+  type TicketDetailSectionKey,
+} from "@/features/meetings/TicketDetailContent";
 import {
   TicketDetailHero,
   ticketFadeTransition,
@@ -59,6 +62,7 @@ import type {
 import type {
   GatheringTicket,
   TicketArrivalStatus,
+  TicketProgressStep,
   UserTicket,
   UserTicketStatus,
 } from "@/types/ticket";
@@ -857,8 +861,13 @@ function StoredTicketDetailView({
   onClose: () => void;
 }) {
   const ticket = userTicket.ticket;
-  const confirmed = userTicket.rawStatus === "approved";
   const [statusOpen, setStatusOpen] = useState(true);
+  const [selectedProgressStep, setSelectedProgressStep] =
+    useState<TicketProgressStep>(userTicket.progressStep);
+
+  useEffect(() => {
+    setSelectedProgressStep(userTicket.progressStep);
+  }, [userTicket.id, userTicket.progressStep]);
 
   return (
     <motion.section
@@ -896,15 +905,16 @@ function StoredTicketDetailView({
           transition={{ delay: 0.08, duration: 0.22, ease: "easeOut" }}
           className="bg-white px-5 pb-5 pt-1"
         >
-          {userTicket.status === "feedback_open" ? (
-            <TicketFeedbackPlaceholder userTicket={userTicket} />
-          ) : (
-            <>
-              <TicketStatusOverview userTicket={userTicket} open={statusOpen} />
-              <TicketDetailContent ticket={ticket} />
-              {confirmed && <ConfirmedTicketSections userTicket={userTicket} />}
-            </>
-          )}
+          <TicketStatusOverview
+            userTicket={userTicket}
+            open={statusOpen}
+            selectedProgressStep={selectedProgressStep}
+            onSelectProgressStep={setSelectedProgressStep}
+          />
+          <TicketStageContent
+            userTicket={userTicket}
+            progressStep={selectedProgressStep}
+          />
         </motion.div>
       </motion.article>
 
@@ -932,20 +942,33 @@ function detailStatusBadgeClass(status: UserTicketStatus) {
   return "border-black/10 bg-black/[0.04] text-black/65";
 }
 
-const ticketProgressSteps = [
-  "신청 완료",
-  "참여 확정",
-  "시작 전 안내",
-  "진행 중",
-  "피드백 작성",
+const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
+  { key: "applied", label: "신청 완료" },
+  { key: "approved", label: "참여 확정" },
+  { key: "pre_start", label: "시작 전 안내" },
+  { key: "in_progress", label: "진행 중" },
+  { key: "feedback", label: "피드백 작성" },
 ];
+
+const introDetailSections: TicketDetailSectionKey[] = ["summary", "activities"];
+
+function progressStepIndex(step: TicketProgressStep) {
+  return Math.max(
+    ticketProgressSteps.findIndex((progressStep) => progressStep.key === step),
+    0,
+  );
+}
 
 function TicketStatusOverview({
   userTicket,
   open,
+  selectedProgressStep,
+  onSelectProgressStep,
 }: {
   userTicket: UserTicket;
   open: boolean;
+  selectedProgressStep: TicketProgressStep;
+  onSelectProgressStep: (step: TicketProgressStep) => void;
 }) {
   const ticket = userTicket.ticket;
 
@@ -979,7 +1002,11 @@ function TicketStatusOverview({
               <TicketMetaLine Icon={MapPin}>{ticket.area}</TicketMetaLine>
             </div>
 
-            <TicketProgressSteps progressIndex={userTicket.progressIndex} />
+            <TicketProgressSteps
+              progressIndex={userTicket.progressIndex}
+              selectedProgressStep={selectedProgressStep}
+              onSelectProgressStep={onSelectProgressStep}
+            />
             <TicketStatusGuidance userTicket={userTicket} />
           </div>
         </motion.section>
@@ -1003,16 +1030,28 @@ function TicketMetaLine({
   );
 }
 
-function TicketProgressSteps({ progressIndex }: { progressIndex: number }) {
+function TicketProgressSteps({
+  progressIndex,
+  selectedProgressStep,
+  onSelectProgressStep,
+}: {
+  progressIndex: number;
+  selectedProgressStep: TicketProgressStep;
+  onSelectProgressStep: (step: TicketProgressStep) => void;
+}) {
+  const selectedIndex = progressStepIndex(selectedProgressStep);
+
   return (
     <div className="mt-5">
       <div className="grid grid-cols-5 gap-1.5">
         {ticketProgressSteps.map((step, index) => {
           const active = index <= progressIndex;
           const current = index === progressIndex;
+          const selected = index === selectedIndex;
+          const disabled = index > progressIndex;
 
           return (
-            <div key={step} className="min-w-0">
+            <div key={step.key} className="min-w-0">
               <div
                 className={cn(
                   "h-1.5 rounded-full transition",
@@ -1020,27 +1059,41 @@ function TicketProgressSteps({ progressIndex }: { progressIndex: number }) {
                 )}
               />
               <div className="mt-2 flex min-h-10 flex-col items-center text-center">
-                <span
+                <button
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`${step.label} 단계 보기`}
+                  aria-pressed={selected}
+                  aria-current={current ? "step" : undefined}
+                  onClick={() => onSelectProgressStep(step.key)}
                   className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black",
-                    active
-                      ? "bg-black text-white"
-                      : "bg-black/[0.05] text-black/30",
+                    "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black transition",
+                    selected
+                      ? "bg-accent text-white shadow-[0_4px_12px_rgba(126,179,199,0.42)]"
+                      : active
+                        ? "bg-black text-white"
+                        : "bg-black/[0.05] text-black/30",
+                    active &&
+                      !selected &&
+                      "hover:-translate-y-0.5 hover:bg-black/[0.08]",
+                    disabled && "cursor-default",
                   )}
                 >
                   {active ? <Check size={13} aria-hidden /> : index + 1}
-                </span>
+                </button>
                 <span
                   className={cn(
                     "mt-1 text-[10px] font-black leading-3",
-                    current
+                    selected
                       ? "text-black"
-                      : active
+                      : current
+                        ? "text-black/75"
+                        : active
                         ? "text-black/52"
                         : "text-black/25",
                   )}
                 >
-                  {step}
+                  {step.label}
                 </span>
               </div>
             </div>
@@ -1064,8 +1117,44 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.status === "waitlisted") {
     return (
       <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs font-bold leading-5 text-sky-800">
-        대기열 등록이 완료됐어요. 운영자가 자리 구성을 확인한 뒤 참여 확정
-        여부를 안내합니다.
+        신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
+        확인할 수 있어요.
+      </p>
+    );
+  }
+
+  if (userTicket.progressStep === "applied") {
+    return (
+      <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs font-bold leading-5 text-sky-800">
+        신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
+        확인할 수 있어요.
+      </p>
+    );
+  }
+
+  if (userTicket.progressStep === "pre_start") {
+    return (
+      <p className="mt-4 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-bold leading-5 text-black/62">
+        모임 시작 3시간 전 안내가 열렸어요. 도착 상태와 오늘의 장소를
+        확인할 수 있어요.
+      </p>
+    );
+  }
+
+  if (userTicket.status === "in_progress") {
+    return (
+      <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800">
+        모임이 진행 중이에요. 도착 상태와 장소를 확인하고, 모임 후 피드백
+        안내를 확인할 수 있어요.
+      </p>
+    );
+  }
+
+  if (userTicket.status === "feedback_open") {
+    return (
+      <p className="mt-4 rounded-2xl bg-violet-50 px-4 py-3 text-xs font-bold leading-5 text-violet-800">
+        피드백 작성이 열렸어요. 남겨주신 피드백은 다음 자리의 큐레이션을
+        더 잘 맞추는 데 참고돼요.
       </p>
     );
   }
@@ -1077,15 +1166,77 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   );
 }
 
-function ConfirmedTicketSections({ userTicket }: { userTicket: UserTicket }) {
-  return (
-    <div className="border-t border-black/8 pt-5">
-      <PlaceSection userTicket={userTicket} />
-      <MemberIntroCarousel members={userTicket.members} />
-      <ArrivalStatusPanel userTicket={userTicket} />
-      <FeedbackGuide userTicket={userTicket} />
-    </div>
-  );
+function TicketStageContent({
+  userTicket,
+  progressStep,
+}: {
+  userTicket: UserTicket;
+  progressStep: TicketProgressStep;
+}) {
+  const ticket = userTicket.ticket;
+
+  if (progressStep === "feedback") {
+    return <TicketFeedbackPlaceholder />;
+  }
+
+  if (progressStep === "in_progress") {
+    return (
+      <>
+        <ArrivalStatusPanel userTicket={userTicket} />
+        <PlaceSection userTicket={userTicket} />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={introDetailSections}
+          className="mt-0"
+        />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={["flow"]}
+          className="mt-0"
+          startWithBorder
+        />
+        <FeedbackGuide userTicket={userTicket} />
+      </>
+    );
+  }
+
+  if (progressStep === "pre_start") {
+    return (
+      <>
+        <ArrivalStatusPanel userTicket={userTicket} />
+        <PlaceSection userTicket={userTicket} />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={introDetailSections}
+          className="mt-0"
+        />
+        <MemberIntroCarousel members={userTicket.members} />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={["flow"]}
+          className="mt-0"
+          startWithBorder
+        />
+      </>
+    );
+  }
+
+  if (progressStep === "approved") {
+    return (
+      <>
+        <TicketDetailContent ticket={ticket} sections={introDetailSections} />
+        <MemberIntroCarousel members={userTicket.members} />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={["flow"]}
+          className="mt-0"
+          startWithBorder
+        />
+      </>
+    );
+  }
+
+  return <TicketDetailContent ticket={ticket} />;
 }
 
 function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
@@ -1094,7 +1245,7 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
   );
 
   return (
-    <section className="py-5 first:pt-0">
+    <section className="border-t border-black/8 py-5">
       <h2 className="text-[15px] font-black text-black">오늘의 장소</h2>
       <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4">
         {hasPlace ? (
@@ -1235,6 +1386,10 @@ function ArrivalStatusPanel({ userTicket }: { userTicket: UserTicket }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setSelected(userTicket.arrivalStatus);
+  }, [userTicket.arrivalStatus, userTicket.waitlistId]);
+
   const saveArrivalStatus = async (arrivalStatus: TicketArrivalStatus) => {
     if (saving || !userTicket.canSetArrival) return;
     setSaving(true);
@@ -1264,7 +1419,7 @@ function ArrivalStatusPanel({ userTicket }: { userTicket: UserTicket }) {
       <h2 className="text-[15px] font-black text-black">도착 상태</h2>
       {!userTicket.canSetArrival ? (
         <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-          도착 상태는 모임 시작 2시간 전부터 선택할 수 있어요.
+          도착 상태는 모임 시작 3시간 전부터 선택할 수 있어요.
         </p>
       ) : (
         <div className="mt-4 grid gap-2">
@@ -1392,15 +1547,10 @@ function FeedbackGuide({ userTicket }: { userTicket: UserTicket }) {
   );
 }
 
-function TicketFeedbackPlaceholder({
-  userTicket,
-}: {
-  userTicket: UserTicket;
-}) {
+function TicketFeedbackPlaceholder() {
   return (
     <div className="py-5">
-      <TicketProgressSteps progressIndex={userTicket.progressIndex} />
-      <section className="mt-6 rounded-3xl border border-black/10 bg-white px-5 py-6 text-center">
+      <section className="rounded-3xl border border-black/10 bg-white px-5 py-6 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
           <PenLine size={20} aria-hidden />
         </div>

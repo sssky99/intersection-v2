@@ -79,7 +79,12 @@ type InstanceDraft = {
 };
 
 type ListMode = "templates" | "dates";
-type TestTimeMode = "before_start" | "just_started" | "feedback_open";
+type TestTimeMode =
+  | "applied"
+  | "approved"
+  | "pre_start"
+  | "in_progress"
+  | "feedback";
 type TemplateScoreDraftKey =
   | "scoreTemperature"
   | "scoreTexture"
@@ -1675,30 +1680,46 @@ function InstanceEditor({
                 테스트 전용 티켓에서만 사용자 진행 화면을 빠르게 확인합니다.
               </p>
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-5">
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => onShiftTestTime("before_start")}
+                onClick={() => onShiftTestTime("applied")}
                 className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
               >
-                시작 1시간 전
+                신청 완료
               </button>
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => onShiftTestTime("just_started")}
+                onClick={() => onShiftTestTime("approved")}
                 className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
               >
-                시작 직후
+                참여 확정
               </button>
               <button
                 type="button"
                 disabled={saving}
-                onClick={() => onShiftTestTime("feedback_open")}
+                onClick={() => onShiftTestTime("pre_start")}
                 className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
               >
-                피드백 오픈
+                시작 전 안내
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onShiftTestTime("in_progress")}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
+              >
+                진행 중
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onShiftTestTime("feedback")}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
+              >
+                피드백 작성
               </button>
             </div>
           </div>

@@ -106,9 +106,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (new Date() < addHours(startAt, -2)) {
+    if (new Date() < addHours(startAt, -3)) {
       return NextResponse.json(
-        { error: "Arrival status opens two hours before the meeting." },
+        { error: "Arrival status opens three hours before the meeting." },
         { status: 403 },
       );
     }

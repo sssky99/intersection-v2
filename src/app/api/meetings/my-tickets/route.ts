@@ -142,7 +142,7 @@ const statusPriority: Record<UserTicketStatus, number> = {
 
 const statusLabels: Record<UserTicketStatus, string> = {
   payment_pending: "결제 확인 필요",
-  waitlisted: "대기열 등록 완료",
+  waitlisted: "신청 완료",
   approved: "참여 확정",
   in_progress: "진행 중",
   feedback_open: "피드백 작성 가능",
@@ -294,9 +294,20 @@ function deriveStatus(
     };
   }
 
-  const arrivalOpenAt = addHours(startAt, -2);
+  const approvalOpenAt = addHours(startAt, -24);
+  const arrivalOpenAt = addHours(startAt, -3);
   const feedbackOpenAt = addHours(startAt, 3);
   const canSetArrival = now >= arrivalOpenAt;
+
+  if (now < approvalOpenAt) {
+    return {
+      status: "approved",
+      statusLabel: statusLabels.waitlisted,
+      progressStep: "applied",
+      progressIndex: 0,
+      canSetArrival: false,
+    };
+  }
 
   if (now >= feedbackOpenAt) {
     return {
@@ -567,10 +578,12 @@ export async function GET() {
         if (!derived.status) return null;
 
         const confirmed = row.status === "approved";
-        const assignedIds = confirmed
+        const memberInfoVisible = confirmed && derived.progressIndex >= 1;
+        const placeInfoVisible = confirmed && derived.progressIndex >= 2;
+        const assignedIds = memberInfoVisible
           ? assignmentsByInstance.get(instanceId ?? "") ?? []
           : [];
-        const memberIds = confirmed
+        const memberIds = memberInfoVisible
           ? unique([...assignedIds, user.id])
           : [];
         const members: TicketMemberIntro[] = memberIds.map((id) => {
@@ -602,7 +615,7 @@ export async function GET() {
         });
 
         const placeVisible =
-          confirmed && instance?.place_visibility !== "hidden";
+          placeInfoVisible && instance?.place_visibility !== "hidden";
 
         return {
           id: String(row.id),
@@ -614,7 +627,7 @@ export async function GET() {
           progressStep: derived.progressStep,
           progressIndex: derived.progressIndex,
           meetingStartAt: isoOrNull(startAt),
-          arrivalOpensAt: isoOrNull(startAt ? addHours(startAt, -2) : null),
+          arrivalOpensAt: isoOrNull(startAt ? addHours(startAt, -3) : null),
           feedbackOpensAt: isoOrNull(startAt ? addHours(startAt, 3) : null),
           canSetArrival:
             confirmed && !row.assignment_only && derived.canSetArrival,

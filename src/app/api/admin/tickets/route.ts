@@ -182,9 +182,13 @@ function scoreValue(value: unknown) {
 
 function testTimeTarget(mode: unknown) {
   const now = new Date();
-  if (mode === "before_start") return new Date(now.getTime() + 60 * 60 * 1000);
-  if (mode === "just_started") return new Date(now.getTime() - 5 * 60 * 1000);
-  if (mode === "feedback_open") {
+  if (mode === "applied") {
+    return new Date(now.getTime() + (24 * 60 + 5) * 60 * 1000);
+  }
+  if (mode === "approved") return new Date(now.getTime() + 12 * 60 * 60 * 1000);
+  if (mode === "pre_start") return new Date(now.getTime() + 60 * 60 * 1000);
+  if (mode === "in_progress") return new Date(now.getTime() - 5 * 60 * 1000);
+  if (mode === "feedback") {
     return new Date(now.getTime() - (3 * 60 + 5) * 60 * 1000);
   }
   return null;
