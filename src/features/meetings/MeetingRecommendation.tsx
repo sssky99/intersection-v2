@@ -505,8 +505,19 @@ function TicketInsideView({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={ticketFadeTransition}
+      className="relative pt-[calc(54px+env(safe-area-inset-top))]"
     >
-      <div className="flex items-start justify-between gap-4 pr-16">
+      <button
+        type="button"
+        onClick={onClose}
+        disabled={saving}
+        aria-label="초대장 닫기"
+        className="absolute left-0 top-[calc(6px+env(safe-area-inset-top))] z-30 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md disabled:opacity-40"
+      >
+        <X size={18} aria-hidden />
+      </button>
+
+      <div className="pr-16">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
             invitation
@@ -515,15 +526,6 @@ function TicketInsideView({
             자세히 보고 신청할까요?
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={saving}
-          aria-label="초대장 닫기"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:text-black disabled:opacity-40"
-        >
-          <X size={18} aria-hidden />
-        </button>
       </div>
 
       <motion.article

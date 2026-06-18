@@ -9,7 +9,7 @@ import { isMembershipStatus } from "@/features/membership/membershipTypes";
 
 export const dynamic = "force-dynamic";
 
-const baseProfileSelect = [
+const baseProfileFields = [
   "user_id",
   "name",
   "gender",
@@ -21,17 +21,44 @@ const baseProfileSelect = [
   "created_at",
   "profile_completed",
   "questions_completed",
-].join(",");
+];
 
-const membershipProfileSelect = [
-  baseProfileSelect,
+const scoreProfileFields = [
+  "score_temperature",
+  "score_texture",
+  "score_tone",
+  "score_rhythm",
+];
+
+const membershipProfileFields = [
   "membership_status",
   "membership_plan",
   "membership_start_date",
   "membership_end_date",
   "membership_purchase_clicked_at",
   "membership_updated_at",
+];
+
+const baseProfileSelect = baseProfileFields.join(",");
+const scoreProfileSelect = [...baseProfileFields, ...scoreProfileFields].join(
+  ",",
+);
+const membershipProfileSelect = [
+  ...baseProfileFields,
+  ...membershipProfileFields,
+  ...scoreProfileFields,
 ].join(",");
+const membershipWithoutScoresProfileSelect = [
+  ...baseProfileFields,
+  ...membershipProfileFields,
+].join(",");
+
+const profileSelects = [
+  membershipProfileSelect,
+  membershipWithoutScoresProfileSelect,
+  scoreProfileSelect,
+  baseProfileSelect,
+];
 
 function normalizeProfiles(profiles: AdminProfile[]) {
   return profiles.map(normalizeAdminProfile);
@@ -41,6 +68,56 @@ function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
   );
+}
+
+function queryErrorMessage(
+  label: string,
+  error: { message: string; hint?: string | null },
+) {
+  return [`${label}: ${error.message}`, error.hint].filter(Boolean).join(" | ");
+}
+
+async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
+  const errors: string[] = [];
+
+  for (const [index, select] of profileSelects.entries()) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(select)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    if (!error) {
+      return (data ?? []) as unknown as AdminProfile[];
+    }
+
+    errors.push(queryErrorMessage(`profile query ${index + 1}`, error));
+  }
+
+  throw new Error(errors.join(" | "));
+}
+
+async function fetchProfile(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+) {
+  const errors: string[] = [];
+
+  for (const [index, select] of profileSelects.entries()) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(select)
+      .eq("user_id", userId)
+      .single();
+
+    if (!error) {
+      return data as unknown as AdminProfile;
+    }
+
+    errors.push(queryErrorMessage(`profile query ${index + 1}`, error));
+  }
+
+  throw new Error(errors.join(" | "));
 }
 
 export async function GET(request: NextRequest) {
@@ -53,42 +130,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
-    const withMembership = await supabase
-      .from("profiles")
-      .select(membershipProfileSelect)
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    if (!withMembership.error) {
-      return NextResponse.json({
-        profiles: normalizeProfiles(
-          (withMembership.data ?? []) as unknown as AdminProfile[],
-        ),
-      });
-    }
-
-    const fallback = await supabase
-      .from("profiles")
-      .select(baseProfileSelect)
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    if (fallback.error) {
-      throw new Error(
-        [
-          `membership query: ${withMembership.error.message}`,
-          `base query: ${fallback.error.message}`,
-          fallback.error.hint,
-        ]
-          .filter(Boolean)
-          .join(" | "),
-      );
-    }
+    const profiles = await fetchProfiles(supabase);
 
     return NextResponse.json({
-      profiles: normalizeProfiles(
-        (fallback.data ?? []) as unknown as AdminProfile[],
-      ),
+      profiles: normalizeProfiles(profiles),
     });
   } catch (error) {
     console.error("Admin profiles load failed:", error);
@@ -123,20 +168,18 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({
         membership_status: status,
         membership_updated_at: new Date().toISOString(),
       })
-      .eq("user_id", userId)
-      .select(membershipProfileSelect)
-      .single();
+      .eq("user_id", userId);
 
     if (error) throw error;
 
     return NextResponse.json({
-      profile: normalizeAdminProfile(data as unknown as AdminProfile),
+      profile: normalizeAdminProfile(await fetchProfile(supabase, userId)),
     });
   } catch (error) {
     console.error("Admin profile membership save failed:", error);

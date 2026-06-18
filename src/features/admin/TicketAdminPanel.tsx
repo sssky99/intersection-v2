@@ -85,6 +85,14 @@ type TestTimeMode =
   | "pre_start"
   | "in_progress"
   | "feedback";
+
+const testTimeSteps: Array<{ mode: TestTimeMode; label: string }> = [
+  { mode: "applied", label: "신청 완료" },
+  { mode: "approved", label: "참여 확정" },
+  { mode: "pre_start", label: "시작 전 안내" },
+  { mode: "in_progress", label: "진행 중" },
+  { mode: "feedback", label: "피드백 작성" },
+];
 type TemplateScoreDraftKey =
   | "scoreTemperature"
   | "scoreTexture"
@@ -340,6 +348,28 @@ function dateTimeText(instance: AdminTicketInstance) {
   return [instance.event_date, instance.event_time?.slice(0, 5)]
     .filter(Boolean)
     .join(" ") || "일정 미정";
+}
+
+function instanceStartDate(instance: AdminTicketInstance) {
+  if (!instance.event_date) return null;
+  const time = instance.event_time?.slice(0, 5) || "00:00";
+  const date = new Date(`${instance.event_date}T${time}:00+09:00`);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function testTimeModeForInstance(instance: AdminTicketInstance) {
+  const startAt = instanceStartDate(instance);
+  if (!startAt) return null;
+
+  const now = new Date();
+  const diffMs = startAt.getTime() - now.getTime();
+  const hourMs = 60 * 60 * 1000;
+
+  if (diffMs > 24 * hourMs) return "applied" satisfies TestTimeMode;
+  if (diffMs > 3 * hourMs) return "approved" satisfies TestTimeMode;
+  if (diffMs > 0) return "pre_start" satisfies TestTimeMode;
+  if (diffMs > -3 * hourMs) return "in_progress" satisfies TestTimeMode;
+  return "feedback" satisfies TestTimeMode;
 }
 
 function shortDateText(value: string | null) {
@@ -1554,6 +1584,8 @@ function InstanceEditor({
   onAddMember: (profileId: string) => void;
   onRemoveMember: (profileId: string) => void;
 }) {
+  const currentTestTimeMode = testTimeModeForInstance(instance);
+
   return (
     <div className="mx-auto max-w-[980px] space-y-5">
       <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -1681,46 +1713,26 @@ function InstanceEditor({
               </p>
             </div>
             <div className="grid gap-2 sm:grid-cols-5">
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => onShiftTestTime("applied")}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
-              >
-                신청 완료
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => onShiftTestTime("approved")}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
-              >
-                참여 확정
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => onShiftTestTime("pre_start")}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
-              >
-                시작 전 안내
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => onShiftTestTime("in_progress")}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
-              >
-                진행 중
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => onShiftTestTime("feedback")}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
-              >
-                피드백 작성
-              </button>
+              {testTimeSteps.map((step) => {
+                const active = currentTestTimeMode === step.mode;
+
+                return (
+                  <button
+                    key={step.mode}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => onShiftTestTime(step.mode)}
+                    className={cn(
+                      "h-10 rounded-xl border bg-white px-3 text-xs font-bold transition disabled:opacity-40",
+                      active
+                        ? "border-accent bg-accent/10 text-black shadow-[0_0_0_3px_rgba(126,179,199,0.18)]"
+                        : "border-black/10 text-black/60 hover:border-accent hover:text-black",
+                    )}
+                  >
+                    {step.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>

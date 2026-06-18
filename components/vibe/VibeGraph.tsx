@@ -1,3 +1,6 @@
+"use client";
+
+import { motion, useReducedMotion } from "framer-motion";
 import {
   vibeAxes,
   vibeAxisConfig,
@@ -11,21 +14,32 @@ type VibeAxisLabelOverride = Partial<{
   rightLabel: string;
 }>;
 
+type VibeScoreScale = "legacy" | "internal";
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-function isValidScore(value: number | null | undefined) {
-  return (
-    typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= 1 &&
-    value <= 5
-  );
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeScore(
+  value: number | null | undefined,
+  scoreScale: VibeScoreScale,
+) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+
+  if (scoreScale === "legacy") {
+    if (value < 1 || value > 5) return null;
+    return clamp((value - 3) * 50, -100, 100);
+  }
+
+  return clamp(value, -100, 100);
 }
 
 function positionPercent(score: number) {
-  return 8 + ((score - 1) / 4) * 84;
+  return ((score + 100) / 200) * 100;
 }
 
 export function VibeGraph({
@@ -36,6 +50,9 @@ export function VibeGraph({
   className,
   showAxisHeader = true,
   axisLabelOverrides,
+  scoreScale = "legacy",
+  animationKey = 0,
+  animateBars = true,
 }: {
   title: string;
   description?: string;
@@ -44,8 +61,15 @@ export function VibeGraph({
   className?: string;
   showAxisHeader?: boolean;
   axisLabelOverrides?: Partial<Record<VibeAxis, VibeAxisLabelOverride>>;
+  scoreScale?: VibeScoreScale;
+  animationKey?: string | number;
+  animateBars?: boolean;
 }) {
-  const axes = visibleAxes.filter((axis) => isValidScore(scores?.[axis]));
+  const shouldReduceMotion = useReducedMotion();
+  const axes = visibleAxes.filter(
+    (axis) => normalizeScore(scores?.[axis], scoreScale) !== null,
+  );
+  const shouldAnimate = animateBars && !shouldReduceMotion;
 
   if (axes.length === 0) return null;
 
@@ -63,40 +87,66 @@ export function VibeGraph({
         </p>
       )}
 
-      <div className="mt-5 space-y-4">
-        {axes.map((axis) => {
+      <div className="mt-6 space-y-5">
+        {axes.map((axis, index) => {
           const config = {
             ...vibeAxisConfig[axis],
             ...axisLabelOverrides?.[axis],
           };
-          const score = scores?.[axis] as number;
+          const score = normalizeScore(scores?.[axis], scoreScale) ?? 0;
+          const targetPercent = positionPercent(score);
+          const fillLeft = Math.min(50, targetPercent);
+          const fillWidth = Math.abs(targetPercent - 50);
+          const transition = {
+            duration: shouldAnimate ? 0.72 : 0,
+            ease: "easeOut" as const,
+            delay: shouldAnimate ? index * 0.05 : 0,
+          };
 
           return (
             <div key={axis}>
               {showAxisHeader && (
-                <div className="mb-1.5 flex items-center justify-between gap-3">
-                  <span className="text-xs font-black text-black/70">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-xs font-black text-black/72">
                     {config.label}
                   </span>
                   <span className="text-[11px] font-semibold text-black/35">
-                    {config.leftLabel} ↔ {config.rightLabel}
+                    {config.leftLabel} · {config.rightLabel}
                   </span>
                 </div>
               )}
-              <div className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3">
-                <span className="text-[11px] font-bold text-black/38">
-                  {config.leftLabel}
-                </span>
-                <div className="relative h-3 rounded-full bg-black/[0.06]">
-                  <span className="absolute left-1/2 top-1/2 h-4 w-px -translate-y-1/2 bg-black/10" />
-                  <span
-                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-accent shadow-[0_3px_10px_rgba(0,0,0,0.14)]"
-                    style={{ left: `${positionPercent(score)}%` }}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-[11px] font-bold leading-4 text-black/42">
+                    {config.leftLabel}
+                  </span>
+                  <span className="text-right text-[11px] font-bold leading-4 text-black/42">
+                    {config.rightLabel}
+                  </span>
+                </div>
+                <div
+                  className="relative h-4 rounded-full bg-black/[0.07] shadow-inner"
+                  aria-label={`${config.label}: ${config.leftLabel}에서 ${config.rightLabel} 사이`}
+                >
+                  <motion.span
+                    key={`fill-${axis}-${animationKey}`}
+                    initial={shouldAnimate ? { left: "50%", width: "0%" } : false}
+                    animate={{
+                      left: `${fillLeft}%`,
+                      width: `${fillWidth}%`,
+                    }}
+                    transition={transition}
+                    className="absolute top-0 h-full rounded-full bg-accent"
+                  />
+                  <span className="absolute left-1/2 top-1/2 z-10 h-7 w-px -translate-y-1/2 bg-black/28" />
+                  <motion.span
+                    key={`thumb-${axis}-${animationKey}`}
+                    initial={shouldAnimate ? { left: "50%" } : false}
+                    animate={{ left: `${targetPercent}%` }}
+                    transition={transition}
+                    className="absolute top-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-accent shadow-[0_5px_14px_rgba(0,0,0,0.18)]"
                   />
                 </div>
-                <span className="text-right text-[11px] font-bold text-black/38">
-                  {config.rightLabel}
-                </span>
               </div>
             </div>
           );

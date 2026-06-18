@@ -7,17 +7,13 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
-  Coffee,
-  Heart,
   LogOut,
   MapPin,
-  MessageCircle,
   X,
   PenLine,
   Sparkles,
   Ticket as TicketIcon,
   UserRound,
-  Users,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
@@ -26,8 +22,12 @@ import {
   IntersectionTicketCard,
 } from "@/components/IntersectionTicketCard";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
-import type { VibeScores } from "@/components/vibe/vibeGraphConfig";
-import { profileQuestions, questionCategories } from "@/data/profileQuestions";
+import {
+  vibeAxisConfig,
+  type VibeAxis,
+  type VibeScores,
+} from "@/components/vibe/vibeGraphConfig";
+import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
@@ -54,10 +54,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import type { ProfileRow } from "@/types/profile";
 import type {
-  ProfileQuestion,
   QuestionAnswer,
-  QuestionCategory,
-  QuestionOption,
 } from "@/types/question";
 import type {
   GatheringTicket,
@@ -90,25 +87,37 @@ type BasicInfoDraft = {
   mbti: string;
 };
 
+const feedbackPersonAxes = [
+  "temperature",
+  "texture",
+  "tone",
+  "rhythm",
+] as const satisfies readonly VibeAxis[];
+const profileVibeAxes = feedbackPersonAxes;
+const feedbackPlaceAxes = [
+  "temperature",
+  "texture",
+  "tone",
+  "rhythm",
+  "alcohol",
+  "romance",
+] as const satisfies readonly VibeAxis[];
+
+type FeedbackPersonAxis = (typeof feedbackPersonAxes)[number];
+type ProfileVibeAxis = (typeof profileVibeAxes)[number];
+type FeedbackPlaceAxis = (typeof feedbackPlaceAxes)[number];
+
+type MemberFeedbackDraft = {
+  status: "pending" | "done" | "skipped";
+  values: Record<FeedbackPersonAxis, number>;
+  touchedAxes: FeedbackPersonAxis[];
+};
+
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "recommend", label: "추천", Icon: Sparkles },
   { id: "profile", label: "프로필", Icon: UserRound },
 ];
-
-const categoryIcons: Partial<Record<QuestionCategory, LucideIcon>> = {
-  온도: Coffee,
-  결: MessageCircle,
-  톤: Heart,
-  리듬: Sparkles,
-  "모임 역할": Users,
-  "모임 역할 - 상대": Users,
-  "관계 기대": Heart,
-  "회피 조건": X,
-  "나이 조건": Users,
-  "모임 취향": TicketIcon,
-  자기소개: PenLine,
-};
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -124,22 +133,6 @@ function normalizePhone(phone: string) {
   if (digits.startsWith("8210")) return `0${digits.slice(2)}`;
   if (digits.startsWith("82") && digits.length > 10) return `0${digits.slice(2)}`;
   return digits;
-}
-
-function questionOptionValue(option: string | QuestionOption) {
-  return typeof option === "string" ? option : option.value;
-}
-
-function questionOptionLabel(option: string | QuestionOption) {
-  return typeof option === "string" ? option : option.label;
-}
-
-function questionOptionMeta(question: ProfileQuestion, value: string) {
-  return question.options
-    ?.map((option) =>
-      typeof option === "string" ? { value: option, label: option } : option,
-    )
-    .find((option) => option.value === value);
 }
 
 function rowToAnswer(row: AnswerRow): QuestionAnswer {
@@ -162,33 +155,6 @@ function rowToAnswer(row: AnswerRow): QuestionAnswer {
   };
 }
 
-function isAnswerComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
-  if (!answer) return false;
-  if (question.type === "ticket_rating") {
-    return (
-      typeof answer.value === "object" &&
-      !Array.isArray(answer.value) &&
-      Boolean(answer.value.ticket_id && answer.value.rating)
-    );
-  }
-
-  const value = answer.value;
-  const hasValue = Array.isArray(value)
-    ? value.length > 0
-    : typeof value === "object"
-      ? false
-    : Boolean(String(value).trim());
-
-  if (!hasValue) return false;
-
-  const needsOther = Array.isArray(value)
-    ? value.some((item) => questionOptionMeta(question, item)?.hasTextInput)
-    : typeof value === "string" &&
-      Boolean(questionOptionMeta(question, value)?.hasTextInput);
-
-  return !needsOther || Boolean(answer.otherText?.trim());
-}
-
 function answerScore(answer?: QuestionAnswer) {
   const value =
     typeof answer?.value === "number"
@@ -201,12 +167,47 @@ function answerScore(answer?: QuestionAnswer) {
   return value >= 1 && value <= 5 ? value : null;
 }
 
-function profileVibeScores(answers: AnswerMap): VibeScores {
+function clampInternalScore(value: number) {
+  return Math.min(100, Math.max(-100, value));
+}
+
+function answerScoreToInternalScore(value: number | null) {
+  return value === null ? null : clampInternalScore((value - 3) * 50);
+}
+
+const profileScoreColumns = {
+  temperature: "score_temperature",
+  texture: "score_texture",
+  tone: "score_tone",
+  rhythm: "score_rhythm",
+} as const satisfies Record<ProfileVibeAxis, keyof ProfileRow>;
+
+function currentProfileScore(profile: ProfileRow, axis: ProfileVibeAxis) {
+  const value = profile[profileScoreColumns[axis]];
+  return typeof value === "number" && Number.isFinite(value)
+    ? clampInternalScore(value)
+    : null;
+}
+
+function profileAxisScore(
+  profile: ProfileRow,
+  answers: AnswerMap,
+  axis: ProfileVibeAxis,
+  answerOrder: number,
+) {
+  return (
+    currentProfileScore(profile, axis) ??
+    answerScoreToInternalScore(answerScore(answers[answerOrder])) ??
+    0
+  );
+}
+
+function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores {
   return {
-    temperature: answerScore(answers[1]),
-    texture: answerScore(answers[2]),
-    tone: answerScore(answers[3]),
-    rhythm: answerScore(answers[4]),
+    temperature: profileAxisScore(profile, answers, "temperature", 1),
+    texture: profileAxisScore(profile, answers, "texture", 2),
+    tone: profileAxisScore(profile, answers, "tone", 3),
+    rhythm: profileAxisScore(profile, answers, "rhythm", 4),
   };
 }
 
@@ -290,6 +291,7 @@ export function AppHome({
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
+  const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [membershipModalOpen, setMembershipModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -347,6 +349,10 @@ export function AppHome({
   }, [userId]);
 
   const switchTab = (tab: AppTab) => {
+    if (tab === "profile") {
+      setProfileVibeAnimationKey((current) => current + 1);
+    }
+
     setActiveTab(tab);
     setProfilePanelOpen(false);
     setMembershipModalOpen(false);
@@ -460,9 +466,10 @@ export function AppHome({
           )}
           {activeTab === "profile" && (
             <ProfileTab
-              key="profile"
+              key={`profile-${profileVibeAnimationKey}`}
               profile={currentProfile}
               answers={answers}
+              vibeAnimationKey={profileVibeAnimationKey}
               loggingOut={loggingOut}
               logoutError={logoutError}
               onLogout={logout}
@@ -951,12 +958,63 @@ const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
 ];
 
 const introDetailSections: TicketDetailSectionKey[] = ["summary", "activities"];
+const ticketGuidanceClass =
+  "mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800";
 
 function progressStepIndex(step: TicketProgressStep) {
   return Math.max(
     ticketProgressSteps.findIndex((progressStep) => progressStep.key === step),
     0,
   );
+}
+
+function countdownText(targetIso: string | null, label: string, now: Date) {
+  if (!targetIso) return null;
+  const target = new Date(targetIso);
+  const remainingMs = target.getTime() - now.getTime();
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const timeText =
+    hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+
+  return `${label} ${timeText} 남았어요`;
+}
+
+function useTicketCountdown(userTicket: UserTicket) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (userTicket.progressStep === "approved") {
+    const text = countdownText(
+      userTicket.arrivalOpensAt,
+      "시작 전 안내까지",
+      now,
+    );
+    return text ? { text } : null;
+  }
+
+  if (userTicket.progressStep === "pre_start") {
+    const text = countdownText(userTicket.meetingStartAt, "진행 중까지", now);
+    return text ? { text } : null;
+  }
+
+  if (userTicket.progressStep === "in_progress") {
+    const text = countdownText(
+      userTicket.feedbackOpensAt,
+      "피드백 작성까지",
+      now,
+    );
+    return text ? { text } : null;
+  }
+
+  return null;
 }
 
 function TicketStatusOverview({
@@ -971,6 +1029,7 @@ function TicketStatusOverview({
   onSelectProgressStep: (step: TicketProgressStep) => void;
 }) {
   const ticket = userTicket.ticket;
+  const countdown = useTicketCountdown(userTicket);
 
   return (
     <AnimatePresence initial={false}>
@@ -993,6 +1052,16 @@ function TicketStatusOverview({
                   {userTicket.statusLabel}
                 </h2>
               </div>
+              {countdown && (
+                <motion.p
+                  key={countdown.text}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-1 shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-right text-[11px] font-black leading-4 text-emerald-800 shadow-[0_8px_18px_rgba(16,185,129,0.12)]"
+                >
+                  {countdown.text}
+                </motion.p>
+              )}
             </div>
 
             <div className="mt-4 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-3 text-xs font-bold text-black/58">
@@ -1107,7 +1176,7 @@ function TicketProgressSteps({
 function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.status === "payment_pending") {
     return (
-      <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+      <p className={ticketGuidanceClass}>
         결제 확인이 완료되면 대기열 등록 상태로 전환돼요. 운영자가 확인한 뒤
         참여 확정 여부를 안내합니다.
       </p>
@@ -1116,7 +1185,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 
   if (userTicket.status === "waitlisted") {
     return (
-      <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs font-bold leading-5 text-sky-800">
+      <p className={ticketGuidanceClass}>
         신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
         확인할 수 있어요.
       </p>
@@ -1125,7 +1194,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 
   if (userTicket.progressStep === "applied") {
     return (
-      <p className="mt-4 rounded-2xl bg-sky-50 px-4 py-3 text-xs font-bold leading-5 text-sky-800">
+      <p className={ticketGuidanceClass}>
         신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
         확인할 수 있어요.
       </p>
@@ -1134,7 +1203,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 
   if (userTicket.progressStep === "pre_start") {
     return (
-      <p className="mt-4 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-bold leading-5 text-black/62">
+      <p className={ticketGuidanceClass}>
         모임 시작 3시간 전 안내가 열렸어요. 도착 상태와 오늘의 장소를
         확인할 수 있어요.
       </p>
@@ -1143,7 +1212,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 
   if (userTicket.status === "in_progress") {
     return (
-      <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800">
+      <p className={ticketGuidanceClass}>
         모임이 진행 중이에요. 도착 상태와 장소를 확인하고, 모임 후 피드백
         안내를 확인할 수 있어요.
       </p>
@@ -1152,7 +1221,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 
   if (userTicket.status === "feedback_open") {
     return (
-      <p className="mt-4 rounded-2xl bg-violet-50 px-4 py-3 text-xs font-bold leading-5 text-violet-800">
+      <p className={ticketGuidanceClass}>
         피드백 작성이 열렸어요. 남겨주신 피드백은 다음 자리의 큐레이션을
         더 잘 맞추는 데 참고돼요.
       </p>
@@ -1160,7 +1229,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   }
 
   return (
-    <p className="mt-4 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-bold leading-5 text-black/62">
+    <p className={ticketGuidanceClass}>
       참여가 확정되었어요. 이제 모임 안내와 함께 멤버 정보를 확인할 수 있어요.
     </p>
   );
@@ -1174,16 +1243,32 @@ function TicketStageContent({
   progressStep: TicketProgressStep;
 }) {
   const ticket = userTicket.ticket;
+  const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
+    userTicket.arrivalStatus,
+  );
+  const placeUnlocked = Boolean(arrivalStatus);
+
+  useEffect(() => {
+    setArrivalStatus(userTicket.arrivalStatus);
+  }, [userTicket.arrivalStatus, userTicket.waitlistId]);
 
   if (progressStep === "feedback") {
-    return <TicketFeedbackPlaceholder />;
+    return <TicketFeedbackForm userTicket={userTicket} />;
   }
 
   if (progressStep === "in_progress") {
     return (
       <>
-        <ArrivalStatusPanel userTicket={userTicket} />
-        <PlaceSection userTicket={userTicket} />
+        <ArrivalStatusPanel
+          userTicket={userTicket}
+          selectedArrivalStatus={arrivalStatus}
+          onArrivalStatusChange={setArrivalStatus}
+        />
+        {placeUnlocked ? (
+          <PlaceSection userTicket={userTicket} />
+        ) : (
+          <PlaceLockedSection />
+        )}
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
@@ -1203,8 +1288,16 @@ function TicketStageContent({
   if (progressStep === "pre_start") {
     return (
       <>
-        <ArrivalStatusPanel userTicket={userTicket} />
-        <PlaceSection userTicket={userTicket} />
+        <ArrivalStatusPanel
+          userTicket={userTicket}
+          selectedArrivalStatus={arrivalStatus}
+          onArrivalStatusChange={setArrivalStatus}
+        />
+        {placeUnlocked ? (
+          <PlaceSection userTicket={userTicket} />
+        ) : (
+          <PlaceLockedSection />
+        )}
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
@@ -1268,6 +1361,17 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
           </p>
         )}
       </div>
+    </section>
+  );
+}
+
+function PlaceLockedSection() {
+  return (
+    <section className="border-t border-black/8 py-5">
+      <h2 className="text-[15px] font-black text-black">오늘의 장소</h2>
+      <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+        (도착 상태를 눌러야 오늘의 장소가 표시돼요.)
+      </p>
     </section>
   );
 }
@@ -1379,16 +1483,36 @@ function arrivalStatusToneClass(status: TicketArrivalStatus | null) {
   return "border-black/10 bg-white text-black/45";
 }
 
-function ArrivalStatusPanel({ userTicket }: { userTicket: UserTicket }) {
+function arrivalOptionActiveClass(status: TicketArrivalStatus) {
+  if (status === "on_time") {
+    return "border-emerald-400 bg-emerald-50 text-emerald-900";
+  }
+
+  return "border-amber-400 bg-amber-50 text-amber-900";
+}
+
+function arrivalCheckClass(status: TicketArrivalStatus) {
+  return status === "on_time" ? "text-emerald-600" : "text-amber-600";
+}
+
+function ArrivalStatusPanel({
+  userTicket,
+  selectedArrivalStatus,
+  onArrivalStatusChange,
+}: {
+  userTicket: UserTicket;
+  selectedArrivalStatus?: TicketArrivalStatus | null;
+  onArrivalStatusChange?: (arrivalStatus: TicketArrivalStatus) => void;
+}) {
   const [selected, setSelected] = useState<TicketArrivalStatus | null>(
-    userTicket.arrivalStatus,
+    selectedArrivalStatus ?? userTicket.arrivalStatus,
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelected(userTicket.arrivalStatus);
-  }, [userTicket.arrivalStatus, userTicket.waitlistId]);
+    setSelected(selectedArrivalStatus ?? userTicket.arrivalStatus);
+  }, [selectedArrivalStatus, userTicket.arrivalStatus, userTicket.waitlistId]);
 
   const saveArrivalStatus = async (arrivalStatus: TicketArrivalStatus) => {
     if (saving || !userTicket.canSetArrival) return;
@@ -1411,6 +1535,7 @@ function ArrivalStatusPanel({ userTicket }: { userTicket: UserTicket }) {
     }
 
     setSelected(arrivalStatus);
+    onArrivalStatusChange?.(arrivalStatus);
     setSaving(false);
   };
 
@@ -1435,12 +1560,18 @@ function ArrivalStatusPanel({ userTicket }: { userTicket: UserTicket }) {
                 className={cn(
                   "flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-bold transition disabled:opacity-45",
                   active
-                    ? "border-accent bg-accent/12 text-black"
+                    ? arrivalOptionActiveClass(option.value)
                     : "border-black/10 bg-white text-black/55 hover:border-black/20",
                 )}
               >
                 <span>{option.label}</span>
-                {active && <Check size={16} className="text-accent" aria-hidden />}
+                {active && (
+                  <Check
+                    size={16}
+                    className={arrivalCheckClass(option.value)}
+                    aria-hidden
+                  />
+                )}
               </button>
             );
           })}
@@ -1547,6 +1678,549 @@ function FeedbackGuide({ userTicket }: { userTicket: UserTicket }) {
   );
 }
 
+function createMemberFeedbackDrafts(
+  members: UserTicket["members"],
+): Record<string, MemberFeedbackDraft> {
+  return Object.fromEntries(
+    members.map((member) => [
+      member.id,
+      {
+        status: "pending",
+        values: {
+          temperature: 3,
+          texture: 3,
+          tone: 3,
+          rhythm: 3,
+        },
+        touchedAxes: [],
+      },
+    ]),
+  );
+}
+
+function placeFeedbackInitialScores(scores?: VibeScores | null) {
+  return Object.fromEntries(
+    feedbackPlaceAxes.map((axis) => {
+      const value = scores?.[axis];
+      return [
+        axis,
+        typeof value === "number" && value >= 1 && value <= 5 ? value : 3,
+      ];
+    }),
+  ) as Record<FeedbackPlaceAxis, number>;
+}
+
+function scoreToInternal(score: number) {
+  return (score - 3) * 50;
+}
+
+function memberRealName(member: UserTicket["members"][number]) {
+  return member.name?.trim() || member.nickname?.trim() || "멤버";
+}
+
+function memberFeedbackStatusLabel(
+  status: MemberFeedbackDraft["status"],
+  active: boolean,
+) {
+  if (status === "done") return "완료";
+  if (status === "skipped") return "건너뜀";
+  return active ? "진행중" : "대기";
+}
+
+function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
+  const otherMembers = useMemo(
+    () => userTicket.members.filter((member) => !member.isSelf),
+    [userTicket.members],
+  );
+  const [selectedMeetAgainIds, setSelectedMeetAgainIds] = useState<string[]>([]);
+  const [meetAgainUnknown, setMeetAgainUnknown] = useState(false);
+  const [memberFeedback, setMemberFeedback] = useState<
+    Record<string, MemberFeedbackDraft>
+  >(() => createMemberFeedbackDrafts(otherMembers));
+  const [activeMemberId, setActiveMemberId] = useState(otherMembers[0]?.id ?? "");
+  const [placeFeedback, setPlaceFeedback] = useState<
+    Record<FeedbackPlaceAxis, number>
+  >(() => placeFeedbackInitialScores(userTicket.ticket.vibeScores));
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedMeetAgainIds([]);
+    setMeetAgainUnknown(false);
+    setMemberFeedback(createMemberFeedbackDrafts(otherMembers));
+    setActiveMemberId(otherMembers[0]?.id ?? "");
+    setPlaceFeedback(placeFeedbackInitialScores(userTicket.ticket.vibeScores));
+    setSubmitting(false);
+    setSubmitted(false);
+    setSubmitError(null);
+  }, [otherMembers, userTicket.ticket.vibeScores, userTicket.waitlistId]);
+
+  const activeMember =
+    otherMembers.find((member) => member.id === activeMemberId) ?? otherMembers[0];
+  const activeDraft = activeMember ? memberFeedback[activeMember.id] : null;
+  const allMembersHandled = otherMembers.every(
+    (member) => memberFeedback[member.id]?.status !== "pending",
+  );
+
+  const toggleMeetAgain = (memberId: string) => {
+    setMeetAgainUnknown(false);
+    setSelectedMeetAgainIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
+  };
+
+  const selectUnknownMeetAgain = () => {
+    setSelectedMeetAgainIds([]);
+    setMeetAgainUnknown(true);
+  };
+
+  const updateMemberAxis = (axis: FeedbackPersonAxis, value: number) => {
+    if (!activeMember) return;
+    setMemberFeedback((current) => {
+      const draft = current[activeMember.id];
+      if (!draft) return current;
+      return {
+        ...current,
+        [activeMember.id]: {
+          ...draft,
+          values: { ...draft.values, [axis]: value },
+          touchedAxes: draft.touchedAxes.includes(axis)
+            ? draft.touchedAxes
+            : [...draft.touchedAxes, axis],
+        },
+      };
+    });
+  };
+
+  const moveToNextMember = (memberId: string) => {
+    const currentIndex = otherMembers.findIndex((member) => member.id === memberId);
+    const nextPending =
+      otherMembers
+        .slice(currentIndex + 1)
+        .find((member) => memberFeedback[member.id]?.status === "pending") ??
+      otherMembers.find((member) => memberFeedback[member.id]?.status === "pending");
+
+    if (nextPending) setActiveMemberId(nextPending.id);
+  };
+
+  const completeActiveMember = () => {
+    if (!activeMember || !activeDraft) return;
+    setMemberFeedback((current) => ({
+      ...current,
+      [activeMember.id]: {
+        ...activeDraft,
+        status: activeDraft.touchedAxes.length > 0 ? "done" : "skipped",
+      },
+    }));
+    moveToNextMember(activeMember.id);
+  };
+
+  const skipActiveMember = () => {
+    if (!activeMember || !activeDraft) return;
+    setMemberFeedback((current) => ({
+      ...current,
+      [activeMember.id]: {
+        ...activeDraft,
+        status: "skipped",
+      },
+    }));
+    moveToNextMember(activeMember.id);
+  };
+
+  const submitFeedback = async () => {
+    if (submitting || !allMembersHandled) return;
+    setSubmitting(true);
+    setSubmitError(null);
+
+    const payloadMemberFeedback = Object.fromEntries(
+      otherMembers.map((member) => {
+        const draft = memberFeedback[member.id];
+        const skipped = !draft || draft.status !== "done" || draft.touchedAxes.length === 0;
+        const values = Object.fromEntries(
+          feedbackPersonAxes.map((axis) => [
+            axis,
+            skipped || !draft.touchedAxes.includes(axis)
+              ? null
+              : scoreToInternal(draft.values[axis]),
+          ]),
+        );
+
+        return [
+          member.id,
+          {
+            status: skipped ? "skipped" : "done",
+            ...values,
+          },
+        ];
+      }),
+    );
+
+    try {
+      const response = await fetch("/api/meetings/my-tickets/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waitlistId: userTicket.waitlistId,
+          selectedMemberIds: selectedMeetAgainIds,
+          memberFeedback: payloadMemberFeedback,
+          placeFeedback,
+        }),
+      });
+
+      if (!response.ok) throw new Error("feedback-submit-failed");
+
+      setSubmitted(true);
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch {
+      setSubmitError("피드백을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="py-5">
+        <section className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-6 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-emerald-600">
+            <Check size={20} aria-hidden />
+          </div>
+          <h2 className="mt-4 text-xl font-black text-emerald-950">
+            피드백이 저장됐어요.
+          </h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-emerald-800/70">
+            이 티켓은 곧 목록에서 숨겨지고, 다음 자리 추천에 참고될 거예요.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 py-5">
+      <section className="rounded-3xl border border-black/10 bg-white px-5 py-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent">
+            <PenLine size={19} aria-hidden />
+          </div>
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
+              feedback
+            </p>
+            <h2 className="mt-1 text-[22px] font-black text-black">피드백 작성</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
+              남겨주신 피드백은 원본으로 보관되고, 다음 자리의 사람 지표와 장소 분위기를 맞추는 데 참고돼요.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <h3 className="text-[15px] font-black leading-6 text-black">
+          이번 모임에서 단둘이 다시 만나보고 싶은 분이 있나요?
+        </h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+          중복 선택할 수 있어요.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {otherMembers.map((member) => {
+            const selected = selectedMeetAgainIds.includes(member.id);
+            return (
+              <button
+                key={member.id}
+                type="button"
+                onClick={() => toggleMeetAgain(member.id)}
+                className={cn(
+                  "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                  selected
+                    ? "border-accent bg-accent text-white"
+                    : "border-black/10 bg-white text-black/62 hover:border-accent/45",
+                )}
+              >
+                {memberRealName(member)}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={selectUnknownMeetAgain}
+            className={cn(
+              "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+              meetAgainUnknown
+                ? "border-black bg-black text-white"
+                : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
+            )}
+          >
+            잘 모르겠어요
+          </button>
+        </div>
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-black text-black">멤버 피드백</h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+              각 멤버를 한 번씩 지나가며 느낀 분위기만 남겨주세요.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full bg-black/[0.04] px-3 py-1 text-[11px] font-black text-black/45">
+            {otherMembers.filter((member) => memberFeedback[member.id]?.status !== "pending").length}/
+            {otherMembers.length}
+          </span>
+        </div>
+
+        {otherMembers.length === 0 ? (
+          <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+            함께한 멤버 정보가 없어 이 단계는 건너뛰어요.
+          </p>
+        ) : (
+          <>
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {otherMembers.map((member) => {
+                const selected = activeMember?.id === member.id;
+                const draft = memberFeedback[member.id];
+
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => setActiveMemberId(member.id)}
+                    className={cn(
+                      "min-w-[104px] rounded-2xl border px-3 py-3 text-left transition",
+                      selected
+                        ? "border-accent bg-accent/8"
+                        : "border-black/10 bg-white hover:border-black/20",
+                    )}
+                  >
+                    <span className="block truncate text-sm font-black text-black">
+                      {memberRealName(member)}
+                    </span>
+                    <span
+                      className={cn(
+                        "mt-1 block text-[11px] font-bold",
+                        draft?.status === "done"
+                          ? "text-emerald-600"
+                          : draft?.status === "skipped"
+                            ? "text-black/35"
+                            : selected
+                              ? "text-accent"
+                              : "text-black/35",
+                      )}
+                    >
+                      {memberFeedbackStatusLabel(draft?.status ?? "pending", selected)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeMember && activeDraft && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-base font-black text-black">
+                    {memberRealName(activeMember)}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={skipActiveMember}
+                    className="h-9 rounded-full border border-black/10 bg-white px-3 text-xs font-bold text-black/45"
+                  >
+                    잘 모르겠어요
+                  </button>
+                </div>
+                <FeedbackVibeGraphControl
+                  className="border-t-0 pt-4"
+                  axes={feedbackPersonAxes}
+                  values={activeDraft.values}
+                  onChange={updateMemberAxis}
+                />
+                <button
+                  type="button"
+                  onClick={completeActiveMember}
+                  className="mt-5 h-12 w-full rounded-full bg-black text-sm font-black text-white"
+                >
+                  이 멤버 피드백 완료
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <h3 className="text-[15px] font-black text-black">장소 피드백</h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+          이 자리 자체의 분위기를 알려주세요.
+        </p>
+        <FeedbackVibeGraphControl
+          className="border-t-0 pt-5"
+          axes={feedbackPlaceAxes}
+          values={placeFeedback}
+          onChange={(axis, value) =>
+            setPlaceFeedback((current) => ({ ...current, [axis]: value }))
+          }
+        />
+      </section>
+
+      {submitError && (
+        <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold leading-6 text-red-600">
+          {submitError}
+        </p>
+      )}
+
+      <button
+        type="button"
+        disabled={submitting || !allMembersHandled}
+        onClick={() => void submitFeedback()}
+        className="h-12 w-full rounded-full bg-accent text-sm font-black text-white shadow-[0_10px_24px_rgba(126,179,199,0.28)] transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+      >
+        {submitting
+          ? "저장 중이에요"
+          : allMembersHandled
+            ? "피드백 제출하기"
+            : "멤버 피드백을 모두 지나가주세요"}
+      </button>
+    </div>
+  );
+}
+
+const feedbackAxisLabelOverrides: Partial<
+  Record<VibeAxis, { leftLabel: string; rightLabel: string }>
+> = {
+  alcohol: {
+    leftLabel: "술이 없는",
+    rightLabel: "술이 있는",
+  },
+  romance: {
+    leftLabel: "편한",
+    rightLabel: "설레는",
+  },
+};
+
+function feedbackSliderPositionPercent(score: number) {
+  return 8 + ((score - 1) / 4) * 84;
+}
+
+function FeedbackVibeGraphControl<TAxis extends VibeAxis>({
+  title,
+  description,
+  axes,
+  values,
+  onChange,
+  className,
+}: {
+  title?: string;
+  description?: string;
+  axes: readonly TAxis[];
+  values: Record<TAxis, number>;
+  onChange: (axis: TAxis, value: number) => void;
+  className?: string;
+}) {
+  return (
+    <section className={cn("border-t border-black/8 py-5", className)}>
+      {title && <h2 className="text-[15px] font-black text-black">{title}</h2>}
+      {description && (
+        <p className="mt-2 text-xs font-semibold leading-5 text-black/40">
+          {description}
+        </p>
+      )}
+      <div className="mt-5 space-y-4">
+        {axes.map((axis) => {
+          const config = {
+            ...vibeAxisConfig[axis],
+            ...feedbackAxisLabelOverrides[axis],
+          };
+          const value = values[axis];
+          const position = feedbackSliderPositionPercent(value);
+
+          return (
+            <div
+              key={axis}
+              className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3"
+            >
+              <span className="text-[11px] font-bold text-black/80">
+                {config.leftLabel}
+              </span>
+              <div className="relative h-4">
+                <div className="absolute left-0 right-0 top-1/2 h-3 -translate-y-1/2 rounded-full bg-black/[0.06]">
+                  <span className="absolute left-1/2 top-1/2 h-4 w-px -translate-y-1/2 bg-black/10" />
+                  <span
+                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-accent shadow-[0_3px_10px_rgba(0,0,0,0.14)]"
+                    style={{ left: `${position}%` }}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  step={1}
+                  value={value}
+                  aria-label={config.label}
+                  aria-valuetext={`${config.leftLabel}에서 ${config.rightLabel} 사이`}
+                  onChange={(event) => onChange(axis, Number(event.target.value))}
+                  className="absolute inset-0 h-4 w-full cursor-pointer opacity-0"
+                />
+              </div>
+              <span className="text-right text-[11px] font-bold text-black/80">
+                {config.rightLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function FeedbackAxisSlider({
+  axis,
+  value,
+  onChange,
+}: {
+  axis: VibeAxis;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const config = {
+    ...vibeAxisConfig[axis],
+    ...feedbackAxisLabelOverrides[axis],
+  };
+  const position = feedbackSliderPositionPercent(value);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-xs font-black text-black/70">{config.label}</span>
+        <span className="text-[11px] font-semibold text-black/35">
+          {config.leftLabel} · {config.rightLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3">
+        <span className="text-[11px] font-bold text-black/38">
+          {config.leftLabel}
+        </span>
+        <input
+          type="range"
+          min={1}
+          max={5}
+          step={1}
+          value={value}
+          aria-label={config.label}
+          aria-valuetext={`${config.leftLabel}에서 ${config.rightLabel} 사이`}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="h-3 w-full cursor-pointer appearance-none rounded-full bg-black/[0.06] accent-[#7eb3c7]"
+        />
+        <span className="text-right text-[11px] font-bold text-black/38">
+          {config.rightLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function TicketFeedbackPlaceholder() {
   return (
     <div className="py-5">
@@ -1584,64 +2258,48 @@ function formatKoreanDateTime(value: string) {
 function ProfileTab({
   profile,
   answers,
+  vibeAnimationKey,
   loggingOut,
   logoutError,
   onLogout,
 }: {
   profile: ProfileRow;
   answers: AnswerMap;
+  vibeAnimationKey: number;
   loggingOut: boolean;
   logoutError: string | null;
   onLogout: () => Promise<void>;
 }) {
-  const [editingCategory, setEditingCategory] =
-    useState<QuestionCategory | null>(null);
-  const questionGroups = useMemo(
-    () =>
-      profileQuestions
-        .filter(
-          (question) =>
-            question.type !== "ticket_rating" &&
-            question.category !== "모임 취향",
-        )
-        .reduce(
-        (groups, question) => {
-          groups[question.category] = groups[question.category] ?? [];
-          groups[question.category].push(question);
-          return groups;
-        },
-        {} as Record<QuestionCategory, ProfileQuestion[]>,
-      ),
-    [],
-  );
-  const categories = Object.keys(questionGroups) as QuestionCategory[];
   const publicIntro = profile.public_intro?.trim();
-  const vibeScores = useMemo(() => profileVibeScores(answers), [answers]);
+  const vibeScores = useMemo(
+    () => profileVibeScores(profile, answers),
+    [answers, profile],
+  );
 
   return (
     <TabMotion>
       <section className="px-5 pb-7 pt-7">
         <header className="pr-16">
           <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-            question cards
+            profile
           </p>
           <h1 className="mt-2 text-[27px] font-bold leading-9 tracking-tight text-black">
-            {profileInitial(profile)}님의 질문 카드첩
+            {profileInitial(profile)}님의 프로필
           </h1>
-          <p className="mt-2 text-sm leading-6 text-black/48">
-            카드를 열어 내가 남긴 답변을 확인할 수 있어요.
-          </p>
         </header>
 
-        <section className="mt-7 rounded-2xl border border-black/10 bg-white px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+        <section className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
           <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
             about me
           </p>
-          <h2 className="mt-1 text-lg font-bold leading-7 text-black">
-            {profileInitial(profile)}
+          <h2 className="mt-2 flex items-center gap-2 text-xl font-bold leading-7 text-black">
+            <span>{profileNickname(profile)}</span>
+            <span aria-hidden className="text-base leading-none">
+              💎
+            </span>
           </h2>
-          <p className="mt-3 whitespace-pre-line text-xs leading-6 text-black/58">
-            {publicIntro ?? "아직 작성된 자기소개가 없어요. 교집합 소개를 다시 만들면 이곳에서 확인할 수 있어요."}
+          <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">
+            {publicIntro ?? "아직 소개가 준비 중이에요."}
           </p>
         </section>
 
@@ -1649,83 +2307,12 @@ function ProfileTab({
           title="나의 대화 결"
           description="교집합이 자리를 제안할 때 참고하는 분위기예요."
           scores={vibeScores}
-          visibleAxes={["temperature", "texture", "tone", "rhythm"]}
+          visibleAxes={profileVibeAxes}
           showAxisHeader={false}
+          scoreScale="internal"
+          animationKey={vibeAnimationKey}
           className="mt-5"
         />
-
-        <div className="mt-5 grid grid-cols-3 gap-2.5">
-          {categories.map((category) => {
-            const Icon = categoryIcons[category] ?? Sparkles;
-            const questions = questionGroups[category];
-            const meta = questionCategories.find((item) => item.key === category);
-            const label = meta?.label ?? category;
-            const completeCount = questions.filter((question) =>
-              isAnswerComplete(question, answers[question.id]),
-            ).length;
-            const selected = editingCategory === category;
-
-            return (
-              <button
-                key={category}
-                type="button"
-                title={`${label} 답변 보기`}
-                aria-label={`${label} 답변 보기`}
-                onClick={() => setEditingCategory(selected ? null : category)}
-                className={cn(
-                  "flex aspect-square flex-col items-center justify-center gap-2 rounded-2xl border bg-white text-xs font-semibold transition-all",
-                  selected
-                    ? "border-black text-black shadow-[0_8px_26px_rgba(0,0,0,0.08)]"
-                    : "border-black/10 text-black/55 hover:border-black/20",
-                )}
-              >
-                <Icon size={19} aria-hidden />
-                <span>{label}</span>
-                <span className="text-[9px] font-medium text-black/45">
-                  {completeCount}/{questions.length}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <AnimatePresence mode="wait">
-          {editingCategory && (
-            <motion.section
-              key={editingCategory}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="mt-7 border-t border-black/10 pt-5"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-bold text-black">
-                  {questionCategories.find((item) => item.key === editingCategory)
-                    ?.label ?? editingCategory}{" "}
-                  카드 목록
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setEditingCategory(null)}
-                  className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs font-semibold text-black/55"
-                >
-                  목록 닫기
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {questionGroups[editingCategory].map((question, index) => (
-                  <QuestionAnswerCard
-                    key={question.id}
-                    index={index}
-                    question={question}
-                    answer={answers[question.id]}
-                  />
-                ))}
-              </div>
-            </motion.section>
-          )}
-        </AnimatePresence>
 
         <button
           type="button"
@@ -1754,104 +2341,6 @@ function ProfileTab({
         )}
       </section>
     </TabMotion>
-  );
-}
-
-function answerDisplayItems(question: ProfileQuestion, answer?: QuestionAnswer) {
-  if (!answer) return [];
-
-  if (question.type === "text") {
-    return typeof answer.value === "string" && answer.value.trim()
-      ? [answer.value.trim()]
-      : [];
-  }
-
-  if (question.type === "multi_choice") {
-    if (!Array.isArray(answer.value)) return [];
-
-    return answer.value
-      .map((value) => {
-        const option = questionOptionMeta(question, value);
-        const label = option?.label ?? value;
-        if (option?.hasTextInput && answer.otherText?.trim()) {
-          return `${label}: ${answer.otherText.trim()}`;
-        }
-        return label;
-      })
-      .filter(Boolean);
-  }
-
-  if (question.type === "single_choice") {
-    const value =
-      typeof answer.value === "string" || typeof answer.value === "number"
-        ? String(answer.value)
-        : "";
-    if (!value) return [];
-
-    const option = questionOptionMeta(question, value);
-    const label = option?.label ?? value;
-    if (option?.hasTextInput && answer.otherText?.trim()) {
-      return [`${label}: ${answer.otherText.trim()}`];
-    }
-    return [label];
-  }
-
-  return [];
-}
-
-function QuestionAnswerCard({
-  question,
-  answer,
-  index,
-}: {
-  question: ProfileQuestion;
-  answer?: QuestionAnswer;
-  index: number;
-}) {
-  const categoryLabel =
-    questionCategories.find((item) => item.key === question.category)?.label ??
-    question.category;
-  const items = answerDisplayItems(question, answer);
-
-  return (
-    <article className="rounded-[22px] border border-black/10 bg-white p-4 shadow-[0_2px_10px_rgba(0,0,0,0.01)]">
-      <div className="mb-3 flex items-start gap-3">
-        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-black text-[9px] font-bold text-white">
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[9px] font-bold uppercase tracking-wider text-accent">
-            {categoryLabel}
-          </p>
-          <h3 className="mt-0.5 whitespace-pre-line text-xs font-bold leading-5 text-black/85">
-            {question.question}
-          </h3>
-        </div>
-      </div>
-
-      {items.length > 0 ? (
-        question.type === "text" ? (
-          <p className="whitespace-pre-line rounded-2xl bg-[#f7f7f5] px-4 py-3 text-xs font-medium leading-6 text-black/65">
-            {items[0]}
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {items.map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-black/10 bg-[#f7f7f5] px-3 py-1.5 text-[10px] font-semibold leading-4 text-black/65"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        )
-      ) : (
-        <p className="rounded-2xl bg-[#f7f7f5] px-4 py-3 text-xs font-semibold text-black/35">
-          아직 저장된 답변이 없어요.
-        </p>
-      )}
-    </article>
   );
 }
 

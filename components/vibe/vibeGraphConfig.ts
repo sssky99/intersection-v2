@@ -41,8 +41,8 @@ export const vibeAxisConfig: Record<
   },
   alcohol: {
     label: "술",
-    leftLabel: "술 적은",
-    rightLabel: "술 있는",
+    leftLabel: "술이 없는",
+    rightLabel: "술이 있는",
   },
   romance: {
     label: "설렘",

@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
@@ -119,6 +120,19 @@ function completionText(value: boolean | null) {
 
 function membershipStatusValue(profile: AdminProfile): MembershipStatus {
   return profile.membership_status ?? "none";
+}
+
+const adminProfileScoreItems = [
+  ["score_temperature", "온도"],
+  ["score_texture", "결"],
+  ["score_tone", "톤"],
+  ["score_rhythm", "리듬"],
+] as const;
+
+function displayPersonScore(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "미설정";
+  const displayScore = Math.max(1, Math.min(5, Math.round((value + 100) / 50) + 1));
+  return `${value} / 표시 ${displayScore}`;
 }
 
 export function AdminPageClient({
@@ -494,9 +508,14 @@ export function AdminPageClient({
               <WaitlistAdminPanel />
             </div>
           )}
-          {(activeTab === "rooms" || activeTab === "feedback") && (
+          {activeTab === "rooms" && (
             <div className="flex h-[calc(100dvh-190px)] items-center justify-center rounded-2xl border border-dashed border-black/15 bg-white text-sm font-semibold text-black/45">
               준비 중입니다.
+            </div>
+          )}
+          {visitedTabs.feedback && (
+            <div className={cn(activeTab === "feedback" ? "block" : "hidden")}>
+              <FeedbackAdminPanel />
             </div>
           )}
         </section>
@@ -914,6 +933,24 @@ function ProfileDetailPanel({
             value={completionText(profile.questions_completed)}
           />
         </div>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold">사람 지표</h3>
+            <span className="text-[11px] font-semibold text-black/35">
+              관리자 전용
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {adminProfileScoreItems.map(([key, label]) => (
+              <InfoPill
+                key={key}
+                label={label}
+                value={displayPersonScore(profile[key])}
+              />
+            ))}
+          </div>
+        </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
           <div className="flex items-center justify-between gap-3">
