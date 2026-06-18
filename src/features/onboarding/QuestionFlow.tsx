@@ -359,11 +359,6 @@ export function QuestionFlow({
       return;
     }
 
-    if (isPreview) {
-      onPreviewComplete?.();
-      return;
-    }
-
     if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
 
     const { error: profileError } = await createClient()
@@ -378,6 +373,16 @@ export function QuestionFlow({
   };
 
   const moveToNext = async (nextAnswers: AnswerMap) => {
+    if (isPreview) {
+      if (questionIndex >= questions.length - 1) {
+        onPreviewComplete?.();
+        return;
+      }
+
+      setQuestionIndex((current) => Math.min(questions.length - 1, current + 1));
+      return;
+    }
+
     if (questionIndex >= questions.length - 1) {
       await completeOrMoveNext(nextAnswers);
       return;
