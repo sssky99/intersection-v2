@@ -831,10 +831,10 @@ export function QuestionFlow({
                     return (
                       <div
                         key={example}
-                        className="grid grid-cols-[24px_1fr] gap-2 border-b border-[#eadfc8]/70 px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 last:border-b-0"
+                        className="grid grid-cols-[18px_1fr] gap-2 border-b border-[#eadfc8]/70 px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 last:border-b-0"
                       >
-                        <span className="pt-px text-[10px] font-black tracking-[0.08em] text-accent/72">
-                          예
+                        <span className="pt-px text-[12px]" aria-hidden>
+                          📌
                         </span>
                         <p>{exampleText}</p>
                       </div>
