@@ -105,6 +105,7 @@ function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
       tags={question.ticket.tags}
       drawn={drawn}
       imageVisible={imageVisible}
+      className="!w-[82%] !max-w-[292px] sm:!max-w-[310px]"
     />
   );
 }
@@ -739,18 +740,16 @@ export function QuestionFlow({
                       whileTap={!saving ? { scale: 0.98 } : undefined}
                       disabled={saving}
                       onClick={() => void selectTicketRating(option.value)}
-                      data-rating={option.value}
+                      aria-label={`${option.value}점: ${option.label}`}
                       className={cn(
-                        "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors before:content-[attr(data-rating)] disabled:cursor-wait disabled:opacity-55 [&>span]:sr-only",
+                        "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-55",
                         selected
                           ? "text-lg font-extrabold text-black after:absolute after:bottom-0 after:h-[2px] after:w-3 after:rounded-full after:bg-accent"
                           : "text-black/40 hover:text-black/65",
                       )}
                     >
-                      <span>{option.label}</span>
-                      <span className="text-[11px] font-bold">
-                        {selectedFeedback === option.value ? "저장 중" : option.value}
-                      </span>
+                      <span aria-hidden>{option.value}</span>
+                      <span className="sr-only">{option.label}</span>
                     </motion.button>
                   );
                   })}
