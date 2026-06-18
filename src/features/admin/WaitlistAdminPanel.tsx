@@ -1,13 +1,31 @@
 "use client";
 
-import { Image as ImageIcon, RefreshCw, Save, UserRound } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  Image as ImageIcon,
+  RefreshCw,
+  Save,
+  Search,
+  UserRound,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AdminMemberName,
-  GenderBadge,
   formatAgeAndBirthYear,
   membershipLabel,
+  membershipStatusForDisplay,
 } from "@/features/admin/adminDisplay";
+import {
+  membershipStatuses,
+  membershipStatusLabels,
+  type MembershipStatus,
+} from "@/features/membership/membershipTypes";
 import {
   waitlistStatuses,
   waitlistStatusLabels,
@@ -24,6 +42,18 @@ type WaitlistPatch = {
   ticketInstanceId?: string | null;
 };
 
+type StatusFilter = WaitlistStatus | "all";
+type GenderFilter = "all" | "남성" | "여성" | "unknown";
+type MembershipFilter = MembershipStatus | "all";
+
+type WaitlistGroup = {
+  id: string;
+  title: string;
+  rows: AdminWaitlistRow[];
+  total: number;
+  counts: Record<WaitlistStatus, number>;
+};
+
 const dateTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Seoul",
   year: "numeric",
@@ -33,6 +63,31 @@ const dateTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
   minute: "2-digit",
   hour12: false,
 });
+
+const statusMetricLabels: Record<WaitlistStatus, string> = {
+  payment_pending: "결제전",
+  waitlisted: "대기",
+  approved: "승인",
+  on_hold: "보류",
+  not_selected: "미선정",
+  cancelled: "취소",
+};
+
+const statusBadgeClasses: Record<WaitlistStatus, string> = {
+  payment_pending: "border-amber-200 bg-amber-50 text-amber-700",
+  waitlisted: "border-sky-200 bg-sky-50 text-sky-700",
+  approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  on_hold: "border-zinc-200 bg-zinc-50 text-zinc-700",
+  not_selected: "border-rose-200 bg-rose-50 text-rose-700",
+  cancelled: "border-black/10 bg-black/5 text-black/45",
+};
+
+const genderFilters: Array<{ value: GenderFilter; label: string }> = [
+  { value: "all", label: "성별 전체" },
+  { value: "남성", label: "남성" },
+  { value: "여성", label: "여성" },
+  { value: "unknown", label: "미입력" },
+];
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -50,22 +105,94 @@ function formatCreatedAt(value: string | null) {
   return dateTimeFormatter.format(date);
 }
 
+function normalizeDate(value: string | null | undefined) {
+  if (!value) return "";
+  const date = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
+}
+
+function rowDate(row: AdminWaitlistRow) {
+  return (
+    normalizeDate(row.meeting_date) ||
+    normalizeDate(row.ticket_instance?.event_date) ||
+    normalizeDate(row.ticket_snapshot?.date)
+  );
+}
+
+function formatDateLabel(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value || "날짜 미선택";
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][
+    new Date(year, month - 1, day).getDay()
+  ];
+  return `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(
+    2,
+    "0",
+  )} ${weekday}`;
+}
+
+function formatShortDateLabel(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][
+    new Date(year, month - 1, day).getDay()
+  ];
+  return `${String(month).padStart(2, "0")}.${String(day).padStart(
+    2,
+    "0",
+  )} ${weekday}`;
+}
+
+function waitlistDateOptions(rows: AdminWaitlistRow[]) {
+  return Array.from(new Set(rows.map(rowDate).filter(Boolean))).sort();
+}
+
+function waitlistDateCounts(rows: AdminWaitlistRow[]) {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => {
+    const date = rowDate(row);
+    if (!date) return;
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  });
+  return counts;
+}
+
+function rowTemplateId(row: AdminWaitlistRow) {
+  return (
+    row.ticket_template_id ??
+    row.ticket_instance?.template_id ??
+    row.ticket_snapshot?.templateId ??
+    ""
+  );
+}
+
 function ticketTitle(row: AdminWaitlistRow) {
   return (
     row.ticket_template?.title ??
     row.ticket_snapshot?.title ??
+    row.ticket_instance?.title ??
     row.ticket_id ??
     "티켓 미확인"
   );
 }
 
+function rowGroupId(row: AdminWaitlistRow) {
+  return rowTemplateId(row) || `ticket:${row.ticket_id || rowKey(row)}`;
+}
+
+function formatTime(value: string | null | undefined) {
+  return value ? value.slice(0, 5) : "";
+}
+
 function instanceText(instance: WaitlistTicketInstance | null) {
   if (!instance) return "미배정";
-  const schedule = [instance.event_date, instance.event_time?.slice(0, 5)]
+  const label = instance.operation_code
+    ? `${instance.operation_code} (${instance.title})`
+    : instance.title;
+  const schedule = [instance.event_date, formatTime(instance.event_time)]
     .filter(Boolean)
     .join(" ");
-  const area = instance.region ? ` · ${instance.region}` : "";
-  return `${instance.title}${schedule ? ` · ${schedule}` : ""}${area}`;
+  return [label, schedule, instance.region].filter(Boolean).join(" / ");
 }
 
 function instanceOptionLabel(
@@ -73,10 +200,12 @@ function instanceOptionLabel(
   templateMap: Map<string, WaitlistTicketTemplate>,
 ) {
   const template = templateMap.get(instance.template_id);
-  const schedule = [instance.event_date, instance.event_time?.slice(0, 5)]
+  const schedule = [instance.event_date, formatTime(instance.event_time)]
     .filter(Boolean)
     .join(" ");
+  const code = instance.operation_code ? `[${instance.operation_code}]` : null;
   return [
+    code,
     template?.title,
     instance.title,
     schedule,
@@ -90,11 +219,111 @@ function rowKey(row: AdminWaitlistRow) {
   return String(row.id);
 }
 
+function compactPhone(value: string | null | undefined) {
+  const digits = value?.replace(/\D/g, "") ?? "";
+  const lastEight = digits.slice(-8);
+  if (lastEight.length === 8) {
+    return `${lastEight.slice(0, 4)}-${lastEight.slice(4)}`;
+  }
+  return display(value);
+}
+
+function searchMatches(row: AdminWaitlistRow, query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+
+  const profile = row.profile;
+  const name = profile?.name?.toLocaleLowerCase("ko-KR") ?? "";
+  const queryText = trimmed.toLocaleLowerCase("ko-KR");
+  const queryDigits = trimmed.replace(/\D/g, "");
+  const phoneDigits = profile?.phone?.replace(/\D/g, "") ?? "";
+
+  return (
+    name.includes(queryText) ||
+    (queryDigits.length > 0 && phoneDigits.includes(queryDigits))
+  );
+}
+
+function rowMembershipStatus(row: AdminWaitlistRow): MembershipStatus {
+  return row.profile ? membershipStatusForDisplay(row.profile) : "none";
+}
+
+function rowGenderFilter(row: AdminWaitlistRow): GenderFilter {
+  const gender = row.profile?.gender;
+  if (gender === "남성" || gender === "여성") return gender;
+  return "unknown";
+}
+
+function countStatuses(rows: AdminWaitlistRow[]) {
+  const counts = Object.fromEntries(
+    waitlistStatuses.map((status) => [status, 0]),
+  ) as Record<WaitlistStatus, number>;
+  rows.forEach((row) => {
+    counts[row.status] += 1;
+  });
+  return counts;
+}
+
+function groupWaitlistRows(rows: AdminWaitlistRow[]): WaitlistGroup[] {
+  const groups = new Map<string, WaitlistGroup>();
+
+  rows.forEach((row) => {
+    const id = rowGroupId(row);
+    const current =
+      groups.get(id) ??
+      ({
+        id,
+        title: ticketTitle(row),
+        rows: [],
+        total: 0,
+        counts: countStatuses([]),
+      } satisfies WaitlistGroup);
+
+    current.rows.push(row);
+    current.total += 1;
+    current.counts[row.status] += 1;
+    groups.set(id, current);
+  });
+
+  return Array.from(groups.values()).sort((a, b) =>
+    a.title.localeCompare(b.title, "ko"),
+  );
+}
+
+function instancesForRow(
+  row: AdminWaitlistRow,
+  instances: WaitlistTicketInstance[],
+) {
+  const templateId = rowTemplateId(row);
+  const date = rowDate(row);
+  const filtered = instances.filter((instance) => {
+    const templateMatches = templateId
+      ? instance.template_id === templateId
+      : true;
+    const dateMatches = date ? normalizeDate(instance.event_date) === date : true;
+    return templateMatches && dateMatches;
+  });
+  const current = row.ticket_instance;
+
+  if (current && !filtered.some((instance) => instance.id === current.id)) {
+    return [current, ...filtered];
+  }
+
+  return filtered;
+}
+
 export function WaitlistAdminPanel() {
   const [rows, setRows] = useState<AdminWaitlistRow[]>([]);
   const [templates, setTemplates] = useState<WaitlistTicketTemplate[]>([]);
   const [instances, setInstances] = useState<WaitlistTicketInstance[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
+  const [membershipFilter, setMembershipFilter] =
+    useState<MembershipFilter>("all");
+  const [query, setQuery] = useState("");
+  const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -111,6 +340,7 @@ export function WaitlistAdminPanel() {
         nextRows.map((row) => [rowKey(row), row.admin_note ?? ""]),
       ),
     );
+    setSelectedDate((current) => current || waitlistDateOptions(nextRows)[0] || "");
     setSelectedId((current) => {
       if (current && nextRows.some((row) => rowKey(row) === current)) {
         return current;
@@ -147,8 +377,50 @@ export function WaitlistAdminPanel() {
     [templates],
   );
 
+  const dateOptions = useMemo(() => waitlistDateOptions(rows), [rows]);
+  const dateCounts = useMemo(() => waitlistDateCounts(rows), [rows]);
+
+  const dateScopedRows = useMemo(() => {
+    if (!selectedDate) return [];
+    return rows.filter((row) => rowDate(row) === selectedDate);
+  }, [rows, selectedDate]);
+
+  const filteredRows = useMemo(
+    () =>
+      dateScopedRows.filter((row) => {
+        if (statusFilter !== "all" && row.status !== statusFilter) return false;
+        if (genderFilter !== "all" && rowGenderFilter(row) !== genderFilter) {
+          return false;
+        }
+        if (
+          membershipFilter !== "all" &&
+          rowMembershipStatus(row) !== membershipFilter
+        ) {
+          return false;
+        }
+        return searchMatches(row, query);
+      }),
+    [dateScopedRows, genderFilter, membershipFilter, query, statusFilter],
+  );
+
+  const groups = useMemo(() => groupWaitlistRows(filteredRows), [filteredRows]);
   const selectedRow =
     rows.find((row) => rowKey(row) === selectedId) ?? null;
+
+  useEffect(() => {
+    if (filteredRows.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+
+    if (!selectedId || !filteredRows.some((row) => rowKey(row) === selectedId)) {
+      setSelectedId(rowKey(filteredRows[0]));
+    }
+  }, [filteredRows, selectedId]);
+
+  useEffect(() => {
+    setOpenGroupIds(new Set());
+  }, [genderFilter, membershipFilter, query, selectedDate, statusFilter]);
 
   const patchRow = async (
     row: AdminWaitlistRow,
@@ -189,15 +461,27 @@ export function WaitlistAdminPanel() {
       "운영자 메모를 저장했습니다.",
     );
 
+  const toggleGroup = (groupId: string) => {
+    setOpenGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   return (
-    <section className="grid h-[calc(100dvh-190px)] min-h-[660px] grid-cols-[minmax(0,1fr)_380px] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+    <section className="grid h-[calc(100dvh-190px)] min-h-[680px] grid-cols-[minmax(0,1fr)_400px] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <div className="flex min-w-0 flex-col overflow-hidden">
         <header className="shrink-0 border-b border-black/10 px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-bold">대기열 관리</h2>
               <p className="mt-1 text-xs leading-5 text-black/45">
-                티켓에 Yes를 누른 신청자와 운영 상태를 확인합니다.
+                날짜별 초대장과 신청자 상태를 확인합니다.
               </p>
             </div>
             <button
@@ -208,6 +492,83 @@ export function WaitlistAdminPanel() {
               <RefreshCw size={15} aria-hidden />
               새로고침
             </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-[170px_160px_150px_180px_minmax(220px,1fr)]">
+            <FilterField label="날짜 선택">
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
+              />
+            </FilterField>
+
+            <FilterField label="상태">
+              <select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as StatusFilter)
+                }
+                className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
+              >
+                <option value="all">상태 전체</option>
+                {waitlistStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {waitlistStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="성별">
+              <select
+                value={genderFilter}
+                onChange={(event) =>
+                  setGenderFilter(event.target.value as GenderFilter)
+                }
+                className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
+              >
+                {genderFilters.map((filter) => (
+                  <option key={filter.value} value={filter.value}>
+                    {filter.label}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="멤버십">
+              <select
+                value={membershipFilter}
+                onChange={(event) =>
+                  setMembershipFilter(event.target.value as MembershipFilter)
+                }
+                className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
+              >
+                <option value="all">멤버십 전체</option>
+                {membershipStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {membershipStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+
+            <FilterField label="검색">
+              <div className="relative">
+                <Search
+                  size={15}
+                  aria-hidden
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="이름 또는 전화번호"
+                  className="h-10 w-full rounded-xl border border-black/10 bg-white pl-9 pr-3 text-sm font-semibold text-black/70 outline-none placeholder:text-black/30 focus:border-accent"
+                />
+              </div>
+            </FilterField>
           </div>
 
           {(notice || error) && (
@@ -222,145 +583,81 @@ export function WaitlistAdminPanel() {
           )}
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto">
+        {dateOptions.length > 0 && (
+          <div className="shrink-0 overflow-x-auto border-b border-black/10 px-5 py-3">
+            <div className="flex gap-2">
+              {dateOptions.map((date) => (
+                <button
+                  key={date}
+                  type="button"
+                  onClick={() => setSelectedDate(date)}
+                  className={cn(
+                    "inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition",
+                    selectedDate === date
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white text-black/55 hover:border-black/25 hover:text-black",
+                  )}
+                >
+                  {formatShortDateLabel(date)}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px]",
+                      selectedDate === date
+                        ? "bg-white/15 text-white"
+                        : "bg-black/5 text-black/45",
+                    )}
+                  >
+                    {dateCounts.get(date) ?? 0}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#fbfbfa] px-5 py-4">
           {loading ? (
             <StateMessage message="대기열 정보를 불러오는 중입니다." />
           ) : error && rows.length === 0 ? (
             <StateMessage tone="error" message={error} />
           ) : rows.length === 0 ? (
             <StateMessage message="아직 대기열 등록 내역이 없습니다." />
+          ) : !selectedDate ? (
+            <StateMessage message="날짜를 선택해주세요." />
+          ) : dateScopedRows.length === 0 ? (
+            <StateMessage message="이 날짜에 신청한 대기열이 없습니다." />
+          ) : filteredRows.length === 0 ? (
+            <StateMessage message="필터 조건에 맞는 신청자가 없습니다." />
           ) : (
-            <table className="min-w-[1540px] w-full border-separate border-spacing-0 text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
-                <tr>
-                  <TableHead className="w-36">등록일</TableHead>
-                  <TableHead className="w-36">이름</TableHead>
-                  <TableHead className="w-24">성별</TableHead>
-                  <TableHead className="w-24">출생연도</TableHead>
-                  <TableHead className="w-24">MBTI</TableHead>
-                  <TableHead className="w-36">전화번호</TableHead>
-                  <TableHead className="w-40">멤버십 상태</TableHead>
-                  <TableHead className="w-52">티켓</TableHead>
-                  <TableHead className="w-64">세부 티켓</TableHead>
-                  <TableHead className="w-40">상태</TableHead>
-                  <TableHead>메모</TableHead>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const profile = row.profile;
-                  const key = rowKey(row);
-                  const selected = key === selectedId;
-                  const saving = savingId === key;
+            <>
+              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">
+                    selected date
+                  </p>
+                  <h3 className="mt-1 text-xl font-black">
+                    {formatDateLabel(selectedDate)}
+                  </h3>
+                </div>
+                <p className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-black/50 ring-1 ring-black/10">
+                  표시 {filteredRows.length}명 · 전체 {dateScopedRows.length}명
+                </p>
+              </div>
 
-                  return (
-                    <tr
-                      key={key}
-                      onClick={() => setSelectedId(key)}
-                      className={cn(
-                        "cursor-pointer align-top transition hover:bg-accent/10",
-                        selected && "bg-accent/15",
-                      )}
-                    >
-                      <TableCell>{formatCreatedAt(row.created_at)}</TableCell>
-                      <TableCell>
-                        {profile ? <AdminMemberName profile={profile} /> : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {profile?.gender ? (
-                          <GenderBadge gender={profile.gender} />
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                      <TableCell>{display(profile?.birth_year)}</TableCell>
-                      <TableCell>{display(profile?.mbti)}</TableCell>
-                      <TableCell>{display(profile?.phone)}</TableCell>
-                      <TableCell>
-                        {profile ? membershipLabel(profile) : "-"}
-                      </TableCell>
-                      <TableCell>
-                        <p className="line-clamp-2 font-semibold text-black/70">
-                          {ticketTitle(row)}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        <select
-                          value={row.ticket_instance_id ?? ""}
-                          disabled={saving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) =>
-                            void patchRow(
-                              row,
-                              {
-                                ticketInstanceId: event.target.value || null,
-                              },
-                              "세부 티켓을 저장했습니다.",
-                            )
-                          }
-                          className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent disabled:bg-black/5"
-                        >
-                          <option value="">미배정</option>
-                          {instances.map((instance) => (
-                            <option key={instance.id} value={instance.id}>
-                              {instanceOptionLabel(instance, templateMap)}
-                            </option>
-                          ))}
-                        </select>
-                      </TableCell>
-                      <TableCell>
-                        <select
-                          value={row.status}
-                          disabled={saving}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) =>
-                            void patchRow(
-                              row,
-                              { status: event.target.value as WaitlistStatus },
-                              "대기열 상태를 저장했습니다.",
-                            )
-                          }
-                          className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                        >
-                          {waitlistStatuses.map((status) => (
-                            <option key={status} value={status}>
-                              {waitlistStatusLabels[status]}
-                            </option>
-                          ))}
-                        </select>
-                      </TableCell>
-                      <TableCell>
-                        <div
-                          className="flex min-w-[220px] items-start gap-2"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <textarea
-                            value={noteDrafts[key] ?? ""}
-                            disabled={saving}
-                            onChange={(event) =>
-                              setNoteDrafts((current) => ({
-                                ...current,
-                                [key]: event.target.value,
-                              }))
-                            }
-                            className="min-h-10 flex-1 resize-y rounded-xl border border-black/10 px-3 py-2 text-xs leading-5 outline-none focus:border-accent disabled:bg-black/5"
-                          />
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => void saveNote(row)}
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black text-white disabled:bg-black/25"
-                            aria-label="메모 저장"
-                          >
-                            <Save size={15} aria-hidden />
-                          </button>
-                        </div>
-                      </TableCell>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              <div className="space-y-3">
+                {groups.map((group) => (
+                  <WaitlistAccordion
+                    key={group.id}
+                    group={group}
+                    selectedId={selectedId}
+                    savingId={savingId}
+                    open={openGroupIds.has(group.id)}
+                    onToggle={() => toggleGroup(group.id)}
+                    onSelect={(row) => setSelectedId(rowKey(row))}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -380,6 +677,119 @@ export function WaitlistAdminPanel() {
         onSaveNote={(row) => void saveNote(row)}
       />
     </section>
+  );
+}
+
+function WaitlistAccordion({
+  group,
+  open,
+  selectedId,
+  savingId,
+  onToggle,
+  onSelect,
+}: {
+  group: WaitlistGroup;
+  open: boolean;
+  selectedId: string | null;
+  savingId: string | null;
+  onToggle: () => void;
+  onSelect: (row: AdminWaitlistRow) => void;
+}) {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left transition hover:bg-black/[0.02]"
+      >
+        <div className="min-w-0">
+          <h4 className="truncate text-base font-black text-black">
+            {group.title}
+          </h4>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <MetricPill label="신청" value={group.total} />
+            {waitlistStatuses.map((status) => (
+              <MetricPill
+                key={status}
+                label={statusMetricLabels[status]}
+                value={group.counts[status]}
+              />
+            ))}
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          aria-hidden
+          className={cn(
+            "mt-1 shrink-0 text-black/35 transition",
+            open && "rotate-180 text-black",
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="space-y-2 border-t border-black/10 bg-[#fcfcfb] p-3">
+          {group.rows.map((row) => (
+            <ApplicantRow
+              key={rowKey(row)}
+              row={row}
+              selected={rowKey(row) === selectedId}
+              saving={rowKey(row) === savingId}
+              onSelect={() => onSelect(row)}
+            />
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ApplicantRow({
+  row,
+  selected,
+  saving,
+  onSelect,
+}: {
+  row: AdminWaitlistRow;
+  selected: boolean;
+  saving: boolean;
+  onSelect: () => void;
+}) {
+  const profile = row.profile;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border bg-white px-4 py-3 text-left transition",
+        selected
+          ? "border-accent ring-2 ring-accent/20"
+          : "border-black/8 hover:border-black/18",
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
+          {saving && (
+            <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-bold text-black/45">
+              저장 중
+            </span>
+          )}
+        </div>
+        <p className="mt-1 truncate text-xs font-semibold text-black/45">
+          {[
+            profile?.gender,
+            profile?.birth_year,
+            profile?.mbti,
+            compactPhone(profile?.phone),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </div>
+      <StatusBadge status={row.status} />
+    </button>
   );
 }
 
@@ -410,12 +820,13 @@ function WaitlistDetailPanel({
     return (
       <aside className="flex min-h-0 flex-col items-center justify-center border-l border-black/10 bg-white px-6 text-center text-sm font-semibold text-black/45">
         <UserRound size={32} aria-hidden className="mb-3 text-black/25" />
-        대기열 행을 선택하면 상세 정보가 표시됩니다.
+        신청자를 선택하면 상세 정보가 표시됩니다.
       </aside>
     );
   }
 
   const profile = row.profile;
+  const instanceOptions = instancesForRow(row, instances);
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden border-l border-black/10 bg-white">
@@ -426,6 +837,11 @@ function WaitlistDetailPanel({
         <h3 className="mt-1 text-xl font-bold">
           {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
         </h3>
+        <p className="mt-1 text-xs font-semibold text-black/45">
+          {[profile?.gender, profile?.birth_year, profile?.mbti]
+            .filter(Boolean)
+            .join(" · ") || "기본 정보 미입력"}
+        </p>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -434,39 +850,37 @@ function WaitlistDetailPanel({
           alt={`${profile?.name ?? "신청자"} 프로필 사진`}
         />
 
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <DetailItem label="이름" value={display(profile?.name)} />
-          <DetailItem label="성별" value={display(profile?.gender)} />
-          <DetailItem
-            label="출생연도"
-            value={display(profile?.birth_year)}
-          />
-          <DetailItem label="MBTI" value={display(profile?.mbti)} />
+        <div className="mt-4 grid grid-cols-2 gap-3">
           <DetailItem label="전화번호" value={display(profile?.phone)} />
+          <DetailItem
+            label="멤버십 상태"
+            value={profile ? membershipLabel(profile) : "-"}
+          />
           <DetailItem
             label="나이"
             value={profile ? formatAgeAndBirthYear(profile) : "-"}
           />
+          <DetailItem label="신청일" value={formatCreatedAt(row.created_at)} />
         </div>
 
         <section className="mt-4 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
-          <h4 className="text-sm font-bold">public_intro</h4>
+          <h4 className="text-sm font-bold">사용자 소개</h4>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-black/65">
             {profile?.public_intro?.trim() || "아직 생성된 자기소개가 없습니다."}
           </p>
         </section>
 
-        <div className="mt-4 space-y-3">
-          <DetailItem
-            label="멤버십 상태"
-            value={profile ? membershipLabel(profile) : "-"}
-          />
-          <DetailItem label="선택한 티켓" value={ticketTitle(row)} />
-          <DetailItem
-            label="현재 세부 티켓"
-            value={instanceText(row.ticket_instance)}
-          />
+        <section className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
+          <div className="space-y-3">
+            <DetailItem label="선택한 초대장" value={ticketTitle(row)} />
+            <DetailItem
+              label="현재 세부 티켓"
+              value={instanceText(row.ticket_instance)}
+            />
+          </div>
+        </section>
 
+        <div className="mt-4 space-y-3">
           <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
             <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">
               세부 티켓 선택
@@ -484,12 +898,17 @@ function WaitlistDetailPanel({
               className="mt-2 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
             >
               <option value="">미배정</option>
-              {instances.map((instance) => (
+              {instanceOptions.map((instance) => (
                 <option key={instance.id} value={instance.id}>
                   {instanceOptionLabel(instance, templateMap)}
                 </option>
               ))}
             </select>
+            {instanceOptions.length === 0 && (
+              <p className="mt-2 text-xs font-semibold text-black/40">
+                같은 날짜와 초대장에 연결된 세부 티켓이 없습니다.
+              </p>
+            )}
           </label>
 
           <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
@@ -530,8 +949,9 @@ function WaitlistDetailPanel({
               type="button"
               disabled={saving}
               onClick={() => onSaveNote(row)}
-              className="mt-2 h-10 w-full rounded-xl bg-black text-sm font-bold text-white disabled:bg-black/25"
+              className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white disabled:bg-black/25"
             >
+              <Save size={15} aria-hidden />
               {saving ? "저장 중" : "메모 저장"}
             </button>
           </label>
@@ -541,9 +961,47 @@ function WaitlistDetailPanel({
   );
 }
 
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-black/35">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="inline-flex rounded-full bg-black/5 px-2 py-1 text-[11px] font-bold text-black/55">
+      {label} {value}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: WaitlistStatus }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-black",
+        statusBadgeClasses[status],
+      )}
+    >
+      {waitlistStatusLabels[status]}
+    </span>
+  );
+}
+
 function PhotoBox({ src, alt }: { src: string | null; alt: string }) {
   return (
-    <div className="flex h-[300px] w-full items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
+    <div className="flex h-[220px] w-full items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
       {src ? (
         <img src={src} alt={alt} className="h-full w-full object-contain" />
       ) : (
@@ -556,35 +1014,17 @@ function PhotoBox({ src, alt }: { src: string | null; alt: string }) {
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string }) {
+function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
       <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
         {label}
       </p>
-      <p className="mt-1 break-words text-sm font-semibold text-black/72">
+      <div className="mt-1 break-words text-sm font-semibold text-black/72">
         {value}
-      </p>
+      </div>
     </div>
   );
-}
-
-function TableHead({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <th className={cn("border-b border-black/10 px-4 py-3 font-bold", className)}>
-      {children}
-    </th>
-  );
-}
-
-function TableCell({ children }: { children: React.ReactNode }) {
-  return <td className="border-b border-black/5 px-4 py-3 text-black/62">{children}</td>;
 }
 
 function StateMessage({
@@ -597,7 +1037,7 @@ function StateMessage({
   return (
     <div
       className={cn(
-        "flex h-full items-center justify-center text-sm font-semibold",
+        "flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-black/10 bg-white text-sm font-semibold",
         tone === "error" ? "text-red-600" : "text-black/45",
       )}
     >

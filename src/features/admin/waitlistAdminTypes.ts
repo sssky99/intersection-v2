@@ -39,6 +39,7 @@ export type WaitlistTicketInstance = {
   event_date: string | null;
   event_time: string | null;
   region: string | null;
+  operation_code: string | null;
 };
 
 export type AdminWaitlistRow = {

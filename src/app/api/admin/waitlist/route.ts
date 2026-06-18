@@ -50,6 +50,9 @@ const profileSelect = [
   "membership_updated_at",
 ].join(",");
 
+const instanceSelect =
+  "id,template_id,title,event_date,event_time,region,operation_code";
+
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
@@ -69,39 +72,80 @@ function text(value: unknown) {
 
 async function loadWaitlistData(): Promise<AdminWaitlistData> {
   const supabase = createAdminClient();
-  const [waitlistResult, profilesResult, templatesResult, instancesResult] =
-    await Promise.all([
-      supabase
-        .from("meeting_waitlist")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(500),
-      supabase.from("profiles").select(profileSelect).order("name"),
-      supabase.from("ticket_templates").select("id,title").order("title"),
-      supabase
-        .from("ticket_instances")
-        .select("id,template_id,title,event_date,event_time,region")
-        .order("event_date", { ascending: true, nullsFirst: false })
-        .order("event_time", { ascending: true, nullsFirst: false }),
-    ]);
 
-  const error =
-    waitlistResult.error ??
-    profilesResult.error ??
-    templatesResult.error ??
-    instancesResult.error;
-  if (error) throw error;
+  const { data: waitlistData, error: waitlistError } = await supabase
+    .from("meeting_waitlist")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (waitlistError) throw waitlistError;
 
-  const profiles = ((profilesResult.data ?? []) as unknown as AdminProfile[]).map(
-    normalizeAdminProfile,
+  const waitlistRows = (waitlistData ?? []) as WaitlistDbRow[];
+  const userIds = uniqueText(waitlistRows.map((row) => row.user_id));
+  const rowTemplateIds = uniqueText(
+    waitlistRows.map((row) => row.ticket_template_id),
   );
-  const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
-  const templates = (templatesResult.data ?? []) as WaitlistTicketTemplate[];
-  const instances = (instancesResult.data ?? []) as WaitlistTicketInstance[];
+  const rowInstanceIds = uniqueText(
+    waitlistRows.map((row) => row.ticket_instance_id),
+  );
+
+  let profiles: AdminProfile[] = [];
+  if (userIds.length > 0) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(profileSelect)
+      .in("user_id", userIds)
+      .order("name");
+    if (error) throw error;
+    profiles = ((data ?? []) as unknown as AdminProfile[]).map(
+      normalizeAdminProfile,
+    );
+  }
+
+  let seedInstances: WaitlistTicketInstance[] = [];
+  if (rowInstanceIds.length > 0) {
+    const { data, error } = await supabase
+      .from("ticket_instances")
+      .select(instanceSelect)
+      .in("id", rowInstanceIds);
+    if (error) throw error;
+    seedInstances = (data ?? []) as WaitlistTicketInstance[];
+  }
+
+  const templateIds = uniqueText([
+    ...rowTemplateIds,
+    ...seedInstances.map((instance) => instance.template_id),
+  ]);
+
+  let templates: WaitlistTicketTemplate[] = [];
+  if (templateIds.length > 0) {
+    const { data, error } = await supabase
+      .from("ticket_templates")
+      .select("id,title")
+      .in("id", templateIds)
+      .order("title");
+    if (error) throw error;
+    templates = (data ?? []) as WaitlistTicketTemplate[];
+  }
+
+  let templateInstances: WaitlistTicketInstance[] = [];
+  if (templateIds.length > 0) {
+    const { data, error } = await supabase
+      .from("ticket_instances")
+      .select(instanceSelect)
+      .in("template_id", templateIds)
+      .order("event_date", { ascending: true, nullsFirst: false })
+      .order("event_time", { ascending: true, nullsFirst: false });
+    if (error) throw error;
+    templateInstances = (data ?? []) as WaitlistTicketInstance[];
+  }
+
+  const profilesMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
+  const instances = sortInstances(dedupeInstances([...seedInstances, ...templateInstances]));
   const templateMap = new Map(templates.map((template) => [template.id, template]));
   const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
 
-  const waitlist = ((waitlistResult.data ?? []) as WaitlistDbRow[]).map(
+  const waitlist = waitlistRows.map(
     (row): AdminWaitlistRow => {
       const instance = row.ticket_instance_id
         ? instanceMap.get(row.ticket_instance_id) ?? null
@@ -111,7 +155,7 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
       return {
         ...row,
         status: isWaitlistStatus(row.status) ? row.status : "waitlisted",
-        profile: profileMap.get(row.user_id) ?? null,
+        profile: profilesMap.get(row.user_id) ?? null,
         ticket_template: templateId ? templateMap.get(templateId) ?? null : null,
         ticket_instance: instance,
       };
@@ -119,6 +163,34 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
   );
 
   return { waitlist, templates, instances };
+}
+
+function uniqueText(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function dedupeInstances(instances: WaitlistTicketInstance[]) {
+  return Array.from(
+    new Map(instances.map((instance) => [instance.id, instance])).values(),
+  );
+}
+
+function sortInstances(instances: WaitlistTicketInstance[]) {
+  return [...instances].sort((a, b) => {
+    const dateCompare = (a.event_date ?? "").localeCompare(b.event_date ?? "");
+    if (dateCompare !== 0) return dateCompare;
+
+    const timeCompare = (a.event_time ?? "").localeCompare(b.event_time ?? "");
+    if (timeCompare !== 0) return timeCompare;
+
+    return a.title.localeCompare(b.title, "ko");
+  });
 }
 
 export async function GET(request: NextRequest) {

@@ -7,6 +7,7 @@ import {
 import { useEffect, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
+import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 type Screen = "calendar" | "drawing" | "waitlisted";
@@ -399,7 +400,8 @@ function TicketDrawingCard({
                 {error}
               </p>
             )}
-            <div className="grid grid-cols-2 gap-2.5">
+            <TicketDetailContent ticket={ticket} />
+            <div className="mt-5 grid grid-cols-2 gap-2.5">
               <motion.button
                 whileTap={!saving ? { scale: 0.98 } : undefined}
                 type="button"

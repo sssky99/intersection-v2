@@ -25,6 +25,7 @@ import {
   ticketVisibilityLabels,
   type AdminTicketInstance,
   type AdminTicketTemplate,
+  type AdminTicketWaitlistEntry,
   type PlaceVisibility,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
@@ -32,6 +33,7 @@ import {
 type TicketData = {
   templates: AdminTicketTemplate[];
   profiles: AdminProfile[];
+  waitlist: AdminTicketWaitlistEntry[];
 };
 
 let ticketDataCache: TicketData | null = null;
@@ -40,6 +42,10 @@ let ticketDataRequest: Promise<TicketData> | null = null;
 type TemplateDraft = {
   title: string;
   shortDescription: string;
+  detailSummary: string;
+  detailActivities: string;
+  detailGoodFor: string;
+  detailNotice: string;
   imageUrl: string;
   moodTags: string;
   activityType: string;
@@ -63,6 +69,8 @@ type InstanceDraft = {
   region: string;
   placeName: string;
   address: string;
+  operationCode: string;
+  operationNote: string;
   placeVisibility: PlaceVisibility;
   visibility: TicketVisibility;
   remainingSeatLabelCount: string;
@@ -198,6 +206,10 @@ function templateDraft(template: AdminTicketTemplate): TemplateDraft {
   return {
     title: template.title,
     shortDescription: template.short_description ?? "",
+    detailSummary: template.detail_summary ?? "",
+    detailActivities: template.detail_activities.join("\n"),
+    detailGoodFor: template.detail_good_for.join("\n"),
+    detailNotice: template.detail_notice ?? "",
     imageUrl: template.image_url ?? "",
     moodTags: template.mood_tags.join(", "),
     activityType: template.activity_type ?? "",
@@ -229,6 +241,8 @@ function instanceDraft(instance: AdminTicketInstance): InstanceDraft {
     region: instance.region ?? "",
     placeName: instance.place_name ?? "",
     address: instance.address ?? "",
+    operationCode: instance.operation_code ?? "",
+    operationNote: instance.operation_note ?? "",
     placeVisibility: instance.place_visibility,
     visibility: instance.visibility,
     remainingSeatLabelCount: String(instance.remaining_seat_label_count ?? 0),
@@ -239,6 +253,16 @@ function requestBody(draft: TemplateDraft) {
   return {
     title: draft.title,
     shortDescription: draft.shortDescription,
+    detailSummary: draft.detailSummary,
+    detailActivities: draft.detailActivities
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    detailGoodFor: draft.detailGoodFor
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    detailNotice: draft.detailNotice,
     imageUrl: draft.imageUrl,
     moodTags: draft.moodTags
       .split(",")
@@ -267,6 +291,8 @@ function instanceRequestBody(draft: InstanceDraft) {
     region: draft.region,
     placeName: draft.placeName,
     address: draft.address,
+    operationCode: draft.operationCode,
+    operationNote: draft.operationNote,
     placeVisibility: draft.placeVisibility,
     visibility: draft.visibility,
     remainingSeatLabelCount: draft.remainingSeatLabelCount,
@@ -286,6 +312,18 @@ function dateTimeText(instance: AdminTicketInstance) {
   return [instance.event_date, instance.event_time?.slice(0, 5)]
     .filter(Boolean)
     .join(" ") || "일정 미정";
+}
+
+function shortDateText(value: string | null) {
+  if (!value) return "날짜 미정";
+  const [, month, day] = value.split("-");
+  return month && day ? `${month}.${day}` : value;
+}
+
+function instanceDisplayTitle(instance: AdminTicketInstance) {
+  return instance.operation_code
+    ? `[${instance.operation_code}] ${instance.title}`
+    : instance.title;
 }
 
 function membershipText(profile: AdminProfile) {
@@ -317,12 +355,15 @@ function scoreSummary(template: AdminTicketTemplate) {
 export function TicketAdminPanel() {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
+  const [waitlist, setWaitlist] = useState<AdminTicketWaitlistEntry[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     null,
   );
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
     null,
   );
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [openDateTemplateIds, setOpenDateTemplateIds] = useState<string[]>([]);
   const [listMode, setListMode] = useState<ListMode>("templates");
   const [query, setQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
@@ -337,6 +378,7 @@ export function TicketAdminPanel() {
     ticketDataCache = data;
     setTemplates(data.templates ?? []);
     setProfiles(data.profiles ?? []);
+    setWaitlist(data.waitlist ?? []);
     setSelectedTemplateId((current) => {
       if (current && data.templates.some((template) => template.id === current)) {
         return current;
@@ -586,6 +628,60 @@ export function TicketAdminPanel() {
         ),
     [templates],
   );
+  const instanceById = useMemo(
+    () =>
+      new Map(
+        allInstances.map(({ instance, template }) => [
+          instance.id,
+          { instance, template },
+        ]),
+      ),
+    [allInstances],
+  );
+  const dateOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          allInstances
+            .map(({ instance }) => instance.event_date)
+            .filter((date): date is string => Boolean(date)),
+        ),
+      ).sort(),
+    [allInstances],
+  );
+  const dateTemplateGroups = useMemo(
+    () =>
+      selectedDate
+        ? templates
+            .map((template) => ({
+              template,
+              instances: template.instances
+                .filter((instance) => instance.event_date === selectedDate)
+                .sort((left, right) =>
+                  `${left.event_time ?? ""}${left.operation_code ?? ""}${left.title}`.localeCompare(
+                    `${right.event_time ?? ""}${right.operation_code ?? ""}${right.title}`,
+                  ),
+                ),
+            }))
+            .filter((group) => group.instances.length > 0)
+        : [],
+    [selectedDate, templates],
+  );
+
+  useEffect(() => {
+    if (listMode !== "dates") return;
+    if (!dateOptions.length) {
+      setSelectedDate("");
+      return;
+    }
+    setSelectedDate((current) =>
+      current && dateOptions.includes(current) ? current : dateOptions[0],
+    );
+  }, [dateOptions, listMode]);
+
+  useEffect(() => {
+    setOpenDateTemplateIds([]);
+  }, [selectedDate]);
 
   const filteredTemplates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -598,12 +694,40 @@ export function TicketAdminPanel() {
   }, [query, templates]);
 
   const assignableProfiles = useMemo(() => {
-    if (!selectedInstance) return [];
+    if (!selectedInstance || !selectedTemplate || !selectedInstance.event_date) {
+      return [];
+    }
     const assignedIds = new Set(
       selectedInstance.assignments.map((assignment) => assignment.profile_id),
     );
+    for (const { instance } of allInstances) {
+      if (instance.event_date === selectedInstance.event_date) {
+        for (const assignment of instance.assignments) {
+          assignedIds.add(assignment.profile_id);
+        }
+      }
+    }
+    const candidateIds = new Set<string>();
+    for (const row of waitlist) {
+      const rowInstance = row.ticket_instance_id
+        ? instanceById.get(row.ticket_instance_id)?.instance
+        : instanceById.get(row.ticket_id)?.instance;
+      const rowTemplateId =
+        row.ticket_template_id ?? rowInstance?.template_id ?? null;
+      const rowDate = row.meeting_date ?? rowInstance?.event_date ?? null;
+
+      if (
+        row.user_id &&
+        rowDate === selectedInstance.event_date &&
+        rowTemplateId === selectedTemplate.id &&
+        !assignedIds.has(row.user_id)
+      ) {
+        candidateIds.add(row.user_id);
+      }
+    }
     const normalized = memberQuery.trim().toLowerCase();
     return profiles
+      .filter((profile) => candidateIds.has(profile.user_id))
       .filter((profile) => !assignedIds.has(profile.user_id))
       .filter((profile) =>
         `${profile.name ?? ""} ${profile.phone ?? ""}`
@@ -611,7 +735,15 @@ export function TicketAdminPanel() {
           .includes(normalized),
       )
       .slice(0, 8);
-  }, [memberQuery, profiles, selectedInstance]);
+  }, [
+    allInstances,
+    instanceById,
+    memberQuery,
+    profiles,
+    selectedInstance,
+    selectedTemplate,
+    waitlist,
+  ]);
 
   return (
     <section className="flex h-[calc(100dvh-190px)] min-h-[680px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
@@ -712,33 +844,107 @@ export function TicketAdminPanel() {
               ) : (
                 <PanelMessage>등록된 티켓 템플릿이 없습니다.</PanelMessage>
               )
-            ) : allInstances.length ? (
-              <div className="space-y-3">
-                {allInstances.map(({ template, instance }) => (
-                  <button
-                    key={instance.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedTemplateId(template.id);
-                      setSelectedInstanceId(instance.id);
-                    }}
-                    className={cn(
-                      "w-full rounded-2xl border p-4 text-left transition",
-                      instance.id === selectedInstanceId
-                        ? "border-accent bg-accent/10"
-                        : "border-black/10 hover:border-black/20",
-                    )}
-                  >
-                    <p className="text-xs font-semibold text-accent">
-                      {instance.event_date ?? "날짜 미정"}
-                    </p>
-                    <h3 className="mt-1 font-bold">{instance.title}</h3>
-                    <p className="mt-1 text-xs text-black/45">
-                      {template.title} · {instance.event_time?.slice(0, 5) ?? "시간 미정"} ·{" "}
-                      {instance.region ?? "지역 미정"}
-                    </p>
-                  </button>
-                ))}
+            ) : dateOptions.length ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-black/10 bg-white p-3">
+                  <p className="text-[11px] font-bold text-black/45">
+                    날짜 선택
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {dateOptions.map((date) => (
+                      <button
+                        key={date}
+                        type="button"
+                        onClick={() => setSelectedDate(date)}
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-left text-xs font-bold transition",
+                          selectedDate === date
+                            ? "border-accent bg-accent/12 text-black"
+                            : "border-black/10 text-black/45 hover:border-black/20",
+                        )}
+                      >
+                        {date}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDate && dateTemplateGroups.length ? (
+                  <div className="space-y-2">
+                    {dateTemplateGroups.map(({ template, instances }) => {
+                      const open = openDateTemplateIds.includes(template.id);
+                      const assignmentCount = instances.reduce(
+                        (sum, instance) => sum + instance.assignment_count,
+                        0,
+                      );
+                      const waitlistCount = instances.reduce(
+                        (sum, instance) => sum + instance.waitlist_count,
+                        0,
+                      );
+
+                      return (
+                        <section
+                          key={template.id}
+                          className="overflow-hidden rounded-2xl border border-black/10 bg-white"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenDateTemplateIds((current) =>
+                                current.includes(template.id)
+                                  ? current.filter((id) => id !== template.id)
+                                  : [...current, template.id],
+                              )
+                            }
+                            className="w-full px-4 py-3 text-left transition hover:bg-black/[0.02]"
+                          >
+                            <h3 className="text-sm font-bold text-black">
+                              {template.title}
+                            </h3>
+                            <p className="mt-1 text-[11px] font-semibold text-black/42">
+                              세부 {instances.length}개 · 배정 {assignmentCount}명 · 신청{" "}
+                              {waitlistCount}명
+                            </p>
+                          </button>
+
+                          {open && (
+                            <div className="border-t border-black/8 p-2">
+                              {instances.map((instance) => (
+                                <button
+                                  key={instance.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedTemplateId(template.id);
+                                    setSelectedInstanceId(instance.id);
+                                  }}
+                                  className={cn(
+                                    "w-full rounded-xl px-3 py-2.5 text-left transition",
+                                    instance.id === selectedInstanceId
+                                      ? "bg-accent/12"
+                                      : "hover:bg-black/[0.03]",
+                                  )}
+                                >
+                                  <p className="text-xs font-bold text-black">
+                                    {instanceDisplayTitle(instance)}
+                                  </p>
+                                  <p className="mt-1 text-[11px] font-semibold text-black/42">
+                                    {instance.event_time?.slice(0, 5) ?? "시간 미정"} ·{" "}
+                                    {instance.region ?? "지역 미정"} · 배정{" "}
+                                    {instance.assignment_count}명
+                                  </p>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <PanelMessage>
+                    해당 날짜에 등록된 티켓이 없습니다.
+                  </PanelMessage>
+                )}
               </div>
             ) : (
               <PanelMessage>등록된 세부 티켓이 없습니다.</PanelMessage>
@@ -1061,6 +1267,52 @@ function TemplateEditor({
         </div>
       </section>
 
+      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+        <div>
+          <h3 className="font-bold">사용자 상세 콘텐츠</h3>
+          <p className="mt-1 text-xs leading-5 text-black/45">
+            사용자가 티켓을 자세히 볼 때 카드 아래에 표시되는 템플릿 설명입니다.
+            세부 티켓의 운영 코드/운영 메모와 분리해서 관리합니다.
+          </p>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <TextAreaField
+            label="상세 한 줄 요약"
+            className="col-span-2"
+            value={draft.detailSummary}
+            onChange={(detailSummary) =>
+              onDraftChange({ ...draft, detailSummary })
+            }
+          />
+          <TextAreaField
+            label="이 자리에서는 이런 걸 해요"
+            className="col-span-2"
+            value={draft.detailActivities}
+            placeholder={"최근 기억에 남는 이야기\n가볍게 나누는 실패담\n서로의 취향과 생각"}
+            onChange={(detailActivities) =>
+              onDraftChange({ ...draft, detailActivities })
+            }
+          />
+          <TextAreaField
+            label="이런 결의 분들에게 잘 맞아요"
+            className="col-span-2"
+            value={draft.detailGoodFor}
+            placeholder={"처음 보는 사람과도 편하게 대화하는 분\n너무 무겁지 않은 이야기가 좋은 분"}
+            onChange={(detailGoodFor) =>
+              onDraftChange({ ...draft, detailGoodFor })
+            }
+          />
+          <TextAreaField
+            label="티켓별 안내사항"
+            className="col-span-2"
+            value={draft.detailNotice}
+            onChange={(detailNotice) =>
+              onDraftChange({ ...draft, detailNotice })
+            }
+          />
+        </div>
+      </section>
+
       <ScoreEditor draft={draft} saving={saving} onDraftChange={onDraftChange} />
 
       <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -1093,7 +1345,7 @@ function TemplateEditor({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h4 className="font-bold">{instance.title}</h4>
+                    <h4 className="font-bold">{instanceDisplayTitle(instance)}</h4>
                     <p className="mt-1 text-xs text-black/45">
                       {dateTimeText(instance)}
                     </p>
@@ -1101,6 +1353,11 @@ function TemplateEditor({
                       {instance.region ?? "지역 미정"} ·{" "}
                       {instance.place_name ?? "장소 미정"}
                     </p>
+                    {instance.operation_note && (
+                      <p className="mt-2 line-clamp-2 text-[11px] font-semibold text-black/38">
+                        {instance.operation_note}
+                      </p>
+                    )}
                   </div>
                   <VisibilityBadge visibility={instance.visibility} />
                 </div>
@@ -1278,6 +1535,22 @@ function InstanceEditor({
             onChange={(title) => onDraftChange({ ...draft, title })}
           />
           <FormField
+            label="운영 코드"
+            value={draft.operationCode}
+            placeholder="LOVE-0620-A"
+            onChange={(operationCode) =>
+              onDraftChange({ ...draft, operationCode })
+            }
+          />
+          <FormField
+            label="운영 메모"
+            value={draft.operationNote}
+            placeholder="A조 / 차분한 대화형"
+            onChange={(operationNote) =>
+              onDraftChange({ ...draft, operationNote })
+            }
+          />
+          <FormField
             label="날짜"
             type="date"
             value={draft.eventDate}
@@ -1401,6 +1674,9 @@ function InstanceEditor({
 
           <div className="mt-5 border-t border-black/8 pt-5">
             <h4 className="text-sm font-bold">멤버 추가</h4>
+            <p className="mt-1 text-[11px] font-semibold leading-4 text-black/38">
+              기본 후보는 이 날짜와 이 티켓 템플릿에 신청한 사람만 표시됩니다.
+            </p>
             <label className="relative mt-3 block">
               <Search
                 size={15}
@@ -1415,27 +1691,33 @@ function InstanceEditor({
               />
             </label>
             <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">
-              {profiles.map((profile) => (
-                <button
-                  key={profile.user_id}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onAddMember(profile.user_id)}
-                  className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
-                >
-                  <div>
-                    <AdminMemberName profile={profile} />
-                    <p className="mt-0.5 text-[10px] text-black/40">
-                      {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
-                      {profile.mbti ?? "-"} · {profile.phone ?? "-"}
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-semibold text-accent">
-                      {membershipText(profile)}
-                    </p>
-                  </div>
-                  <Plus size={15} aria-hidden />
-                </button>
-              ))}
+              {profiles.length ? (
+                profiles.map((profile) => (
+                  <button
+                    key={profile.user_id}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => onAddMember(profile.user_id)}
+                    className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
+                  >
+                    <div>
+                      <AdminMemberName profile={profile} />
+                      <p className="mt-0.5 text-[10px] text-black/40">
+                        {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
+                        {profile.mbti ?? "-"} · {profile.phone ?? "-"}
+                      </p>
+                      <p className="mt-0.5 text-[10px] font-semibold text-accent">
+                        {membershipText(profile)}
+                      </p>
+                    </div>
+                    <Plus size={15} aria-hidden />
+                  </button>
+                ))
+              ) : (
+                <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
+                  이 날짜와 템플릿에 신청한 추가 후보가 없습니다.
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -1457,6 +1739,8 @@ function draftToInstanceFields(draft: InstanceDraft) {
     region: draft.region || null,
     place_name: draft.placeName || null,
     address: draft.address || null,
+    operation_code: draft.operationCode || null,
+    operation_note: draft.operationNote || null,
     place_visibility: draft.placeVisibility,
     visibility: draft.visibility,
     remaining_seat_label_count: Number.parseInt(
@@ -1587,11 +1871,13 @@ function TextAreaField({
   label,
   value,
   onChange,
+  placeholder,
   className,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
   className?: string;
 }) {
   return (
@@ -1599,6 +1885,7 @@ function TextAreaField({
       <span className="text-xs font-semibold text-black/50">{label}</span>
       <textarea
         value={value}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1.5 min-h-24 w-full resize-y rounded-xl border border-black/10 px-3 py-2 text-sm leading-5 outline-none focus:border-accent"
       />

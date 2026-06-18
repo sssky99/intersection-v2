@@ -10,6 +10,7 @@ import {
   isTicketVisibility,
   type AdminTicketInstance,
   type AdminTicketTemplate,
+  type AdminTicketWaitlistEntry,
   type PlaceVisibility,
   type TicketAssignment,
   type TicketVisibility,
@@ -26,6 +27,14 @@ type InstanceRow = Omit<
   "assignment_count" | "waitlist_count" | "assignments"
 >;
 type AssignmentRow = Omit<TicketAssignment, "profile">;
+type WaitlistRow = AdminTicketWaitlistEntry;
+
+const candidateWaitlistStatuses = [
+  "payment_pending",
+  "waitlisted",
+  "approved",
+  "on_hold",
+];
 
 const profileSelect = [
   "user_id",
@@ -46,6 +55,10 @@ const templateSelect = [
   "id",
   "title",
   "short_description",
+  "detail_summary",
+  "detail_activities",
+  "detail_good_for",
+  "detail_notice",
   "image_url",
   "mood_tags",
   "activity_type",
@@ -73,6 +86,8 @@ const instanceSelect = [
   "region",
   "place_name",
   "address",
+  "operation_code",
+  "operation_note",
   "place_visibility",
   "visibility",
   "remaining_seat_label_count",
@@ -112,6 +127,23 @@ function tags(value: unknown) {
         .filter(Boolean)
         .slice(0, 3)
     : [];
+}
+
+function textList(value: unknown) {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\r?\n/)
+      : [];
+
+  return items
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function dbTextList(value: unknown) {
+  return textList(value);
 }
 
 function remainingSeatCount(value: unknown) {
@@ -161,6 +193,10 @@ function templatePayload(body: Record<string, unknown>) {
   return {
     title: text(body.title),
     short_description: text(body.shortDescription),
+    detail_summary: text(body.detailSummary),
+    detail_activities: textList(body.detailActivities),
+    detail_good_for: textList(body.detailGoodFor),
+    detail_notice: text(body.detailNotice),
     image_url: text(body.imageUrl),
     mood_tags: tags(body.moodTags),
     activity_type: text(body.activityType),
@@ -187,6 +223,8 @@ function instancePayload(body: Record<string, unknown>) {
     region: text(body.region),
     place_name: text(body.placeName),
     address: text(body.address),
+    operation_code: text(body.operationCode),
+    operation_note: text(body.operationNote),
     place_visibility: isPlaceVisibility(body.placeVisibility)
       ? body.placeVisibility
       : ("confirmed_only" as PlaceVisibility),
@@ -215,8 +253,10 @@ async function loadTicketData() {
       supabase.from("profiles").select(profileSelect).order("name"),
       supabase
         .from("meeting_waitlist")
-        .select("ticket_id,ticket_instance_id,status")
-        .in("status", ["waitlisted", "approved"]),
+        .select(
+          "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
+        )
+        .in("status", candidateWaitlistStatuses),
     ]);
 
   const error =
@@ -232,9 +272,10 @@ async function loadTicketData() {
   );
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const assignments = (assignmentsResult.data ?? []) as unknown as AssignmentRow[];
+  const waitlist = (waitlistResult.data ?? []) as unknown as WaitlistRow[];
   const waitlistCounts = new Map<string, number>();
 
-  for (const row of waitlistResult.data ?? []) {
+  for (const row of waitlist) {
     const key = row.ticket_instance_id ?? row.ticket_id;
     if (key) waitlistCounts.set(key, (waitlistCounts.get(key) ?? 0) + 1);
   }
@@ -265,6 +306,8 @@ async function loadTicketData() {
 
       return {
         ...template,
+        detail_activities: dbTextList(template.detail_activities),
+        detail_good_for: dbTextList(template.detail_good_for),
         instances: templateInstances,
         instance_count: templateInstances.length,
         assignment_count: templateInstances.reduce(
@@ -279,7 +322,7 @@ async function loadTicketData() {
     },
   );
 
-  return { templates, profiles };
+  return { templates, profiles, waitlist };
 }
 
 export async function GET(request: NextRequest) {
@@ -335,6 +378,10 @@ export async function POST(request: NextRequest) {
         .insert({
           title: `${sourceTemplate.title} 복사본`,
           short_description: sourceTemplate.short_description,
+          detail_summary: sourceTemplate.detail_summary,
+          detail_activities: sourceTemplate.detail_activities,
+          detail_good_for: sourceTemplate.detail_good_for,
+          detail_notice: sourceTemplate.detail_notice,
           image_url: sourceTemplate.image_url,
           mood_tags: sourceTemplate.mood_tags,
           activity_type: sourceTemplate.activity_type,
@@ -375,6 +422,8 @@ export async function POST(request: NextRequest) {
               region: instance.region,
               place_name: instance.place_name,
               address: instance.address,
+              operation_code: instance.operation_code,
+              operation_note: instance.operation_note,
               place_visibility: instance.place_visibility,
               visibility: instance.visibility,
               remaining_seat_label_count: instance.remaining_seat_label_count ?? 0,
@@ -414,6 +463,8 @@ export async function POST(request: NextRequest) {
         region: sourceInstance.region,
         place_name: sourceInstance.place_name,
         address: sourceInstance.address,
+        operation_code: sourceInstance.operation_code,
+        operation_note: sourceInstance.operation_note,
         place_visibility: sourceInstance.place_visibility,
         visibility: sourceInstance.visibility,
         remaining_seat_label_count: sourceInstance.remaining_seat_label_count ?? 0,

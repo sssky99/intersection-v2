@@ -27,6 +27,15 @@ export type TicketAssignment = {
   profile: AdminProfile | null;
 };
 
+export type AdminTicketWaitlistEntry = {
+  user_id: string;
+  ticket_id: string;
+  ticket_template_id: string | null;
+  ticket_instance_id: string | null;
+  meeting_date: string | null;
+  status: string;
+};
+
 export type AdminTicketInstance = {
   id: string;
   template_id: string;
@@ -36,6 +45,8 @@ export type AdminTicketInstance = {
   region: string | null;
   place_name: string | null;
   address: string | null;
+  operation_code: string | null;
+  operation_note: string | null;
   place_visibility: PlaceVisibility;
   visibility: TicketVisibility;
   remaining_seat_label_count: number;
@@ -50,6 +61,10 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   id: string;
   title: string;
   short_description: string | null;
+  detail_summary: string | null;
+  detail_activities: string[];
+  detail_good_for: string[];
+  detail_notice: string | null;
   image_url: string | null;
   mood_tags: string[];
   activity_type: string | null;

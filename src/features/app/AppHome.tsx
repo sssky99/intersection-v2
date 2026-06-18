@@ -18,6 +18,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import { VibeGraph } from "@/components/vibe/VibeGraph";
+import type { VibeScores } from "@/components/vibe/vibeGraphConfig";
 import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
@@ -176,6 +178,27 @@ function isAnswerComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
   return !needsOther || Boolean(answer.otherText?.trim());
 }
 
+function answerScore(answer?: QuestionAnswer) {
+  const value =
+    typeof answer?.value === "number"
+      ? answer.value
+      : typeof answer?.value === "string"
+        ? Number.parseInt(answer.value, 10)
+        : null;
+
+  if (value === null || !Number.isFinite(value)) return null;
+  return value >= 1 && value <= 5 ? value : null;
+}
+
+function profileVibeScores(answers: AnswerMap): VibeScores {
+  return {
+    temperature: answerScore(answers[1]),
+    texture: answerScore(answers[2]),
+    tone: answerScore(answers[3]),
+    rhythm: answerScore(answers[4]),
+  };
+}
+
 function profileName(profile: ProfileRow) {
   return profile.name?.trim() || "나";
 }
@@ -204,7 +227,9 @@ async function fetchWaitlistedTickets(userId: string) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .returns<WaitlistRow[]>();
-  const ticketRequest = fetch("/api/meetings/tickets", { cache: "no-store" })
+  const ticketRequest = fetch("/api/meetings/tickets?includeApplied=1", {
+    cache: "no-store",
+  })
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
         | { dates?: AvailableDate[] }
@@ -785,6 +810,7 @@ function ProfileTab({
   );
   const categories = Object.keys(questionGroups) as QuestionCategory[];
   const publicIntro = profile.public_intro?.trim();
+  const vibeScores = useMemo(() => profileVibeScores(answers), [answers]);
 
   return (
     <TabMotion>
@@ -812,6 +838,14 @@ function ProfileTab({
             {publicIntro ?? "아직 작성된 자기소개가 없어요. 교집합 소개를 다시 만들면 이곳에서 확인할 수 있어요."}
           </p>
         </section>
+
+        <VibeGraph
+          title="나의 대화 결"
+          description="교집합이 자리를 제안할 때 참고하는 분위기예요."
+          scores={vibeScores}
+          visibleAxes={["temperature", "texture", "tone", "rhythm"]}
+          className="mt-5"
+        />
 
         <div className="mt-5 grid grid-cols-3 gap-2.5">
           {categories.map((category) => {

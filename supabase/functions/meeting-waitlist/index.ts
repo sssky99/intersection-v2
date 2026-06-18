@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.108.1";
 
 type GatheringTicket = {
   id: string;
+  templateId: string;
   title: string;
   subtitle: string;
   date: string;
@@ -42,6 +43,7 @@ function json(body: unknown, status = 200) {
 function isTicket(value: WaitlistRequest["ticket"]): value is GatheringTicket {
   return Boolean(
     value?.id &&
+      value.templateId &&
       value.title &&
       value.subtitle &&
       value.date &&
@@ -151,6 +153,7 @@ Deno.serve(async (request) => {
   const { error } = await supabase.from("meeting_waitlist").insert({
     user_id: user.id,
     ticket_id: ticket.id,
+    ticket_template_id: ticket.templateId,
     ticket_instance_id: ticket.id,
     meeting_date: ticket.date,
     status: waitlistStatus,

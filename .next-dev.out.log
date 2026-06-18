@@ -8,14 +8,17 @@
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 1455ms
- ○ Compiling /middleware ...
- ✓ Compiled /middleware in 897ms (802 modules)
- GET /?code=dummy&next=%2Fdetails 200 in 1243ms
- ○ Compiling /auth/callback ...
- ✓ Compiled /auth/callback in 564ms (770 modules)
- GET /auth/callback?next=%2Fdetails 307 in 1016ms
+ ✓ Ready in 1440ms
+ ✓ Compiled /middleware in 421ms (116 modules)
  ○ Compiling /meetings ...
- ✓ Compiled /meetings in 1162ms (1564 modules)
- GET /meetings?tab=profile 307 in 1497ms
- GET /admin 200 in 1526ms
+ ✓ Compiled /meetings in 4.4s (1513 modules)
+ ✓ Compiled in 774ms (679 modules)
+ GET /meetings?tab=profile 200 in 5682ms
+ ○ Compiling /api/meetings/tickets ...
+ ✓ Compiled /api/meetings/tickets in 1027ms (1520 modules)
+ GET /api/meetings/tickets?includeApplied=1 200 in 1234ms
+ GET /api/meetings/tickets 200 in 1317ms
+ GET /meetings?tab=profile 200 in 255ms
+ GET /meetings?tab=profile 200 in 360ms
+ GET /api/meetings/tickets?includeApplied=1 200 in 390ms
+ GET /api/meetings/tickets 200 in 464ms

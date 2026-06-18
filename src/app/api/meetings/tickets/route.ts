@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,10 @@ type TemplateRow = {
   id: string;
   title: string;
   short_description: string | null;
+  detail_summary: string | null;
+  detail_activities: unknown;
+  detail_good_for: unknown;
+  detail_notice: string | null;
   image_url: string | null;
   mood_tags: string[] | null;
   activity_type: string | null;
@@ -15,6 +20,12 @@ type TemplateRow = {
   default_region: string | null;
   default_time: string | null;
   visibility: string;
+  score_temperature: number | null;
+  score_texture: number | null;
+  score_tone: number | null;
+  score_rhythm: number | null;
+  score_alcohol: number | null;
+  score_romance: number | null;
 };
 
 type InstanceRow = {
@@ -28,10 +39,22 @@ type InstanceRow = {
   visibility: string;
 };
 
+type WaitlistRow = {
+  ticket_id: string | null;
+  ticket_template_id: string | null;
+  ticket_instance_id: string | null;
+  meeting_date: string | null;
+  status: string | null;
+};
+
 const templateSelect = [
   "id",
   "title",
   "short_description",
+  "detail_summary",
+  "detail_activities",
+  "detail_good_for",
+  "detail_notice",
   "image_url",
   "mood_tags",
   "activity_type",
@@ -39,6 +62,12 @@ const templateSelect = [
   "default_region",
   "default_time",
   "visibility",
+  "score_temperature",
+  "score_texture",
+  "score_tone",
+  "score_rhythm",
+  "score_alcohol",
+  "score_romance",
 ].join(",");
 
 const instanceSelect = [
@@ -61,6 +90,15 @@ function dateLabel(value: string) {
   return `${month}월 ${day}일 ${weekday}요일`;
 }
 
+function textList(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
 function toTicket(
   instance: InstanceRow,
   template: TemplateRow,
@@ -78,6 +116,7 @@ function toTicket(
 
   return {
     id: instance.id,
+    templateId: instance.template_id,
     title: instance.title || template.title,
     subtitle,
     date: instance.event_date,
@@ -88,6 +127,18 @@ function toTicket(
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     peopleHint: template.recommendation_copy ?? subtitle,
     reason: template.recommendation_copy ?? subtitle,
+    detailSummary: template.detail_summary?.trim() || undefined,
+    detailActivities: textList(template.detail_activities),
+    detailGoodFor: textList(template.detail_good_for),
+    detailNotice: template.detail_notice?.trim() || undefined,
+    vibeScores: {
+      temperature: template.score_temperature,
+      texture: template.score_texture,
+      tone: template.score_tone,
+      rhythm: template.score_rhythm,
+      alcohol: template.score_alcohol,
+      romance: template.score_romance,
+    },
   };
 }
 
@@ -112,8 +163,10 @@ function groupByDate(tickets: GatheringTicket[]) {
     );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const requestUrl = new URL(request.url);
+    const includeApplied = requestUrl.searchParams.get("includeApplied") === "1";
     const supabase = createAdminClient();
     const { data: instances, error: instancesError } = await supabase
       .from("ticket_instances")
@@ -126,6 +179,45 @@ export async function GET() {
     if (instancesError) throw instancesError;
 
     const instanceRows = (instances ?? []) as unknown as InstanceRow[];
+    const instanceMap = new Map(
+      instanceRows.map((instance) => [instance.id, instance]),
+    );
+    const excludedTemplateDates = new Set<string>();
+
+    if (!includeApplied) {
+      const userSupabase = await createClient();
+      const {
+        data: { user },
+      } = await userSupabase.auth.getUser();
+
+      if (user) {
+        const { data: waitlistRows, error: waitlistError } = await userSupabase
+          .from("meeting_waitlist")
+          .select(
+            "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
+          )
+          .eq("user_id", user.id)
+          .returns<WaitlistRow[]>();
+
+        if (waitlistError) throw waitlistError;
+
+        for (const row of waitlistRows ?? []) {
+          const linkedInstance =
+            (row.ticket_instance_id
+              ? instanceMap.get(row.ticket_instance_id)
+              : null) ??
+            (row.ticket_id ? instanceMap.get(row.ticket_id) : null);
+          const templateId =
+            row.ticket_template_id ?? linkedInstance?.template_id ?? null;
+          const meetingDate = row.meeting_date ?? linkedInstance?.event_date ?? null;
+
+          if (templateId && meetingDate) {
+            excludedTemplateDates.add(`${templateId}|${meetingDate}`);
+          }
+        }
+      }
+    }
+
     const templateIds = Array.from(
       new Set(instanceRows.map((instance) => instance.template_id)),
     );
@@ -149,6 +241,12 @@ export async function GET() {
     );
 
     const tickets = instanceRows
+      .filter(
+        (instance) =>
+          !excludedTemplateDates.has(
+            `${instance.template_id}|${instance.event_date ?? ""}`,
+          ),
+      )
       .map((instance) => {
         const template = templateMap.get(instance.template_id);
         return template ? toTicket(instance, template) : null;

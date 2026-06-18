@@ -1,5 +1,6 @@
 export type GatheringTicket = {
   id: string;
+  templateId: string;
   title: string;
   subtitle: string;
   date: string;
@@ -10,6 +11,18 @@ export type GatheringTicket = {
   remainingSeatCount?: number;
   peopleHint: string;
   reason: string;
+  detailSummary?: string;
+  detailActivities?: string[];
+  detailGoodFor?: string[];
+  detailNotice?: string;
+  vibeScores?: {
+    temperature?: number | null;
+    texture?: number | null;
+    tone?: number | null;
+    rhythm?: number | null;
+    alcohol?: number | null;
+    romance?: number | null;
+  };
 };
 
 export type AvailableDate = {

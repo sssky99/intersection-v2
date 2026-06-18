@@ -15,6 +15,7 @@ type ProfileMembership = {
 function isTicket(value: WaitlistRequest["ticket"]): value is GatheringTicket {
   return Boolean(
     value?.id &&
+      value.templateId &&
       value.title &&
       value.date &&
       value.time &&
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
   const { error } = await supabase.from("meeting_waitlist").insert({
     user_id: user.id,
     ticket_id: ticket.id,
+    ticket_template_id: ticket.templateId,
     ticket_instance_id: ticket.id,
     meeting_date: ticket.date,
     status: waitlistStatus,
