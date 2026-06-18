@@ -137,8 +137,7 @@ export async function GET() {
     const { data: templates, error: templatesError } = await supabase
       .from("ticket_templates")
       .select(templateSelect)
-      .in("id", templateIds)
-      .eq("visibility", "public");
+      .in("id", templateIds);
 
     if (templatesError) throw templatesError;
 
