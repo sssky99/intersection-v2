@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  Feather,
   LogOut,
   MapPin,
   X,
@@ -21,7 +22,7 @@ import {
   formatTicketDateLabel,
   IntersectionTicketCard,
 } from "@/components/IntersectionTicketCard";
-import { VibeGraph } from "@/components/vibe/VibeGraph";
+import { VibeAxisBar, VibeGraph } from "@/components/vibe/VibeGraph";
 import {
   vibeAxisConfig,
   type VibeAxis,
@@ -229,6 +230,10 @@ function profileNickname(profile: Pick<ProfileRow, "name" | "nickname">) {
   return nickname && /^[가-힣]{2}$/.test(nickname)
     ? nickname
     : fallbackNickname(profile.name);
+}
+
+function profileEmoji(profile: Pick<ProfileRow, "public_emoji">) {
+  return profile.public_emoji?.trim() || "💎";
 }
 
 function isValidNickname(value: string) {
@@ -1903,7 +1908,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
       <section className="rounded-3xl border border-black/10 bg-white px-5 py-6">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent">
-            <PenLine size={19} aria-hidden />
+            <Feather size={19} aria-hidden />
           </div>
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
@@ -2031,7 +2036,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
                     잘 모르겠어요
                   </button>
                 </div>
-                <FeedbackVibeGraphControl
+                <SharedFeedbackVibeGraphControl
                   className="border-t-0 pt-4"
                   axes={feedbackPersonAxes}
                   values={activeDraft.values}
@@ -2055,7 +2060,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
           이 자리 자체의 분위기를 알려주세요.
         </p>
-        <FeedbackVibeGraphControl
+        <SharedFeedbackVibeGraphControl
           className="border-t-0 pt-5"
           axes={feedbackPlaceAxes}
           values={placeFeedback}
@@ -2100,11 +2105,7 @@ const feedbackAxisLabelOverrides: Partial<
   },
 };
 
-function feedbackSliderPositionPercent(score: number) {
-  return 8 + ((score - 1) / 4) * 84;
-}
-
-function FeedbackVibeGraphControl<TAxis extends VibeAxis>({
+function SharedFeedbackVibeGraphControl<TAxis extends VibeAxis>({
   title,
   description,
   axes,
@@ -2127,97 +2128,27 @@ function FeedbackVibeGraphControl<TAxis extends VibeAxis>({
           {description}
         </p>
       )}
-      <div className="mt-5 space-y-4">
-        {axes.map((axis) => {
-          const config = {
-            ...vibeAxisConfig[axis],
-            ...feedbackAxisLabelOverrides[axis],
-          };
-          const value = values[axis];
-          const position = feedbackSliderPositionPercent(value);
-
-          return (
-            <div
-              key={axis}
-              className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3"
-            >
-              <span className="text-[11px] font-bold text-black/80">
-                {config.leftLabel}
-              </span>
-              <div className="relative h-4">
-                <div className="absolute left-0 right-0 top-1/2 h-3 -translate-y-1/2 rounded-full bg-black/[0.06]">
-                  <span className="absolute left-1/2 top-1/2 h-4 w-px -translate-y-1/2 bg-black/10" />
-                  <span
-                    className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-accent shadow-[0_3px_10px_rgba(0,0,0,0.14)]"
-                    style={{ left: `${position}%` }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={5}
-                  step={1}
-                  value={value}
-                  aria-label={config.label}
-                  aria-valuetext={`${config.leftLabel}에서 ${config.rightLabel} 사이`}
-                  onChange={(event) => onChange(axis, Number(event.target.value))}
-                  className="absolute inset-0 h-4 w-full cursor-pointer opacity-0"
-                />
-              </div>
-              <span className="text-right text-[11px] font-bold text-black/80">
-                {config.rightLabel}
-              </span>
-            </div>
-          );
-        })}
+      <div className="mt-5 space-y-5">
+        {axes.map((axis) => (
+          <VibeAxisBar
+            key={axis}
+            axis={axis}
+            score={values[axis]}
+            scoreScale="legacy"
+            axisLabelOverrides={feedbackAxisLabelOverrides[axis]}
+            showAxisHeader={false}
+            animateBar={false}
+            input={{
+              value: values[axis],
+              min: 1,
+              max: 5,
+              step: 1,
+              onChange: (value) => onChange(axis, value),
+            }}
+          />
+        ))}
       </div>
     </section>
-  );
-}
-
-function FeedbackAxisSlider({
-  axis,
-  value,
-  onChange,
-}: {
-  axis: VibeAxis;
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const config = {
-    ...vibeAxisConfig[axis],
-    ...feedbackAxisLabelOverrides[axis],
-  };
-  const position = feedbackSliderPositionPercent(value);
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-xs font-black text-black/70">{config.label}</span>
-        <span className="text-[11px] font-semibold text-black/35">
-          {config.leftLabel} · {config.rightLabel}
-        </span>
-      </div>
-      <div className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3">
-        <span className="text-[11px] font-bold text-black/38">
-          {config.leftLabel}
-        </span>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          step={1}
-          value={value}
-          aria-label={config.label}
-          aria-valuetext={`${config.leftLabel}에서 ${config.rightLabel} 사이`}
-          onChange={(event) => onChange(Number(event.target.value))}
-          className="h-3 w-full cursor-pointer appearance-none rounded-full bg-black/[0.06] accent-[#7eb3c7]"
-        />
-        <span className="text-right text-[11px] font-bold text-black/38">
-          {config.rightLabel}
-        </span>
-      </div>
-    </div>
   );
 }
 
@@ -2295,7 +2226,7 @@ function ProfileTab({
           <h2 className="mt-2 flex items-center gap-2 text-xl font-bold leading-7 text-black">
             <span>{profileNickname(profile)}</span>
             <span aria-hidden className="text-base leading-none">
-              💎
+              {profileEmoji(profile)}
             </span>
           </h2>
           <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">

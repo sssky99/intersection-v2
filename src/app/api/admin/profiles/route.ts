@@ -18,6 +18,7 @@ const baseProfileFields = [
   "phone",
   "photo_url",
   "public_intro",
+  "public_emoji",
   "created_at",
   "profile_completed",
   "questions_completed",
@@ -75,6 +76,20 @@ function queryErrorMessage(
   error: { message: string; hint?: string | null },
 ) {
   return [`${label}: ${error.message}`, error.hint].filter(Boolean).join(" | ");
+}
+
+function clampScore(value: number) {
+  return Math.min(100, Math.max(-100, Math.round(value)));
+}
+
+function scoreValue(value: unknown) {
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return clampScore(value);
+}
+
+function trimmedText(value: unknown) {
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
 async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
@@ -155,11 +170,65 @@ export async function PATCH(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     userId?: unknown;
     status?: unknown;
+    scores?: Partial<Record<(typeof scoreProfileFields)[number], unknown>>;
+    publicIntro?: unknown;
+    publicEmoji?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
+  const updates: Record<string, unknown> = {};
 
-  if (!userId || !isMembershipStatus(status)) {
+  if (isMembershipStatus(status)) {
+    updates.membership_status = status;
+    updates.membership_updated_at = new Date().toISOString();
+  }
+
+  if (body?.scores && typeof body.scores === "object") {
+    for (const field of scoreProfileFields) {
+      if (!(field in body.scores)) continue;
+      const nextScore = scoreValue(body.scores[field]);
+      if (nextScore === undefined) {
+        return NextResponse.json(
+          { error: "사람 지표 점수는 -100부터 100 사이 숫자여야 합니다." },
+          { status: 400 },
+        );
+      }
+      updates[field] = nextScore;
+    }
+  }
+
+  if (body && "publicIntro" in body) {
+    const publicIntro = trimmedText(body.publicIntro);
+    if (publicIntro === undefined) {
+      return NextResponse.json(
+        { error: "GPT 자기소개는 문자열이어야 합니다." },
+        { status: 400 },
+      );
+    }
+    updates.public_intro = publicIntro || null;
+    updates.public_intro_generated_at = new Date().toISOString();
+    updates.public_intro_model = "admin";
+  }
+
+  if (body && "publicEmoji" in body) {
+    const publicEmoji = trimmedText(body.publicEmoji);
+    if (publicEmoji === undefined || publicEmoji.length > 16) {
+      return NextResponse.json(
+        { error: "이모지는 1~16자 이내로 입력해주세요." },
+        { status: 400 },
+      );
+    }
+    updates.public_emoji = publicEmoji || null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json(
+      { error: "저장할 프로필 변경 사항이 없습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (!userId) {
     return NextResponse.json(
       { error: "멤버십 상태 정보가 올바르지 않습니다." },
       { status: 400 },
@@ -170,10 +239,7 @@ export async function PATCH(request: NextRequest) {
     const supabase = createAdminClient();
     const { error } = await supabase
       .from("profiles")
-      .update({
-        membership_status: status,
-        membership_updated_at: new Date().toISOString(),
-      })
+      .update(updates)
       .eq("user_id", userId);
 
     if (error) throw error;

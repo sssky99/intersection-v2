@@ -14,7 +14,7 @@ type VibeAxisLabelOverride = Partial<{
   rightLabel: string;
 }>;
 
-type VibeScoreScale = "legacy" | "internal";
+export type VibeScoreScale = "legacy" | "internal";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -42,6 +42,120 @@ function positionPercent(score: number) {
   return ((score + 100) / 200) * 100;
 }
 
+export function VibeAxisBar<TAxis extends VibeAxis>({
+  axis,
+  score,
+  scoreScale = "legacy",
+  axisLabelOverrides,
+  showAxisHeader = true,
+  animationKey = 0,
+  animateBar = true,
+  transitionDelay = 0,
+  valueLabel,
+  input,
+}: {
+  axis: TAxis;
+  score: number | null | undefined;
+  scoreScale?: VibeScoreScale;
+  axisLabelOverrides?: VibeAxisLabelOverride;
+  showAxisHeader?: boolean;
+  animationKey?: string | number;
+  animateBar?: boolean;
+  transitionDelay?: number;
+  valueLabel?: string;
+  input?: {
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    disabled?: boolean;
+    onChange: (value: number) => void;
+  };
+}) {
+  const shouldReduceMotion = useReducedMotion();
+  const shouldAnimate = animateBar && !shouldReduceMotion;
+  const config = {
+    ...vibeAxisConfig[axis],
+    ...axisLabelOverrides,
+  };
+  const normalizedScore = normalizeScore(score, scoreScale) ?? 0;
+  const targetPercent = positionPercent(normalizedScore);
+  const fillLeft = Math.min(50, targetPercent);
+  const fillWidth = Math.abs(targetPercent - 50);
+  const transition = {
+    duration: shouldAnimate ? 0.72 : 0,
+    ease: "easeOut" as const,
+    delay: shouldAnimate ? transitionDelay : 0,
+  };
+
+  return (
+    <div>
+      {showAxisHeader && (
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="text-xs font-black text-black/72">
+            {config.label}
+          </span>
+          <span
+            className={cn(
+              "text-[11px] font-semibold text-black/35",
+              valueLabel && "text-black/60",
+            )}
+          >
+            {valueLabel ?? `${config.leftLabel} · ${config.rightLabel}`}
+          </span>
+        </div>
+      )}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-[11px] font-bold leading-4 text-black/42">
+            {config.leftLabel}
+          </span>
+          <span className="text-right text-[11px] font-bold leading-4 text-black/42">
+            {config.rightLabel}
+          </span>
+        </div>
+        <div
+          className="relative h-4 rounded-full bg-black/[0.07] shadow-inner"
+          aria-label={`${config.label}: ${config.leftLabel}에서 ${config.rightLabel} 사이`}
+        >
+          <motion.span
+            key={`fill-${axis}-${animationKey}`}
+            initial={shouldAnimate ? { left: "50%", width: "0%" } : false}
+            animate={{
+              left: `${fillLeft}%`,
+              width: `${fillWidth}%`,
+            }}
+            transition={transition}
+            className="absolute top-0 h-full rounded-full bg-accent"
+          />
+          <span className="absolute left-1/2 top-1/2 z-10 h-7 w-px -translate-y-1/2 bg-black/28" />
+          <motion.span
+            key={`thumb-${axis}-${animationKey}`}
+            initial={shouldAnimate ? { left: "50%" } : false}
+            animate={{ left: `${targetPercent}%` }}
+            transition={transition}
+            className="absolute top-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-accent shadow-[0_5px_14px_rgba(0,0,0,0.18)]"
+          />
+          {input && (
+            <input
+              type="range"
+              min={input.min}
+              max={input.max}
+              step={input.step}
+              value={input.value}
+              disabled={input.disabled}
+              aria-label={config.label}
+              aria-valuetext={`${config.leftLabel}에서 ${config.rightLabel} 사이`}
+              onChange={(event) => input.onChange(Number(event.target.value))}
+              className="absolute inset-0 z-30 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function VibeGraph({
   title,
   description,
@@ -65,11 +179,9 @@ export function VibeGraph({
   animationKey?: string | number;
   animateBars?: boolean;
 }) {
-  const shouldReduceMotion = useReducedMotion();
   const axes = visibleAxes.filter(
     (axis) => normalizeScore(scores?.[axis], scoreScale) !== null,
   );
-  const shouldAnimate = animateBars && !shouldReduceMotion;
 
   if (axes.length === 0) return null;
 
@@ -88,69 +200,19 @@ export function VibeGraph({
       )}
 
       <div className="mt-6 space-y-5">
-        {axes.map((axis, index) => {
-          const config = {
-            ...vibeAxisConfig[axis],
-            ...axisLabelOverrides?.[axis],
-          };
-          const score = normalizeScore(scores?.[axis], scoreScale) ?? 0;
-          const targetPercent = positionPercent(score);
-          const fillLeft = Math.min(50, targetPercent);
-          const fillWidth = Math.abs(targetPercent - 50);
-          const transition = {
-            duration: shouldAnimate ? 0.72 : 0,
-            ease: "easeOut" as const,
-            delay: shouldAnimate ? index * 0.05 : 0,
-          };
-
-          return (
-            <div key={axis}>
-              {showAxisHeader && (
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-xs font-black text-black/72">
-                    {config.label}
-                  </span>
-                  <span className="text-[11px] font-semibold text-black/35">
-                    {config.leftLabel} · {config.rightLabel}
-                  </span>
-                </div>
-              )}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-[11px] font-bold leading-4 text-black/42">
-                    {config.leftLabel}
-                  </span>
-                  <span className="text-right text-[11px] font-bold leading-4 text-black/42">
-                    {config.rightLabel}
-                  </span>
-                </div>
-                <div
-                  className="relative h-4 rounded-full bg-black/[0.07] shadow-inner"
-                  aria-label={`${config.label}: ${config.leftLabel}에서 ${config.rightLabel} 사이`}
-                >
-                  <motion.span
-                    key={`fill-${axis}-${animationKey}`}
-                    initial={shouldAnimate ? { left: "50%", width: "0%" } : false}
-                    animate={{
-                      left: `${fillLeft}%`,
-                      width: `${fillWidth}%`,
-                    }}
-                    transition={transition}
-                    className="absolute top-0 h-full rounded-full bg-accent"
-                  />
-                  <span className="absolute left-1/2 top-1/2 z-10 h-7 w-px -translate-y-1/2 bg-black/28" />
-                  <motion.span
-                    key={`thumb-${axis}-${animationKey}`}
-                    initial={shouldAnimate ? { left: "50%" } : false}
-                    animate={{ left: `${targetPercent}%` }}
-                    transition={transition}
-                    className="absolute top-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-accent shadow-[0_5px_14px_rgba(0,0,0,0.18)]"
-                  />
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {axes.map((axis, index) => (
+          <VibeAxisBar
+            key={axis}
+            axis={axis}
+            score={scores?.[axis]}
+            scoreScale={scoreScale}
+            axisLabelOverrides={axisLabelOverrides?.[axis]}
+            showAxisHeader={showAxisHeader}
+            animationKey={animationKey}
+            animateBar={animateBars}
+            transitionDelay={index * 0.05}
+          />
+        ))}
       </div>
     </section>
   );

@@ -84,6 +84,7 @@ type ProfileIntroRow = {
   name: string | null;
   nickname: string | null;
   public_intro: string | null;
+  public_emoji?: string | null;
 };
 
 type TicketSourceRow = WaitlistRow & {
@@ -369,6 +370,10 @@ function profileEmoji(userId: string) {
   return emojis[sum % emojis.length];
 }
 
+function displayProfileEmoji(profile: ProfileIntroRow | undefined, userId: string) {
+  return profile?.public_emoji?.trim() || profileEmoji(userId);
+}
+
 function fallbackNickname(name: string | null | undefined) {
   const korean = (name ?? "").replace(/[^가-힣]/g, "");
   return korean.length >= 2 ? korean.slice(-2) : korean || null;
@@ -534,7 +539,7 @@ export async function GET() {
     if (profileIds.length > 0) {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,public_intro")
+        .select("user_id,name,nickname,public_intro,public_emoji")
         .in("user_id", profileIds);
       if (error) throw error;
       profileRows = (data ?? []) as unknown as ProfileIntroRow[];
@@ -606,7 +611,7 @@ export async function GET() {
             id,
             name: memberProfile?.name ?? null,
             nickname: displayNickname(memberProfile),
-            emoji: profileEmoji(id),
+            emoji: displayProfileEmoji(memberProfile, id),
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus,
             arrivalStatusUpdatedAt,

@@ -12,6 +12,7 @@ export type AdminProfile = {
   phone: string | null;
   photo_url: string | null;
   public_intro: string | null;
+  public_emoji?: string | null;
   created_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;

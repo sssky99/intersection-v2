@@ -17,6 +17,7 @@ export type ProfileRow = {
   profile_completed: boolean | null;
   questions_completed: boolean | null;
   public_intro: string | null;
+  public_emoji: string | null;
   public_intro_generated_at: string | null;
   public_intro_model: string | null;
   meeting_guidelines_agreed: boolean | null;

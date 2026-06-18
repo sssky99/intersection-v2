@@ -3,11 +3,14 @@
 import {
   Image as ImageIcon,
   LogOut,
+  Save,
   Search,
   UserRound,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { VibeAxisBar } from "@/components/vibe/VibeGraph";
+import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
@@ -122,17 +125,57 @@ function membershipStatusValue(profile: AdminProfile): MembershipStatus {
   return profile.membership_status ?? "none";
 }
 
-const adminProfileScoreItems = [
-  ["score_temperature", "온도"],
-  ["score_texture", "결"],
-  ["score_tone", "톤"],
-  ["score_rhythm", "리듬"],
-] as const;
+const adminProfileAxes = [
+  "temperature",
+  "texture",
+  "tone",
+  "rhythm",
+] as const satisfies readonly VibeAxis[];
 
-function displayPersonScore(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "미설정";
-  const displayScore = Math.max(1, Math.min(5, Math.round((value + 100) / 50) + 1));
-  return `${value} / 표시 ${displayScore}`;
+type AdminProfileAxis = (typeof adminProfileAxes)[number];
+type AdminProfileScoreColumn =
+  | "score_temperature"
+  | "score_texture"
+  | "score_tone"
+  | "score_rhythm";
+
+type ProfileDetailPatch = {
+  scores?: Partial<Record<AdminProfileScoreColumn, number | null>>;
+  publicIntro?: string;
+  publicEmoji?: string;
+};
+
+const adminProfileScoreColumns = {
+  temperature: "score_temperature",
+  texture: "score_texture",
+  tone: "score_tone",
+  rhythm: "score_rhythm",
+} as const satisfies Record<AdminProfileAxis, AdminProfileScoreColumn>;
+
+const defaultProfileEmoji = "💎";
+
+function clampAdminScore(value: number) {
+  return Math.min(100, Math.max(-100, Math.round(value)));
+}
+
+function adminProfileScore(profile: AdminProfile, axis: AdminProfileAxis) {
+  const value = profile[adminProfileScoreColumns[axis]];
+  return typeof value === "number" && Number.isFinite(value)
+    ? clampAdminScore(value)
+    : 0;
+}
+
+function adminScoreDraft(profile: AdminProfile | null) {
+  return Object.fromEntries(
+    adminProfileAxes.map((axis) => [
+      axis,
+      profile ? adminProfileScore(profile, axis) : 0,
+    ]),
+  ) as Record<AdminProfileAxis, number>;
+}
+
+function profilePublicEmoji(profile: Pick<AdminProfile, "public_emoji">) {
+  return profile.public_emoji?.trim() || defaultProfileEmoji;
 }
 
 export function AdminPageClient({
@@ -159,6 +202,11 @@ export function AdminPageClient({
   const [savingMembershipUserId, setSavingMembershipUserId] = useState<
     string | null
   >(null);
+  const [savingProfileUserId, setSavingProfileUserId] = useState<string | null>(
+    null,
+  );
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [profileSaveNotice, setProfileSaveNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [genderFilter, setGenderFilter] = useState("all");
   const [membershipFilter, setMembershipFilter] =
@@ -280,6 +328,56 @@ export function AdminPageClient({
       setMembershipSaveError("멤버십 상태를 저장하지 못했습니다.");
     } finally {
       setSavingMembershipUserId(null);
+    }
+  };
+
+  const saveProfileDetails = async (
+    userId: string,
+    patch: ProfileDetailPatch,
+  ) => {
+    if (savingProfileUserId === userId) return;
+
+    setProfileSaveError(null);
+    setProfileSaveNotice(null);
+    setSavingProfileUserId(userId);
+
+    try {
+      const response = await fetch("/api/admin/profiles", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, ...patch }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        error?: string;
+        profile?: AdminProfile;
+      } | null;
+
+      if (response.status === 401) {
+        setAuthenticated(false);
+        setProfiles([]);
+        setProfilesLoaded(false);
+        setSelectedProfileId(null);
+        return;
+      }
+
+      if (!response.ok || !data?.profile) {
+        throw new Error(data?.error ?? "profile-save-failed");
+      }
+
+      setProfiles((current) =>
+        current.map((profile) =>
+          profile.user_id === userId ? data.profile! : profile,
+        ),
+      );
+      setProfileSaveNotice("프로필 상세 정보를 저장했어요.");
+    } catch (error) {
+      setProfileSaveError(
+        error instanceof Error
+          ? error.message
+          : "프로필 상세 정보를 저장하지 못했어요.",
+      );
+    } finally {
+      setSavingProfileUserId(null);
     }
   };
 
@@ -481,6 +579,9 @@ export function AdminPageClient({
                 completionFilter={completionFilter}
                 membershipSaveError={membershipSaveError}
                 savingMembershipUserId={savingMembershipUserId}
+                savingProfileUserId={savingProfileUserId}
+                profileSaveError={profileSaveError}
+                profileSaveNotice={profileSaveNotice}
                 onViewModeChange={setViewMode}
                 onSearchChange={setSearch}
                 onGenderFilterChange={setGenderFilter}
@@ -490,6 +591,7 @@ export function AdminPageClient({
                 onCloseDetail={() => setSelectedProfileId(null)}
                 onReload={() => void loadProfiles(true)}
                 onMembershipStatusChange={changeMembershipStatus}
+                onProfileDetailSave={saveProfileDetails}
               />
             </div>
           )}
@@ -538,6 +640,9 @@ function ApplicantsPanel({
   completionFilter,
   membershipSaveError,
   savingMembershipUserId,
+  savingProfileUserId,
+  profileSaveError,
+  profileSaveNotice,
   onViewModeChange,
   onSearchChange,
   onGenderFilterChange,
@@ -547,6 +652,7 @@ function ApplicantsPanel({
   onCloseDetail,
   onReload,
   onMembershipStatusChange,
+  onProfileDetailSave,
 }: {
   profiles: AdminProfile[];
   totalCount: number;
@@ -561,6 +667,9 @@ function ApplicantsPanel({
   completionFilter: CompletionFilter;
   membershipSaveError: string | null;
   savingMembershipUserId: string | null;
+  savingProfileUserId: string | null;
+  profileSaveError: string | null;
+  profileSaveNotice: string | null;
   onViewModeChange: (mode: ViewMode) => void;
   onSearchChange: (value: string) => void;
   onGenderFilterChange: (value: string) => void;
@@ -572,6 +681,10 @@ function ApplicantsPanel({
   onMembershipStatusChange: (
     userId: string,
     status: MembershipStatus,
+  ) => Promise<void>;
+  onProfileDetailSave: (
+    userId: string,
+    patch: ProfileDetailPatch,
   ) => Promise<void>;
 }) {
   return (
@@ -722,8 +835,15 @@ function ApplicantsPanel({
           selectedProfile !== null &&
           savingMembershipUserId === selectedProfile.user_id
         }
+        profileSaving={
+          selectedProfile !== null &&
+          savingProfileUserId === selectedProfile.user_id
+        }
+        saveError={profileSaveError}
+        saveNotice={profileSaveNotice}
         onClose={onCloseDetail}
         onMembershipStatusChange={onMembershipStatusChange}
+        onProfileDetailSave={onProfileDetailSave}
       />
     </div>
   );
@@ -857,17 +977,81 @@ function ApplicantCards({
 function ProfileDetailPanel({
   profile,
   saving,
+  profileSaving,
+  saveError,
+  saveNotice,
   onClose,
   onMembershipStatusChange,
+  onProfileDetailSave,
 }: {
   profile: AdminProfile | null;
   saving: boolean;
+  profileSaving: boolean;
+  saveError: string | null;
+  saveNotice: string | null;
   onClose: () => void;
   onMembershipStatusChange: (
     userId: string,
     status: MembershipStatus,
   ) => Promise<void>;
+  onProfileDetailSave: (
+    userId: string,
+    patch: ProfileDetailPatch,
+  ) => Promise<void>;
 }) {
+  const initialScoreDraft = useMemo(() => adminScoreDraft(profile), [profile]);
+  const [scoreDraft, setScoreDraft] = useState(initialScoreDraft);
+  const [introDraft, setIntroDraft] = useState(profile?.public_intro ?? "");
+  const [emojiDraft, setEmojiDraft] = useState(profile?.public_emoji ?? "");
+
+  useEffect(() => {
+    setScoreDraft(initialScoreDraft);
+  }, [initialScoreDraft]);
+
+  useEffect(() => {
+    setIntroDraft(profile?.public_intro ?? "");
+    setEmojiDraft(profile?.public_emoji ?? "");
+  }, [profile?.public_emoji, profile?.public_intro, profile?.user_id]);
+
+  const scoresDirty = Boolean(
+    profile &&
+      adminProfileAxes.some(
+        (axis) => scoreDraft[axis] !== adminProfileScore(profile, axis),
+      ),
+  );
+  const introDirty = Boolean(
+    profile &&
+      (introDraft !== (profile.public_intro ?? "") ||
+        emojiDraft !== (profile.public_emoji ?? "")),
+  );
+
+  const updateScoreDraft = (axis: AdminProfileAxis, value: number) => {
+    setScoreDraft((current) => ({
+      ...current,
+      [axis]: clampAdminScore(value),
+    }));
+  };
+
+  const saveScores = () => {
+    if (!profile || !scoresDirty || profileSaving) return;
+    void onProfileDetailSave(profile.user_id, {
+      scores: Object.fromEntries(
+        adminProfileAxes.map((axis) => [
+          adminProfileScoreColumns[axis],
+          scoreDraft[axis],
+        ]),
+      ) as Record<AdminProfileScoreColumn, number>,
+    });
+  };
+
+  const saveIntro = () => {
+    if (!profile || !introDirty || profileSaving) return;
+    void onProfileDetailSave(profile.user_id, {
+      publicIntro: introDraft,
+      publicEmoji: emojiDraft,
+    });
+  };
+
   if (!profile) {
     return (
       <aside className="flex min-h-0 flex-col items-center justify-center rounded-2xl border border-dashed border-black/15 bg-white px-6 text-center text-sm font-semibold text-black/45">
@@ -938,33 +1122,121 @@ function ProfileDetailPanel({
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-bold">사람 지표</h3>
             <span className="text-[11px] font-semibold text-black/35">
-              관리자 전용
+              관리자 수정 가능
             </span>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {adminProfileScoreItems.map(([key, label]) => (
-              <InfoPill
-                key={key}
-                label={label}
-                value={displayPersonScore(profile[key])}
-              />
-            ))}
+          <div className="mt-4 space-y-5">
+            {adminProfileAxes.map((axis) => {
+              const value = scoreDraft[axis];
+
+              return (
+                <div
+                  key={axis}
+                  className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-3 py-4"
+                >
+                  <VibeAxisBar
+                    axis={axis}
+                    score={value}
+                    scoreScale="internal"
+                    animateBar={false}
+                    valueLabel={`${value}점`}
+                    input={{
+                      value,
+                      min: -100,
+                      max: 100,
+                      step: 1,
+                      disabled: profileSaving,
+                      onChange: (nextValue) => updateScoreDraft(axis, nextValue),
+                    }}
+                  />
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={-100}
+                      max={100}
+                      step={1}
+                      value={value}
+                      disabled={profileSaving}
+                      onChange={(event) =>
+                        updateScoreDraft(axis, Number(event.target.value))
+                      }
+                      className="h-9 w-24 rounded-xl border border-black/10 bg-white px-3 text-sm font-bold outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
+                    />
+                    <span className="text-[11px] font-semibold text-black/40">
+                      -100부터 100까지
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+          <button
+            type="button"
+            disabled={!scoresDirty || profileSaving}
+            onClick={saveScores}
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25"
+          >
+            <Save size={15} aria-hidden />
+            {profileSaving ? "저장 중..." : "사람 지표 저장"}
+          </button>
         </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-bold">GPT 자기소개</h3>
             <span className="text-[11px] font-semibold text-black/35">
-              읽기 전용
+              이모지 포함 수정 가능
             </span>
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-black/65">
-            {profile.public_intro?.trim() ||
-              "아직 생성된 자기소개가 없습니다."}
-          </p>
-          {/* TODO: 관리자 public_intro 수정 기능이 필요해지면 textarea와 저장 API를 연결. */}
+          <div className="mt-4 flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
+              {emojiDraft.trim() || profilePublicEmoji(profile)}
+            </div>
+            <label className="min-w-0 flex-1">
+              <span className="text-[11px] font-bold text-black/40">
+                프로필 이모지
+              </span>
+              <input
+                value={emojiDraft}
+                maxLength={16}
+                disabled={profileSaving}
+                onChange={(event) => setEmojiDraft(event.target.value)}
+                placeholder={defaultProfileEmoji}
+                className="mt-1 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-bold outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
+              />
+            </label>
+          </div>
+          <textarea
+            value={introDraft}
+            disabled={profileSaving}
+            onChange={(event) => setIntroDraft(event.target.value)}
+            rows={7}
+            className="mt-4 w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-6 text-black/70 outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
+            placeholder="GPT 자기소개를 입력해주세요."
+          />
+          <button
+            type="button"
+            disabled={!introDirty || profileSaving}
+            onClick={saveIntro}
+            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25"
+          >
+            <Save size={15} aria-hidden />
+            {profileSaving ? "저장 중..." : "자기소개 저장"}
+          </button>
         </section>
+
+        {(saveError || saveNotice) && (
+          <p
+            className={cn(
+              "mt-4 rounded-2xl px-4 py-3 text-sm font-semibold leading-5",
+              saveError
+                ? "bg-red-50 text-red-600"
+                : "bg-accent/12 text-black/65",
+            )}
+          >
+            {saveError ?? saveNotice}
+          </p>
+        )}
       </div>
 
       <footer className="shrink-0 border-t border-black/10 p-4">
