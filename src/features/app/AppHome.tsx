@@ -1760,6 +1760,11 @@ function memberRealName(member: UserTicket["members"][number]) {
   return member.name?.trim() || member.nickname?.trim() || "멤버";
 }
 
+function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
+  const displayName = member?.nickname?.trim() || member?.name?.trim() || "회원";
+  return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
+}
+
 function memberFeedbackStatusLabel(
   status: MemberFeedbackDraft["status"],
   active: boolean,
@@ -1770,6 +1775,11 @@ function memberFeedbackStatusLabel(
 }
 
 function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
+  const selfMember = useMemo(
+    () => userTicket.members.find((member) => member.isSelf),
+    [userTicket.members],
+  );
+  const feedbackOwner = feedbackOwnerPossessive(selfMember);
   const otherMembers = useMemo(
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
@@ -1942,19 +1952,19 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
   return (
     <div className="space-y-5 py-5">
-      <section className="rounded-3xl border border-black/10 bg-white px-5 py-6">
+      <section className="rounded-3xl border border-[#eadfc8] bg-[#fff8ea] px-5 py-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
             feedback
           </p>
           <h2 className="mt-1 text-[22px] font-black text-black">피드백 작성 ✒️</h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
-            남겨주신 피드백은 원본으로 보관되고, 다음 자리의 사람 지표와 장소 분위기를 맞추는 데 참고돼요.
+            남겨주신 피드백은 철저히 익명이 보장되며, 다음 {feedbackOwner} 큐레이션 정확성을 높이는데 사용됩니다.
           </p>
         </div>
       </section>
 
-      <section className="border-t border-black/8 py-5">
+      <section className="py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           이번 모임에서 단둘이 다시 만나보고 싶은 분이 있나요?
         </h3>
