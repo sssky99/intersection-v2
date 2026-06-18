@@ -7,7 +7,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
-  Feather,
   LogOut,
   MapPin,
   X,
@@ -1944,19 +1943,14 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   return (
     <div className="space-y-5 py-5">
       <section className="rounded-3xl border border-black/10 bg-white px-5 py-6">
-        <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent">
-            <Feather size={19} aria-hidden />
-          </div>
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
-              feedback
-            </p>
-            <h2 className="mt-1 text-[22px] font-black text-black">피드백 작성</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
-              남겨주신 피드백은 원본으로 보관되고, 다음 자리의 사람 지표와 장소 분위기를 맞추는 데 참고돼요.
-            </p>
-          </div>
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
+            feedback
+          </p>
+          <h2 className="mt-1 text-[22px] font-black text-black">피드백 작성 ✒️</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
+            남겨주신 피드백은 원본으로 보관되고, 다음 자리의 사람 지표와 장소 분위기를 맞추는 데 참고돼요.
+          </p>
         </div>
       </section>
 
@@ -2200,7 +2194,7 @@ function TicketFeedbackPlaceholder() {
         <p className="mt-5 text-[11px] font-black uppercase tracking-[0.14em] text-accent">
           feedback
         </p>
-        <h2 className="mt-2 text-[23px] font-black text-black">피드백 작성</h2>
+        <h2 className="mt-2 text-[23px] font-black text-black">피드백 작성 ✒️</h2>
         <p className="mt-3 text-sm font-semibold leading-6 text-black/52">
           이 자리에 대한 피드백을 남기는 화면이에요.
           <br />
