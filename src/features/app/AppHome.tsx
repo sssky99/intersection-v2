@@ -21,7 +21,6 @@ import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
-  ticketImage,
 } from "@/features/meetings/MeetingRecommendation";
 import {
   parseTicketRatingAnswer,
@@ -43,7 +42,7 @@ import type {
   QuestionCategory,
   QuestionOption,
 } from "@/types/question";
-import type { GatheringTicket } from "@/types/ticket";
+import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { Gender } from "@/types/user";
 import type { LucideIcon } from "lucide-react";
 
@@ -56,7 +55,8 @@ type WaitlistedTicket = {
 
 type WaitlistRow = {
   status: string | null;
-  ticket_snapshot: GatheringTicket | null;
+  ticket_id: string | null;
+  ticket_instance_id: string | null;
 };
 
 type AnswerRow = {
@@ -198,20 +198,40 @@ function setTabUrl(tab: AppTab) {
 }
 
 async function fetchWaitlistedTickets(userId: string) {
-  const { data, error } = await createClient()
+  const waitlistRequest = createClient()
     .from("meeting_waitlist")
-    .select("status,ticket_snapshot")
+    .select("status,ticket_id,ticket_instance_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .returns<WaitlistRow[]>();
+  const ticketRequest = fetch("/api/meetings/tickets", { cache: "no-store" })
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as
+        | { dates?: AvailableDate[] }
+        | null;
+
+      return response.ok ? data?.dates ?? [] : [];
+    })
+    .catch(() => []);
+
+  const [{ data, error }, availableDates] = await Promise.all([
+    waitlistRequest,
+    ticketRequest,
+  ]);
 
   if (error || !data) return null;
 
+  const ticketMap = new Map(
+    availableDates.flatMap((date) =>
+      date.tickets.map((ticket) => [ticket.id, ticket] as const),
+    ),
+  );
+
   return data.flatMap((row) =>
-    row.ticket_snapshot
+    ticketMap.get(row.ticket_instance_id ?? row.ticket_id ?? "")
       ? [
           {
-            ticket: row.ticket_snapshot,
+            ticket: ticketMap.get(row.ticket_instance_id ?? row.ticket_id ?? "")!,
             status: "waitlisted" as const,
           },
         ]
@@ -720,7 +740,7 @@ function StoredTicketCard({ ticket }: { ticket: GatheringTicket }) {
   return (
     <IntersectionTicketCard
       title={ticket.title}
-      imageUrl={ticket.imageUrl ?? ticketImage(ticket.id)}
+      imageUrl={ticket.imageUrl}
       date={ticket.date}
       time={ticket.time}
       location={`서울\n${ticket.area}`}

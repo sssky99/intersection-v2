@@ -79,6 +79,7 @@ export async function POST(request: Request) {
   const { error } = await supabase.from("meeting_waitlist").insert({
     user_id: user.id,
     ticket_id: ticket.id,
+    ticket_instance_id: ticket.id,
     meeting_date: ticket.date,
     status: waitlistStatus,
     ticket_snapshot: ticket,

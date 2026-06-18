@@ -79,6 +79,22 @@ type TemplateScoreDraftKey =
 
 const questionOrders = [1, 2, 3, 4, 5] as const;
 const scoreValues = [1, 2, 3, 4, 5] as const;
+const minuteSteps = ["00", "15", "30", "45"] as const;
+const timeOptions = [
+  { value: "", label: "시간 선택" },
+  ...Array.from({ length: 24 }, (_, hour) =>
+    minuteSteps.map((minute) => {
+      const value = `${String(hour).padStart(2, "0")}:${minute}`;
+      const period = hour < 12 ? "오전" : "오후";
+      const displayHour = hour % 12 || 12;
+
+      return {
+        value,
+        label: `${period} ${String(displayHour).padStart(2, "0")}:${minute}`,
+      };
+    }),
+  ).flat(),
+];
 const templateTicketVisibilities = ticketVisibilities.filter(
   (visibility) => visibility !== "question",
 );
@@ -475,7 +491,7 @@ export function TicketAdminPanel() {
       {
         action: "create_instance",
         templateId: selectedTemplate.id,
-        title: "새 세부 티켓",
+        title: selectedTemplate.title,
         eventTime: selectedTemplate.default_time?.slice(0, 5) ?? "",
         region: selectedTemplate.default_region ?? "",
         visibility: "draft",
@@ -1016,10 +1032,10 @@ function TemplateEditor({
                 onDraftChange({ ...draft, defaultRegion })
               }
             />
-            <FormField
+            <SelectField
               label="기본 시간"
-              type="time"
               value={draft.defaultTime}
+              options={timeOptions}
               onChange={(defaultTime) =>
                 onDraftChange({ ...draft, defaultTime })
               }
@@ -1267,10 +1283,10 @@ function InstanceEditor({
             value={draft.eventDate}
             onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
           />
-          <FormField
+          <SelectField
             label="시간"
-            type="time"
             value={draft.eventTime}
+            options={timeOptions}
             onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
           />
           <TextAreaField

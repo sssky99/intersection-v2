@@ -16,16 +16,6 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-export function ticketImage(ticketId: string) {
-  if (ticketId.includes("walk") || ticketId.includes("riverside")) {
-    return "/images/landing-people.jpg";
-  }
-  if (ticketId.includes("dinner") || ticketId.includes("calm")) {
-    return "/images/landing-gathering.png";
-  }
-  return "/images/landing-cinematic.png";
-}
-
 export function MeetingRecommendation({
   userId,
   embedded = false,
@@ -366,7 +356,7 @@ function TicketDrawingCard({
       <TicketDrawingFrame
         motionKey={ticket.id}
         title={ticket.title}
-        imageUrl={ticket.imageUrl ?? ticketImage(ticket.id)}
+        imageUrl={ticket.imageUrl}
         date={ticket.date}
         time={ticket.time}
         location={`서울\n${ticket.area}`}
@@ -380,7 +370,7 @@ function TicketDrawingCard({
         <div className="absolute inset-2 overflow-hidden rounded-[24px]">
           <IntersectionTicketCard
             title={ticket.title}
-            imageUrl={ticket.imageUrl ?? ticketImage(ticket.id)}
+            imageUrl={ticket.imageUrl}
             date={ticket.date}
             time={ticket.time}
             location={`서울\n${ticket.area}`}
@@ -471,7 +461,7 @@ function CalendarSelector({
     ? Array.from(new Set(dates.map((date) => date.date.slice(0, 7)))).sort()
     : [new Date().toISOString().slice(0, 7)];
   const [month, setMonth] = useState(months[0]);
-  const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
   useEffect(() => {
     if (!months.includes(month)) setMonth(months[0]);
@@ -480,8 +470,16 @@ function CalendarSelector({
   const [yearNumber, monthNumber] = month.split("-").map(Number);
   const daysInMonth = new Date(yearNumber, monthNumber, 0).getDate();
   const firstWeekday = new Date(Date.UTC(yearNumber, monthNumber - 1, 1)).getUTCDay();
-  const leadingBlanks = (firstWeekday + 6) % 7;
+  const leadingBlanks = firstWeekday;
   const dateMap = new Map(dates.map((date) => [date.date, date]));
+  const activeWeekdays = new Set(
+    dates
+      .filter((date) => date.date.startsWith(`${month}-`))
+      .map((date) => {
+        const [year, dateMonth, day] = date.date.split("-").map(Number);
+        return new Date(Date.UTC(year, dateMonth - 1, day)).getUTCDay();
+      }),
+  );
 
   const dateForDay = (day: number) => {
     const date = `${month}-${String(day).padStart(2, "0")}`;
@@ -512,8 +510,16 @@ function CalendarSelector({
       </div>
 
       <div className="mt-5 grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-black/35">
-        {weekdays.map((weekday) => (
-          <span key={weekday} className="py-1">
+        {weekdays.map((weekday, index) => (
+          <span
+            key={weekday}
+            className={cn(
+              "rounded-full py-1 transition-colors",
+              activeWeekdays.has(index)
+                ? "bg-[#7eb3c7]/15 font-extrabold text-[#4f9bb8]"
+                : "font-bold text-black/35",
+            )}
+          >
             {weekday}
           </span>
         ))}
