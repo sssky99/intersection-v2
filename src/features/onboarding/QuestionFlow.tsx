@@ -794,9 +794,14 @@ export function QuestionFlow({
                 {typeof answer?.value === "string" ? answer.value.length : 0}/300
               </p>
               {question.examples && question.examples.length > 0 && (
-                <div className="mt-3 space-y-1.5 text-[11px] font-medium leading-5 text-black/38">
+                <div className="mt-4 rounded-[18px] border border-[#eadfc8] bg-[#fff8ea] px-4 py-3 shadow-[0_10px_24px_rgba(0,0,0,0.035)]">
                   {question.examples.map((example) => (
-                    <p key={example}>{example}</p>
+                    <p
+                      key={example}
+                      className="border-b border-[#eadfc8]/70 py-2 text-[11px] font-semibold leading-5 text-black/48 last:border-b-0"
+                    >
+                      {example}
+                    </p>
                   ))}
                 </div>
               )}
