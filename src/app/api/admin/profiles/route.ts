@@ -24,6 +24,8 @@ const baseProfileFields = [
   "questions_completed",
 ];
 
+const testProfileFields = [...baseProfileFields, "is_test_participant"];
+
 const scoreProfileFields = [
   "score_temperature",
   "score_texture",
@@ -40,25 +42,43 @@ const membershipProfileFields = [
   "membership_updated_at",
 ];
 
-const baseProfileSelect = baseProfileFields.join(",");
-const scoreProfileSelect = [...baseProfileFields, ...scoreProfileFields].join(
-  ",",
-);
 const membershipProfileSelect = [
+  ...testProfileFields,
+  ...membershipProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const membershipProfileSelectWithoutTest = [
   ...baseProfileFields,
   ...membershipProfileFields,
   ...scoreProfileFields,
 ].join(",");
 const membershipWithoutScoresProfileSelect = [
+  ...testProfileFields,
+  ...membershipProfileFields,
+].join(",");
+const membershipWithoutScoresProfileSelectWithoutTest = [
   ...baseProfileFields,
   ...membershipProfileFields,
 ].join(",");
+const scoreProfileSelect = [...testProfileFields, ...scoreProfileFields].join(
+  ",",
+);
+const scoreProfileSelectWithoutTest = [
+  ...baseProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const baseProfileSelect = testProfileFields.join(",");
+const baseProfileSelectWithoutTest = baseProfileFields.join(",");
 
 const profileSelects = [
   membershipProfileSelect,
+  membershipProfileSelectWithoutTest,
   membershipWithoutScoresProfileSelect,
+  membershipWithoutScoresProfileSelectWithoutTest,
   scoreProfileSelect,
+  scoreProfileSelectWithoutTest,
   baseProfileSelect,
+  baseProfileSelectWithoutTest,
 ];
 
 function normalizeProfiles(profiles: AdminProfile[]) {
@@ -173,6 +193,7 @@ export async function PATCH(request: NextRequest) {
     scores?: Partial<Record<(typeof scoreProfileFields)[number], unknown>>;
     publicIntro?: unknown;
     publicEmoji?: unknown;
+    isTestParticipant?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
@@ -219,6 +240,16 @@ export async function PATCH(request: NextRequest) {
       );
     }
     updates.public_emoji = publicEmoji || null;
+  }
+
+  if (body && "isTestParticipant" in body) {
+    if (typeof body.isTestParticipant !== "boolean") {
+      return NextResponse.json(
+        { error: "테스트 참가자 값이 올바르지 않습니다." },
+        { status: 400 },
+      );
+    }
+    updates.is_test_participant = body.isTestParticipant;
   }
 
   if (Object.keys(updates).length === 0) {

@@ -45,6 +45,7 @@ type InstanceRow = {
   address: string | null;
   place_visibility: string | null;
   remaining_seat_label_count: number | null;
+  visibility: string | null;
 };
 
 type WaitlistRow = {
@@ -87,6 +88,10 @@ type ProfileIntroRow = {
   public_emoji?: string | null;
 };
 
+type ProfileAccessRow = {
+  is_test_participant: boolean | null;
+};
+
 type TicketSourceRow = WaitlistRow & {
   assignment_only?: boolean;
 };
@@ -124,6 +129,7 @@ const instanceSelect = [
   "address",
   "place_visibility",
   "remaining_seat_label_count",
+  "visibility",
 ].join(",");
 
 const hiddenStatuses = new Set([
@@ -395,6 +401,14 @@ export async function GET() {
 
   try {
     const supabase = createAdminClient();
+    const { data: profileAccess, error: profileAccessError } = await supabase
+      .from("profiles")
+      .select("is_test_participant")
+      .eq("user_id", user.id)
+      .maybeSingle<ProfileAccessRow>();
+    if (profileAccessError) throw profileAccessError;
+    const canSeeTestTickets = profileAccess?.is_test_participant === true;
+
     const { data: waitlistData, error: waitlistError } = await supabase
       .from("meeting_waitlist")
       .select("*")
@@ -468,7 +482,16 @@ export async function GET() {
     const ticketSourceRows: TicketSourceRow[] = [
       ...waitlistRows,
       ...assignmentOnlyRows,
-    ];
+    ].filter((row) => {
+      const instanceId =
+        row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id;
+      const instance = instanceId ? instanceMap.get(instanceId) : null;
+      return instance?.visibility !== "test_only" || canSeeTestTickets;
+    });
+
+    if (ticketSourceRows.length === 0) {
+      return NextResponse.json({ tickets: [] satisfies UserTicket[] });
+    }
     const templateIds = unique([
       ...ticketSourceRows.map((row) => row.ticket_template_id),
       ...instances.map((instance) => instance.template_id),

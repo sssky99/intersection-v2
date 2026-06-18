@@ -49,6 +49,22 @@ const profileSelect = [
   "membership_end_date",
   "membership_purchase_clicked_at",
   "membership_updated_at",
+  "is_test_participant",
+].join(",");
+
+const profileSelectWithoutTestParticipant = [
+  "user_id",
+  "name",
+  "gender",
+  "birth_year",
+  "mbti",
+  "phone",
+  "membership_status",
+  "membership_plan",
+  "membership_start_date",
+  "membership_end_date",
+  "membership_purchase_clicked_at",
+  "membership_updated_at",
 ].join(",");
 
 const templateSelect = [
@@ -272,7 +288,7 @@ function instancePayload(body: Record<string, unknown>) {
 
 async function loadTicketData() {
   const supabase = createAdminClient();
-  const [templatesResult, instancesResult, assignmentsResult, profilesResult, waitlistResult] =
+  const [templatesResult, instancesResult, assignmentsResult, waitlistResult] =
     await Promise.all([
       supabase
         .from("ticket_templates")
@@ -284,7 +300,6 @@ async function loadTicketData() {
         .order("event_date", { ascending: true, nullsFirst: false })
         .order("event_time", { ascending: true, nullsFirst: false }),
       supabase.from("ticket_assignments").select(assignmentSelect),
-      supabase.from("profiles").select(profileSelect).order("name"),
       supabase
         .from("meeting_waitlist")
         .select(
@@ -297,13 +312,10 @@ async function loadTicketData() {
     templatesResult.error ??
     instancesResult.error ??
     assignmentsResult.error ??
-    profilesResult.error ??
     waitlistResult.error;
   if (error) throw error;
 
-  const profiles = (profilesResult.data ?? []).map((profile) =>
-    normalizeAdminProfile(profile as unknown as AdminProfile),
-  );
+  const profiles = await fetchProfiles(supabase);
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const assignments = (assignmentsResult.data ?? []) as unknown as AssignmentRow[];
   const waitlist = (waitlistResult.data ?? []) as unknown as WaitlistRow[];
@@ -357,6 +369,25 @@ async function loadTicketData() {
   );
 
   return { templates, profiles, waitlist };
+}
+
+async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
+  const selects = [profileSelect, profileSelectWithoutTestParticipant];
+
+  for (const select of selects) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(select)
+      .order("name");
+
+    if (!error) {
+      return (data ?? []).map((profile) =>
+        normalizeAdminProfile(profile as unknown as AdminProfile),
+      );
+    }
+  }
+
+  throw new Error("profiles-load-failed");
 }
 
 export async function GET(request: NextRequest) {
@@ -539,18 +570,35 @@ export async function POST(request: NextRequest) {
       if (!instanceId || !profileId) {
         return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
       }
+
+      const { data: instance, error: instanceError } = await supabase
+        .from("ticket_instances")
+        .select("id,template_id,event_date,visibility")
+        .eq("id", instanceId)
+        .single();
+      if (instanceError) throw instanceError;
+
+      if (instance.visibility === "test_only") {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("is_test_participant")
+          .eq("user_id", profileId)
+          .single();
+        if (profileError) throw profileError;
+
+        if (profile?.is_test_participant !== true) {
+          return NextResponse.json(
+            { error: "테스트 참가자만 테스트 티켓에 배정할 수 있습니다." },
+            { status: 403 },
+          );
+        }
+      }
+
       const { error } = await supabase.from("ticket_assignments").insert({
         ticket_instance_id: instanceId,
         profile_id: profileId,
       });
       if (error && error.code !== "23505") throw error;
-
-      const { data: instance, error: instanceError } = await supabase
-        .from("ticket_instances")
-        .select("id,template_id,event_date")
-        .eq("id", instanceId)
-        .single();
-      if (instanceError) throw instanceError;
 
       if (instance.event_date) {
         const { data: existingWaitlist, error: existingWaitlistError } =

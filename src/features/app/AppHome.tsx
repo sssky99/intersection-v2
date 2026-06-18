@@ -32,6 +32,7 @@ import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
+import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
   TicketDetailContent,
   type TicketDetailSectionKey,
@@ -56,6 +57,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { ProfileRow } from "@/types/profile";
 import type {
   QuestionAnswer,
+  TicketQuestionTemplate,
 } from "@/types/question";
 import type {
   GatheringTicket,
@@ -287,17 +289,21 @@ export function AppHome({
   userId,
   profile,
   initialTab = "recommend",
+  ticketQuestionTemplates = [],
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
+  ticketQuestionTemplates?: TicketQuestionTemplate[];
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
+  const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
   const [membershipModalOpen, setMembershipModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -338,6 +344,7 @@ export function AppHome({
       .then(({ data, error }) => {
         if (cancelled || error || !data) return;
 
+        setAnswerRows(data);
         setAnswers(
           Object.fromEntries(
             data.map((row) => {
@@ -360,6 +367,7 @@ export function AppHome({
 
     setActiveTab(tab);
     setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
     setTabUrl(tab);
   };
@@ -388,7 +396,7 @@ export function AppHome({
   };
 
   return (
-    <section className="flex h-dvh flex-col bg-white md:h-[calc(100dvh-32px)]">
+    <section className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]">
       <MembershipFloatingButton
         onClick={() => {
           setProfilePanelOpen(false);
@@ -477,6 +485,7 @@ export function AppHome({
               vibeAnimationKey={profileVibeAnimationKey}
               loggingOut={loggingOut}
               logoutError={logoutError}
+              onOpenQuestionReview={() => setQuestionReviewOpen(true)}
               onLogout={logout}
             />
           )}
@@ -524,6 +533,35 @@ export function AppHome({
           })}
         </div>
       </nav>
+
+      <AnimatePresence>
+        {questionReviewOpen && (
+          <motion.div
+            key="question-review"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-0 z-50 bg-white"
+          >
+            <button
+              type="button"
+              title="질문 다시보기 닫기"
+              aria-label="질문 다시보기 닫기"
+              onClick={() => setQuestionReviewOpen(false)}
+              className="absolute right-4 top-[calc(44px+env(safe-area-inset-top))] z-10 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/92 text-black/55 shadow-sm backdrop-blur"
+            >
+              <X size={17} aria-hidden />
+            </button>
+            <QuestionFlow
+              mode="preview"
+              initialRows={answerRows}
+              ticketQuestionTemplates={ticketQuestionTemplates}
+              onPreviewComplete={() => setQuestionReviewOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -2192,6 +2230,7 @@ function ProfileTab({
   vibeAnimationKey,
   loggingOut,
   logoutError,
+  onOpenQuestionReview,
   onLogout,
 }: {
   profile: ProfileRow;
@@ -2199,6 +2238,7 @@ function ProfileTab({
   vibeAnimationKey: number;
   loggingOut: boolean;
   logoutError: string | null;
+  onOpenQuestionReview: () => void;
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
@@ -2245,12 +2285,26 @@ function ProfileTab({
           className="mt-5"
         />
 
+        {profile.is_test_participant && (
+          <button
+            type="button"
+            onClick={onOpenQuestionReview}
+            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          >
+            <PenLine size={15} aria-hidden />
+            질문 다시보기
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
             window.location.href = "/details?from=profile";
           }}
-          className="mt-8 flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55"
+          className={cn(
+            "flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55",
+            profile.is_test_participant ? "mt-3" : "mt-8",
+          )}
         >
           교집합 소개 다시 보기
         </button>

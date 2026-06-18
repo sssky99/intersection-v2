@@ -51,6 +51,10 @@ type AssignmentRow = {
   ticket_instance_id: string;
 };
 
+type ProfileAccessRow = {
+  is_test_participant: boolean | null;
+};
+
 const templateSelect = [
   "id",
   "title",
@@ -191,6 +195,87 @@ export async function GET(request: Request) {
     let testInstanceRows: InstanceRow[] = [];
 
     if (user) {
+      const { data: profileAccess, error: profileAccessError } = await supabase
+        .from("profiles")
+        .select("is_test_participant")
+        .eq("user_id", user.id)
+        .maybeSingle<ProfileAccessRow>();
+      if (profileAccessError) throw profileAccessError;
+
+      const canSeeTestTickets = profileAccess?.is_test_participant === true;
+
+      if (!canSeeTestTickets) {
+        const instanceRows = publicInstanceRows;
+        const instanceMap = new Map(
+          instanceRows.map((instance) => [instance.id, instance]),
+        );
+        const excludedTemplateDates = new Set<string>();
+
+        if (!includeApplied) {
+          const { data: waitlistRows, error: waitlistError } = await userSupabase
+            .from("meeting_waitlist")
+            .select(
+              "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
+            )
+            .eq("user_id", user.id)
+            .returns<WaitlistRow[]>();
+
+          if (waitlistError) throw waitlistError;
+
+          for (const row of waitlistRows ?? []) {
+            const linkedInstance =
+              (row.ticket_instance_id
+                ? instanceMap.get(row.ticket_instance_id)
+                : null) ??
+              (row.ticket_id ? instanceMap.get(row.ticket_id) : null);
+            const templateId =
+              row.ticket_template_id ?? linkedInstance?.template_id ?? null;
+            const meetingDate = row.meeting_date ?? linkedInstance?.event_date ?? null;
+
+            if (templateId && meetingDate) {
+              excludedTemplateDates.add(`${templateId}|${meetingDate}`);
+            }
+          }
+        }
+
+        const templateIds = Array.from(
+          new Set(instanceRows.map((instance) => instance.template_id)),
+        );
+
+        if (templateIds.length === 0) {
+          return NextResponse.json({ dates: [] satisfies AvailableDate[] });
+        }
+
+        const { data: templates, error: templatesError } = await supabase
+          .from("ticket_templates")
+          .select(templateSelect)
+          .in("id", templateIds);
+
+        if (templatesError) throw templatesError;
+
+        const templateMap = new Map(
+          ((templates ?? []) as unknown as TemplateRow[]).map((template) => [
+            template.id,
+            template,
+          ]),
+        );
+
+        const tickets = instanceRows
+          .filter(
+            (instance) =>
+              !excludedTemplateDates.has(
+                `${instance.template_id}|${instance.event_date ?? ""}`,
+              ),
+          )
+          .map((instance) => {
+            const template = templateMap.get(instance.template_id);
+            return template ? toTicket(instance, template) : null;
+          })
+          .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
+
+        return NextResponse.json({ dates: groupByDate(tickets) });
+      }
+
       const { data: assignments, error: assignmentsError } = await supabase
         .from("ticket_assignments")
         .select("ticket_instance_id")

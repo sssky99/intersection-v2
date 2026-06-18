@@ -143,6 +143,7 @@ type ProfileDetailPatch = {
   scores?: Partial<Record<AdminProfileScoreColumn, number | null>>;
   publicIntro?: string;
   publicEmoji?: string;
+  isTestParticipant?: boolean;
 };
 
 const adminProfileScoreColumns = {
@@ -1024,6 +1025,7 @@ function ProfileDetailPanel({
       (introDraft !== (profile.public_intro ?? "") ||
         emojiDraft !== (profile.public_emoji ?? "")),
   );
+  const isTestParticipant = Boolean(profile?.is_test_participant);
 
   const updateScoreDraft = (axis: AdminProfileAxis, value: number) => {
     setScoreDraft((current) => ({
@@ -1049,6 +1051,13 @@ function ProfileDetailPanel({
     void onProfileDetailSave(profile.user_id, {
       publicIntro: introDraft,
       publicEmoji: emojiDraft,
+    });
+  };
+
+  const toggleTestParticipant = () => {
+    if (!profile || profileSaving) return;
+    void onProfileDetailSave(profile.user_id, {
+      isTestParticipant: !isTestParticipant,
     });
   };
 
@@ -1117,6 +1126,35 @@ function ProfileDetailPanel({
             value={completionText(profile.questions_completed)}
           />
         </div>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold">테스트 참가자</h3>
+              <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+                켜진 신청자에게만 테스트 티켓과 질문 다시보기가 표시됩니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isTestParticipant}
+              disabled={profileSaving}
+              onClick={toggleTestParticipant}
+              className={cn(
+                "relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-45",
+                isTestParticipant ? "bg-black" : "bg-black/15",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition",
+                  isTestParticipant ? "left-7" : "left-1",
+                )}
+              />
+            </button>
+          </div>
+        </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
           <div className="flex items-center justify-between gap-3">

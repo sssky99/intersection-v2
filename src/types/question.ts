@@ -15,7 +15,9 @@ export type QuestionCategory =
   | "회피 조건"
   | "나이 조건"
   | "모임 취향"
-  | "자기소개";
+  | "자기소개"
+  | "나의 일"
+  | "관심 주제";
 
 export type QuestionOption = {
   value: string;
@@ -42,6 +44,19 @@ export type TicketRatingAnswer = {
   signal_tags: string[];
 };
 
+export type TicketQuestionTemplate = {
+  id: string;
+  title: string;
+  shortDescription: string | null;
+  imageUrl: string | null;
+  moodTags: string[];
+  activityType: string | null;
+  recommendationCopy: string | null;
+  defaultRegion: string | null;
+  defaultTime: string | null;
+  questionOrder: number;
+};
+
 export type ProfileQuestion = {
   id: number;
   order?: number;
@@ -49,6 +64,7 @@ export type ProfileQuestion = {
   question: string;
   description?: string;
   placeholder?: string;
+  examples?: string[];
   type: QuestionType;
   options?: Array<string | QuestionOption>;
   maxSelections?: number;

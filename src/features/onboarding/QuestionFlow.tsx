@@ -16,7 +16,10 @@ import type {
   QuestionAnswer,
   QuestionOption,
   TicketRatingAnswer,
+  TicketQuestionTemplate,
 } from "@/types/question";
+
+export type { TicketQuestionTemplate } from "@/types/question";
 
 export type StoredAnswerRow = {
   question_order: number;
@@ -30,19 +33,6 @@ type AnswerMap = Record<number, QuestionAnswer>;
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
-
-export type TicketQuestionTemplate = {
-  id: string;
-  title: string;
-  shortDescription: string | null;
-  imageUrl: string | null;
-  moodTags: string[];
-  activityType: string | null;
-  recommendationCopy: string | null;
-  defaultRegion: string | null;
-  defaultTime: string | null;
-  questionOrder: number;
-};
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -264,13 +254,18 @@ export function QuestionFlow({
   userId,
   initialRows,
   ticketQuestionTemplates = [],
+  mode = "onboarding",
+  onPreviewComplete,
 }: {
-  userId: string;
+  userId?: string;
   initialRows: StoredAnswerRow[];
   ticketQuestionTemplates?: TicketQuestionTemplate[];
+  mode?: "onboarding" | "preview";
+  onPreviewComplete?: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isPreview = mode === "preview";
   const questions = useMemo(
     () => questionsWithTicketTemplates(ticketQuestionTemplates),
     [ticketQuestionTemplates],
@@ -293,8 +288,10 @@ export function QuestionFlow({
     questions.length,
   );
   const [questionIndex, setQuestionIndex] = useState(
-    requestedStartIndex ??
-      (firstIncomplete === -1 ? questions.length - 1 : firstIncomplete),
+    isPreview
+      ? 0
+      : requestedStartIndex ??
+          (firstIncomplete === -1 ? questions.length - 1 : firstIncomplete),
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
   const [saving, setSaving] = useState(false);
@@ -326,6 +323,9 @@ export function QuestionFlow({
     targetQuestion: ProfileQuestion,
     nextAnswer: QuestionAnswer,
   ) => {
+    if (isPreview) return;
+    if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
+
     const { error: saveError } = await createClient()
       .from("user_answers")
       .upsert(
@@ -358,6 +358,13 @@ export function QuestionFlow({
       setQuestionIndex(missingIndex);
       return;
     }
+
+    if (isPreview) {
+      onPreviewComplete?.();
+      return;
+    }
+
+    if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
 
     const { error: profileError } = await createClient()
       .from("profiles")
@@ -782,6 +789,13 @@ export function QuestionFlow({
               <p className="mt-2 text-right text-[10px] font-semibold text-black/32">
                 {typeof answer?.value === "string" ? answer.value.length : 0}/300
               </p>
+              {question.examples && question.examples.length > 0 && (
+                <div className="mt-3 space-y-1.5 text-[11px] font-medium leading-5 text-black/38">
+                  {question.examples.map((example) => (
+                    <p key={example}>{example}</p>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </motion.div>

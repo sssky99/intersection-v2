@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { displayMembershipStatus } from "@/features/membership/membershipTypes";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { GatheringTicket } from "@/types/ticket";
 
@@ -10,6 +11,7 @@ type WaitlistRequest = {
 type ProfileMembership = {
   membership_status: string | null;
   membership_end_date: string | null;
+  is_test_participant: boolean | null;
 };
 
 function isTicket(value: WaitlistRequest["ticket"]): value is GatheringTicket {
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("membership_status,membership_end_date")
+    .select("membership_status,membership_end_date,is_test_participant")
     .eq("user_id", user.id)
     .maybeSingle<ProfileMembership>();
 
@@ -56,6 +58,26 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Profile membership state is not available." },
       { status: 400 },
+    );
+  }
+
+  const { data: instance, error: instanceError } = await createAdminClient()
+    .from("ticket_instances")
+    .select("id,visibility")
+    .eq("id", ticket.id)
+    .maybeSingle<{ id: string; visibility: string | null }>();
+
+  if (instanceError) {
+    return NextResponse.json(
+      { error: "Ticket visibility is not available." },
+      { status: 400 },
+    );
+  }
+
+  if (instance?.visibility === "test_only" && !profile.is_test_participant) {
+    return NextResponse.json(
+      { error: "Test ticket access is not available." },
+      { status: 403 },
     );
   }
 

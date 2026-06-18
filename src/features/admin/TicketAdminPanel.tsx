@@ -783,7 +783,9 @@ export function TicketAdminPanel() {
 
     if (isTestOnly) {
       for (const profile of profiles) {
-        candidateIds.add(profile.user_id);
+        if (profile.is_test_participant) {
+          candidateIds.add(profile.user_id);
+        }
       }
     } else {
       for (const row of waitlist) {
@@ -1794,7 +1796,7 @@ function InstanceEditor({
             <h4 className="text-sm font-bold">멤버 추가</h4>
             <p className="mt-1 text-[11px] font-semibold leading-4 text-black/38">
               {instance.visibility === "test_only"
-                ? "테스트 티켓은 신청하지 않은 사람도 이름이나 전화번호로 검색해 배정할 수 있습니다."
+                ? "테스트 참가자로 표시된 사람만 이름이나 전화번호로 검색해 배정할 수 있습니다."
                 : "기본 후보는 이 날짜와 이 티켓 템플릿에 신청한 사람만 표시됩니다."}
             </p>
             <label className="relative mt-3 block">
@@ -1836,7 +1838,7 @@ function InstanceEditor({
               ) : (
                 <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
                   {instance.visibility === "test_only"
-                    ? "검색 조건에 맞는 추가 후보가 없습니다."
+                    ? "검색 조건에 맞는 테스트 참가자 후보가 없습니다."
                     : "이 날짜와 템플릿에 신청한 추가 후보가 없습니다."}
                 </p>
               )}

@@ -16,6 +16,7 @@ export type AdminProfile = {
   created_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;
+  is_test_participant?: boolean | null;
   membership_status?: MembershipStatus | null;
   membership_plan?: string | null;
   membership_start_date?: string | null;
@@ -52,6 +53,7 @@ export function hasExpiredMembership(profile: AdminProfile) {
 export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
   return {
     ...profile,
+    is_test_participant: profile.is_test_participant ?? false,
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
   };

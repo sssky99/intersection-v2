@@ -4,6 +4,7 @@ import {
   buildFallbackIntro,
   buildProfileInput,
   isValidGeneratedIntro,
+  parseGeneratedProfileContent,
   profileInstructions,
   type PromptAnswerRow,
 } from "@/lib/profilePrompt";
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json({
       intro: profile.public_intro,
+      emoji: profile.public_emoji,
       model: profile.public_intro_model,
       source: "stored",
     });
@@ -95,10 +97,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const generatedIntro = await generateProfileText({
+    const generatedRaw = await generateProfileText({
       instructions: profileInstructions,
       input: buildProfileInput(profile, promptAnswers),
     });
+    const generatedProfile = parseGeneratedProfileContent(generatedRaw);
+    const generatedIntro = generatedProfile?.publicIntro ?? null;
 
     if (
       !generatedIntro ||
@@ -122,20 +126,23 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         intro: fallbackIntro,
+        emoji: profile.public_emoji,
         model: "fallback",
         source: "fallback",
-        notice: generatedIntro
+        notice: generatedRaw
           ? "생성 문장이 공개 프로필 형식과 맞지 않아 안전한 소개문으로 정리했어요."
           : undefined,
       });
     }
 
     const intro = generatedIntro.trim();
+    const emoji = generatedProfile?.publicEmoji ?? null;
     const generatedAt = new Date().toISOString();
     const { error } = await supabase
       .from("profiles")
       .update({
         public_intro: intro,
+        public_emoji: emoji || profile.public_emoji || null,
         public_intro_generated_at: generatedAt,
         public_intro_model: publicProfileModel,
       })
@@ -145,6 +152,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       intro,
+      emoji: emoji || profile.public_emoji,
       model: publicProfileModel,
       source: "generated",
     });

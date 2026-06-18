@@ -12,6 +12,11 @@ export type PromptAnswerRow = {
   other_text: string | null;
 };
 
+export type GeneratedProfileContent = {
+  publicEmoji: string | null;
+  publicIntro: string;
+};
+
 function getOptionLabel(
   questionOrder: number,
   value: string,
@@ -112,7 +117,7 @@ function extractWorkDescription(answer: string) {
 }
 
 function buildConversationParagraph(answers: PromptAnswerRow[]) {
-  const preferredOrders = [1, 2, 3, 4, 6, 5, 9, 10, 11];
+  const preferredOrders = [1, 2, 3, 4, 6, 5, 9, 8, 7];
   const details = preferredOrders
     .map((order) => cleanSentence(getAnswerText(answers, order)))
     .filter(Boolean)
@@ -126,21 +131,21 @@ function buildConversationParagraph(answers: PromptAnswerRow[]) {
 }
 
 function buildInterestParagraph(answers: PromptAnswerRow[]) {
-  const selfIntro = cleanSentence(getAnswerText(answers, 16));
-  const recentThought = cleanSentence(getAnswerText(answers, 16)).replace(
+  const interestAnswer = cleanSentence(getAnswerText(answers, 16));
+  const recentThought = interestAnswer.replace(
     /^요즘은\s*/,
     "",
   );
   const labels = answers
-    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 15)
+    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 14)
     .map((answer) => parseTicketRatingAnswer(answer.answer_text))
     .filter((answer): answer is NonNullable<typeof answer> => Boolean(answer))
     .filter((answer) => Number(answer.rating) >= 4)
     .map((answer) => answer.title.replace(/\n/g, " "))
     .slice(0, 3);
 
-  if (selfIntro && labels.length > 0) {
-    return `${selfIntro}. ${labels.join(", ")} 같은 자리에도 마음이 가는 편이에요.`;
+  if (interestAnswer && labels.length > 0) {
+    return `${interestAnswer}. ${labels.join(", ")} 같은 자리에도 마음이 가는 편이에요.`;
   }
 
   if (recentThought && labels.length > 0) {
@@ -169,7 +174,7 @@ export function buildProfileInput(
   answers: PromptAnswerRow[],
 ) {
   const ticketRatings = answers
-    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 15)
+    .filter((answer) => answer.question_order >= 10 && answer.question_order <= 14)
     .map((answer) => parseTicketRatingAnswer(answer.answer_text))
     .filter((answer): answer is NonNullable<typeof answer> => Boolean(answer));
   const resolvedAnswers = answers
@@ -193,7 +198,7 @@ export function buildProfileInput(
         order: answer.question_order,
         question: question?.question ?? "",
         answer:
-          (answer.question_order >= 10 && answer.question_order <= 15
+          (answer.question_order >= 10 && answer.question_order <= 14
             ? getAnswerText(answers, answer.question_order)
             : answer.answer_text?.trim()) ||
           values.join(", ") ||
@@ -210,7 +215,8 @@ export function buildProfileInput(
     birthYear:
       profile.birth_year == null ? "" : String(profile.birth_year),
     mbti: profile.mbti ?? "",
-    workAnswer: null,
+    workAnswer:
+      resolvedAnswers.find((answer) => answer.order === 15)?.answer ?? null,
     conversationAnswers: resolvedAnswers.filter(
       (answer) => answer.order >= 1 && answer.order <= 9,
     ),
@@ -226,26 +232,60 @@ export function buildProfileInput(
   };
 }
 
+export function parseGeneratedProfileContent(
+  value: string | null | undefined,
+): GeneratedProfileContent | null {
+  const raw = value?.trim();
+  if (!raw) return null;
+
+  const jsonText = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(jsonText) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+
+    const publicIntro = (parsed as { publicIntro?: unknown }).publicIntro;
+    const publicEmoji = (parsed as { publicEmoji?: unknown }).publicEmoji;
+
+    if (typeof publicIntro !== "string" || !publicIntro.trim()) return null;
+
+    return {
+      publicIntro: publicIntro.trim(),
+      publicEmoji:
+        typeof publicEmoji === "string" && publicEmoji.trim()
+          ? publicEmoji.trim().slice(0, 16)
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export const profileInstructions = `
 다른 모임 참가자들이 읽을 공개 프로필을 한국어로 작성한다.
 
-공개 프로필은 반드시 빈 줄로 구분된 정확히 3문단으로 작성한다.
+입력에는 publicDisplayName, workAnswer, conversationAnswers, recentInterestAnswers가 포함된다.
+선택적으로 ticketPreferences가 포함될 수 있으며, 이는 좋아하는 자리 분위기를 파악하는 보조 참고로만 사용한다.
 
-1문단은 반드시 입력에 있는 publicDisplayName 값 뒤에 "님은"을 붙여 시작한다.
-사용자가 직접 적은 자기소개와 기본정보를 바탕으로 이 사람의 전반적인 분위기를 자연스럽게 설명한다.
-직업 또는 일하는 분야가 답변에 명확히 있을 때만 자연스럽게 언급한다.
+출력은 반드시 JSON만 사용한다. 마크다운, 설명문, 코드블록은 출력하지 않는다.
 
-2문단은 질문 1~9번 답변을 참고해 대화 스타일과 모임에서 편안함을 느끼는 조건을 설명한다.
-사용자의 답변에 맞게 표현을 달리하며 예시 문장을 고정 템플릿처럼 반복하지 않는다.
+{
+  "publicEmoji": "직업, 요즘 하는 일, 또는 최근 관심사와 자연스럽게 어울리는 이모지 1개",
+  "publicIntro": "빈 줄로 구분된 정확히 3문단의 공개 프로필"
+}
 
-3문단은 질문 10~15번의 티켓 1~5단계 반응과 질문 16번 자기소개를 참고해 좋아할 만한 자리와 관심사를 설명한다.
-티켓 반응을 직접 점수처럼 나열하지 말고 자연스러운 취향으로 풀어쓴다.
+publicIntro 작성 규칙:
+
+1문단은 반드시 publicDisplayName 값 뒤에 "님은"을 붙여 시작한다. workAnswer를 바탕으로 요즘 어떤 일을 하며 지내는지 자연스럽게 소개한다. 회사명, 정확한 직함, 근무지, 부서명, 정확한 경력 연차, 특정 가능한 업무나 사건은 포함하지 않는다.
+
+2문단은 conversationAnswers를 바탕으로 대화 스타일, 편안함을 느끼는 분위기, 사람들과 가까워지는 방식을 설명한다. 사용자를 진단하거나 유형화하지 말고, 답변에서 드러난 경향만 부드럽게 표현한다.
+
+3문단은 recentInterestAnswers를 바탕으로 최근 관심사와 편하게 나눌 수 있는 대화 주제를 설명한다. ticketPreferences가 있다면 좋아하는 자리 분위기를 보조적으로만 참고하고, 티켓 이름이나 점수를 직접 나열하지 않는다.
 
 사용자의 전체 실명 대신 publicDisplayName만 사용할 수 있다.
-
-회사명, 근무지, 부서명, 정확한 경력 연차, 특정 가능한 사건이나 업무,
-전화번호, 불필요한 신상 정보는 절대 포함하지 않는다.
-답변에 없는 내용을 만들거나 사용자를 진단하지 않는다.
 
 친구가 다른 사람에게 소개하듯 부드럽고 따뜻하게 쓴다.
 "~예요", "~하고 있어요", "~하는 편이에요", "~에 관심이 많아요",
@@ -253,11 +293,10 @@ export const profileInstructions = `
 "~입니다", "~합니다", "~처럼 보여요", "~인 것 같아요", "분석 결과",
 "~일 가능성이 있어요", "~이 느껴져요", "~해 보여요", "~와 어울려요",
 "유형", "진단", "성향상"이라는 표현은 쓰지 않는다.
-부정적인 답변도 과장 없이 긍정적이고 자연스럽게 표현하고,
-연애나 이성 목적을 과하게 강조하지 않는다.
 
-공백 포함 300~450자, 3문단으로 작성한다.
-프로필 본문만 출력하고 제목, 목록, 따옴표, 설명은 붙이지 않는다.
+답변에 없는 내용을 만들지 않는다. 사용자를 과하게 미화하지 않는다. 성격을 단정하지 않는다. 연애나 이성 목적을 과하게 강조하지 않는다.
+
+publicIntro는 공백 포함 300~450자이며, 정확히 3문단으로 작성한다. 각 문단은 빈 줄로 구분한다.
 `.trim();
 
 export function isValidGeneratedIntro(
@@ -289,7 +328,7 @@ export function buildFallbackIntro(
   answers: PromptAnswerRow[],
 ) {
   const name = publicDisplayName(profile.name);
-  const work = extractWorkDescription(getAnswerText(answers, 16));
+  const work = extractWorkDescription(getAnswerText(answers, 15));
   const conversation = buildConversationParagraph(answers);
   const interests = buildInterestParagraph(answers);
 
