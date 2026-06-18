@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
 import type { GatheringTicket } from "@/types/ticket";
 
+function cn(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
+}
+
 const flowSteps = [
   "가볍게 인사하고 자리에 앉아요.",
   "음식이나 음료와 함께 편한 이야기로 시작해요.",
@@ -23,15 +27,21 @@ function cleanList(items: string[] | undefined) {
   return (items ?? []).map((item) => item.trim()).filter(Boolean);
 }
 
-export function TicketDetailContent({ ticket }: { ticket: GatheringTicket }) {
+export function TicketDetailContent({
+  ticket,
+  className,
+}: {
+  ticket: GatheringTicket;
+  className?: string;
+}) {
   const activities = cleanList(ticket.detailActivities);
   const goodFor = cleanList(ticket.detailGoodFor);
   const customNotice = ticket.detailNotice?.trim();
 
   return (
-    <div className="mt-5 space-y-4">
+    <div className={cn("mt-5", className)}>
       {ticket.detailSummary?.trim() && (
-        <p className="rounded-[22px] border border-black/8 bg-white px-5 py-4 text-[15px] font-bold leading-7 text-black shadow-[0_10px_28px_rgba(0,0,0,0.03)]">
+        <p className="pb-5 text-[15px] font-bold leading-7 text-black">
           {ticket.detailSummary.trim()}
         </p>
       )}
@@ -39,6 +49,12 @@ export function TicketDetailContent({ ticket }: { ticket: GatheringTicket }) {
       {activities.length > 0 && (
         <TicketDetailSection title="이 자리에서는 이런 걸 해요">
           <BulletList items={activities} />
+        </TicketDetailSection>
+      )}
+
+      {goodFor.length > 0 && (
+        <TicketDetailSection title="이런 분들에게 잘 맞아요">
+          <BulletList items={goodFor} />
         </TicketDetailSection>
       )}
 
@@ -54,13 +70,19 @@ export function TicketDetailContent({ ticket }: { ticket: GatheringTicket }) {
           "alcohol",
           "romance",
         ]}
+        showAxisHeader={false}
+        axisLabelOverrides={{
+          alcohol: {
+            leftLabel: "술이 없는",
+            rightLabel: "술이 있는",
+          },
+          romance: {
+            leftLabel: "편한",
+            rightLabel: "설레는",
+          },
+        }}
+        className="rounded-none border-x-0 border-b-0 border-t border-black/8 bg-transparent px-0 py-5 shadow-none"
       />
-
-      {goodFor.length > 0 && (
-        <TicketDetailSection title="이런 결의 분들에게 잘 맞아요">
-          <BulletList items={goodFor} />
-        </TicketDetailSection>
-      )}
 
       <TicketDetailSection title="이렇게 진행돼요">
         <ol className="space-y-2.5">
@@ -97,7 +119,7 @@ function TicketDetailSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[22px] border border-black/8 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.025)]">
+    <section className="border-t border-black/8 py-5 first:border-t-0">
       <h2 className="text-[15px] font-black text-black">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>

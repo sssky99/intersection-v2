@@ -3,11 +3,16 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import {
+  TicketDetailHero,
+  ticketFadeTransition,
+} from "@/features/meetings/TicketDetailHero";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 type Screen = "calendar" | "drawing" | "waitlisted";
@@ -155,7 +160,7 @@ export function MeetingRecommendation({
         embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
       )}
     >
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         {screen === "calendar" && (
           <motion.div
             key="calendar"
@@ -320,10 +325,12 @@ function TicketDrawingCard({
 }) {
   const [isDrawn, setIsDrawn] = useState(false);
   const [isImageVisible, setIsImageVisible] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   useEffect(() => {
     setIsDrawn(false);
     setIsImageVisible(false);
+    setDetailOpen(false);
     const revealTimer = window.setTimeout(() => {
       setIsImageVisible(true);
       setIsDrawn(true);
@@ -333,6 +340,10 @@ function TicketDrawingCard({
     };
   }, [ticket.id]);
 
+  const openDetail = () => {
+    if (isDrawn && !saving) setDetailOpen(true);
+  };
+
   return (
     <motion.section
       initial={{ opacity: 0 }}
@@ -340,113 +351,244 @@ function TicketDrawingCard({
       exit={{ opacity: 0 }}
       className="pb-4"
     >
-      <div className="pr-16">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          invitation
-        </p>
-        <motion.h1
-          key={isDrawn ? "drawn-title" : "drawing-title"}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black"
-        >
-          {isDrawn ? "이 초대장이 마음에 드나요?" : "초대장을 그리고 있어요"}
-        </motion.h1>
-      </div>
-
-      <TicketDrawingFrame
-        motionKey={ticket.id}
-        title={ticket.title}
-        imageUrl={ticket.imageUrl}
-        date={ticket.date}
-        time={ticket.time}
-        location={`서울\n${ticket.area}`}
-        tags={ticket.moodTags}
-        remainingSeatCount={ticket.remainingSeatCount}
-        drawn={isDrawn}
-        imageVisible={isImageVisible}
-        className="mt-6"
-      />
-      {/*
-        <div className="absolute inset-2 overflow-hidden rounded-[24px]">
-          <IntersectionTicketCard
-            title={ticket.title}
-            imageUrl={ticket.imageUrl}
-            date={ticket.date}
-            time={ticket.time}
-            location={`서울\n${ticket.area}`}
-            tags={ticket.moodTags}
-            remainingSeatCount={ticket.remainingSeatCount}
-            contentVisible={isDrawn}
-            imageVisible={isImageVisible}
-            className="h-full !aspect-auto !rounded-[24px] shadow-none"
-          />
-        </div>
-        <TicketDrawingBorder />
-
-      */}
-
       <AnimatePresence mode="wait">
-        {isDrawn ? (
+        {detailOpen ? (
+          <TicketInsideView
+            key="ticket-inside"
+            ticket={ticket}
+            saving={saving}
+            error={error}
+            onClose={() => setDetailOpen(false)}
+            onNo={onNo}
+            onYes={onYes}
+            onChangeDate={onChangeDate}
+          />
+        ) : (
           <motion.div
-            key="invitation-actions"
-            initial={{ opacity: 0, y: 10 }}
+            key="ticket-cover"
+            initial={{ opacity: 0 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="mt-5"
           >
-            {error && (
-              <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-                {error}
+            <div className="pr-16">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+                invitation
               </p>
-            )}
-            <TicketDetailContent ticket={ticket} />
-            <div className="mt-5 grid grid-cols-2 gap-2.5">
-              <motion.button
-                whileTap={!saving ? { scale: 0.98 } : undefined}
-                type="button"
-                disabled={saving}
-                onClick={onNo}
-                className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+              <motion.h1
+                key={isDrawn ? "drawn-title" : "drawing-title"}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black"
               >
-                <span className="text-sm font-bold">No</span>
-                <span className="mt-0.5 text-[10px] font-medium text-black/40">
-                  다른 추천 보기
-                </span>
-              </motion.button>
-              <motion.button
-                whileTap={!saving ? { scale: 0.98 } : undefined}
-                type="button"
-                disabled={saving}
-                onClick={onYes}
-                className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
-              >
-                <span className="text-sm font-bold">Yes</span>
-                <span className="mt-0.5 text-[10px] font-medium text-white/60">
-                  {saving ? "등록 중..." : "자세히 보고 신청"}
-                </span>
-              </motion.button>
+                {isDrawn
+                  ? "이 초대장이 마음에 드나요?"
+                  : "초대장을 그리고 있어요"}
+              </motion.h1>
             </div>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onChangeDate}
-              className="mx-auto mt-3 block text-[10px] font-semibold text-black/55 underline underline-offset-4 disabled:opacity-40"
+
+            <motion.div
+              role={isDrawn ? "button" : undefined}
+              tabIndex={isDrawn ? 0 : -1}
+              aria-label={`${ticket.title} 자세히 보기`}
+              onClick={openDetail}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openDetail();
+                }
+              }}
+              className={cn(
+                "mx-auto mt-6 block w-[88%] max-w-[330px] rounded-[28px] text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4",
+                isDrawn && !saving && "cursor-pointer active:scale-[0.99]",
+              )}
             >
-              날짜 다시 고르기
-            </button>
+              <TicketDrawingFrame
+                motionKey={ticket.id}
+                title={ticket.title}
+                imageUrl={ticket.imageUrl}
+                date={ticket.date}
+                time={ticket.time}
+                location={`서울\n${ticket.area}`}
+                tags={ticket.moodTags}
+                remainingSeatCount={ticket.remainingSeatCount}
+                drawn={isDrawn}
+                imageVisible={isImageVisible}
+                className="!mt-0 !w-full !max-w-none"
+              />
+            </motion.div>
+
+            {isDrawn ? (
+              <motion.div
+                key="invitation-actions"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mt-5"
+              >
+                {error && (
+                  <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                    {error}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <motion.button
+                    whileTap={!saving ? { scale: 0.98 } : undefined}
+                    type="button"
+                    disabled={saving}
+                    onClick={onNo}
+                    className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+                  >
+                    <span className="text-sm font-bold">No</span>
+                    <span className="mt-0.5 text-[10px] font-medium text-black/40">
+                      다른 추천 보기
+                    </span>
+                  </motion.button>
+                  <motion.button
+                    whileTap={!saving ? { scale: 0.98 } : undefined}
+                    type="button"
+                    disabled={saving}
+                    onClick={openDetail}
+                    className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
+                  >
+                    <span className="text-sm font-bold">Yes</span>
+                    <span className="mt-0.5 text-[10px] font-medium text-white/60">
+                      자세히 보기
+                    </span>
+                  </motion.button>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onChangeDate}
+                  className="mx-auto mt-3 block text-[10px] font-semibold text-black/55 underline underline-offset-4 disabled:opacity-40"
+                >
+                  날짜 다시 고르기
+                </button>
+              </motion.div>
+            ) : (
+              <motion.span
+                key="drawing-guide"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="mt-4 block h-[15px]"
+              />
+            )}
           </motion.div>
-        ) : (
-          <motion.span
-            key="drawing-guide"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mt-4 block h-[15px]"
-          />
         )}
       </AnimatePresence>
     </motion.section>
+  );
+}
+
+function TicketInsideView({
+  ticket,
+  saving,
+  error,
+  onClose,
+  onYes,
+  onNo,
+  onChangeDate,
+}: {
+  ticket: GatheringTicket;
+  saving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onYes: () => void;
+  onNo: () => void;
+  onChangeDate: () => void;
+}) {
+  return (
+    <motion.div
+      key="ticket-inside"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={ticketFadeTransition}
+    >
+      <div className="flex items-start justify-between gap-4 pr-16">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+            invitation
+          </p>
+          <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+            자세히 보고 신청할까요?
+          </h1>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          aria-label="초대장 닫기"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:text-black disabled:opacity-40"
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </div>
+
+      <motion.article
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.04, duration: 0.22, ease: "easeOut" }}
+        className="mt-5 overflow-hidden rounded-[28px] border border-black/12 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
+      >
+        <TicketDetailHero ticket={ticket} />
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08, duration: 0.22, ease: "easeOut" }}
+          className="bg-white px-5 pb-5 pt-1"
+        >
+          {error && (
+            <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+              {error}
+            </p>
+          )}
+          <TicketDetailContent ticket={ticket} />
+        </motion.div>
+      </motion.article>
+
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12, duration: 0.2, ease: "easeOut" }}
+        className="mt-5 grid grid-cols-2 gap-2.5"
+      >
+        <motion.button
+          whileTap={!saving ? { scale: 0.98 } : undefined}
+          type="button"
+          disabled={saving}
+          onClick={onNo}
+          className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+        >
+          <span className="text-sm font-bold">No</span>
+          <span className="mt-0.5 text-[10px] font-medium text-black/40">
+            다른 추천 보기
+          </span>
+        </motion.button>
+        <motion.button
+          whileTap={!saving ? { scale: 0.98 } : undefined}
+          type="button"
+          disabled={saving}
+          onClick={onYes}
+          className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
+        >
+          <span className="text-sm font-bold">Yes</span>
+          <span className="mt-0.5 text-[10px] font-medium text-white/60">
+            {saving ? "등록 중..." : "신청하기"}
+          </span>
+        </motion.button>
+      </motion.div>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={onChangeDate}
+        className="mx-auto mt-3 block text-[10px] font-semibold text-black/55 underline underline-offset-4 disabled:opacity-40"
+      >
+        날짜 다시 고르기
+      </button>
+    </motion.div>
   );
 }
 

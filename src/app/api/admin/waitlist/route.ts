@@ -6,6 +6,7 @@ import {
   type AdminProfile,
 } from "@/features/admin/adminProfile";
 import {
+  type AdminArrivalStatus,
   isWaitlistStatus,
   type AdminWaitlistData,
   type AdminWaitlistRow,
@@ -24,6 +25,8 @@ type WaitlistDbRow = {
   ticket_instance_id: string | null;
   meeting_date: string | null;
   status: string;
+  arrival_status: AdminArrivalStatus | null;
+  arrival_status_updated_at: string | null;
   admin_note: string | null;
   ticket_snapshot: GatheringTicket | null;
   created_at: string | null;

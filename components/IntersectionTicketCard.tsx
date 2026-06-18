@@ -11,6 +11,7 @@ type IntersectionTicketCardProps = {
   className?: string;
   contentVisible?: boolean;
   imageVisible?: boolean;
+  overlayVisible?: boolean;
   priority?: boolean;
 };
 
@@ -62,6 +63,7 @@ export function IntersectionTicketCard({
   className,
   contentVisible = true,
   imageVisible = true,
+  overlayVisible = true,
 }: IntersectionTicketCardProps) {
   const dateLabel = formatTicketDateLabel(date);
   const tagItems = normalizeTags(tags);
@@ -93,18 +95,28 @@ export function IntersectionTicketCard({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(126,179,199,0.36),transparent_34%),linear-gradient(145deg,#26372f,#101715_58%,#050606)]" />
       )}
 
-      <div
-        className={cn(
-          "absolute inset-0 bg-black/40 transition-opacity duration-[350ms]",
-          imageSurfaceVisible ? "opacity-100" : "opacity-0",
-        )}
-      />
-      <div
-        className={cn(
-          "absolute inset-0 bg-gradient-to-b from-black/28 via-black/30 to-black/88 transition-opacity duration-[350ms]",
-          imageSurfaceVisible ? "opacity-100" : "opacity-0",
-        )}
-      />
+      {overlayVisible && (
+        <>
+          <div
+            className={cn(
+              "absolute inset-0 bg-black/40 transition-opacity duration-[350ms]",
+              imageSurfaceVisible ? "opacity-100" : "opacity-0",
+            )}
+          />
+          <div
+            className={cn(
+              "absolute inset-0 bg-gradient-to-b from-black/22 via-black/42 to-black/95 transition-opacity duration-[350ms]",
+              imageSurfaceVisible ? "opacity-100" : "opacity-0",
+            )}
+          />
+          <div
+            className={cn(
+              "absolute inset-x-0 bottom-0 h-[58%] bg-gradient-to-t from-black/95 via-black/72 to-transparent transition-opacity duration-[350ms]",
+              imageSurfaceVisible ? "opacity-100" : "opacity-0",
+            )}
+          />
+        </>
+      )}
 
       <div
         className={cn(

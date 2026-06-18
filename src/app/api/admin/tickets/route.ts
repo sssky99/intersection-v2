@@ -180,6 +180,36 @@ function scoreValue(value: unknown) {
   return Math.max(1, Math.min(5, Math.trunc(number)));
 }
 
+function testTimeTarget(mode: unknown) {
+  const now = new Date();
+  if (mode === "before_start") return new Date(now.getTime() + 60 * 60 * 1000);
+  if (mode === "just_started") return new Date(now.getTime() - 5 * 60 * 1000);
+  if (mode === "feedback_open") {
+    return new Date(now.getTime() - (3 * 60 + 5) * 60 * 1000);
+  }
+  return null;
+}
+
+function kstDateTimePayload(date: Date) {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    event_date: `${value("year")}-${value("month")}-${value("day")}`,
+    event_time: `${value("hour")}:${value("minute")}`,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 function operationalVisibility(value: unknown) {
   const visibility = isTicketVisibility(value)
     ? value
@@ -470,6 +500,35 @@ export async function POST(request: NextRequest) {
         remaining_seat_label_count: sourceInstance.remaining_seat_label_count ?? 0,
       });
       if (error) throw error;
+    } else if (action === "set_instance_test_time") {
+      const instanceId = text(body?.instanceId);
+      const target = testTimeTarget(body?.mode);
+      if (!instanceId || !target) {
+        return NextResponse.json(
+          { error: "잘못된 테스트 시간 요청입니다." },
+          { status: 400 },
+        );
+      }
+
+      const { data: instance, error: instanceError } = await supabase
+        .from("ticket_instances")
+        .select("id,visibility")
+        .eq("id", instanceId)
+        .single();
+      if (instanceError) throw instanceError;
+
+      if (instance.visibility !== "test_only") {
+        return NextResponse.json(
+          { error: "테스트 전용 티켓에서만 시간을 이동할 수 있습니다." },
+          { status: 403 },
+        );
+      }
+
+      const { error } = await supabase
+        .from("ticket_instances")
+        .update(kstDateTimePayload(target))
+        .eq("id", instanceId);
+      if (error) throw error;
     } else if (action === "add_assignment") {
       const instanceId = text(body?.instanceId);
       const profileId = text(body?.profileId);
@@ -481,6 +540,52 @@ export async function POST(request: NextRequest) {
         profile_id: profileId,
       });
       if (error && error.code !== "23505") throw error;
+
+      const { data: instance, error: instanceError } = await supabase
+        .from("ticket_instances")
+        .select("id,template_id,event_date")
+        .eq("id", instanceId)
+        .single();
+      if (instanceError) throw instanceError;
+
+      if (instance.event_date) {
+        const { data: existingWaitlist, error: existingWaitlistError } =
+          await supabase
+            .from("meeting_waitlist")
+            .select("id")
+            .eq("user_id", profileId)
+            .eq("ticket_instance_id", instanceId)
+            .maybeSingle();
+        if (existingWaitlistError) throw existingWaitlistError;
+
+        if (existingWaitlist?.id) {
+          const { error: waitlistUpdateError } = await supabase
+            .from("meeting_waitlist")
+            .update({
+              status: "approved",
+              ticket_id: instanceId,
+              ticket_template_id: instance.template_id,
+              meeting_date: instance.event_date,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingWaitlist.id);
+          if (waitlistUpdateError) throw waitlistUpdateError;
+        } else {
+          const { error: waitlistInsertError } = await supabase
+            .from("meeting_waitlist")
+            .insert({
+              user_id: profileId,
+              ticket_id: instanceId,
+              ticket_instance_id: instanceId,
+              ticket_template_id: instance.template_id,
+              meeting_date: instance.event_date,
+              status: "approved",
+            });
+          if (waitlistInsertError && waitlistInsertError.code !== "23505") {
+            throw waitlistInsertError;
+          }
+        }
+      }
     } else {
       return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
     }

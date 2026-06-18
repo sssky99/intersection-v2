@@ -47,6 +47,10 @@ type WaitlistRow = {
   status: string | null;
 };
 
+type AssignmentRow = {
+  ticket_instance_id: string;
+};
+
 const templateSelect = [
   "id",
   "title",
@@ -168,6 +172,11 @@ export async function GET(request: Request) {
     const requestUrl = new URL(request.url);
     const includeApplied = requestUrl.searchParams.get("includeApplied") === "1";
     const supabase = createAdminClient();
+    const userSupabase = await createClient();
+    const {
+      data: { user },
+    } = await userSupabase.auth.getUser();
+
     const { data: instances, error: instancesError } = await supabase
       .from("ticket_instances")
       .select(instanceSelect)
@@ -178,42 +187,82 @@ export async function GET(request: Request) {
 
     if (instancesError) throw instancesError;
 
-    const instanceRows = (instances ?? []) as unknown as InstanceRow[];
+    const publicInstanceRows = (instances ?? []) as unknown as InstanceRow[];
+    let testInstanceRows: InstanceRow[] = [];
+
+    if (user) {
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("ticket_assignments")
+        .select("ticket_instance_id")
+        .eq("profile_id", user.id)
+        .returns<AssignmentRow[]>();
+
+      if (assignmentsError) throw assignmentsError;
+
+      const testInstanceIds = Array.from(
+        new Set(
+          (assignments ?? [])
+            .map((assignment) => assignment.ticket_instance_id)
+            .filter(Boolean),
+        ),
+      );
+
+      if (testInstanceIds.length > 0) {
+        const { data: assignedInstances, error: assignedInstancesError } =
+          await supabase
+            .from("ticket_instances")
+            .select(instanceSelect)
+            .in("id", testInstanceIds)
+            .eq("visibility", "test_only")
+            .not("event_date", "is", null)
+            .order("event_date", { ascending: true })
+            .order("event_time", { ascending: true, nullsFirst: false });
+
+        if (assignedInstancesError) throw assignedInstancesError;
+        testInstanceRows = (assignedInstances ?? []) as unknown as InstanceRow[];
+      }
+    }
+
+    const instanceRows = Array.from(
+      new Map(
+        [...publicInstanceRows, ...testInstanceRows].map((instance) => [
+          instance.id,
+          instance,
+        ]),
+      ).values(),
+    ).sort((left, right) =>
+      `${left.event_date ?? ""}${left.event_time ?? ""}${left.title}`.localeCompare(
+        `${right.event_date ?? ""}${right.event_time ?? ""}${right.title}`,
+      ),
+    );
     const instanceMap = new Map(
       instanceRows.map((instance) => [instance.id, instance]),
     );
     const excludedTemplateDates = new Set<string>();
 
-    if (!includeApplied) {
-      const userSupabase = await createClient();
-      const {
-        data: { user },
-      } = await userSupabase.auth.getUser();
+    if (!includeApplied && user) {
+      const { data: waitlistRows, error: waitlistError } = await userSupabase
+        .from("meeting_waitlist")
+        .select(
+          "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
+        )
+        .eq("user_id", user.id)
+        .returns<WaitlistRow[]>();
 
-      if (user) {
-        const { data: waitlistRows, error: waitlistError } = await userSupabase
-          .from("meeting_waitlist")
-          .select(
-            "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
-          )
-          .eq("user_id", user.id)
-          .returns<WaitlistRow[]>();
+      if (waitlistError) throw waitlistError;
 
-        if (waitlistError) throw waitlistError;
+      for (const row of waitlistRows ?? []) {
+        const linkedInstance =
+          (row.ticket_instance_id
+            ? instanceMap.get(row.ticket_instance_id)
+            : null) ??
+          (row.ticket_id ? instanceMap.get(row.ticket_id) : null);
+        const templateId =
+          row.ticket_template_id ?? linkedInstance?.template_id ?? null;
+        const meetingDate = row.meeting_date ?? linkedInstance?.event_date ?? null;
 
-        for (const row of waitlistRows ?? []) {
-          const linkedInstance =
-            (row.ticket_instance_id
-              ? instanceMap.get(row.ticket_instance_id)
-              : null) ??
-            (row.ticket_id ? instanceMap.get(row.ticket_id) : null);
-          const templateId =
-            row.ticket_template_id ?? linkedInstance?.template_id ?? null;
-          const meetingDate = row.meeting_date ?? linkedInstance?.event_date ?? null;
-
-          if (templateId && meetingDate) {
-            excludedTemplateDates.add(`${templateId}|${meetingDate}`);
-          }
+        if (templateId && meetingDate) {
+          excludedTemplateDates.add(`${templateId}|${meetingDate}`);
         }
       }
     }

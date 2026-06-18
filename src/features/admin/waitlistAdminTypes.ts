@@ -7,7 +7,15 @@ export type WaitlistStatus =
   | "on_hold"
   | "not_selected"
   | "cancelled"
-  | "payment_pending";
+  | "payment_pending"
+  | "feedback_done"
+  | "completed";
+
+export type AdminArrivalStatus =
+  | "on_time"
+  | "late_10"
+  | "late_20"
+  | "late_30_plus";
 
 export const waitlistStatuses: WaitlistStatus[] = [
   "waitlisted",
@@ -16,6 +24,8 @@ export const waitlistStatuses: WaitlistStatus[] = [
   "not_selected",
   "cancelled",
   "payment_pending",
+  "feedback_done",
+  "completed",
 ];
 
 export const waitlistStatusLabels: Record<WaitlistStatus, string> = {
@@ -25,6 +35,15 @@ export const waitlistStatusLabels: Record<WaitlistStatus, string> = {
   not_selected: "미선정",
   cancelled: "취소",
   payment_pending: "결제 확인 필요",
+  feedback_done: "피드백 완료",
+  completed: "모임 종료",
+};
+
+export const arrivalStatusLabels: Record<AdminArrivalStatus, string> = {
+  on_time: "정상 도착 예정",
+  late_10: "10분 정도 늦음",
+  late_20: "20분 정도 늦음",
+  late_30_plus: "30분 이상 늦음",
 };
 
 export type WaitlistTicketTemplate = {
@@ -50,6 +69,8 @@ export type AdminWaitlistRow = {
   ticket_instance_id: string | null;
   meeting_date: string | null;
   status: WaitlistStatus;
+  arrival_status: AdminArrivalStatus | null;
+  arrival_status_updated_at: string | null;
   admin_note: string | null;
   ticket_snapshot: GatheringTicket | null;
   created_at: string | null;

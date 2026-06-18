@@ -5,6 +5,12 @@ import {
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 
+type VibeAxisLabelOverride = Partial<{
+  label: string;
+  leftLabel: string;
+  rightLabel: string;
+}>;
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -28,12 +34,16 @@ export function VibeGraph({
   scores,
   visibleAxes = vibeAxes,
   className,
+  showAxisHeader = true,
+  axisLabelOverrides,
 }: {
   title: string;
   description?: string;
   scores?: VibeScores | null;
   visibleAxes?: readonly VibeAxis[];
   className?: string;
+  showAxisHeader?: boolean;
+  axisLabelOverrides?: Partial<Record<VibeAxis, VibeAxisLabelOverride>>;
 }) {
   const axes = visibleAxes.filter((axis) => isValidScore(scores?.[axis]));
 
@@ -55,19 +65,24 @@ export function VibeGraph({
 
       <div className="mt-5 space-y-4">
         {axes.map((axis) => {
-          const config = vibeAxisConfig[axis];
+          const config = {
+            ...vibeAxisConfig[axis],
+            ...axisLabelOverrides?.[axis],
+          };
           const score = scores?.[axis] as number;
 
           return (
             <div key={axis}>
-              <div className="mb-1.5 flex items-center justify-between gap-3">
-                <span className="text-xs font-black text-black/70">
-                  {config.label}
-                </span>
-                <span className="text-[11px] font-semibold text-black/35">
-                  {config.leftLabel} ↔ {config.rightLabel}
-                </span>
-              </div>
+              {showAxisHeader && (
+                <div className="mb-1.5 flex items-center justify-between gap-3">
+                  <span className="text-xs font-black text-black/70">
+                    {config.label}
+                  </span>
+                  <span className="text-[11px] font-semibold text-black/35">
+                    {config.leftLabel} ↔ {config.rightLabel}
+                  </span>
+                </div>
+              )}
               <div className="grid grid-cols-[62px_minmax(0,1fr)_78px] items-center gap-3">
                 <span className="text-[11px] font-bold text-black/38">
                   {config.leftLabel}

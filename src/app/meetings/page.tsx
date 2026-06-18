@@ -1,10 +1,22 @@
 import { redirect } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
-import { AppHome } from "@/features/app/AppHome";
+import { AppHome, type AppTab } from "@/features/app/AppHome";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 
-export default async function MeetingsPage() {
+type MeetingsPageProps = {
+  searchParams?: Promise<{
+    tab?: string | string[];
+  }>;
+};
+
+function initialTabFromSearchParam(value: string | string[] | undefined): AppTab {
+  const tab = Array.isArray(value) ? value[0] : value;
+  return tab === "browse" || tab === "profile" ? tab : "recommend";
+}
+
+export default async function MeetingsPage({ searchParams }: MeetingsPageProps) {
+  const params = await searchParams;
   const { user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) redirect("/");
@@ -16,7 +28,11 @@ export default async function MeetingsPage() {
 
   return (
     <MobileFrame>
-      <AppHome userId={user.id} profile={profile} initialTab="recommend" />
+      <AppHome
+        userId={user.id}
+        profile={profile}
+        initialTab={initialTabFromSearchParam(params?.tab)}
+      />
     </MobileFrame>
   );
 }

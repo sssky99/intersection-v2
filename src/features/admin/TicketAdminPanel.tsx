@@ -3,6 +3,8 @@
 import {
   CalendarDays,
   Check,
+  ChevronDown,
+  Clock3,
   Copy,
   Image as ImageIcon,
   Plus,
@@ -77,6 +79,7 @@ type InstanceDraft = {
 };
 
 type ListMode = "templates" | "dates";
+type TestTimeMode = "before_start" | "just_started" | "feedback_open";
 type TemplateScoreDraftKey =
   | "scoreTemperature"
   | "scoreTexture"
@@ -88,21 +91,9 @@ type TemplateScoreDraftKey =
 const questionOrders = [1, 2, 3, 4, 5] as const;
 const scoreValues = [1, 2, 3, 4, 5] as const;
 const minuteSteps = ["00", "15", "30", "45"] as const;
-const timeOptions = [
-  { value: "", label: "시간 선택" },
-  ...Array.from({ length: 24 }, (_, hour) =>
-    minuteSteps.map((minute) => {
-      const value = `${String(hour).padStart(2, "0")}:${minute}`;
-      const period = hour < 12 ? "오전" : "오후";
-      const displayHour = hour % 12 || 12;
-
-      return {
-        value,
-        label: `${period} ${String(displayHour).padStart(2, "0")}:${minute}`,
-      };
-    }),
-  ).flat(),
-];
+const hourOptions = Array.from({ length: 24 }, (_, hour) =>
+  String(hour).padStart(2, "0"),
+);
 const templateTicketVisibilities = ticketVisibilities.filter(
   (visibility) => visibility !== "question",
 );
@@ -200,6 +191,38 @@ async function fetchTicketData(force = false) {
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
+}
+
+function splitTimeValue(value: string) {
+  const [hour, minute] = value.split(":");
+  return {
+    hour: typeof hour === "string" && hourOptions.includes(hour) ? hour : "",
+    minute:
+      typeof minute === "string" &&
+      minuteSteps.includes(minute as (typeof minuteSteps)[number])
+      ? minute
+      : "",
+  };
+}
+
+function joinTimeValue(
+  currentValue: string,
+  patch: Partial<{ hour: string; minute: string }>,
+) {
+  if (patch.hour === "" || patch.minute === "") return "";
+
+  const current = splitTimeValue(currentValue);
+  const hour = patch.hour ?? current.hour;
+  const minute = patch.minute ?? current.minute;
+  if (!hour && !minute) return "";
+  return `${hour || "00"}:${minute || "00"}`;
+}
+
+function hourLabel(hour: string) {
+  const number = Number.parseInt(hour, 10);
+  const period = number < 12 ? "오전" : "오후";
+  const displayHour = number % 12 || 12;
+  return `${period} ${String(displayHour).padStart(2, "0")}시`;
 }
 
 function templateDraft(template: AdminTicketTemplate): TemplateDraft {
@@ -571,6 +594,19 @@ export function TicketAdminPanel() {
     );
   };
 
+  const shiftTestInstanceTime = async (mode: TestTimeMode) => {
+    if (!selectedInstance) return;
+    await runAction(
+      "POST",
+      {
+        action: "set_instance_test_time",
+        instanceId: selectedInstance.id,
+        mode,
+      },
+      "테스트 티켓 시간을 이동했습니다.",
+    );
+  };
+
   const uploadImage = async (file: File) => {
     if (!selectedTemplate || saving) return;
     setSaving(true);
@@ -707,24 +743,33 @@ export function TicketAdminPanel() {
         }
       }
     }
+    const isTestOnly = selectedInstance.visibility === "test_only";
     const candidateIds = new Set<string>();
-    for (const row of waitlist) {
-      const rowInstance = row.ticket_instance_id
-        ? instanceById.get(row.ticket_instance_id)?.instance
-        : instanceById.get(row.ticket_id)?.instance;
-      const rowTemplateId =
-        row.ticket_template_id ?? rowInstance?.template_id ?? null;
-      const rowDate = row.meeting_date ?? rowInstance?.event_date ?? null;
 
-      if (
-        row.user_id &&
-        rowDate === selectedInstance.event_date &&
-        rowTemplateId === selectedTemplate.id &&
-        !assignedIds.has(row.user_id)
-      ) {
-        candidateIds.add(row.user_id);
+    if (isTestOnly) {
+      for (const profile of profiles) {
+        candidateIds.add(profile.user_id);
+      }
+    } else {
+      for (const row of waitlist) {
+        const rowInstance = row.ticket_instance_id
+          ? instanceById.get(row.ticket_instance_id)?.instance
+          : instanceById.get(row.ticket_id)?.instance;
+        const rowTemplateId =
+          row.ticket_template_id ?? rowInstance?.template_id ?? null;
+        const rowDate = row.meeting_date ?? rowInstance?.event_date ?? null;
+
+        if (
+          row.user_id &&
+          rowDate === selectedInstance.event_date &&
+          rowTemplateId === selectedTemplate.id &&
+          !assignedIds.has(row.user_id)
+        ) {
+          candidateIds.add(row.user_id);
+        }
       }
     }
+
     const normalized = memberQuery.trim().toLowerCase();
     return profiles
       .filter((profile) => candidateIds.has(profile.user_id))
@@ -968,6 +1013,7 @@ export function TicketAdminPanel() {
               onBack={() => setSelectedInstanceId(null)}
               onSave={() => void saveInstance()}
               onDuplicate={() => void duplicateInstance()}
+              onShiftTestTime={(mode) => void shiftTestInstanceTime(mode)}
               onAddMember={(profileId) =>
                 void runAction(
                   "POST",
@@ -1238,10 +1284,9 @@ function TemplateEditor({
                 onDraftChange({ ...draft, defaultRegion })
               }
             />
-            <SelectField
+            <TimeSplitField
               label="기본 시간"
               value={draft.defaultTime}
-              options={timeOptions}
               onChange={(defaultTime) =>
                 onDraftChange({ ...draft, defaultTime })
               }
@@ -1485,6 +1530,7 @@ function InstanceEditor({
   onBack,
   onSave,
   onDuplicate,
+  onShiftTestTime,
   onAddMember,
   onRemoveMember,
 }: {
@@ -1499,6 +1545,7 @@ function InstanceEditor({
   onBack: () => void;
   onSave: () => void;
   onDuplicate: () => void;
+  onShiftTestTime: (mode: TestTimeMode) => void;
   onAddMember: (profileId: string) => void;
   onRemoveMember: (profileId: string) => void;
 }) {
@@ -1556,10 +1603,9 @@ function InstanceEditor({
             value={draft.eventDate}
             onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
           />
-          <SelectField
+          <TimeSplitField
             label="시간"
             value={draft.eventTime}
-            options={timeOptions}
             onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
           />
           <TextAreaField
@@ -1620,6 +1666,45 @@ function InstanceEditor({
         </div>
       </section>
 
+      {instance.visibility === "test_only" && (
+        <section className="rounded-2xl border border-accent/20 bg-accent/[0.06] p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h3 className="font-bold">테스트 시간 이동</h3>
+              <p className="mt-1 text-xs leading-5 text-black/45">
+                테스트 전용 티켓에서만 사용자 진행 화면을 빠르게 확인합니다.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onShiftTestTime("before_start")}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
+              >
+                시작 1시간 전
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onShiftTestTime("just_started")}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
+              >
+                시작 직후
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => onShiftTestTime("feedback_open")}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/60 hover:border-accent hover:text-black disabled:opacity-40"
+              >
+                피드백 오픈
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
         <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -1675,7 +1760,9 @@ function InstanceEditor({
           <div className="mt-5 border-t border-black/8 pt-5">
             <h4 className="text-sm font-bold">멤버 추가</h4>
             <p className="mt-1 text-[11px] font-semibold leading-4 text-black/38">
-              기본 후보는 이 날짜와 이 티켓 템플릿에 신청한 사람만 표시됩니다.
+              {instance.visibility === "test_only"
+                ? "테스트 티켓은 신청하지 않은 사람도 이름이나 전화번호로 검색해 배정할 수 있습니다."
+                : "기본 후보는 이 날짜와 이 티켓 템플릿에 신청한 사람만 표시됩니다."}
             </p>
             <label className="relative mt-3 block">
               <Search
@@ -1715,7 +1802,9 @@ function InstanceEditor({
                 ))
               ) : (
                 <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
-                  이 날짜와 템플릿에 신청한 추가 후보가 없습니다.
+                  {instance.visibility === "test_only"
+                    ? "검색 조건에 맞는 추가 후보가 없습니다."
+                    : "이 날짜와 템플릿에 신청한 추가 후보가 없습니다."}
                 </p>
               )}
             </div>
@@ -1893,6 +1982,76 @@ function TextAreaField({
   );
 }
 
+function TimeSplitField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { hour, minute } = splitTimeValue(value);
+
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-black/50">{label}</span>
+      <div className="mt-1.5 grid grid-cols-2 gap-2">
+        <div className="relative">
+          <Clock3
+            size={15}
+            aria-hidden
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
+          />
+          <select
+            value={hour}
+            aria-label={`${label} 시간`}
+            onChange={(event) =>
+              onChange(joinTimeValue(value, { hour: event.target.value }))
+            }
+            className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] pl-9 pr-8 text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+          >
+            <option value="">시간</option>
+            {hourOptions.map((option) => (
+              <option key={option} value={option}>
+                {hourLabel(option)}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={15}
+            aria-hidden
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
+          />
+        </div>
+
+        <div className="relative">
+          <select
+            value={minute}
+            aria-label={`${label} 분`}
+            onChange={(event) =>
+              onChange(joinTimeValue(value, { minute: event.target.value }))
+            }
+            className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] px-3 pr-8 text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+          >
+            <option value="">분</option>
+            {minuteSteps.map((option) => (
+              <option key={option} value={option}>
+                {option}분
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={15}
+            aria-hidden
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
+          />
+        </div>
+      </div>
+    </label>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -1905,19 +2064,26 @@ function SelectField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label>
+    <label className="block">
       <span className="text-xs font-semibold text-black/50">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <div className="relative mt-1.5">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] px-3 pr-9 text-sm font-bold text-black/70 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={15}
+          aria-hidden
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
+        />
+      </div>
     </label>
   );
 }

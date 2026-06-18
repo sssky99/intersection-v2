@@ -27,6 +27,7 @@ import {
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
 import {
+  arrivalStatusLabels,
   waitlistStatuses,
   waitlistStatusLabels,
   type AdminWaitlistData,
@@ -71,6 +72,8 @@ const statusMetricLabels: Record<WaitlistStatus, string> = {
   on_hold: "보류",
   not_selected: "미선정",
   cancelled: "취소",
+  feedback_done: "피드백",
+  completed: "종료",
 };
 
 const statusBadgeClasses: Record<WaitlistStatus, string> = {
@@ -80,6 +83,8 @@ const statusBadgeClasses: Record<WaitlistStatus, string> = {
   on_hold: "border-zinc-200 bg-zinc-50 text-zinc-700",
   not_selected: "border-rose-200 bg-rose-50 text-rose-700",
   cancelled: "border-black/10 bg-black/5 text-black/45",
+  feedback_done: "border-violet-200 bg-violet-50 text-violet-700",
+  completed: "border-black/10 bg-black/5 text-black/45",
 };
 
 const genderFilters: Array<{ value: GenderFilter; label: string }> = [
@@ -193,6 +198,14 @@ function instanceText(instance: WaitlistTicketInstance | null) {
     .filter(Boolean)
     .join(" ");
   return [label, schedule, instance.region].filter(Boolean).join(" / ");
+}
+
+function arrivalStatusText(row: AdminWaitlistRow) {
+  if (!row.arrival_status) return "미응답";
+  const label = arrivalStatusLabels[row.arrival_status] ?? row.arrival_status;
+  return row.arrival_status_updated_at
+    ? `${label} · ${formatCreatedAt(row.arrival_status_updated_at)}`
+    : label;
 }
 
 function instanceOptionLabel(
@@ -877,6 +890,7 @@ function WaitlistDetailPanel({
               label="현재 세부 티켓"
               value={instanceText(row.ticket_instance)}
             />
+            <DetailItem label="도착 상태" value={arrivalStatusText(row)} />
           </div>
         </section>
 

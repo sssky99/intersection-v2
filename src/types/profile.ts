@@ -5,6 +5,7 @@ export type ProfileRow = {
   provider: string | null;
   kakao_id: string | null;
   name: string | null;
+  nickname: string | null;
   phone: string | null;
   phone_normalized: string | null;
   gender: Gender | null;
