@@ -33,6 +33,13 @@ type AnswerMap = Record<number, QuestionAnswer>;
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
+const ticketRatingReactions: Record<string, string[]> = {
+  "1": ["👎", "👎"],
+  "2": ["👎"],
+  "3": ["😐"],
+  "4": ["❤️"],
+  "5": ["❤️", "❤️"],
+};
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -107,6 +114,39 @@ function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
       imageVisible={imageVisible}
       className="!w-[82%] !max-w-[292px] sm:!max-w-[310px]"
     />
+  );
+}
+
+function TicketRatingReaction({ rating }: { rating: string }) {
+  const reactions = ticketRatingReactions[rating] ?? [];
+
+  return (
+    <span className="pointer-events-none absolute bottom-6 left-1/2 z-10 h-10 w-12 -translate-x-1/2" aria-hidden>
+      {reactions.map((emoji, index) => {
+        const pairOffset = reactions.length > 1;
+        const left = pairOffset ? (index === 0 ? "44%" : "56%") : "50%";
+        const rotate = pairOffset ? (index === 0 ? -14 : 12) : 0;
+
+        return (
+          <motion.span
+            key={`${emoji}-${index}`}
+            initial={{ opacity: 0, x: "-50%", y: 16, scale: 0.64, rotate }}
+            animate={{
+              opacity: [0, 1, 1, 0],
+              x: "-50%",
+              y: [16, -12, -30, -42],
+              scale: [0.64, 1.16, 1, 0.9],
+              rotate: [rotate, rotate * -0.3, rotate],
+            }}
+            transition={{ duration: 0.62, ease: "easeOut", delay: index * 0.04 }}
+            className="absolute bottom-0 left-1/2 text-[21px] drop-shadow-[0_3px_8px_rgba(0,0,0,0.18)]"
+            style={{ left }}
+          >
+            {emoji}
+          </motion.span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -511,7 +551,7 @@ export function QuestionFlow({
           setSaving(false);
           setSelectedFeedback(null);
         });
-      }, 520);
+      }, 650);
     } catch (saveError) {
       console.error("Failed to save ticket rating:", saveError);
       setError("티켓 반응을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -750,28 +790,18 @@ export function QuestionFlow({
                     >
                       <span aria-hidden>{option.value}</span>
                       <span className="sr-only">{option.label}</span>
+                      <AnimatePresence>
+                        {selectedFeedback === option.value && (
+                          <TicketRatingReaction
+                            key={`reaction-${option.value}`}
+                            rating={option.value}
+                          />
+                        )}
+                      </AnimatePresence>
                     </motion.button>
                   );
                   })}
                 </div>
-                <AnimatePresence mode="wait">
-                  {selectedTicketAnswer && (
-                    <motion.p
-                      key={selectedTicketAnswer.rating}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -3 }}
-                      transition={{ duration: 0.2 }}
-                      className="mx-auto max-w-[320px] px-3 pt-3 text-center text-[13px] font-semibold leading-5 text-black/55"
-                    >
-                      {
-                        ticketRatingOptions.find(
-                          (option) => option.value === selectedTicketAnswer.rating,
-                        )?.label
-                      }
-                    </motion.p>
-                  )}
-                </AnimatePresence>
               </div>
             </div>
           )}
@@ -794,17 +824,14 @@ export function QuestionFlow({
                 {typeof answer?.value === "string" ? answer.value.length : 0}/300
               </p>
               {question.examples && question.examples.length > 0 && (
-                <div className="mt-5 space-y-2">
-                  {question.examples.map((example, index) => {
+                <div className="mt-5 border border-[#eadfc8] bg-[#fff8ea] shadow-[4px_4px_0_rgba(0,0,0,0.035)]">
+                  {question.examples.map((example) => {
                     const exampleText = example.replace(/^예:\s*/, "");
 
                     return (
                       <div
                         key={example}
-                        className={cn(
-                          "grid grid-cols-[22px_1fr] gap-2 border-l-[3px] border-accent/55 bg-[#fffaf0] px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 shadow-[0_1px_0_rgba(0,0,0,0.06)]",
-                          index % 2 === 1 && "ml-3 border-black/18 bg-[#fffdf7]",
-                        )}
+                        className="grid grid-cols-[24px_1fr] gap-2 border-b border-[#eadfc8]/70 px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 last:border-b-0"
                       >
                         <span className="pt-px text-[10px] font-black tracking-[0.08em] text-accent/72">
                           예
