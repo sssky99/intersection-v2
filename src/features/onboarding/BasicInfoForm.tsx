@@ -73,13 +73,16 @@ function isStepComplete(stepKey: BasicInfoStepKey, draft: BasicInfoValues) {
 export function BasicInfoForm({
   userId,
   initialValues,
+  mode = "onboarding",
   returnPath = "/meetings?tab=recommend&profileComplete=1",
 }: {
   userId: string;
   initialValues: BasicInfoValues;
+  mode?: "onboarding" | "regeneration";
   returnPath?: string;
 }) {
   const router = useRouter();
+  const isRegeneration = mode === "regeneration";
   const [draft, setDraft] = useState(initialValues);
   const [visibleStepCount, setVisibleStepCount] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -105,11 +108,15 @@ export function BasicInfoForm({
       : "입력 정보를 확인해주세요";
   const finalButtonVisible = allStepsVisible;
   const ctaLabel = saving
-    ? "저장 중..."
+    ? isRegeneration
+      ? "프로필 새로 만드는 중..."
+      : "저장 중..."
     : photoUploading
       ? "사진 업로드 중..."
       : canSave
-        ? "프로필 완성하기"
+        ? isRegeneration
+          ? "새 프로필 완성하기"
+          : "프로필 완성하기"
         : finalIncompleteLabel;
 
   useEffect(() => {
@@ -146,12 +153,14 @@ export function BasicInfoForm({
     setError(null);
     try {
       const photoUrl = await uploadProfilePhoto(userId, file);
-      const { error: profileError } = await createClient()
-        .from("profiles")
-        .update({ photo_url: photoUrl })
-        .eq("user_id", userId);
+      if (!isRegeneration) {
+        const { error: profileError } = await createClient()
+          .from("profiles")
+          .update({ photo_url: photoUrl })
+          .eq("user_id", userId);
 
-      if (profileError) throw new Error(profileError.message);
+        if (profileError) throw new Error(profileError.message);
+      }
 
       setDraft((current) => ({ ...current, photoUrl }));
     } catch {
@@ -168,6 +177,40 @@ export function BasicInfoForm({
 
     setSaving(true);
     setError(null);
+    if (isRegeneration) {
+      const response = await fetch("/api/profile/regeneration/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: draft.name.trim(),
+          phone: draft.phone.trim(),
+          gender: draft.gender,
+          birthYear: draft.birthYear,
+          mbti: draft.mbti.toUpperCase(),
+          photoUrl: draft.photoUrl,
+        }),
+      }).catch(() => null);
+
+      const responseBody = response
+        ? ((await response.json().catch(() => null)) as
+            | { error?: string; nextAvailableAt?: string }
+            | null)
+        : null;
+
+      if (!response?.ok) {
+        setError(
+          responseBody?.error ??
+            "프로필 새로 만들기에 실패했어요. 잠시 후 다시 시도해주세요.",
+        );
+        setSaving(false);
+        return;
+      }
+
+      router.replace("/meetings?tab=recommend&profileComplete=1");
+      router.refresh();
+      return;
+    }
+
     const { error: saveError } = await createClient()
       .from("profiles")
       .update({

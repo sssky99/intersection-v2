@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   ChevronDown,
@@ -11,6 +12,7 @@ import {
   MapPin,
   X,
   PenLine,
+  RotateCcw,
   Sparkles,
   Ticket as TicketIcon,
   UserRound,
@@ -335,6 +337,12 @@ export function AppHome({
   );
   const [profileCompletionReplayKey, setProfileCompletionReplayKey] = useState(0);
   const [membershipModalOpen, setMembershipModalOpen] = useState(false);
+  const [profileRegenerationConfirmOpen, setProfileRegenerationConfirmOpen] =
+    useState(false);
+  const [profileRegenerating, setProfileRegenerating] = useState(false);
+  const [profileRegenerationError, setProfileRegenerationError] = useState<
+    string | null
+  >(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const currentMembership = useMemo(
@@ -448,6 +456,46 @@ export function AppHome({
     setQuestionReviewOpen(false);
     setProfileCompletionReplayKey((current) => current + 1);
     setProfileCompletionOpen(true);
+  };
+
+  const openProfileRegenerationConfirm = () => {
+    setMembershipModalOpen(false);
+    setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
+    setProfileRegenerationError(null);
+    setProfileRegenerationConfirmOpen(true);
+  };
+
+  const startProfileRegeneration = async () => {
+    if (profileRegenerating) return;
+
+    setProfileRegenerating(true);
+    setProfileRegenerationError(null);
+
+    const response = await fetch("/api/profile/regeneration/start", {
+      method: "POST",
+    }).catch(() => null);
+    const body = response
+      ? ((await response.json().catch(() => null)) as
+          | { error?: string; nextAvailableAt?: string }
+          | null)
+      : null;
+
+    if (!response?.ok) {
+      const nextDate = body?.nextAvailableAt
+        ? formatProfileRegenerationDate(body.nextAvailableAt)
+        : null;
+      setProfileRegenerationError(
+        nextDate
+          ? `프로필 새로 만들기는 한 달에 한 번만 가능해요. 다음 재생성 가능일은 ${nextDate}이에요.`
+          : body?.error ??
+              "프로필 새로 만들기를 시작하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+      setProfileRegenerating(false);
+      return;
+    }
+
+    window.location.href = "/onboarding/questions?regenerate=1&start=1";
   };
 
   const finishProfileCompletion = (nextProfile: Partial<ProfileRow>) => {
@@ -598,6 +646,7 @@ export function AppHome({
               logoutError={logoutError}
               onOpenQuestionReview={() => setQuestionReviewOpen(true)}
               onOpenProfileCompletionReplay={openProfileCompletionReplay}
+              onRequestProfileRegeneration={openProfileRegenerationConfirm}
               onLogout={logout}
             />
           )}
@@ -655,6 +704,18 @@ export function AppHome({
             answers={answers}
             animationKey={profileCompletionReplayKey}
             onComplete={finishProfileCompletion}
+          />
+        )}
+        {profileRegenerationConfirmOpen && (
+          <ProfileRegenerationConfirmModal
+            key="profile-regeneration-confirm"
+            loading={profileRegenerating}
+            error={profileRegenerationError}
+            onCancel={() => {
+              if (profileRegenerating) return;
+              setProfileRegenerationConfirmOpen(false);
+            }}
+            onConfirm={() => void startProfileRegeneration()}
           />
         )}
         {questionReviewOpen && (
@@ -2577,6 +2638,93 @@ const profileCompletionMessages = [
   "거의 다 완성 됐어요.",
 ];
 
+function ProfileRegenerationConfirmModal({
+  loading,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  loading: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+
+  return (
+    <motion.div
+      key="profile-regeneration-confirm-modal"
+      initial={shouldReduceMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+      className="absolute inset-0 z-[75] flex items-center justify-center bg-black/28 px-4 py-8 backdrop-blur-[3px]"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-regeneration-title"
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8, scale: 0.98 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        className="w-full max-w-[390px] rounded-[26px] border border-black/10 bg-white px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.16)]"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
+            <AlertTriangle size={20} aria-hidden />
+          </span>
+          <div>
+            <h2
+              id="profile-regeneration-title"
+              className="text-[21px] font-black leading-7 text-black"
+            >
+              프로필을 다시 만들까요?
+            </h2>
+            <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-black/58">
+              <p>프로필을 새로 만들면 1번 질문부터 다시 답변하게 됩니다.</p>
+              <p>기존 답변과 공개 프로필은 새 답변으로 덮어씌워집니다.</p>
+              <p>
+                또한 이전 교집합 참여와 피드백을 통해 보정되었던 대화 결
+                점수는 초기화됩니다.
+              </p>
+              <p>
+                원본 참여 기록과 피드백 기록은 삭제되지 않지만, 새 프로필에는
+                기존 보정치가 다시 반영되지 않습니다.
+              </p>
+              <p>프로필 새로 만들기는 한 달에 한 번만 가능합니다.</p>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onCancel}
+            className="h-12 rounded-full border border-black/10 bg-white text-xs font-bold text-black/55 transition hover:border-black/20 disabled:opacity-45"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onConfirm}
+            className="h-12 rounded-full border border-red-200 bg-red-50 px-3 text-xs font-black text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-wait disabled:opacity-55"
+          >
+            {loading ? "시작 중..." : "정말 프로필 새로 만들기"}
+          </button>
+        </div>
+      </motion.section>
+    </motion.div>
+  );
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -2647,8 +2795,8 @@ function ProfileCompletionModal({
     }, 500);
 
     const loadProfile = async () => {
+      const existingIntro = profile.public_intro?.trim();
       try {
-        const existingIntro = profile.public_intro?.trim();
         const profilePromise = existingIntro
           ? Promise.resolve<ProfileGenerateResponse>({
               intro: existingIntro,
@@ -2679,8 +2827,13 @@ function ProfileCompletionModal({
         setPhase("typing");
       } catch {
         if (!alive) return;
-        setError("프로필을 완성하지 못했어요. 잠시 후 다시 시도해주세요.");
-        setPhase("error");
+        setIntro(
+          existingIntro ||
+            "프로필을 준비하고 있어요.\n\n잠시 후 프로필 탭에서 다시 확인할 수 있어요.",
+        );
+        setNotice("잠시 후 프로필 탭에서 다시 확인할 수 있어요.");
+        setError(null);
+        setPhase("typing");
       } finally {
         if (messageTimer !== null) window.clearInterval(messageTimer);
       }
@@ -2789,7 +2942,7 @@ function ProfileCompletionModal({
               profile complete
             </p>
             <h2 className="mt-2 flex items-center gap-2 text-[24px] font-black leading-8 text-black">
-              <span>{displayName}님의 프로필</span>
+              <span>{displayName}님의 프로필이 만들어졌어요</span>
               <span aria-hidden>{emoji ?? profileEmoji(profile)}</span>
             </h2>
             <div className="mt-5 min-h-[152px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
@@ -2940,6 +3093,15 @@ function formatKoreanDateTime(value: string) {
   }).format(date);
 }
 
+function formatProfileRegenerationDate(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}.${month}.${day}`;
+}
+
 function ProfileTab({
   profile,
   answers,
@@ -2948,6 +3110,7 @@ function ProfileTab({
   logoutError,
   onOpenQuestionReview,
   onOpenProfileCompletionReplay,
+  onRequestProfileRegeneration,
   onLogout,
 }: {
   profile: ProfileRow;
@@ -2957,6 +3120,7 @@ function ProfileTab({
   logoutError: string | null;
   onOpenQuestionReview: () => void;
   onOpenProfileCompletionReplay: () => void;
+  onRequestProfileRegeneration: () => void;
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
@@ -3023,14 +3187,6 @@ function ProfileTab({
               <UserRound size={15} aria-hidden />
               기본정보 다시보기
             </button>
-            <button
-              type="button"
-              onClick={onOpenProfileCompletionReplay}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
-            >
-              <Sparkles size={15} aria-hidden />
-              프로필 완성 다시보기
-            </button>
           </div>
         )}
 
@@ -3042,6 +3198,33 @@ function ProfileTab({
           className="mt-8 flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55"
         >
           교집합 소개 다시 보기
+        </button>
+
+        {profile.is_test_participant && (
+          <button
+            type="button"
+            onClick={onOpenProfileCompletionReplay}
+            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          >
+            <Sparkles size={15} aria-hidden />
+            프로필 완성 다시보기
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onRequestProfileRegeneration}
+          className="mt-3 flex min-h-[58px] w-full items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-white px-4 py-3 text-left transition hover:border-black/20 hover:bg-black/[0.015]"
+        >
+          <span>
+            <span className="block text-xs font-black text-black/62">
+              프로필 새로 만들기
+            </span>
+            <span className="mt-1 block text-[11px] font-semibold leading-4 text-black/38">
+              질문을 다시 답하고 내 대화 결을 새로 만들어요.
+            </span>
+          </span>
+          <RotateCcw size={16} className="shrink-0 text-black/35" aria-hidden />
         </button>
 
         <button

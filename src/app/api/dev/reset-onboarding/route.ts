@@ -30,6 +30,18 @@ export async function POST() {
     );
   }
 
+  const { error: regenerationAnswersError } = await admin
+    .from("profile_regeneration_answers")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (regenerationAnswersError) {
+    console.error(
+      "Development onboarding regeneration draft reset failed:",
+      regenerationAnswersError,
+    );
+  }
+
   const { error: profileError } = await admin
     .from("profiles")
     .update({
@@ -39,6 +51,8 @@ export async function POST() {
       public_intro_generated_at: null,
       public_intro_revealed_generated_at: null,
       public_intro_model: null,
+      profile_regeneration_started_at: null,
+      profile_regeneration_questions_completed_at: null,
     })
     .eq("user_id", user.id);
 

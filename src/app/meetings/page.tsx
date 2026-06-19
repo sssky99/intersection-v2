@@ -30,13 +30,14 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   const profileCompleteParam = Array.isArray(params?.profileComplete)
     ? params?.profileComplete[0]
     : params?.profileComplete;
+  const hasUnrevealedGeneratedIntro = Boolean(
+    profile.public_intro_generated_at &&
+      profile.public_intro_revealed_generated_at !==
+        profile.public_intro_generated_at,
+  );
   const shouldOpenCompletionModal =
-    profileCompleteParam === "1" ||
-    Boolean(
-      profile.public_intro_generated_at &&
-        profile.public_intro_revealed_generated_at !==
-          profile.public_intro_generated_at,
-    );
+    hasUnrevealedGeneratedIntro ||
+    (profileCompleteParam === "1" && !introUsable);
   if (!introUsable && !shouldOpenCompletionModal) redirect("/profile/result");
 
   const ticketQuestionTemplates = await loadTicketQuestionTemplates();

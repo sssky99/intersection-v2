@@ -7,6 +7,7 @@ import type { Gender } from "@/types/user";
 type OnboardingProfilePageProps = {
   searchParams?: Promise<{
     from?: string | string[];
+    regenerate?: string | string[];
   }>;
 };
 
@@ -23,27 +24,44 @@ export default async function OnboardingProfilePage({
   if (!user || !profile) redirect("/");
   if (!profile.details_seen_at) redirect("/details");
   if (!profile.browse_seen_at) redirect("/browse");
-  if (!profile.questions_completed) redirect("/onboarding/questions");
+  const isRegeneration = searchValue(params?.regenerate) === "1";
+  if (isRegeneration && !profile.profile_regeneration_started_at) {
+    redirect("/meetings?tab=profile");
+  }
+  if (
+    isRegeneration &&
+    !profile.profile_regeneration_questions_completed_at
+  ) {
+    redirect("/onboarding/questions?regenerate=1&start=1");
+  }
+  if (!profile.questions_completed && !isRegeneration) {
+    redirect("/onboarding/questions");
+  }
   const isTestProfileReview =
     Boolean(profile.profile_completed) &&
     profile.is_test_participant === true &&
     searchValue(params?.from) === "profile";
 
-  if (profile.profile_completed && !isTestProfileReview) redirect("/profile/result");
+  if (profile.profile_completed && !isTestProfileReview && !isRegeneration) {
+    redirect("/profile/result");
+  }
 
   return (
     <MobileFrame>
       <BasicInfoForm
         userId={user.id}
+        mode={isRegeneration ? "regeneration" : "onboarding"}
         returnPath={isTestProfileReview ? "/meetings?tab=profile" : undefined}
         initialValues={{
-          name: profile.name ?? "",
-          phone: profile.phone ?? profile.phone_normalized ?? "",
-          gender: (profile.gender ?? "") as Gender,
+          name: isRegeneration ? "" : profile.name ?? "",
+          phone: isRegeneration ? "" : profile.phone ?? profile.phone_normalized ?? "",
+          gender: (isRegeneration ? "" : profile.gender ?? "") as Gender,
           birthYear:
-            profile.birth_year == null ? "" : String(profile.birth_year),
-          mbti: profile.mbti?.toUpperCase() ?? "",
-          photoUrl: profile.photo_url ?? "",
+            isRegeneration || profile.birth_year == null
+              ? ""
+              : String(profile.birth_year),
+          mbti: isRegeneration ? "" : profile.mbti?.toUpperCase() ?? "",
+          photoUrl: isRegeneration ? "" : profile.photo_url ?? "",
         }}
       />
     </MobileFrame>

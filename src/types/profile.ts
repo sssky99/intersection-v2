@@ -22,6 +22,9 @@ export type ProfileRow = {
   public_intro_generated_at: string | null;
   public_intro_revealed_generated_at: string | null;
   public_intro_model: string | null;
+  last_profile_regenerated_at: string | null;
+  profile_regeneration_started_at: string | null;
+  profile_regeneration_questions_completed_at: string | null;
   meeting_guidelines_agreed: boolean | null;
   meeting_guidelines_agreed_at: string | null;
   membership_status: string | null;

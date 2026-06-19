@@ -30,6 +30,7 @@ export type StoredAnswerRow = {
 };
 
 type AnswerMap = Record<number, QuestionAnswer>;
+type QuestionFlowMode = "onboarding" | "preview" | "regeneration";
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
@@ -470,12 +471,13 @@ export function QuestionFlow({
   userId?: string;
   initialRows: StoredAnswerRow[];
   ticketQuestionTemplates?: TicketQuestionTemplate[];
-  mode?: "onboarding" | "preview";
+  mode?: QuestionFlowMode;
   onPreviewComplete?: () => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isPreview = mode === "preview";
+  const isRegeneration = mode === "regeneration";
   const questions = useMemo(
     () => questionsWithTicketTemplates(ticketQuestionTemplates),
     [ticketQuestionTemplates],
@@ -570,7 +572,7 @@ export function QuestionFlow({
     if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
 
     const { error: saveError } = await createClient()
-      .from("user_answers")
+      .from(isRegeneration ? "profile_regeneration_answers" : "user_answers")
       .upsert(
         {
           user_id: userId,
@@ -606,12 +608,20 @@ export function QuestionFlow({
 
     const { error: profileError } = await createClient()
       .from("profiles")
-      .update({ questions_completed: true })
+      .update(
+        isRegeneration
+          ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
+          : { questions_completed: true },
+      )
       .eq("user_id", userId);
 
     if (profileError) throw new Error(profileError.message);
 
-    router.replace("/onboarding/profile");
+    router.replace(
+      isRegeneration
+        ? "/onboarding/profile?regenerate=1"
+        : "/onboarding/profile",
+    );
     router.refresh();
   };
 
@@ -664,7 +674,7 @@ export function QuestionFlow({
   }, []);
 
   useEffect(() => {
-    if (isPreview) {
+    if (isPreview || isRegeneration) {
       setTicketCoachmarkDismissed(false);
       setTicketCoachmarkReady(true);
       return;
@@ -674,11 +684,11 @@ export function QuestionFlow({
       window.sessionStorage.getItem(TICKET_COACHMARK_SESSION_KEY) === "1",
     );
     setTicketCoachmarkReady(true);
-  }, [isPreview]);
+  }, [isPreview, isRegeneration]);
 
   const dismissTicketCoachmark = () => {
     setTicketCoachmarkDismissed(true);
-    if (!isPreview) {
+    if (!isPreview && !isRegeneration) {
       window.sessionStorage.setItem(TICKET_COACHMARK_SESSION_KEY, "1");
     }
   };
