@@ -1,9 +1,9 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { profileQuestions, questionCategories } from "@/data/profileQuestions";
 import {
@@ -33,6 +33,10 @@ type AnswerMap = Record<number, QuestionAnswer>;
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
+const QUESTION_TYPING_SPEED_MS = 18;
+const SCALE_ANSWER_TYPING_SPEED_MS = 18;
+const ANSWER_AFTER_TYPING_DELAY_MS = 300;
+const scaleAnswerReactions = ["❤️", "❤️"];
 const ticketRatingReactions: Record<string, string[]> = {
   "1": ["👎", "👎"],
   "2": ["👎"],
@@ -84,6 +88,66 @@ function scaleLabelParts(label?: string) {
   return { left: parts[0], right: parts[parts.length - 1] };
 }
 
+function typingDurationMs(text: string, speedMs: number) {
+  return Array.from(text).length * speedMs;
+}
+
+function TypingText({
+  className,
+  speedMs = QUESTION_TYPING_SPEED_MS,
+  text,
+}: {
+  className?: string;
+  speedMs?: number;
+  text: string;
+}) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const [displayText, setDisplayText] = useState(
+    shouldReduceMotion ? text : "",
+  );
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      setDisplayText(text);
+      return;
+    }
+
+    const characters = Array.from(text);
+    let index = 0;
+    setDisplayText("");
+
+    if (characters.length === 0) return;
+
+    const timer = window.setInterval(() => {
+      index += 1;
+      setDisplayText(characters.slice(0, index).join(""));
+
+      if (index >= characters.length) {
+        window.clearInterval(timer);
+      }
+    }, speedMs);
+
+    return () => window.clearInterval(timer);
+  }, [shouldReduceMotion, speedMs, text]);
+
+  return (
+    <span aria-label={text} className={cn("grid", className)}>
+      <span
+        aria-hidden="true"
+        className="invisible col-start-1 row-start-1 whitespace-pre-line"
+      >
+        {text}
+      </span>
+      <span
+        aria-hidden="true"
+        className="col-start-1 row-start-1 whitespace-pre-line"
+      >
+        {displayText}
+      </span>
+    </span>
+  );
+}
+
 function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
   const [drawn, setDrawn] = useState(false);
   const [imageVisible, setImageVisible] = useState(false);
@@ -117,13 +181,14 @@ function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
   );
 }
 
-function TicketRatingReaction({ rating }: { rating: string }) {
-  const reactions = ticketRatingReactions[rating] ?? [];
-
+function EmojiBurst({ emojis }: { emojis: string[] }) {
   return (
-    <span className="pointer-events-none absolute bottom-6 left-1/2 z-10 h-10 w-12 -translate-x-1/2" aria-hidden>
-      {reactions.map((emoji, index) => {
-        const pairOffset = reactions.length > 1;
+    <span
+      className="pointer-events-none absolute bottom-6 left-1/2 z-10 h-10 w-12 -translate-x-1/2"
+      aria-hidden
+    >
+      {emojis.map((emoji, index) => {
+        const pairOffset = emojis.length > 1;
         const left = pairOffset ? (index === 0 ? "44%" : "56%") : "50%";
         const rotate = pairOffset ? (index === 0 ? -14 : 12) : 0;
 
@@ -148,6 +213,14 @@ function TicketRatingReaction({ rating }: { rating: string }) {
       })}
     </span>
   );
+}
+
+function TicketRatingReaction({ rating }: { rating: string }) {
+  return <EmojiBurst emojis={ticketRatingReactions[rating] ?? []} />;
+}
+
+function ScaleAnswerReaction() {
+  return <EmojiBurst emojis={scaleAnswerReactions} />;
 }
 
 function templateToTicketQuestion(
@@ -338,6 +411,7 @@ export function QuestionFlow({
   const [saving, setSaving] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const autoAdvanceTimerRef = useRef<number | null>(null);
   const question = questions[questionIndex];
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
@@ -439,24 +513,57 @@ export function QuestionFlow({
     }));
   };
 
+  const scheduleAutoAdvance = (nextAnswers: AnswerMap, delayMs: number) => {
+    if (autoAdvanceTimerRef.current) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+    }
+
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      autoAdvanceTimerRef.current = null;
+      void moveToNext(nextAnswers).finally(() => {
+        setSaving(false);
+        setSelectedFeedback(null);
+      });
+    }, delayMs);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        window.clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, []);
+
   const selectSingle = async (value: string) => {
     if (saving) return;
 
     const nextAnswer = { questionId: question.id, value };
     const nextAnswers = answerMapWith(nextAnswer);
+    const selectedNumericOption = usesNumericScale
+      ? scaleOptions.find((option) => optionValue(option) === value)
+      : undefined;
+    const selectedNumericLabel = selectedNumericOption
+      ? optionLabel(selectedNumericOption)
+      : "";
+    const nextDelay = usesNumericScale
+      ? typingDurationMs(selectedNumericLabel, SCALE_ANSWER_TYPING_SPEED_MS) +
+        ANSWER_AFTER_TYPING_DELAY_MS
+      : 420;
+
     updateLocalAnswer(nextAnswer);
     setSaving(true);
     setSelectedFeedback(value);
     setError(null);
 
+    if (isPreview) {
+      scheduleAutoAdvance(nextAnswers, nextDelay);
+      return;
+    }
+
     try {
       await saveAnswer(question, nextAnswer);
-      window.setTimeout(() => {
-        void moveToNext(nextAnswers).finally(() => {
-          setSaving(false);
-          setSelectedFeedback(null);
-        });
-      }, 420);
+      scheduleAutoAdvance(nextAnswers, nextDelay);
     } catch (saveError) {
       console.error("Failed to save onboarding answer:", saveError);
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -544,14 +651,14 @@ export function QuestionFlow({
     setSelectedFeedback(rating);
     setError(null);
 
+    if (isPreview) {
+      scheduleAutoAdvance(nextAnswers, 650);
+      return;
+    }
+
     try {
       await saveAnswer(question, nextAnswer);
-      window.setTimeout(() => {
-        void moveToNext(nextAnswers).finally(() => {
-          setSaving(false);
-          setSelectedFeedback(null);
-        });
-      }, 650);
+      scheduleAutoAdvance(nextAnswers, 650);
     } catch (saveError) {
       console.error("Failed to save ticket rating:", saveError);
       setError("티켓 반응을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -605,7 +712,7 @@ export function QuestionFlow({
                 question.type !== "ticket_rating" && "mt-2",
               )}
             >
-              {question.question}
+              <TypingText text={question.question} />
             </h1>
             {question.scaleLabel && !usesNumericScale && (
               <p className="mt-2 text-[11px] font-semibold text-black/35">
@@ -663,30 +770,37 @@ export function QuestionFlow({
                           className="absolute bottom-0 h-[2px] w-3 rounded-full bg-accent"
                         />
                       )}
+                      <AnimatePresence>
+                        {selectedFeedback === value && (
+                          <ScaleAnswerReaction key={`scale-reaction-${value}`} />
+                        )}
+                      </AnimatePresence>
                     </motion.button>
                   );
                 })}
               </div>
 
-              <AnimatePresence mode="wait">
-                {selectedScaleOption && (
-                  <motion.div
-                    key={optionValue(selectedScaleOption)}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -3 }}
-                    transition={{ duration: 0.2 }}
-                    className="mx-auto max-w-[320px] px-3 pt-2 text-center"
-                  >
-                    <span className="block text-[10px] font-bold tracking-[0.12em] text-accent/70">
-                      이런 모습에 가까워요
-                    </span>
-                    <p className="mt-1.5 text-[13px] font-medium leading-5 text-black/55">
-                      “{optionLabel(selectedScaleOption)}”
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <div className="min-h-[210px]">
+                <AnimatePresence mode="wait">
+                  {selectedScaleOption && (
+                    <motion.div
+                      key={optionValue(selectedScaleOption)}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      transition={{ duration: 0.2 }}
+                      className="mx-auto flex max-w-[340px] justify-center px-4 pt-14 text-center"
+                    >
+                      <p className="text-xl font-bold leading-8 tracking-tight text-black">
+                        <TypingText
+                          text={optionLabel(selectedScaleOption)}
+                          speedMs={SCALE_ANSWER_TYPING_SPEED_MS}
+                        />
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           )}
 

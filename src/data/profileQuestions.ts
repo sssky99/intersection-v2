@@ -21,7 +21,8 @@ const baseQuestions: ProfileQuestion[] = [
     order: 1,
     category: "온도",
     type: "single_choice",
-    question: "새로운 사람들과 함께 있을 때, 나는 어떤 분위기에서 더 편해지나요?",
+    question:
+      "새로운 사람들과 함께 있을 때,\n나는 어떤 분위기에서 더 편해지나요?",
     scaleLabel: "차분형 ↔ 활기형",
     options: [
       { value: "1", label: "조용하고 차분한 자리가 훨씬 편해요." },
@@ -42,7 +43,8 @@ const baseQuestions: ProfileQuestion[] = [
     order: 2,
     category: "결",
     type: "single_choice",
-    question: "처음 만난 사람과 대화할 때, 어떤 이야기가 더 잘 이어지나요?",
+    question:
+      "처음 만난 사람과 대화할 때,\n어떤 이야기가 더 잘 이어지나요?",
     scaleLabel: "현실·경험 중심 ↔ 의미·아이디어 중심",
     options: [
       {
@@ -72,7 +74,8 @@ const baseQuestions: ProfileQuestion[] = [
     order: 3,
     category: "톤",
     type: "single_choice",
-    question: "누군가 고민을 말했을 때, 나는 어떤 방식으로 반응하는 편인가요?",
+    question:
+      "누군가 고민을 말했을 때,\n나는 어떤 방식으로 반응하는 편인가요?",
     scaleLabel: "공감 중심 ↔ 분석·해결 중심",
     options: [
       { value: "1", label: "먼저 감정을 충분히 들어주는 편이에요." },
@@ -115,8 +118,8 @@ const baseQuestions: ProfileQuestion[] = [
     category: "모임 역할",
     type: "multi_choice",
     maxSelections: 2,
-    question:
-      "처음 만난 자리에서 나에게 가까운 모습을 골라주세요.\n최대 2개까지 선택할 수 있어요.",
+    question: "처음 만난 자리에서\n나에게 가까운 모습을 골라주세요.",
+    description: "최대 2개까지 선택할 수 있어요.",
     options: [
       { value: "listener", label: "주로 편하게 듣는 편이에요." },
       { value: "reactor", label: "주로 리액션으로 대화를 받아주는 편이에요." },
@@ -139,7 +142,8 @@ const baseQuestions: ProfileQuestion[] = [
     type: "multi_choice",
     maxSelections: 2,
     question:
-      "처음 만나는 자리에서 내가 편하게 느끼는 사람은 어떤 사람인가요?\n최대 2개까지 골라주세요.",
+      "처음 만나는 자리에서\n내가 편하게 느끼는 사람은 어떤 사람인가요?",
+    description: "최대 2개까지 선택할 수 있어요.",
     options: [
       { value: "opens_conversation", label: "먼저 말문을 열어주는 사람" },
       { value: "warm_reactor", label: "리액션이 따뜻한 사람" },
@@ -181,6 +185,7 @@ const baseQuestions: ProfileQuestion[] = [
     category: "회피 조건",
     type: "multi_choice",
     question: "아래 중 피하고 싶은 자리가 있다면 골라주세요.",
+    description: "중복 선택이 가능해요.",
     options: [
       { value: "heavy_drinking", label: "과한 술자리" },
       { value: "too_loud", label: "너무 시끄러운 자리" },
@@ -201,7 +206,8 @@ const baseQuestions: ProfileQuestion[] = [
     order: 9,
     category: "나이 조건",
     type: "single_choice",
-    question: "분위기가 잘 맞는다면 어느 정도 나이 차이까지 괜찮으신가요?",
+    question:
+      "분위기가 잘 맞는다면\n어느 정도 나이 차이까지 괜찮으신가요?",
     options: [
       { value: "older_ok", label: "3살 이상 연상도 괜찮아요." },
       { value: "younger_ok", label: "3살 이상 연하도 괜찮아요." },
