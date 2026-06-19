@@ -3038,13 +3038,13 @@ function ProfileCompletionModal({
 function ProfileCompletionLogo() {
   const shouldReduceMotion = Boolean(useReducedMotion());
   const strokeWidth = 2;
-  const lensTopY = 27.07;
-  const lensBottomY = 100.93;
+  const lensTopY = 30.25;
+  const lensBottomY = 97.75;
   const lensHeight = lensBottomY - lensTopY;
   const leftCirclePath =
-    "M76 22 A42 42 0 1 1 76 106 A42 42 0 1 1 76 22";
+    "M71 22 A42 42 0 1 1 71 106 A42 42 0 1 1 71 22";
   const rightCirclePath =
-    "M116 22 A42 42 0 1 1 116 106 A42 42 0 1 1 116 22";
+    "M121 22 A42 42 0 1 1 121 106 A42 42 0 1 1 121 22";
   const lensPath = `M96 ${lensTopY} A42 42 0 0 1 96 ${lensBottomY} A42 42 0 0 1 96 ${lensTopY} Z`;
   const circlePathLength = 264;
   const lensPathLength = 182;
@@ -3068,8 +3068,8 @@ function ProfileCompletionLogo() {
             clipPathUnits="userSpaceOnUse"
           >
             <motion.rect
-              x="74"
-              width="44"
+              x="79"
+              width="34"
               initial={shouldReduceMotion ? false : { y: lensBottomY, height: 0 }}
               animate={{ y: lensTopY, height: lensHeight }}
               transition={{
@@ -3086,8 +3086,8 @@ function ProfileCompletionLogo() {
           animate={{ opacity: 1 }}
           transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
         >
-          <path d={leftCirclePath} fill="#fff" />
-          <path d={rightCirclePath} fill="#fff" />
+          <path d={leftCirclePath} fill="transparent" />
+          <path d={rightCirclePath} fill="transparent" />
         </motion.g>
 
         <motion.path
