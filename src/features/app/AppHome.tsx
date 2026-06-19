@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   AlertTriangle,
+  ArrowRight,
   CalendarDays,
   Check,
   ChevronDown,
@@ -2756,8 +2757,10 @@ function ProfileCompletionModal({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [typingDone, setTypingDone] = useState(false);
-  const [graphVisible, setGraphVisible] = useState(false);
-  const [buttonVisible, setButtonVisible] = useState(false);
+  const [completionScreen, setCompletionScreen] = useState<"intro" | "vibe">(
+    "intro",
+  );
+  const [introAdvanceVisible, setIntroAdvanceVisible] = useState(false);
   const [closing, setClosing] = useState(false);
   const modalProfile = useMemo(
     () => ({
@@ -2784,8 +2787,8 @@ function ProfileCompletionModal({
     setNotice(null);
     setError(null);
     setTypingDone(false);
-    setGraphVisible(false);
-    setButtonVisible(false);
+    setCompletionScreen("intro");
+    setIntroAdvanceVisible(false);
     setClosing(false);
 
     messageTimer = window.setInterval(() => {
@@ -2855,12 +2858,8 @@ function ProfileCompletionModal({
   useEffect(() => {
     if (!typingDone) return;
 
-    const graphTimer = window.setTimeout(() => setGraphVisible(true), 180);
-    const buttonTimer = window.setTimeout(() => setButtonVisible(true), 920);
-    return () => {
-      window.clearTimeout(graphTimer);
-      window.clearTimeout(buttonTimer);
-    };
+    const timer = window.setTimeout(() => setIntroAdvanceVisible(true), 180);
+    return () => window.clearTimeout(timer);
   }, [typingDone]);
 
   const finish = async () => {
@@ -2937,65 +2936,99 @@ function ProfileCompletionModal({
         )}
 
         {phase === "typing" && (
-          <div className="text-left">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-              profile complete
-            </p>
-            <h2 className="mt-2 flex items-center gap-2 text-[24px] font-black leading-8 text-black">
-              <span>{displayName}님의 프로필이 만들어졌어요</span>
-              <span aria-hidden>{emoji ?? profileEmoji(profile)}</span>
-            </h2>
-            <div className="mt-5 min-h-[152px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
-              <ProfileCompletionTypewriter
-                text={intro}
-                onComplete={() => setTypingDone(true)}
-              />
-            </div>
-            {notice && (
-              <p className="mt-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-[11px] font-semibold leading-5 text-black/48">
-                {notice}
-              </p>
-            )}
-
-            <AnimatePresence>
-              {graphVisible && (
-                <motion.div
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
-                  transition={{ duration: 0.24, ease: "easeOut" }}
-                >
-                  <VibeGraph
-                    title="나의 대화 결"
-                    description="교집합이 자리를 제안할 때 참고하는 분위기예요."
-                    scores={modalVibeScores}
-                    visibleAxes={profileVibeAxes}
-                    showAxisHeader={false}
-                    scoreScale="internal"
-                    animationKey={`completion-${animationKey}-${generatedAt ?? "new"}`}
-                    className="mt-4 !rounded-[24px] !shadow-none"
+          <AnimatePresence mode="wait" initial={false}>
+            {completionScreen === "intro" ? (
+              <motion.div
+                key="profile-completion-intro"
+                initial={shouldReduceMotion ? false : { opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, x: -14 }}
+                transition={{ duration: 0.24, ease: "easeOut" }}
+                className="flex min-h-[438px] flex-col text-left"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+                  profile complete
+                </p>
+                <h2 className="mt-2 flex items-center gap-2 text-[24px] font-black leading-8 text-black">
+                  <span>{displayName}님의 프로필이 만들어졌어요</span>
+                  <span aria-hidden>{emoji ?? profileEmoji(profile)}</span>
+                </h2>
+                <div className="mt-5 min-h-[258px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
+                  <ProfileCompletionTypewriter
+                    text={intro}
+                    onComplete={() => setTypingDone(true)}
                   />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+                {notice && (
+                  <p className="mt-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-[11px] font-semibold leading-5 text-black/48">
+                    {notice}
+                  </p>
+                )}
 
-            <AnimatePresence>
-              {buttonVisible && (
+                <div className="mt-auto flex items-center justify-end pt-5">
+                  <AnimatePresence>
+                    {introAdvanceVisible && (
+                      <motion.button
+                        type="button"
+                        title="나의 대화 결 보기"
+                        aria-label="나의 대화 결 보기"
+                        initial={
+                          shouldReduceMotion ? false : { opacity: 0, x: 10 }
+                        }
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={
+                          shouldReduceMotion
+                            ? undefined
+                            : { opacity: 0, x: 8 }
+                        }
+                        whileTap={{ scale: 0.96 }}
+                        onClick={() => setCompletionScreen("vibe")}
+                        className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(0,0,0,0.18)]"
+                      >
+                        <ArrowRight size={19} aria-hidden />
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="profile-completion-vibe"
+                initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, x: 10 }}
+                transition={{ duration: 0.24, ease: "easeOut" }}
+                className="flex min-h-[438px] flex-col text-left"
+              >
+                <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+                  conversation vibe
+                </p>
+                <VibeGraph
+                  title="나의 대화 결"
+                  description="교집합이 자리를 제안할 때 참고하는 분위기예요."
+                  scores={modalVibeScores}
+                  visibleAxes={profileVibeAxes}
+                  showAxisHeader={false}
+                  scoreScale="internal"
+                  animationKey={`completion-${animationKey}-${generatedAt ?? "new"}-${completionScreen}`}
+                  className="mt-3 !rounded-[24px] !shadow-none"
+                />
                 <motion.button
                   type="button"
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+                  transition={{ delay: shouldReduceMotion ? 0 : 0.26 }}
                   whileTap={!closing ? { scale: 0.98 } : undefined}
                   disabled={closing}
                   onClick={() => void finish()}
-                  className="mt-5 h-[52px] w-full rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] disabled:bg-black/25"
+                  className="mt-auto h-[52px] w-full rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] disabled:bg-black/25"
                 >
                   {closing ? "이동 중..." : "나에게 맞는 자리 추천받기"}
                 </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
       </motion.section>
     </motion.div>
@@ -3003,26 +3036,61 @@ function ProfileCompletionModal({
 }
 
 function ProfileCompletionLogo() {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const circleTransition = {
+    duration: shouldReduceMotion ? 0 : 1.05,
+    ease: "easeOut" as const,
+  };
+
   return (
-    <div className="relative h-24 w-44" aria-hidden>
-      <motion.span
-        initial={{ x: -54, rotate: -180 }}
-        animate={{ x: -14, rotate: 0 }}
-        transition={{ duration: 1.18, ease: "easeOut" }}
-        className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px] border-accent/75 bg-white shadow-[0_12px_28px_rgba(126,179,199,0.22)]"
-      />
-      <motion.span
-        initial={{ x: 54, rotate: 180 }}
-        animate={{ x: 14, rotate: 0 }}
-        transition={{ duration: 1.18, ease: "easeOut" }}
-        className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px] border-accent/75 bg-white shadow-[0_12px_28px_rgba(126,179,199,0.22)]"
-      />
-      <motion.span
-        initial={{ opacity: 0, scale: 0.42 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.44, ease: "easeOut", delay: 0.78 }}
-        className="absolute left-1/2 top-1/2 h-12 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/45 shadow-[0_0_30px_rgba(126,179,199,0.42)]"
-      />
+    <div className="relative flex h-28 w-56 items-center justify-center" aria-hidden>
+      <motion.svg
+        viewBox="0 0 192 128"
+        className="h-28 w-48 overflow-visible drop-shadow-[0_18px_28px_rgba(0,0,0,0.08)]"
+      >
+        <motion.g
+          initial={shouldReduceMotion ? false : { x: -54, y: 3, rotate: -16 }}
+          animate={{ x: 0, y: 0, rotate: 0 }}
+          transition={circleTransition}
+          style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        >
+          <circle
+            cx="76"
+            cy="64"
+            r="42"
+            fill="#fff"
+            stroke="#0b0b0b"
+            strokeWidth="5.5"
+          />
+        </motion.g>
+        <motion.g
+          initial={shouldReduceMotion ? false : { x: 54, y: 3, rotate: 16 }}
+          animate={{ x: 0, y: 0, rotate: 0 }}
+          transition={circleTransition}
+          style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        >
+          <circle
+            cx="116"
+            cy="64"
+            r="42"
+            fill="#fff"
+            stroke="#0b0b0b"
+            strokeWidth="5.5"
+          />
+        </motion.g>
+        <motion.path
+          d="M96 24 C110 32 118 47 118 64 C118 81 110 96 96 104 C82 96 74 81 74 64 C74 47 82 32 96 24 Z"
+          fill="#0b0b0b"
+          initial={shouldReduceMotion ? false : { opacity: 0, scaleX: 0.18 }}
+          animate={{ opacity: 1, scaleX: 1 }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 0.5,
+            ease: "easeOut",
+            delay: shouldReduceMotion ? 0 : 0.74,
+          }}
+          style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        />
+      </motion.svg>
     </div>
   );
 }
