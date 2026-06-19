@@ -541,7 +541,7 @@ export function AppHome({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="absolute inset-0 z-50 bg-white"
+            className="absolute inset-0 z-50 overflow-y-auto overscroll-contain bg-white"
           >
             <button
               type="button"
