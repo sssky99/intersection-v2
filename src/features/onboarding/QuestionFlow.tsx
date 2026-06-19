@@ -789,9 +789,9 @@ export function QuestionFlow({
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -5 }}
                       transition={{ duration: 0.2 }}
-                      className="mx-auto flex max-w-[340px] justify-center px-4 pt-14 text-center"
+                      className="mx-auto flex w-full max-w-[320px] justify-start px-3 pt-24 text-left"
                     >
-                      <p className="text-xl font-bold leading-8 tracking-tight text-black">
+                      <p className="w-full text-xl font-bold leading-8 tracking-tight text-black">
                         <TypingText
                           text={optionLabel(selectedScaleOption)}
                           speedMs={SCALE_ANSWER_TYPING_SPEED_MS}
