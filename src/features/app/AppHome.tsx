@@ -1952,7 +1952,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
   return (
     <div className="space-y-5 py-5">
-      <section className="rounded-3xl border border-[#eadfc8] bg-[#fff8ea] px-5 py-6">
+      <section className="border border-[#eadfc8] bg-[#fff8ea] px-5 py-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
             feedback

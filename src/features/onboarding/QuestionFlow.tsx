@@ -194,11 +194,11 @@ function questionsWithTicketTemplates(
   const dynamicTicketQuestions = ticketQuestionTemplates
     .map(templateToTicketQuestion)
     .sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
+  const staticQuestions = profileQuestions
+    .filter((question) => question.type !== "ticket_rating")
+    .sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
 
-  return [
-    ...profileQuestions.filter((question) => question.type !== "ticket_rating"),
-    ...dynamicTicketQuestions,
-  ].sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
+  return [...dynamicTicketQuestions, ...staticQuestions];
 }
 
 function rowToAnswer(
