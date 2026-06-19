@@ -103,6 +103,7 @@ const safetyItems = [
   "✒️모임 후 피드백을 받아 다음 추천에 반영해요.",
   "🚫불편한 피드백, 노쇼는 강력하게 제제해요.",
 ];
+const exampleInterestCounts = [3, 2, 4, 5, 4];
 
 export function DetailsClient({
   userId,
@@ -168,7 +169,7 @@ export function DetailsClient({
 
             <DocumentSection label="왜 안전하고 덜 어색할까요?" prominentLabel>
               <ImageSlot tone="warm" image="/images/details/safety-friends-booth.png" />
-              <Checklist items={safetyItems} icon="none" />
+              <Checklist items={safetyItems} icon="none" boxed />
             </DocumentSection>
 
             <DocumentSection label="시작하기" hideLabel>
@@ -368,9 +369,11 @@ function TicketExampleHeading() {
 }
 
 function Checklist({
+  boxed = false,
   items,
   icon = "check",
 }: {
+  boxed?: boolean;
   items: string[];
   icon?: "check" | "shield" | "none";
 }) {
@@ -380,6 +383,7 @@ function Checklist({
     <ul
       className={cn(
         "space-y-3",
+        boxed && "bg-black/[0.035] px-4 py-4",
         icon === "shield" && "bg-black/[0.035] px-4 py-4",
       )}
     >
@@ -489,17 +493,17 @@ function ProfileCarousel() {
 }
 
 function templateToExampleCard(template: TicketQuestionTemplate): ExampleCard {
+  const interestCount =
+    exampleInterestCounts[template.questionOrder - 1] ??
+    exampleInterestCounts[0];
+
   return {
     title: template.title,
     tags: template.moodTags,
     image: template.imageUrl ?? "",
     time: template.defaultTime ?? "",
     location: template.defaultRegion ?? "",
-    interestText:
-      template.recommendationCopy?.trim() ||
-      template.shortDescription?.trim() ||
-      template.activityType?.trim() ||
-      null,
+    interestText: `${interestCount}명이 관심을 보였어요.`,
   };
 }
 
