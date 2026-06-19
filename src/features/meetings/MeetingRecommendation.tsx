@@ -2,7 +2,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  CalendarDays,
   Check,
+  Clock3,
+  MapPin,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -14,8 +17,9 @@ import {
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
+import type { BlindDateUserOffer } from "@/types/blindDate";
 
-type Screen = "calendar" | "drawing" | "waitlisted";
+type Screen = "calendar" | "drawing" | "waitlisted" | "blindDate";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -29,6 +33,8 @@ export function MeetingRecommendation({
   onWaitlisted,
   onMembershipRequired,
   onOpenList,
+  blindDateOffers = [],
+  onBlindDateOffersChange,
 }: {
   userId: string;
   embedded?: boolean;
@@ -36,6 +42,8 @@ export function MeetingRecommendation({
   onWaitlisted?: (ticket: GatheringTicket) => void;
   onMembershipRequired?: () => void;
   onOpenList?: () => void;
+  blindDateOffers?: BlindDateUserOffer[];
+  onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
 }) {
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
@@ -49,7 +57,19 @@ export function MeetingRecommendation({
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
+    useState<string | null>(null);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
+  const answerableBlindDateOffers = blindDateOffers.filter(
+    (offer) =>
+      !offer.isExpired &&
+      offer.ownResponse === "pending" &&
+      ["offered", "waiting_response"].includes(offer.status),
+  );
+  const selectedBlindDateOffer =
+    blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
+    answerableBlindDateOffers[0] ??
+    null;
 
   useEffect(() => {
     let alive = true;
@@ -188,6 +208,22 @@ export function MeetingRecommendation({
               onSelect={selectDate}
             />
 
+            {answerableBlindDateOffers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBlindDateOfferId(answerableBlindDateOffers[0].id);
+                  setScreen("blindDate");
+                }}
+                className="mt-4 flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-black/10 bg-black px-4 py-3 text-left text-sm font-bold text-white shadow-sm transition active:scale-[0.99]"
+              >
+                <span>나에게 온 블라인드 데이트 초대장 보기</span>
+                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-2 text-[11px] font-black text-black">
+                  {answerableBlindDateOffers.length}
+                </span>
+              </button>
+            )}
+
             {(notice || error) && (
               <p className="mt-4 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-black/55">
                 {notice ?? error}
@@ -302,6 +338,15 @@ export function MeetingRecommendation({
               </button>
             )}
           </motion.div>
+        )}
+
+        {screen === "blindDate" && selectedBlindDateOffer && (
+          <BlindDateInvitationFlow
+            key={selectedBlindDateOffer.id}
+            offer={selectedBlindDateOffer}
+            onClose={() => setScreen("calendar")}
+            onOffersChange={onBlindDateOffersChange}
+          />
         )}
       </AnimatePresence>
     </section>
@@ -591,6 +636,363 @@ function TicketInsideView({
         날짜 다시 고르기
       </button>
     </motion.div>
+  );
+}
+
+function blindDateDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00+09:00`);
+  if (!Number.isFinite(date.getTime())) return value;
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
+  return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(
+    date.getDate(),
+  ).padStart(2, "0")} ${weekday}`;
+}
+
+function remainingTimeText(expiresAt: string, nowMs = Date.now()) {
+  const target = new Date(expiresAt);
+  const remainingMs = target.getTime() - nowMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const timeText = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+
+  return `응답 마감까지 ${timeText} 남았어요.`;
+}
+
+function useBlindDateRemainingText(expiresAt: string) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return remainingTimeText(expiresAt, nowMs);
+}
+
+function BlindDateInvitationFlow({
+  offer,
+  onClose,
+  onOffersChange,
+}: {
+  offer: BlindDateUserOffer;
+  onClose: () => void;
+  onOffersChange?: (offers: BlindDateUserOffer[]) => void;
+}) {
+  const [currentOffer, setCurrentOffer] = useState(offer);
+  const [step, setStep] = useState<"invite" | "dates" | "result">(
+    offer.ownResponse === "pending" && !offer.isExpired ? "invite" : "result",
+  );
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remainingText = useBlindDateRemainingText(currentOffer.expiresAt);
+  const expired = currentOffer.isExpired || !remainingText;
+
+  useEffect(() => {
+    setCurrentOffer(offer);
+    setStep(offer.ownResponse === "pending" && !offer.isExpired ? "invite" : "result");
+    setSelectedDates([]);
+    setError(null);
+  }, [offer]);
+
+  const respond = async (action: "yes" | "no", availableDates: string[] = []) => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/meetings/blind-dates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          offerId: currentOffer.id,
+          action,
+          availableDates,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | {
+            offer?: BlindDateUserOffer;
+            offers?: BlindDateUserOffer[];
+            error?: string;
+          }
+        | null;
+
+      if (!response.ok || !data?.offer) {
+        throw new Error(data?.error ?? "blind-date-response-failed");
+      }
+
+      setCurrentOffer(data.offer);
+      onOffersChange?.(data.offers ?? [data.offer]);
+      setStep("result");
+    } catch (responseError) {
+      setError(
+        responseError instanceof Error
+          ? responseError.message
+          : "응답을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleDate = (date: string) => {
+    setSelectedDates((current) =>
+      current.includes(date)
+        ? current.filter((item) => item !== date)
+        : [...current, date].sort(),
+    );
+  };
+
+  return (
+    <motion.div
+      key="blind-date-invitation"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 8 }}
+      transition={ticketFadeTransition}
+      className="relative pb-5 pt-[calc(54px+env(safe-area-inset-top))]"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        disabled={saving}
+        aria-label="블라인드 데이트 초대장 닫기"
+        className="absolute left-0 top-[calc(6px+env(safe-area-inset-top))] z-30 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md disabled:opacity-40"
+      >
+        <X size={18} aria-hidden />
+      </button>
+
+      {expired ? (
+        <BlindDateResultMessage
+          tone="muted"
+          title="응답 시간이 지나 초대장이 만료되었어요."
+          body="만료된 초대장은 추천탭 알림에서 제외돼요."
+        />
+      ) : step === "dates" ? (
+        <section>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+            available dates
+          </p>
+          <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+            가능한 날짜를
+            <br />
+            골라주세요.
+          </h1>
+          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
+            상대방과 가능한 날짜가 겹치면 가장 빠른 날짜로 확정돼요.
+          </p>
+
+          <div className="mt-6 grid gap-2">
+            {currentOffer.candidateDates.map((date) => {
+              const selected = selectedDates.includes(date);
+
+              return (
+                <button
+                  key={date}
+                  type="button"
+                  disabled={saving}
+                  aria-pressed={selected}
+                  onClick={() => toggleDate(date)}
+                  className={cn(
+                    "flex min-h-12 items-center justify-between rounded-2xl border px-4 py-3 text-sm font-bold transition disabled:opacity-40",
+                    selected
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white text-black/62",
+                  )}
+                >
+                  <span>{blindDateDateLabel(date)}</span>
+                  {selected && <Check size={16} aria-hidden />}
+                </button>
+              );
+            })}
+          </div>
+
+          {error && (
+            <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="button"
+            disabled={saving || selectedDates.length === 0}
+            onClick={() => void respond("yes", selectedDates)}
+            className="mt-5 h-[54px] w-full rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/20"
+          >
+            {saving ? "저장 중..." : "선택한 날짜 제출"}
+          </button>
+        </section>
+      ) : step === "result" ? (
+        <BlindDateResponseResult offer={currentOffer} remainingText={remainingText} />
+      ) : (
+        <section>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+            blind date invitation
+          </p>
+          <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+            블라인드 데이트 제안이
+            <br />
+            도착했어요.
+          </h1>
+          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
+            지난 교집합 자리에서 서로 다시 만나보고 싶다고 선택된 분과
+            단둘이 만날 수 있는 자리가 준비되었어요.
+            <br />
+            상대방은 현장에서 알 수 있어요.
+          </p>
+
+          <div className="mt-6">
+            <TicketDrawingFrame
+              motionKey={currentOffer.id}
+              title={currentOffer.template.title}
+              imageUrl={currentOffer.template.imageUrl}
+              time={currentOffer.timeLabel}
+              location={`서울\n${currentOffer.region}`}
+              tags={["블라인드", "비공개"]}
+              drawn
+              imageVisible
+              className="!mt-0"
+            />
+          </div>
+
+          <div className="mt-5 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-4 text-xs font-bold text-black/58">
+            <p className="flex items-center gap-2">
+              <Clock3 size={14} className="text-black/35" aria-hidden />
+              <span>{currentOffer.timeLabel}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <MapPin size={14} className="text-black/35" aria-hidden />
+              <span>{currentOffer.region}</span>
+            </p>
+            <p className="flex items-center gap-2">
+              <CalendarDays size={14} className="text-black/35" aria-hidden />
+              <span>{remainingText}</span>
+            </p>
+          </div>
+
+          {error && (
+            <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-5 grid grid-cols-2 gap-2.5">
+            <motion.button
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              type="button"
+              disabled={saving}
+              onClick={() => void respond("no")}
+              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+            >
+              <span className="text-sm font-bold">No</span>
+              <span className="mt-0.5 text-[10px] font-medium text-black/40">
+                이번엔 지나갈게요
+              </span>
+            </motion.button>
+            <motion.button
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              type="button"
+              disabled={saving}
+              onClick={() => setStep("dates")}
+              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
+            >
+              <span className="text-sm font-bold">Yes</span>
+              <span className="mt-0.5 text-[10px] font-medium text-white/60">
+                가능한 날짜 선택
+              </span>
+            </motion.button>
+          </div>
+        </section>
+      )}
+    </motion.div>
+  );
+}
+
+function BlindDateResponseResult({
+  offer,
+  remainingText,
+}: {
+  offer: BlindDateUserOffer;
+  remainingText: string | null;
+}) {
+  if (offer.status === "scheduled" && offer.scheduledDate) {
+    return (
+      <BlindDateResultMessage
+        tone="success"
+        title="블라인드 데이트 일정이 확정되었어요."
+        body={`${blindDateDateLabel(offer.scheduledDate)}\n${offer.timeLabel}\n${offer.region}\n\n정확한 장소는 운영진이 안내드릴게요.\n상대방은 현장에서 알 수 있어요.`}
+      />
+    );
+  }
+
+  if (offer.status === "needs_reschedule") {
+    return (
+      <BlindDateResultMessage
+        tone="muted"
+        title="가능한 날짜가 서로 맞지 않았어요."
+        body="운영진이 다른 일정을 확인해볼게요."
+      />
+    );
+  }
+
+  if (offer.ownResponse === "no" || offer.status === "declined") {
+    return (
+      <BlindDateResultMessage
+        tone="muted"
+        title="이번 블라인드 데이트 제안은 지나갔어요."
+        body="다음 교집합에서 더 잘 맞는 자리를 제안드릴게요."
+      />
+    );
+  }
+
+  return (
+    <BlindDateResultMessage
+      tone="default"
+      title="상대방의 응답을 기다리는 중이에요."
+      body={`${remainingText ?? "응답 마감 시간이 곧 도착해요."}\n상대방도 참여 의사를 남기고 가능한 날짜가 겹치면\n블라인드 데이트 일정이 확정돼요.`}
+    />
+  );
+}
+
+function BlindDateResultMessage({
+  title,
+  body,
+  tone,
+}: {
+  title: string;
+  body: string;
+  tone: "default" | "success" | "muted";
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-[28px] border px-5 py-7 text-center",
+        tone === "success"
+          ? "border-emerald-100 bg-emerald-50 text-emerald-950"
+          : tone === "muted"
+            ? "border-black/10 bg-black/[0.03] text-black"
+            : "border-accent/20 bg-accent/[0.08] text-black",
+      )}
+    >
+      <div
+        className={cn(
+          "mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white",
+          tone === "success" ? "text-emerald-600" : "text-accent",
+        )}
+      >
+        <Check size={20} aria-hidden />
+      </div>
+      <h1 className="mt-5 whitespace-pre-line text-xl font-black leading-7">
+        {title}
+      </h1>
+      <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-black/58">
+        {body}
+      </p>
+    </section>
   );
 }
 

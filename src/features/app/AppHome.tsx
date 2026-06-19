@@ -9,6 +9,7 @@ import {
   Clock3,
   LogOut,
   MapPin,
+  MessageCircle,
   X,
   PenLine,
   Sparkles,
@@ -54,6 +55,7 @@ import {
 } from "@/features/membership/membershipTypes";
 import { createClient } from "@/lib/supabase/client";
 import type { ProfileRow } from "@/types/profile";
+import type { BlindDateUserOffer } from "@/types/blindDate";
 import type {
   QuestionAnswer,
   TicketQuestionTemplate,
@@ -272,6 +274,19 @@ async function fetchUserTickets() {
   return response.ok ? data?.tickets ?? [] : null;
 }
 
+async function fetchBlindDateOffers() {
+  const response = await fetch("/api/meetings/blind-dates", {
+    cache: "no-store",
+  }).catch(() => null);
+  if (!response) return null;
+
+  const data = (await response.json().catch(() => null)) as
+    | { offers?: BlindDateUserOffer[] }
+    | null;
+
+  return response.ok ? data?.offers ?? [] : null;
+}
+
 function currentMembershipFromProfile(profile: ProfileRow): CurrentMembership {
   if (
     displayMembershipStatus({
@@ -303,6 +318,7 @@ export function AppHome({
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
+  const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
@@ -324,6 +340,16 @@ export function AppHome({
       }),
     [currentProfile.membership_end_date, currentProfile.membership_status],
   );
+  const pendingBlindDateOfferCount = useMemo(
+    () =>
+      blindDateOffers.filter(
+        (offer) =>
+          !offer.isExpired &&
+          offer.ownResponse === "pending" &&
+          ["offered", "waiting_response"].includes(offer.status),
+      ).length,
+    [blindDateOffers],
+  );
 
   useEffect(() => {
     setCurrentProfile(profile);
@@ -336,6 +362,11 @@ export function AppHome({
       if (cancelled || !tickets) return;
 
       setWaitlistedTickets(tickets);
+    });
+    void fetchBlindDateOffers().then((offers) => {
+      if (cancelled || !offers) return;
+
+      setBlindDateOffers(offers);
     });
 
     const supabase = createClient();
@@ -411,6 +442,21 @@ export function AppHome({
 
       <button
         type="button"
+        onClick={() => switchTab("recommend")}
+        title="메시지"
+        aria-label={`메시지${pendingBlindDateOfferCount ? ` ${pendingBlindDateOfferCount}개` : ""}`}
+        className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+      >
+        <MessageCircle size={18} strokeWidth={2.2} aria-hidden />
+        {pendingBlindDateOfferCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
+            {pendingBlindDateOfferCount}
+          </span>
+        )}
+      </button>
+
+      <button
+        type="button"
         onClick={() => {
           setMembershipModalOpen(false);
           setProfilePanelOpen((open) => !open);
@@ -480,6 +526,8 @@ export function AppHome({
                 setMembershipModalOpen(true);
               }}
               onOpenList={() => switchTab("browse")}
+              blindDateOffers={blindDateOffers}
+              onBlindDateOffersChange={setBlindDateOffers}
             />
           )}
           {activeTab === "profile" && (

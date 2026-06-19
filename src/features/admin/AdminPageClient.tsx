@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
@@ -35,7 +36,8 @@ type AdminTab =
   | "tickets"
   | "waitlist"
   | "rooms"
-  | "feedback";
+  | "feedback"
+  | "blindDates";
 
 type ViewMode = "list" | "cards";
 type MembershipFilter = "all" | "active" | "inactive";
@@ -56,6 +58,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
+  { id: "blindDates", label: "블라인드 데이트 관리" },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat("sv-SE", {
@@ -619,6 +622,11 @@ export function AdminPageClient({
           {visitedTabs.feedback && (
             <div className={cn(activeTab === "feedback" ? "block" : "hidden")}>
               <FeedbackAdminPanel />
+            </div>
+          )}
+          {visitedTabs.blindDates && (
+            <div className={cn(activeTab === "blindDates" ? "block" : "hidden")}>
+              <BlindDateAdminPanel />
             </div>
           )}
         </section>
