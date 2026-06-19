@@ -2820,7 +2820,7 @@ function ProfileCompletionModal({
               return body;
             });
 
-        const [result] = await Promise.all([profilePromise, wait(2000)]);
+        const [result] = await Promise.all([profilePromise, wait(2500)]);
         if (!alive) return;
 
         setIntro(result.intro?.trim() || existingIntro || "");
@@ -3038,9 +3038,24 @@ function ProfileCompletionModal({
 function ProfileCompletionLogo() {
   const shouldReduceMotion = Boolean(useReducedMotion());
   const circleTransition = {
-    duration: shouldReduceMotion ? 0 : 1.05,
-    ease: "easeOut" as const,
+    duration: shouldReduceMotion ? 0 : 1.7,
+    ease: "easeInOut" as const,
+    times: [0, 0.28, 0.56, 0.82, 1] as const,
   };
+  const leftRoll = shouldReduceMotion
+    ? false
+    : {
+        x: [-84, -62, -38, -14, 0],
+        y: [6, 2, 6, 1, 0],
+        rotate: [-360, -270, -180, -72, 0],
+      };
+  const rightRoll = shouldReduceMotion
+    ? false
+    : {
+        x: [84, 62, 38, 14, 0],
+        y: [6, 2, 6, 1, 0],
+        rotate: [360, 270, 180, 72, 0],
+      };
 
   return (
     <div className="relative flex h-28 w-56 items-center justify-center" aria-hidden>
@@ -3049,8 +3064,8 @@ function ProfileCompletionLogo() {
         className="h-28 w-48 overflow-visible drop-shadow-[0_18px_28px_rgba(0,0,0,0.08)]"
       >
         <motion.g
-          initial={shouldReduceMotion ? false : { x: -54, y: 3, rotate: -16 }}
-          animate={{ x: 0, y: 0, rotate: 0 }}
+          initial={shouldReduceMotion ? false : { x: -84, y: 6, rotate: -360 }}
+          animate={leftRoll || { x: 0, y: 0, rotate: 0 }}
           transition={circleTransition}
           style={{ transformBox: "fill-box", transformOrigin: "center" }}
         >
@@ -3062,10 +3077,22 @@ function ProfileCompletionLogo() {
             stroke="#0b0b0b"
             strokeWidth="5.5"
           />
+          <motion.circle
+            cx="76"
+            cy="22"
+            r="3"
+            fill="#0b0b0b"
+            initial={shouldReduceMotion ? false : { opacity: 0.42 }}
+            animate={{ opacity: 0 }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.35,
+              delay: shouldReduceMotion ? 0 : 1.42,
+            }}
+          />
         </motion.g>
         <motion.g
-          initial={shouldReduceMotion ? false : { x: 54, y: 3, rotate: 16 }}
-          animate={{ x: 0, y: 0, rotate: 0 }}
+          initial={shouldReduceMotion ? false : { x: 84, y: 6, rotate: 360 }}
+          animate={rightRoll || { x: 0, y: 0, rotate: 0 }}
           transition={circleTransition}
           style={{ transformBox: "fill-box", transformOrigin: "center" }}
         >
@@ -3077,16 +3104,33 @@ function ProfileCompletionLogo() {
             stroke="#0b0b0b"
             strokeWidth="5.5"
           />
+          <motion.circle
+            cx="116"
+            cy="22"
+            r="3"
+            fill="#0b0b0b"
+            initial={shouldReduceMotion ? false : { opacity: 0.42 }}
+            animate={{ opacity: 0 }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.35,
+              delay: shouldReduceMotion ? 0 : 1.42,
+            }}
+          />
         </motion.g>
         <motion.path
           d="M96 24 C110 32 118 47 118 64 C118 81 110 96 96 104 C82 96 74 81 74 64 C74 47 82 32 96 24 Z"
           fill="#0b0b0b"
-          initial={shouldReduceMotion ? false : { opacity: 0, scaleX: 0.18 }}
-          animate={{ opacity: 1, scaleX: 1 }}
+          initial={shouldReduceMotion ? false : { opacity: 0, scaleY: 0.08 }}
+          animate={
+            shouldReduceMotion
+              ? { opacity: 1, scaleY: 1 }
+              : { opacity: [0, 1, 1], scaleY: [0.08, 0.28, 1] }
+          }
           transition={{
-            duration: shouldReduceMotion ? 0 : 0.5,
-            ease: "easeOut",
-            delay: shouldReduceMotion ? 0 : 0.74,
+            duration: shouldReduceMotion ? 0 : 0.54,
+            ease: [0.16, 1, 0.3, 1],
+            delay: shouldReduceMotion ? 0 : 1.76,
+            times: [0, 0.22, 1],
           }}
           style={{ transformBox: "fill-box", transformOrigin: "center" }}
         />
