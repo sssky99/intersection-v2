@@ -3037,14 +3037,17 @@ function ProfileCompletionModal({
 
 function ProfileCompletionLogo() {
   const shouldReduceMotion = Boolean(useReducedMotion());
+  const strokeWidth = 4.2;
+  const lensTopY = 27.07;
+  const lensBottomY = 100.93;
+  const lensHeight = lensBottomY - lensTopY;
   const leftCirclePath =
     "M76 22 A42 42 0 1 1 76 106 A42 42 0 1 1 76 22";
   const rightCirclePath =
     "M116 22 A42 42 0 1 1 116 106 A42 42 0 1 1 116 22";
-  const lensPath =
-    "M96 24 C110 32 118 47 118 64 C118 81 110 96 96 104 C82 96 74 81 74 64 C74 47 82 32 96 24 Z";
-  const circlePathLength = 270;
-  const lensPathLength = 210;
+  const lensPath = `M96 ${lensTopY} A42 42 0 0 1 96 ${lensBottomY} A42 42 0 0 1 96 ${lensTopY} Z`;
+  const circlePathLength = 264;
+  const lensPathLength = 182;
   const drawTransition = {
     duration: shouldReduceMotion ? 0 : 0.9,
     ease: "easeInOut" as const,
@@ -3060,12 +3063,15 @@ function ProfileCompletionLogo() {
         className="h-28 w-48 overflow-visible drop-shadow-[0_18px_28px_rgba(0,0,0,0.08)]"
       >
         <defs>
-          <clipPath id="profile-completion-logo-lens-fill">
+          <clipPath
+            id="profile-completion-logo-lens-fill"
+            clipPathUnits="userSpaceOnUse"
+          >
             <motion.rect
-              x="72"
-              width="48"
-              initial={shouldReduceMotion ? false : { y: 104, height: 0 }}
-              animate={{ y: 24, height: 82 }}
+              x="74"
+              width="44"
+              initial={shouldReduceMotion ? false : { y: lensBottomY, height: 0 }}
+              animate={{ y: lensTopY, height: lensHeight }}
               transition={{
                 duration: shouldReduceMotion ? 0 : 0.52,
                 ease: [0.16, 1, 0.3, 1],
@@ -3090,7 +3096,7 @@ function ProfileCompletionLogo() {
           stroke="#0b0b0b"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="5.5"
+          strokeWidth={strokeWidth}
           strokeDasharray={circlePathLength}
           vectorEffect="non-scaling-stroke"
           initial={hiddenStroke}
@@ -3103,7 +3109,7 @@ function ProfileCompletionLogo() {
           stroke="#0b0b0b"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="5.5"
+          strokeWidth={strokeWidth}
           strokeDasharray={circlePathLength}
           vectorEffect="non-scaling-stroke"
           initial={hiddenStroke}
@@ -3112,11 +3118,22 @@ function ProfileCompletionLogo() {
         />
         <motion.path
           d={lensPath}
+          fill="#0b0b0b"
+          clipPath="url(#profile-completion-logo-lens-fill)"
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 0.12,
+            delay: shouldReduceMotion ? 0 : 1.62,
+          }}
+        />
+        <motion.path
+          d={lensPath}
           fill="none"
           stroke="#0b0b0b"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="5.5"
+          strokeWidth={strokeWidth}
           strokeDasharray={lensPathLength}
           vectorEffect="non-scaling-stroke"
           initial={
@@ -3129,17 +3146,6 @@ function ProfileCompletionLogo() {
             duration: shouldReduceMotion ? 0 : 0.42,
             ease: "easeInOut",
             delay: shouldReduceMotion ? 0 : 1.24,
-          }}
-        />
-        <motion.path
-          d={lensPath}
-          fill="#0b0b0b"
-          clipPath="url(#profile-completion-logo-lens-fill)"
-          initial={shouldReduceMotion ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{
-            duration: shouldReduceMotion ? 0 : 0.12,
-            delay: shouldReduceMotion ? 0 : 1.62,
           }}
         />
       </motion.svg>
