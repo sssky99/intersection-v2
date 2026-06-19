@@ -3037,7 +3037,7 @@ function ProfileCompletionModal({
 
 function ProfileCompletionLogo() {
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const strokeWidth = 4.2;
+  const strokeWidth = 2;
   const lensTopY = 27.07;
   const lensBottomY = 100.93;
   const lensHeight = lensBottomY - lensTopY;
