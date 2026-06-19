@@ -84,6 +84,7 @@ type ProfileIntroRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
+  gender: string | null;
   public_intro: string | null;
   public_emoji?: string | null;
 };
@@ -562,7 +563,7 @@ export async function GET() {
     if (profileIds.length > 0) {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,public_intro,public_emoji")
+        .select("user_id,name,nickname,gender,public_intro,public_emoji")
         .in("user_id", profileIds);
       if (error) throw error;
       profileRows = (data ?? []) as unknown as ProfileIntroRow[];
@@ -634,6 +635,10 @@ export async function GET() {
             id,
             name: memberProfile?.name ?? null,
             nickname: displayNickname(memberProfile),
+            gender:
+              memberProfile?.gender === "남성" || memberProfile?.gender === "여성"
+                ? memberProfile.gender
+                : null,
             emoji: displayProfileEmoji(memberProfile, id),
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus,

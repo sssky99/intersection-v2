@@ -59,6 +59,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       intro: profile.public_intro,
       emoji: profile.public_emoji,
+      generatedAt: profile.public_intro_generated_at,
       model: profile.public_intro_model,
       source: "stored",
     });
@@ -68,12 +69,13 @@ export async function POST(request: Request) {
   const fallbackIntro = buildFallbackIntro(profile, promptAnswers);
 
   if (!process.env.OPENAI_API_KEY) {
+    const generatedAt = new Date().toISOString();
     if (!storedIntroIsUsable || forceRegenerate) {
       const { error } = await supabase
         .from("profiles")
         .update({
           public_intro: fallbackIntro,
-          public_intro_generated_at: new Date().toISOString(),
+          public_intro_generated_at: generatedAt,
           public_intro_model: "fallback",
         })
         .eq("user_id", user.id);
@@ -89,6 +91,7 @@ export async function POST(request: Request) {
         : storedIntroIsUsable
           ? profile.public_intro
           : fallbackIntro,
+      generatedAt,
       model: "fallback",
       source: "fallback",
       notice:
@@ -108,11 +111,12 @@ export async function POST(request: Request) {
       !generatedIntro ||
       !isValidGeneratedIntro(generatedIntro, profile)
     ) {
+      const generatedAt = new Date().toISOString();
       const { error: fallbackSaveError } = await supabase
         .from("profiles")
         .update({
           public_intro: fallbackIntro,
-          public_intro_generated_at: new Date().toISOString(),
+          public_intro_generated_at: generatedAt,
           public_intro_model: "fallback",
         })
         .eq("user_id", user.id);
@@ -127,6 +131,7 @@ export async function POST(request: Request) {
       return NextResponse.json({
         intro: fallbackIntro,
         emoji: profile.public_emoji,
+        generatedAt,
         model: "fallback",
         source: "fallback",
         notice: generatedRaw
@@ -153,11 +158,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       intro,
       emoji: emoji || profile.public_emoji,
+      generatedAt,
       model: publicProfileModel,
       source: "generated",
     });
   } catch (error) {
     console.error("Public profile generation error:", error);
+    const generatedAt = new Date().toISOString();
     const { error: fallbackSaveError } = await supabase
       .from("profiles")
       .update({
@@ -166,7 +173,7 @@ export async function POST(request: Request) {
           : storedIntroIsUsable
             ? profile.public_intro
             : fallbackIntro,
-        public_intro_generated_at: new Date().toISOString(),
+        public_intro_generated_at: generatedAt,
         public_intro_model: "fallback",
       })
       .eq("user_id", user.id);
@@ -184,6 +191,9 @@ export async function POST(request: Request) {
         : storedIntroIsUsable
           ? profile.public_intro
           : fallbackIntro,
+      generatedAt: forceRegenerate || !storedIntroIsUsable
+        ? generatedAt
+        : profile.public_intro_generated_at,
       model: "fallback",
       source: "fallback",
       notice:

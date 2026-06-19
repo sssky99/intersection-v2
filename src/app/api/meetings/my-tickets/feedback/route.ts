@@ -52,6 +52,11 @@ type AssignmentRow = {
   profile_id: string;
 };
 
+type ProfileGenderRow = {
+  user_id: string;
+  gender: string | null;
+};
+
 const personAxes: PersonAxis[] = ["temperature", "texture", "tone", "rhythm"];
 const placeAxes: PlaceAxis[] = [
   "temperature",
@@ -90,6 +95,12 @@ function toStartAt(date: string | null | undefined, time: string | null | undefi
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function oppositeGender(gender: string | null | undefined) {
+  if (gender === "남성") return "여성";
+  if (gender === "여성") return "남성";
+  return null;
 }
 
 function normalizeSelectedMemberIds(value: unknown) {
@@ -347,6 +358,36 @@ export async function POST(request: Request) {
             { status: 400 },
           );
         }
+      }
+    }
+
+    if (selectedMemberIds.length > 0) {
+      const profileIds = Array.from(new Set([...assignedMemberIds, user.id]));
+      const { data: profileGenderData, error: profileGenderError } = await supabase
+        .from("profiles")
+        .select("user_id,gender")
+        .in("user_id", profileIds)
+        .returns<ProfileGenderRow[]>();
+      if (profileGenderError) throw profileGenderError;
+
+      const genderMap = new Map(
+        (profileGenderData ?? []).map((profile) => [
+          profile.user_id,
+          profile.gender,
+        ]),
+      );
+      const requiredGender = oppositeGender(genderMap.get(user.id));
+      const selectedMembersAreOppositeGender =
+        Boolean(requiredGender) &&
+        selectedMemberIds.every(
+          (memberId) => genderMap.get(memberId) === requiredGender,
+        );
+
+      if (!selectedMembersAreOppositeGender) {
+        return NextResponse.json(
+          { error: "Blind date feedback target must be opposite gender." },
+          { status: 400 },
+        );
       }
     }
 

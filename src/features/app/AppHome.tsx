@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarDays,
   Check,
@@ -9,7 +9,6 @@ import {
   Clock3,
   LogOut,
   MapPin,
-  MessageCircle,
   X,
   PenLine,
   Sparkles,
@@ -253,6 +252,7 @@ function setTabUrl(tab: AppTab) {
   if (typeof window === "undefined") return;
 
   const url = new URL(window.location.href);
+  url.searchParams.delete("profileComplete");
   if (tab === "recommend") {
     url.searchParams.delete("tab");
   } else {
@@ -309,22 +309,31 @@ export function AppHome({
   userId,
   profile,
   initialTab = "recommend",
+  initialProfileCompletionOpen = false,
   ticketQuestionTemplates = [],
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
+  initialProfileCompletionOpen?: boolean;
   ticketQuestionTemplates?: TicketQuestionTemplate[];
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
+  const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
+  const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
+    useState(false);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
+  const [profileCompletionOpen, setProfileCompletionOpen] = useState(
+    initialProfileCompletionOpen,
+  );
+  const [profileCompletionReplayKey, setProfileCompletionReplayKey] = useState(0);
   const [membershipModalOpen, setMembershipModalOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -350,10 +359,25 @@ export function AppHome({
       ).length,
     [blindDateOffers],
   );
+  const activeBlindDateOfferCount = useMemo(
+    () =>
+      blindDateOffers.filter(
+        (offer) =>
+          !offer.isExpired &&
+          ["offered", "waiting_response", "scheduled", "needs_reschedule"].includes(
+            offer.status,
+          ),
+      ).length,
+    [blindDateOffers],
+  );
 
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    if (initialProfileCompletionOpen) setProfileCompletionOpen(true);
+  }, [initialProfileCompletionOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -408,6 +432,31 @@ export function AppHome({
     setTabUrl(tab);
   };
 
+  const openBlindDateStatus = () => {
+    setActiveTab("recommend");
+    setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
+    setMembershipModalOpen(false);
+    setTabUrl("recommend");
+    setBlindDateOpenRequestId((current) => current + 1);
+    setBlindDateOpenRequestPending(true);
+  };
+
+  const openProfileCompletionReplay = () => {
+    setMembershipModalOpen(false);
+    setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
+    setProfileCompletionReplayKey((current) => current + 1);
+    setProfileCompletionOpen(true);
+  };
+
+  const finishProfileCompletion = (nextProfile: Partial<ProfileRow>) => {
+    setCurrentProfile((current) => ({ ...current, ...nextProfile }));
+    setProfileCompletionOpen(false);
+    setActiveTab("recommend");
+    setTabUrl("recommend");
+  };
+
   const addWaitlistedTicket = (_ticket: GatheringTicket) => {
     void fetchUserTickets().then((tickets) => {
       if (tickets) setWaitlistedTickets(tickets);
@@ -440,20 +489,28 @@ export function AppHome({
         }}
       />
 
-      <button
-        type="button"
-        onClick={() => switchTab("recommend")}
-        title="메시지"
-        aria-label={`메시지${pendingBlindDateOfferCount ? ` ${pendingBlindDateOfferCount}개` : ""}`}
-        className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
-      >
-        <MessageCircle size={18} strokeWidth={2.2} aria-hidden />
-        {pendingBlindDateOfferCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
-            {pendingBlindDateOfferCount}
+      {activeBlindDateOfferCount > 0 && (
+        <button
+          type="button"
+          onClick={openBlindDateStatus}
+          title="블라인드 데이트"
+          aria-label={
+            pendingBlindDateOfferCount > 0
+              ? `메시지 ${pendingBlindDateOfferCount}개`
+              : "블라인드 데이트 상태 확인"
+          }
+          className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+        >
+          <span className="text-lg leading-none" aria-hidden>
+            ✉️
           </span>
-        )}
-      </button>
+          {pendingBlindDateOfferCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
+              {pendingBlindDateOfferCount}
+            </span>
+          )}
+        </button>
+      )}
 
       <button
         type="button"
@@ -463,18 +520,14 @@ export function AppHome({
         }}
         aria-label="기본정보 카드 열기"
         aria-expanded={profilePanelOpen}
-        className="absolute right-4 top-[calc(14px+env(safe-area-inset-top))] z-30"
+        className={cn(
+          "absolute right-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xs font-bold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
+          profilePanelOpen
+            ? "border-black text-black shadow-md"
+            : "border-black/15 text-black/70 hover:text-black",
+        )}
       >
-        <span
-          className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xs font-bold shadow-sm transition",
-            profilePanelOpen
-              ? "border-black text-black"
-              : "border-black/15 text-black/70",
-          )}
-        >
-          {profileInitial(currentProfile)}
-        </span>
+        {profileInitial(currentProfile)}
       </button>
 
       <AnimatePresence>
@@ -528,6 +581,11 @@ export function AppHome({
               onOpenList={() => switchTab("browse")}
               blindDateOffers={blindDateOffers}
               onBlindDateOffersChange={setBlindDateOffers}
+              blindDateOpenRequestId={blindDateOpenRequestId}
+              blindDateOpenRequestPending={blindDateOpenRequestPending}
+              onBlindDateOpenRequestHandled={() =>
+                setBlindDateOpenRequestPending(false)
+              }
             />
           )}
           {activeTab === "profile" && (
@@ -539,6 +597,7 @@ export function AppHome({
               loggingOut={loggingOut}
               logoutError={logoutError}
               onOpenQuestionReview={() => setQuestionReviewOpen(true)}
+              onOpenProfileCompletionReplay={openProfileCompletionReplay}
               onLogout={logout}
             />
           )}
@@ -588,6 +647,16 @@ export function AppHome({
       </nav>
 
       <AnimatePresence>
+        {profileCompletionOpen && (
+          <ProfileCompletionModal
+            key={`profile-completion-${profileCompletionReplayKey}`}
+            userId={userId}
+            profile={currentProfile}
+            answers={answers}
+            animationKey={profileCompletionReplayKey}
+            onComplete={finishProfileCompletion}
+          />
+        )}
         {questionReviewOpen && (
           <motion.div
             key="question-review"
@@ -1802,6 +1871,12 @@ function memberRealName(member: UserTicket["members"][number]) {
   return member.name?.trim() || member.nickname?.trim() || "멤버";
 }
 
+function oppositeGender(gender: Gender | null | undefined): Gender | null {
+  if (gender === "남성") return "여성";
+  if (gender === "여성") return "남성";
+  return null;
+}
+
 function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
   const displayName = member?.nickname?.trim() || member?.name?.trim() || "회원";
   return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
@@ -1817,12 +1892,19 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
   );
+  const dateCandidateMembers = useMemo(() => {
+    const targetGender = oppositeGender(selfMember?.gender);
+    if (!targetGender) return [];
+    return otherMembers.filter((member) => member.gender === targetGender);
+  }, [otherMembers, selfMember?.gender]);
   const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
     overall: null,
     expectationMatch: null,
   });
-  const [positiveUnknown, setPositiveUnknown] = useState(false);
-  const [positiveMemberId, setPositiveMemberId] = useState("");
+  const [dateUnknown, setDateUnknown] = useState(false);
+  const [dateMemberId, setDateMemberId] = useState("");
+  const [vibeUnknown, setVibeUnknown] = useState(false);
+  const [vibeMemberId, setVibeMemberId] = useState("");
   const [memberFeedback, setMemberFeedback] = useState<
     Record<string, MemberFeedbackDraft>
   >(() => createMemberFeedbackDrafts(otherMembers));
@@ -1836,8 +1918,10 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
   useEffect(() => {
     setMeetingRatings({ overall: null, expectationMatch: null });
-    setPositiveUnknown(false);
-    setPositiveMemberId("");
+    setDateUnknown(false);
+    setDateMemberId("");
+    setVibeUnknown(false);
+    setVibeMemberId("");
     setMemberFeedback(createMemberFeedbackDrafts(otherMembers));
     setNegativeMemberIds([]);
     setNegativeFeedback({});
@@ -1846,17 +1930,20 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
     setSubmitError(null);
   }, [otherMembers, userTicket.waitlistId]);
 
-  const positiveMember = otherMembers.find(
-    (member) => member.id === positiveMemberId,
+  const dateMember = dateCandidateMembers.find(
+    (member) => member.id === dateMemberId,
   );
-  const positiveDraft = positiveMember ? memberFeedback[positiveMember.id] : null;
+  const vibeMember = otherMembers.find((member) => member.id === vibeMemberId);
+  const vibeDraft = vibeMember ? memberFeedback[vibeMember.id] : null;
   const meetingRatingsComplete = Object.values(meetingRatings).every(
     (value) => typeof value === "number",
   );
-  const positiveSelectionComplete =
-    otherMembers.length === 0 || positiveUnknown || Boolean(positiveMember);
-  const positiveAxisComplete =
-    !positiveMember || Boolean(positiveDraft?.touchedAxes.length);
+  const dateSelectionComplete =
+    dateCandidateMembers.length === 0 || dateUnknown || Boolean(dateMember);
+  const vibeSelectionComplete =
+    otherMembers.length === 0 || vibeUnknown || Boolean(vibeMember);
+  const vibeAxisComplete =
+    !vibeMember || Boolean(vibeDraft?.touchedAxes.length);
   const negativeFeedbackComplete = negativeMemberIds.every((memberId) => {
     const draft = negativeFeedback[memberId];
     if (!draft || draft.reasons.length === 0) return false;
@@ -1866,32 +1953,43 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   });
   const canSubmit =
     meetingRatingsComplete &&
-    positiveSelectionComplete &&
-    positiveAxisComplete &&
+    dateSelectionComplete &&
+    vibeSelectionComplete &&
+    vibeAxisComplete &&
     negativeFeedbackComplete;
-  const selectedPositiveMemberIds = positiveMember ? [positiveMember.id] : [];
+  const selectedPositiveMemberIds = dateMember ? [dateMember.id] : [];
   const negativeMembers = negativeMemberIds
     .map((memberId) => otherMembers.find((member) => member.id === memberId))
     .filter((member): member is UserTicket["members"][number] => Boolean(member));
 
-  const selectPositiveMember = (memberId: string) => {
-    setPositiveUnknown(false);
-    setPositiveMemberId(memberId);
+  const selectDateMember = (memberId: string) => {
+    setDateUnknown(false);
+    setDateMemberId(memberId);
   };
 
-  const selectPositiveUnknown = () => {
-    setPositiveMemberId("");
-    setPositiveUnknown(true);
+  const selectDateUnknown = () => {
+    setDateMemberId("");
+    setDateUnknown(true);
+  };
+
+  const selectVibeMember = (memberId: string) => {
+    setVibeUnknown(false);
+    setVibeMemberId(memberId);
+  };
+
+  const selectVibeUnknown = () => {
+    setVibeMemberId("");
+    setVibeUnknown(true);
   };
 
   const updateMemberAxis = (axis: FeedbackPersonAxis, value: number) => {
-    if (!positiveMember) return;
+    if (!vibeMember) return;
     setMemberFeedback((current) => {
-      const draft = current[positiveMember.id];
+      const draft = current[vibeMember.id];
       if (!draft) return current;
       return {
         ...current,
-        [positiveMember.id]: {
+        [vibeMember.id]: {
           ...draft,
           status: "done",
           values: { ...draft.values, [axis]: value },
@@ -1953,26 +2051,27 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   const submitLabel = (() => {
     if (submitting) return "저장 중이에요";
     if (!meetingRatingsComplete) return "모임 별점을 남겨주세요";
-    if (!positiveSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
-    if (!positiveAxisComplete) return "선택한 사람의 분위기를 알려주세요";
+    if (!dateSelectionComplete) return "단둘이 만나고 싶은 사람을 선택해주세요";
+    if (!vibeSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
+    if (!vibeAxisComplete) return "선택한 사람의 분위기를 알려주세요";
     if (!negativeFeedbackComplete) return "부정 피드백 사유를 선택해주세요";
     return "피드백 제출하기";
   })();
 
   const payloadMemberFeedback = () => {
-    if (!positiveMember || !positiveDraft) return {};
+    if (!vibeMember || !vibeDraft) return {};
 
     const values = Object.fromEntries(
       feedbackPersonAxes.map((axis) => [
         axis,
-        positiveDraft.touchedAxes.includes(axis)
-          ? scoreToInternal(positiveDraft.values[axis])
+        vibeDraft.touchedAxes.includes(axis)
+          ? scoreToInternal(vibeDraft.values[axis])
           : null,
       ]),
     );
 
     return {
-      [positiveMember.id]: {
+      [vibeMember.id]: {
         status: "done",
         ...values,
       },
@@ -2086,22 +2185,22 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
-          이 사람과 결이 비슷한 사람을 더 만나고 싶어요.
+          단둘이 만나고 싶어요.
           <span className="ml-1 text-accent">(필수)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          잘 모르겠다면 답변을 건너뛸 수 있어요.
+          블라인드 데이트 제안을 만들 때 참고해요.
         </p>
-        {otherMembers.length > 0 ? (
+        {dateCandidateMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
-            {otherMembers.map((member) => {
-              const selected = positiveMemberId === member.id;
+            {dateCandidateMembers.map((member) => {
+              const selected = dateMemberId === member.id;
 
               return (
                 <button
                   key={member.id}
                   type="button"
-                  onClick={() => selectPositiveMember(member.id)}
+                  onClick={() => selectDateMember(member.id)}
                   className={cn(
                     "min-h-10 rounded-full border px-4 text-sm font-bold transition",
                     selected
@@ -2115,10 +2214,59 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
             })}
             <button
               type="button"
-              onClick={selectPositiveUnknown}
+              onClick={selectDateUnknown}
               className={cn(
                 "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                positiveUnknown
+                dateUnknown
+                  ? "border-black bg-black text-white"
+                  : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
+              )}
+            >
+              잘 모르겠어요
+            </button>
+          </div>
+        ) : (
+          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+            선택 가능한 이성 멤버가 없어 이 단계는 건너뛰어요.
+          </p>
+        )}
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <h3 className="text-[15px] font-black leading-6 text-black">
+          이런 결의 사람을 만나고 싶어요.
+          <span className="ml-1 text-accent">(필수)</span>
+        </h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+          잘 모르겠다면 답변을 건너뛸 수 있어요.
+        </p>
+        {otherMembers.length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {otherMembers.map((member) => {
+              const selected = vibeMemberId === member.id;
+
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => selectVibeMember(member.id)}
+                  className={cn(
+                    "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                    selected
+                      ? "border-accent bg-accent text-white"
+                      : "border-black/10 bg-white text-black/62 hover:border-accent/45",
+                  )}
+                >
+                  {memberRealName(member)}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={selectVibeUnknown}
+              className={cn(
+                "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                vibeUnknown
                   ? "border-black bg-black text-white"
                   : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
               )}
@@ -2132,18 +2280,18 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
           </p>
         )}
 
-        {positiveMember && positiveDraft && (
+        {vibeMember && vibeDraft && (
           <div className="mt-6">
             <h4 className="text-[15px] font-black text-black">
               이 사람은 어떤 사람이었나요?
             </h4>
             <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-              {memberRealName(positiveMember)}님과 비슷한 결의 사람을 추천할 때 참고해요.
+              {memberRealName(vibeMember)}님과 비슷한 결의 사람을 추천할 때 참고해요.
             </p>
             <SharedFeedbackVibeGraphControl
               className="border-t-0 pt-4"
               axes={feedbackPersonAxes}
-              values={positiveDraft.values}
+              values={vibeDraft.values}
               onChange={updateMemberAxis}
             />
           </div>
@@ -2414,6 +2562,371 @@ function TicketFeedbackPlaceholder() {
   );
 }
 
+type ProfileGenerateResponse = {
+  intro?: string | null;
+  emoji?: string | null;
+  generatedAt?: string | null;
+  notice?: string;
+  error?: string;
+};
+
+const profileCompletionMessages = [
+  "{name}님의 결을 정리하고 있어요.",
+  "답변을 바탕으로 교집합 프로필을 만들고 있어요.",
+  "요즘 관심사를 반영하고 있어요.",
+  "거의 다 완성 됐어요.",
+];
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function ProfileCompletionModal({
+  userId,
+  profile,
+  answers,
+  animationKey,
+  onComplete,
+}: {
+  userId: string;
+  profile: ProfileRow;
+  answers: AnswerMap;
+  animationKey: number;
+  onComplete: (profile: Partial<ProfileRow>) => void;
+}) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const displayName = profileNickname(profile);
+  const [phase, setPhase] = useState<"loading" | "typing" | "error">("loading");
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [intro, setIntro] = useState("");
+  const [emoji, setEmoji] = useState<string | null>(profile.public_emoji);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(
+    profile.public_intro_generated_at,
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [typingDone, setTypingDone] = useState(false);
+  const [graphVisible, setGraphVisible] = useState(false);
+  const [buttonVisible, setButtonVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const modalProfile = useMemo(
+    () => ({
+      ...profile,
+      public_intro: intro || profile.public_intro,
+      public_emoji: emoji ?? profile.public_emoji,
+    }),
+    [emoji, intro, profile],
+  );
+  const modalVibeScores = useMemo(
+    () => profileVibeScores(modalProfile, answers),
+    [answers, modalProfile],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    let messageTimer: number | null = null;
+
+    setPhase("loading");
+    setMessageIndex(0);
+    setIntro("");
+    setEmoji(profile.public_emoji);
+    setGeneratedAt(profile.public_intro_generated_at);
+    setNotice(null);
+    setError(null);
+    setTypingDone(false);
+    setGraphVisible(false);
+    setButtonVisible(false);
+    setClosing(false);
+
+    messageTimer = window.setInterval(() => {
+      setMessageIndex((current) =>
+        Math.min(current + 1, profileCompletionMessages.length - 1),
+      );
+    }, 500);
+
+    const loadProfile = async () => {
+      try {
+        const existingIntro = profile.public_intro?.trim();
+        const profilePromise = existingIntro
+          ? Promise.resolve<ProfileGenerateResponse>({
+              intro: existingIntro,
+              emoji: profile.public_emoji,
+              generatedAt: profile.public_intro_generated_at,
+            })
+          : fetch("/api/profile/generate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({}),
+            }).then(async (response) => {
+              const body = (await response.json().catch(() => null)) as
+                | ProfileGenerateResponse
+                | null;
+              if (!response.ok || !body?.intro) {
+                throw new Error(body?.error ?? "profile-generate-failed");
+              }
+              return body;
+            });
+
+        const [result] = await Promise.all([profilePromise, wait(2000)]);
+        if (!alive) return;
+
+        setIntro(result.intro?.trim() || existingIntro || "");
+        setEmoji(result.emoji ?? profile.public_emoji);
+        setGeneratedAt(result.generatedAt ?? profile.public_intro_generated_at);
+        setNotice(result.notice ?? null);
+        setPhase("typing");
+      } catch {
+        if (!alive) return;
+        setError("프로필을 완성하지 못했어요. 잠시 후 다시 시도해주세요.");
+        setPhase("error");
+      } finally {
+        if (messageTimer !== null) window.clearInterval(messageTimer);
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      alive = false;
+      if (messageTimer !== null) window.clearInterval(messageTimer);
+    };
+  }, [
+    animationKey,
+    profile.public_emoji,
+    profile.public_intro,
+    profile.public_intro_generated_at,
+  ]);
+
+  useEffect(() => {
+    if (!typingDone) return;
+
+    const graphTimer = window.setTimeout(() => setGraphVisible(true), 180);
+    const buttonTimer = window.setTimeout(() => setButtonVisible(true), 920);
+    return () => {
+      window.clearTimeout(graphTimer);
+      window.clearTimeout(buttonTimer);
+    };
+  }, [typingDone]);
+
+  const finish = async () => {
+    if (closing) return;
+    setClosing(true);
+
+    const revealedGeneratedAt = generatedAt ?? profile.public_intro_generated_at;
+    if (revealedGeneratedAt) {
+      await createClient()
+        .from("profiles")
+        .update({ public_intro_revealed_generated_at: revealedGeneratedAt })
+        .eq("user_id", userId);
+    }
+
+    onComplete({
+      public_intro: intro || profile.public_intro,
+      public_emoji: emoji ?? profile.public_emoji,
+      public_intro_generated_at: revealedGeneratedAt,
+      public_intro_revealed_generated_at: revealedGeneratedAt,
+    });
+  };
+
+  const loadingMessage = profileCompletionMessages[messageIndex].replace(
+    "{name}",
+    displayName,
+  );
+
+  return (
+    <motion.div
+      key="profile-completion-modal"
+      initial={shouldReduceMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+      className="absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-white/74 px-4 py-8 backdrop-blur-[5px]"
+    >
+      <motion.section
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 10, scale: 0.98 }}
+        transition={{ duration: 0.28, ease: "easeOut" }}
+        className="w-full max-w-[390px] rounded-[30px] border border-black/10 bg-white px-5 py-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.14)]"
+      >
+        {phase === "loading" && (
+          <div className="flex min-h-[420px] flex-col items-center justify-center">
+            <ProfileCompletionLogo />
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={loadingMessage}
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  textShadow: "0 0 18px rgba(126,179,199,0.34)",
+                }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
+                transition={{ duration: 0.28, ease: "easeOut" }}
+                className="mt-8 min-h-6 text-sm font-black leading-6 text-black"
+              >
+                {loadingMessage}
+              </motion.p>
+            </AnimatePresence>
+          </div>
+        )}
+
+        {phase === "error" && (
+          <div className="flex min-h-[360px] flex-col items-center justify-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-500">
+              <X size={20} aria-hidden />
+            </div>
+            <p className="mt-5 text-sm font-bold leading-6 text-red-600">
+              {error}
+            </p>
+          </div>
+        )}
+
+        {phase === "typing" && (
+          <div className="text-left">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+              profile complete
+            </p>
+            <h2 className="mt-2 flex items-center gap-2 text-[24px] font-black leading-8 text-black">
+              <span>{displayName}님의 프로필</span>
+              <span aria-hidden>{emoji ?? profileEmoji(profile)}</span>
+            </h2>
+            <div className="mt-5 min-h-[152px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
+              <ProfileCompletionTypewriter
+                text={intro}
+                onComplete={() => setTypingDone(true)}
+              />
+            </div>
+            {notice && (
+              <p className="mt-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-[11px] font-semibold leading-5 text-black/48">
+                {notice}
+              </p>
+            )}
+
+            <AnimatePresence>
+              {graphVisible && (
+                <motion.div
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+                  transition={{ duration: 0.24, ease: "easeOut" }}
+                >
+                  <VibeGraph
+                    title="나의 대화 결"
+                    description="교집합이 자리를 제안할 때 참고하는 분위기예요."
+                    scores={modalVibeScores}
+                    visibleAxes={profileVibeAxes}
+                    showAxisHeader={false}
+                    scoreScale="internal"
+                    animationKey={`completion-${animationKey}-${generatedAt ?? "new"}`}
+                    className="mt-4 !rounded-[24px] !shadow-none"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {buttonVisible && (
+                <motion.button
+                  type="button"
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
+                  whileTap={!closing ? { scale: 0.98 } : undefined}
+                  disabled={closing}
+                  onClick={() => void finish()}
+                  className="mt-5 h-[52px] w-full rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] disabled:bg-black/25"
+                >
+                  {closing ? "이동 중..." : "나에게 맞는 자리 추천받기"}
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function ProfileCompletionLogo() {
+  return (
+    <div className="relative h-24 w-44" aria-hidden>
+      <motion.span
+        initial={{ x: -54, rotate: -180 }}
+        animate={{ x: -14, rotate: 0 }}
+        transition={{ duration: 1.18, ease: "easeOut" }}
+        className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px] border-accent/75 bg-white shadow-[0_12px_28px_rgba(126,179,199,0.22)]"
+      />
+      <motion.span
+        initial={{ x: 54, rotate: 180 }}
+        animate={{ x: 14, rotate: 0 }}
+        transition={{ duration: 1.18, ease: "easeOut" }}
+        className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-[6px] border-accent/75 bg-white shadow-[0_12px_28px_rgba(126,179,199,0.22)]"
+      />
+      <motion.span
+        initial={{ opacity: 0, scale: 0.42 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.44, ease: "easeOut", delay: 0.78 }}
+        className="absolute left-1/2 top-1/2 h-12 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/45 shadow-[0_0_30px_rgba(126,179,199,0.42)]"
+      />
+    </div>
+  );
+}
+
+function ProfileCompletionTypewriter({
+  text,
+  onComplete,
+}: {
+  text: string;
+  onComplete: () => void;
+}) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const onCompleteRef = useRef(onComplete);
+  const [displayText, setDisplayText] = useState(shouldReduceMotion ? text : "");
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      setDisplayText(text);
+      onCompleteRef.current();
+      return;
+    }
+
+    const characters = Array.from(text);
+    let index = 0;
+    setDisplayText("");
+
+    if (characters.length === 0) {
+      onCompleteRef.current();
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      index += 1;
+      setDisplayText(characters.slice(0, index).join(""));
+      if (index >= characters.length) {
+        window.clearInterval(timer);
+        onCompleteRef.current();
+      }
+    }, 18);
+
+    return () => window.clearInterval(timer);
+  }, [shouldReduceMotion, text]);
+
+  return (
+    <p className="min-h-[112px] whitespace-pre-line text-sm font-semibold leading-7 text-black/68">
+      {displayText}
+      {!shouldReduceMotion && displayText.length < text.length && (
+        <span className="ml-0.5 inline-block h-4 w-px translate-y-0.5 animate-pulse bg-black/42" />
+      )}
+    </p>
+  );
+}
+
 function formatKoreanDateTime(value: string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
@@ -2434,6 +2947,7 @@ function ProfileTab({
   loggingOut,
   logoutError,
   onOpenQuestionReview,
+  onOpenProfileCompletionReplay,
   onLogout,
 }: {
   profile: ProfileRow;
@@ -2442,6 +2956,7 @@ function ProfileTab({
   loggingOut: boolean;
   logoutError: string | null;
   onOpenQuestionReview: () => void;
+  onOpenProfileCompletionReplay: () => void;
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
@@ -2489,14 +3004,34 @@ function ProfileTab({
         />
 
         {profile.is_test_participant && (
-          <button
-            type="button"
-            onClick={onOpenQuestionReview}
-            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
-          >
-            <PenLine size={15} aria-hidden />
-            질문 다시보기
-          </button>
+          <div className="mt-5 space-y-3">
+            <button
+              type="button"
+              onClick={onOpenQuestionReview}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+            >
+              <PenLine size={15} aria-hidden />
+              질문 다시보기
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/onboarding/profile?from=profile";
+              }}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+            >
+              <UserRound size={15} aria-hidden />
+              기본정보 다시보기
+            </button>
+            <button
+              type="button"
+              onClick={onOpenProfileCompletionReplay}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+            >
+              <Sparkles size={15} aria-hidden />
+              프로필 완성 다시보기
+            </button>
+          </div>
         )}
 
         <button
@@ -2504,10 +3039,7 @@ function ProfileTab({
           onClick={() => {
             window.location.href = "/details?from=profile";
           }}
-          className={cn(
-            "flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55",
-            profile.is_test_participant ? "mt-3" : "mt-8",
-          )}
+          className="mt-8 flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55"
         >
           교집합 소개 다시 보기
         </button>

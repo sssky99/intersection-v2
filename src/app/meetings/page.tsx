@@ -8,6 +8,7 @@ import { hasUsablePublicIntro } from "@/lib/textQuality";
 type MeetingsPageProps = {
   searchParams?: Promise<{
     tab?: string | string[];
+    profileComplete?: string | string[];
   }>;
 };
 
@@ -25,7 +26,18 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   if (!profile.browse_seen_at) redirect("/browse");
   if (!profile.questions_completed) redirect("/onboarding/questions");
   if (!profile.profile_completed) redirect("/onboarding/profile");
-  if (!hasUsablePublicIntro(profile.public_intro)) redirect("/profile/result");
+  const introUsable = hasUsablePublicIntro(profile.public_intro);
+  const profileCompleteParam = Array.isArray(params?.profileComplete)
+    ? params?.profileComplete[0]
+    : params?.profileComplete;
+  const shouldOpenCompletionModal =
+    profileCompleteParam === "1" ||
+    Boolean(
+      profile.public_intro_generated_at &&
+        profile.public_intro_revealed_generated_at !==
+          profile.public_intro_generated_at,
+    );
+  if (!introUsable && !shouldOpenCompletionModal) redirect("/profile/result");
 
   const ticketQuestionTemplates = await loadTicketQuestionTemplates();
 
@@ -35,6 +47,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
         userId={user.id}
         profile={profile}
         initialTab={initialTabFromSearchParam(params?.tab)}
+        initialProfileCompletionOpen={shouldOpenCompletionModal}
         ticketQuestionTemplates={ticketQuestionTemplates}
       />
     </MobileFrame>

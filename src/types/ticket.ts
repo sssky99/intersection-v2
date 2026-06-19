@@ -1,3 +1,5 @@
+import type { Gender } from "@/types/user";
+
 export type GatheringTicket = {
   id: string;
   templateId: string;
@@ -62,6 +64,7 @@ export type TicketMemberIntro = {
   id: string;
   name: string | null;
   nickname: string | null;
+  gender: Gender | null;
   emoji: string;
   publicIntro: string | null;
   arrivalStatus: TicketArrivalStatus | null;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import { blindDateSelectableDatesFrom } from "@/lib/blindDateDates";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   BlindDateAdminOffer,
@@ -255,7 +256,7 @@ function normalizeOffer(
     template_id: row.template_id,
     time_label: row.time_label,
     region: row.region,
-    candidate_dates: datesFromDb(row.candidate_dates),
+    candidate_dates: blindDateSelectableDatesFrom(row.created_at),
     a_response: row.a_response,
     b_response: row.b_response,
     a_available_dates: datesFromDb(row.a_available_dates),
@@ -539,9 +540,10 @@ export async function POST(request: NextRequest) {
       const participantAId = uuid(body?.participantAId);
       const participantBId = uuid(body?.participantBId);
       const templateId = uuid(body?.templateId);
-      const candidateDates = dateList(body?.candidateDates);
       const sourceType: BlindDateSourceType =
         body?.sourceType === "test" ? "test" : "mutual_feedback";
+      const createdAt = new Date();
+      const candidateDates = blindDateSelectableDatesFrom(createdAt);
 
       if (!participantAId || !participantBId || participantAId === participantBId) {
         return NextResponse.json(
@@ -552,12 +554,6 @@ export async function POST(request: NextRequest) {
       if (!templateId) {
         return NextResponse.json(
           { error: "블라인드 데이트 템플릿을 선택해주세요." },
-          { status: 400 },
-        );
-      }
-      if (candidateDates.length === 0) {
-        return NextResponse.json(
-          { error: "후보 날짜를 1개 이상 입력해주세요." },
           { status: 400 },
         );
       }
@@ -589,6 +585,7 @@ export async function POST(request: NextRequest) {
         region: text(body?.region) ?? template.region ?? "지역 미정",
         candidate_dates: candidateDates,
         expires_at: validExpiresAt(body?.expiresAt),
+        created_at: createdAt.toISOString(),
       });
       if (error) throw error;
 

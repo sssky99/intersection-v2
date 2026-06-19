@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { blindDateSelectableDatesFrom } from "@/lib/blindDateDates";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -121,7 +122,7 @@ function sanitizeOffer(
     template: publicTemplate(template, row),
     timeLabel: row.time_label,
     region: row.region,
-    candidateDates: dateList(row.candidate_dates),
+    candidateDates: blindDateSelectableDatesFrom(row.created_at),
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     ownResponse,
@@ -324,7 +325,7 @@ export async function POST(request: Request) {
       updates.declined_at = now;
     } else {
       const selectedDates = dateList(body?.availableDates);
-      const candidateDates = dateList(offer.candidate_dates);
+      const candidateDates = blindDateSelectableDatesFrom(offer.created_at);
       const candidateSet = new Set(candidateDates);
       const validDates = selectedDates.filter((date) => candidateSet.has(date));
 

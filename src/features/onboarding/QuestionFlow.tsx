@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
@@ -36,6 +36,7 @@ const TICKET_QUESTION_BASE_ORDER = 9;
 const QUESTION_TYPING_SPEED_MS = 18;
 const SCALE_ANSWER_TYPING_SPEED_MS = 18;
 const ANSWER_AFTER_TYPING_DELAY_MS = 300;
+const TICKET_COACHMARK_SESSION_KEY = "intersection-ticket-question-coachmark-dismissed";
 const scaleAnswerReactions = ["❤️", "❤️"];
 const ticketRatingReactions: Record<string, string[]> = {
   "1": ["👎", "👎"],
@@ -95,10 +96,14 @@ function typingDurationMs(text: string, speedMs: number) {
 function TypingText({
   className,
   speedMs = QUESTION_TYPING_SPEED_MS,
+  startDelayMs = 0,
+  textClassName = "whitespace-pre-line",
   text,
 }: {
   className?: string;
   speedMs?: number;
+  startDelayMs?: number;
+  textClassName?: string;
   text: string;
 }) {
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -114,33 +119,42 @@ function TypingText({
 
     const characters = Array.from(text);
     let index = 0;
+    let timer: number | null = null;
     setDisplayText("");
 
     if (characters.length === 0) return;
 
-    const timer = window.setInterval(() => {
-      index += 1;
-      setDisplayText(characters.slice(0, index).join(""));
+    const startTyping = () => {
+      timer = window.setInterval(() => {
+        index += 1;
+        setDisplayText(characters.slice(0, index).join(""));
 
-      if (index >= characters.length) {
-        window.clearInterval(timer);
-      }
-    }, speedMs);
+        if (index >= characters.length) {
+          setDisplayText(text);
+          if (timer) window.clearInterval(timer);
+        }
+      }, speedMs);
+    };
 
-    return () => window.clearInterval(timer);
-  }, [shouldReduceMotion, speedMs, text]);
+    const delayTimer = window.setTimeout(startTyping, startDelayMs);
+
+    return () => {
+      window.clearTimeout(delayTimer);
+      if (timer) window.clearInterval(timer);
+    };
+  }, [shouldReduceMotion, speedMs, startDelayMs, text]);
 
   return (
     <span aria-label={text} className={cn("grid", className)}>
       <span
         aria-hidden="true"
-        className="invisible col-start-1 row-start-1 whitespace-pre-line"
+        className={cn("invisible col-start-1 row-start-1", textClassName)}
       >
         {text}
       </span>
       <span
         aria-hidden="true"
-        className="col-start-1 row-start-1 whitespace-pre-line"
+        className={cn("col-start-1 row-start-1", textClassName)}
       >
         {displayText}
       </span>
@@ -221,6 +235,88 @@ function TicketRatingReaction({ rating }: { rating: string }) {
 
 function ScaleAnswerReaction() {
   return <EmojiBurst emojis={scaleAnswerReactions} />;
+}
+
+function TicketCoachmarkOverlay({ onClose }: { onClose: () => void }) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+
+  return (
+    <>
+      <motion.div
+        className="absolute inset-0 z-40 bg-black/[0.58] backdrop-blur-[1.5px]"
+        initial={shouldReduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+        aria-hidden
+      />
+      <motion.button
+        type="button"
+        aria-label="코치마크 닫기"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-[80] flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-black/55 shadow-[0_8px_22px_rgba(0,0,0,0.18)] backdrop-blur transition hover:text-black"
+        initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+      >
+        <X size={18} strokeWidth={2.4} aria-hidden />
+      </motion.button>
+      <motion.p
+        className="pointer-events-none absolute left-5 top-6 z-[70] text-left text-[32px] font-black uppercase leading-none tracking-[0.04em] text-white"
+        style={{
+          WebkitTextStroke: "1px rgba(0,0,0,0.48)",
+          textShadow:
+            "0 2px 0 rgba(0,0,0,0.28), 0 8px 22px rgba(0,0,0,0.42)",
+        }}
+        initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3 }}
+        transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
+      >
+        <TypingText text="HOW TO..." speedMs={32} startDelayMs={80} />
+      </motion.p>
+    </>
+  );
+}
+
+function TicketCoachmarkHint({
+  className,
+  delayMs,
+  placement = "center",
+  text,
+}: {
+  className?: string;
+  delayMs: number;
+  placement?: "center" | "rating";
+  text: string;
+}) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const delay = shouldReduceMotion ? 0 : delayMs / 1000;
+  const positionClass =
+    placement === "rating"
+      ? "left-[44%] -translate-x-1/2"
+      : "left-1/2 -translate-x-1/2";
+
+  return (
+    <motion.p
+      className={cn(
+        "pointer-events-none absolute z-[70] min-w-max whitespace-nowrap rounded-full bg-white px-5 py-2 text-center text-[12px] font-extrabold leading-4 text-black shadow-[0_12px_30px_rgba(0,0,0,0.22)]",
+        positionClass,
+        className,
+      )}
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.28, delay, ease: "easeOut" }}
+    >
+      <TypingText
+        text={text}
+        speedMs={24}
+        startDelayMs={delayMs}
+        textClassName="whitespace-nowrap"
+      />
+    </motion.p>
+  );
 }
 
 function templateToTicketQuestion(
@@ -411,7 +507,10 @@ export function QuestionFlow({
   const [saving, setSaving] = useState(false);
   const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ticketCoachmarkReady, setTicketCoachmarkReady] = useState(isPreview);
+  const [ticketCoachmarkDismissed, setTicketCoachmarkDismissed] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const question = questions[questionIndex];
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
@@ -433,6 +532,35 @@ export function QuestionFlow({
   const numericScaleLabel = usesNumericScale
     ? scaleLabelParts(question.scaleLabel)
     : null;
+  const shouldShowTicketCoachmark =
+    ticketCoachmarkReady &&
+    !ticketCoachmarkDismissed &&
+    questionIndex === 0 &&
+    question.type === "ticket_rating";
+  const cardCoachmarkAnimation = shouldShowTicketCoachmark
+    ? {
+        filter: shouldReduceMotion
+          ? "drop-shadow(0 0 30px rgba(255,255,255,0.62))"
+          : [
+              "drop-shadow(0 0 12px rgba(255,255,255,0.38))",
+              "drop-shadow(0 0 34px rgba(255,255,255,0.78))",
+              "drop-shadow(0 0 18px rgba(126,179,199,0.58))",
+            ],
+        scale: shouldReduceMotion ? 1 : [1, 1.015, 1],
+      }
+    : undefined;
+  const ratingCoachmarkAnimation = shouldShowTicketCoachmark
+    ? {
+        filter: shouldReduceMotion
+          ? "drop-shadow(0 0 24px rgba(255,255,255,0.62))"
+          : [
+              "drop-shadow(0 0 0 rgba(255,255,255,0))",
+              "drop-shadow(0 0 28px rgba(255,255,255,0.72))",
+              "drop-shadow(0 0 16px rgba(126,179,199,0.55))",
+            ],
+        scale: shouldReduceMotion ? 1 : [1, 1.03, 1],
+      }
+    : undefined;
 
   const saveAnswer = async (
     targetQuestion: ProfileQuestion,
@@ -534,6 +662,26 @@ export function QuestionFlow({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isPreview) {
+      setTicketCoachmarkDismissed(false);
+      setTicketCoachmarkReady(true);
+      return;
+    }
+
+    setTicketCoachmarkDismissed(
+      window.sessionStorage.getItem(TICKET_COACHMARK_SESSION_KEY) === "1",
+    );
+    setTicketCoachmarkReady(true);
+  }, [isPreview]);
+
+  const dismissTicketCoachmark = () => {
+    setTicketCoachmarkDismissed(true);
+    if (!isPreview) {
+      window.sessionStorage.setItem(TICKET_COACHMARK_SESSION_KEY, "1");
+    }
+  };
 
   const selectSingle = async (value: string) => {
     if (saving) return;
@@ -672,7 +820,7 @@ export function QuestionFlow({
       ?.label ?? question.category;
 
   return (
-    <section className="flex min-h-dvh flex-col px-5 pb-5 pt-7 md:min-h-[calc(100dvh-32px)]">
+    <section className="relative flex min-h-dvh flex-col px-5 pb-5 pt-7 md:min-h-[calc(100dvh-32px)]">
       <AnimatePresence mode="wait">
         <motion.div
           key={question.id}
@@ -880,43 +1028,96 @@ export function QuestionFlow({
 
           {question.type === "ticket_rating" && question.ticket && (
             <div>
-              <OnboardingTicketPreview question={question} />
+              <motion.div
+                className={cn(
+                  "relative",
+                  shouldShowTicketCoachmark && "pointer-events-none z-50",
+                )}
+                animate={cardCoachmarkAnimation}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 1.3,
+                  ease: "easeInOut",
+                  repeat: shouldReduceMotion ? 0 : Infinity,
+                  repeatDelay: 1.7,
+                }}
+              >
+                <OnboardingTicketPreview question={question} />
+                {shouldShowTicketCoachmark && (
+                  <TicketCoachmarkHint
+                    className="top-6"
+                    delayMs={260}
+                    text="카드 설명과 분위기를 보고"
+                  />
+                )}
+              </motion.div>
 
-              <div className="mt-4">
-                <div className="flex items-center justify-between px-2">
+              <motion.div
+                className={cn(
+                  "relative mt-4",
+                  shouldShowTicketCoachmark && "pointer-events-none z-50",
+                )}
+                animate={ratingCoachmarkAnimation}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 1.15,
+                  delay: shouldReduceMotion ? 0 : 1.05,
+                  ease: "easeInOut",
+                  repeat: shouldReduceMotion ? 0 : Infinity,
+                  repeatDelay: 1.85,
+                }}
+              >
+                {shouldShowTicketCoachmark && (
+                  <TicketCoachmarkHint
+                    className="top-[62px]"
+                    delayMs={1250}
+                    placement="rating"
+                    text="하단 번호로 선호도를 표시해주세요."
+                  />
+                )}
+                <div className="flex items-center justify-between px-2 pt-5">
                   {ticketRatingOptions.map((option) => {
-                  const selected = selectedTicketAnswer?.rating === option.value;
+                    const selected = selectedTicketAnswer?.rating === option.value;
+                    const edgeLabel =
+                      option.value === "1"
+                        ? "별로예요"
+                        : option.value === "5"
+                          ? "좋아요"
+                          : null;
 
-                  return (
-                    <motion.button
-                      key={option.value}
-                      type="button"
-                      whileTap={!saving ? { scale: 0.98 } : undefined}
-                      disabled={saving}
-                      onClick={() => void selectTicketRating(option.value)}
-                      aria-label={`${option.value}점: ${option.label}`}
-                      className={cn(
-                        "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-55",
-                        selected
-                          ? "text-lg font-extrabold text-black after:absolute after:bottom-0 after:h-[2px] after:w-3 after:rounded-full after:bg-accent"
-                          : "text-black/40 hover:text-black/65",
-                      )}
-                    >
-                      <span aria-hidden>{option.value}</span>
-                      <span className="sr-only">{option.label}</span>
-                      <AnimatePresence>
-                        {selectedFeedback === option.value && (
-                          <TicketRatingReaction
-                            key={`reaction-${option.value}`}
-                            rating={option.value}
-                          />
+                    return (
+                      <motion.button
+                        key={option.value}
+                        type="button"
+                        whileTap={!saving ? { scale: 0.98 } : undefined}
+                        disabled={saving}
+                        onClick={() => void selectTicketRating(option.value)}
+                        aria-label={`${option.value}점: ${option.label}`}
+                        className={cn(
+                          "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-55",
+                          selected
+                            ? "text-lg font-extrabold text-black after:absolute after:bottom-0 after:h-[2px] after:w-3 after:rounded-full after:bg-accent"
+                            : "text-black/40 hover:text-black/65",
                         )}
-                      </AnimatePresence>
-                    </motion.button>
-                  );
+                      >
+                        {edgeLabel && (
+                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-extrabold leading-none text-black/45">
+                            {edgeLabel}
+                          </span>
+                        )}
+                        <span aria-hidden>{option.value}</span>
+                        <span className="sr-only">{option.label}</span>
+                        <AnimatePresence>
+                          {selectedFeedback === option.value && (
+                            <TicketRatingReaction
+                              key={`reaction-${option.value}`}
+                              rating={option.value}
+                            />
+                          )}
+                        </AnimatePresence>
+                      </motion.button>
+                    );
                   })}
                 </div>
-              </div>
+              </motion.div>
             </div>
           )}
 
@@ -966,6 +1167,15 @@ export function QuestionFlow({
           {error}
         </p>
       )}
+
+      <AnimatePresence>
+        {shouldShowTicketCoachmark && (
+          <TicketCoachmarkOverlay
+            key="ticket-question-coachmark"
+            onClose={dismissTicketCoachmark}
+          />
+        )}
+      </AnimatePresence>
 
       <div className="sticky bottom-0 mt-auto flex items-center justify-between bg-white/95 pb-[calc(4px+env(safe-area-inset-bottom))] pt-5 backdrop-blur">
         <button

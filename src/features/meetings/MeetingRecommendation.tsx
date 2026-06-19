@@ -35,6 +35,9 @@ export function MeetingRecommendation({
   onOpenList,
   blindDateOffers = [],
   onBlindDateOffersChange,
+  blindDateOpenRequestId = 0,
+  blindDateOpenRequestPending = false,
+  onBlindDateOpenRequestHandled,
 }: {
   userId: string;
   embedded?: boolean;
@@ -44,6 +47,9 @@ export function MeetingRecommendation({
   onOpenList?: () => void;
   blindDateOffers?: BlindDateUserOffer[];
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
+  blindDateOpenRequestId?: number;
+  blindDateOpenRequestPending?: boolean;
+  onBlindDateOpenRequestHandled?: () => void;
 }) {
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
@@ -60,6 +66,13 @@ export function MeetingRecommendation({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
+  const activeBlindDateOffers = blindDateOffers.filter(
+    (offer) =>
+      !offer.isExpired &&
+      ["offered", "waiting_response", "scheduled", "needs_reschedule"].includes(
+        offer.status,
+      ),
+  );
   const answerableBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -68,8 +81,26 @@ export function MeetingRecommendation({
   );
   const selectedBlindDateOffer =
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
-    answerableBlindDateOffers[0] ??
+    activeBlindDateOffers[0] ??
     null;
+
+  useEffect(() => {
+    if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
+      return;
+    }
+
+    setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
+    setSelectedDate(null);
+    setTicketIndex(0);
+    setWaitlistedTicket(null);
+    setScreen("blindDate");
+    onBlindDateOpenRequestHandled?.();
+  }, [
+    activeBlindDateOffers,
+    blindDateOpenRequestId,
+    blindDateOpenRequestPending,
+    onBlindDateOpenRequestHandled,
+  ]);
 
   useEffect(() => {
     let alive = true;
@@ -208,19 +239,25 @@ export function MeetingRecommendation({
               onSelect={selectDate}
             />
 
-            {answerableBlindDateOffers.length > 0 && (
+            {activeBlindDateOffers.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  setSelectedBlindDateOfferId(answerableBlindDateOffers[0].id);
+                  setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
                   setScreen("blindDate");
                 }}
                 className="mt-4 flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-black/10 bg-black px-4 py-3 text-left text-sm font-bold text-white shadow-sm transition active:scale-[0.99]"
               >
-                <span>나에게 온 블라인드 데이트 초대장 보기</span>
-                <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-2 text-[11px] font-black text-black">
-                  {answerableBlindDateOffers.length}
+                <span>
+                  {answerableBlindDateOffers.length > 0
+                    ? "나에게 온 블라인드 데이트 초대장 보기"
+                    : "블라인드 데이트 상태 확인하기"}
                 </span>
+                {answerableBlindDateOffers.length > 0 && (
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-2 text-[11px] font-black text-black">
+                    {answerableBlindDateOffers.length}
+                  </span>
+                )}
               </button>
             )}
 
@@ -648,6 +685,62 @@ function blindDateDateLabel(value: string) {
   ).padStart(2, "0")} ${weekday}`;
 }
 
+const blindDateCalendarWeekdays = ["일", "월", "화", "수", "목", "금", "토"];
+
+function isoDateParts(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function dateKey(year: number, month: number, day: number) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
+    2,
+    "0",
+  )}`;
+}
+
+function calendarMonthsForDates(dates: string[]) {
+  const months = new Map<string, { year: number; month: number }>();
+  for (const date of dates) {
+    const parts = isoDateParts(date);
+    if (!parts) continue;
+    months.set(`${parts.year}-${parts.month}`, {
+      year: parts.year,
+      month: parts.month,
+    });
+  }
+
+  return Array.from(months.values()).sort(
+    (left, right) =>
+      left.year - right.year || left.month - right.month,
+  );
+}
+
+function calendarCellsForMonth(year: number, month: number) {
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const dayCount = new Date(year, month, 0).getDate();
+  const cells: Array<string | null> = Array.from(
+    { length: firstWeekday },
+    () => null,
+  );
+
+  for (let day = 1; day <= dayCount; day += 1) {
+    cells.push(dateKey(year, month, day));
+  }
+
+  const remainder = cells.length % 7;
+  if (remainder > 0) {
+    cells.push(...Array.from({ length: 7 - remainder }, () => null));
+  }
+
+  return cells;
+}
+
 function remainingTimeText(expiresAt: string, nowMs = Date.now()) {
   const target = new Date(expiresAt);
   const remainingMs = target.getTime() - nowMs;
@@ -786,30 +879,12 @@ function BlindDateInvitationFlow({
             상대방과 가능한 날짜가 겹치면 가장 빠른 날짜로 확정돼요.
           </p>
 
-          <div className="mt-6 grid gap-2">
-            {currentOffer.candidateDates.map((date) => {
-              const selected = selectedDates.includes(date);
-
-              return (
-                <button
-                  key={date}
-                  type="button"
-                  disabled={saving}
-                  aria-pressed={selected}
-                  onClick={() => toggleDate(date)}
-                  className={cn(
-                    "flex min-h-12 items-center justify-between rounded-2xl border px-4 py-3 text-sm font-bold transition disabled:opacity-40",
-                    selected
-                      ? "border-black bg-black text-white"
-                      : "border-black/10 bg-white text-black/62",
-                  )}
-                >
-                  <span>{blindDateDateLabel(date)}</span>
-                  {selected && <Check size={16} aria-hidden />}
-                </button>
-              );
-            })}
-          </div>
+          <BlindDateDateCalendar
+            dates={currentOffer.candidateDates}
+            selectedDates={selectedDates}
+            saving={saving}
+            onToggle={toggleDate}
+          />
 
           {error && (
             <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
@@ -909,6 +984,97 @@ function BlindDateInvitationFlow({
         </section>
       )}
     </motion.div>
+  );
+}
+
+function BlindDateDateCalendar({
+  dates,
+  selectedDates,
+  saving,
+  onToggle,
+}: {
+  dates: string[];
+  selectedDates: string[];
+  saving: boolean;
+  onToggle: (date: string) => void;
+}) {
+  const enabledDates = new Set(dates);
+  const selectedDateSet = new Set(selectedDates);
+  const months = calendarMonthsForDates(dates);
+
+  if (months.length === 0) {
+    return (
+      <p className="mt-6 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold text-black/45">
+        선택 가능한 날짜가 아직 열리지 않았어요.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-6 grid gap-4">
+      {months.map(({ year, month }) => (
+        <section
+          key={`${year}-${month}`}
+          className="rounded-[24px] border border-black/10 bg-white p-3"
+        >
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-black text-black">
+              {year}년 {month}월
+            </h2>
+            <span className="text-[11px] font-bold text-accent">
+              가능한 날짜
+            </span>
+          </div>
+
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-black text-black/32">
+            {blindDateCalendarWeekdays.map((weekday) => (
+              <span key={weekday}>{weekday}</span>
+            ))}
+          </div>
+
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
+            {calendarCellsForMonth(year, month).map((date, index) => {
+              if (!date) {
+                return <span key={`empty-${index}`} className="h-10" />;
+              }
+
+              const parts = isoDateParts(date);
+              const enabled = enabledDates.has(date);
+              const selected = selectedDateSet.has(date);
+
+              return (
+                <button
+                  key={date}
+                  type="button"
+                  disabled={!enabled || saving}
+                  aria-label={blindDateDateLabel(date)}
+                  aria-pressed={selected}
+                  onClick={() => onToggle(date)}
+                  className={cn(
+                    "relative flex h-10 items-center justify-center rounded-xl border text-sm font-black transition disabled:cursor-not-allowed",
+                    selected
+                      ? "border-black bg-black text-white shadow-sm"
+                      : enabled
+                        ? "border-accent/25 bg-accent/[0.08] text-black hover:bg-accent/[0.14]"
+                        : "border-transparent bg-black/[0.025] text-black/18",
+                    saving && enabled && "opacity-45",
+                  )}
+                >
+                  <span>{parts?.day ?? ""}</span>
+                  {selected && (
+                    <Check
+                      size={10}
+                      className="absolute right-1.5 top-1.5"
+                      aria-hidden
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 

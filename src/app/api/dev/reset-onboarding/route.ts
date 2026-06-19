@@ -37,6 +37,7 @@ export async function POST() {
       profile_completed: false,
       public_intro: null,
       public_intro_generated_at: null,
+      public_intro_revealed_generated_at: null,
       public_intro_model: null,
     })
     .eq("user_id", user.id);

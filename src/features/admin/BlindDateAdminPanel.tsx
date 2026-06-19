@@ -2,16 +2,21 @@
 
 import {
   AlertTriangle,
+  CalendarDays,
   Check,
   Clipboard,
   Edit3,
+  ImageIcon,
   Plus,
   RefreshCw,
   Save,
   Send,
+  Upload,
   Wand2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import { blindDateSelectableDateWindowFrom } from "@/lib/blindDateDates";
 import type {
   BlindDateAdminOffer,
   BlindDateAdminProfile,
@@ -44,7 +49,6 @@ type OfferDraft = {
   templateId: string;
   timeLabel: string;
   region: string;
-  candidateDatesText: string;
   expiresAtLocal: string;
 };
 
@@ -113,14 +117,12 @@ function formatDateLabel(value: string | null | undefined) {
   ).padStart(2, "0")} ${weekday}`;
 }
 
-function defaultCandidateDatesText() {
-  const today = new Date();
-  const values: string[] = [];
-  for (let offset = 7; values.length < 3; offset += 7) {
-    const date = new Date(today.getTime() + offset * 24 * 60 * 60 * 1000);
-    values.push(date.toISOString().slice(0, 10));
-  }
-  return values.join("\n");
+function formatDateRangeLabel(values: string[]) {
+  if (values.length === 0) return "-";
+  const first = values[0];
+  const last = values[values.length - 1];
+  if (!last || first === last) return formatDateLabel(first);
+  return `${formatDateLabel(first)} ~ ${formatDateLabel(last)} (${values.length}일)`;
 }
 
 function toDatetimeLocal(date: Date) {
@@ -141,7 +143,6 @@ function emptyOfferDraft(template?: BlindDateTemplate): OfferDraft {
     templateId: template?.id ?? "",
     timeLabel: template?.time_label ?? "저녁 7시",
     region: template?.region ?? "성수",
-    candidateDatesText: defaultCandidateDatesText(),
     expiresAtLocal: defaultExpiresAtLocal(),
   };
 }
@@ -206,6 +207,7 @@ export function BlindDateAdminPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [templateFormOpen, setTemplateFormOpen] = useState(false);
+  const [templateImageUploading, setTemplateImageUploading] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateDraft, setTemplateDraft] =
     useState<TemplateDraft>(emptyTemplateDraft);
@@ -289,6 +291,50 @@ export function BlindDateAdminPanel() {
     }
   };
 
+  const uploadTemplateImage = async (file: File) => {
+    if (templateImageUploading || saving) return;
+    setTemplateImageUploading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("templateId", editingTemplateId ?? "blind-date-template-draft");
+
+      const response = await fetch("/api/admin/tickets/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        imageUrl?: string;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !payload?.imageUrl) {
+        throw new Error(payload?.error ?? "이미지를 업로드하지 못했습니다.");
+      }
+
+      setTemplateDraft((current) => ({
+        ...current,
+        imageUrl: payload.imageUrl ?? "",
+      }));
+      setNotice(
+        editingTemplateId
+          ? "대표 이미지를 업로드했습니다. 수정 저장을 누르면 반영됩니다."
+          : "대표 이미지를 업로드했습니다. 템플릿 생성으로 저장해주세요.",
+      );
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "이미지를 업로드하지 못했습니다.",
+      );
+    } finally {
+      setTemplateImageUploading(false);
+    }
+  };
+
   const createOffer = async (
     draft: OfferDraft,
     sourceType: "mutual_feedback" | "test",
@@ -308,7 +354,6 @@ export function BlindDateAdminPanel() {
         templateId: draft.templateId,
         timeLabel: draft.timeLabel,
         region: draft.region,
-        candidateDates: draft.candidateDatesText,
         expiresAt: expiresIso(draft.expiresAtLocal),
         feedbackAId: source?.feedbackAId,
         feedbackBId: source?.feedbackBId,
@@ -477,7 +522,9 @@ export function BlindDateAdminPanel() {
               editingTemplateId={editingTemplateId}
               draft={templateDraft}
               saving={saving}
+              imageUploading={templateImageUploading}
               onDraftChange={setTemplateDraft}
+              onImageUpload={(file) => void uploadTemplateImage(file)}
               onCreateClick={startCreateTemplate}
               onEditClick={startEditTemplate}
               onCancel={() => {
@@ -528,7 +575,9 @@ function TemplateManagement({
   editingTemplateId,
   draft,
   saving,
+  imageUploading,
   onDraftChange,
+  onImageUpload,
   onCreateClick,
   onEditClick,
   onCancel,
@@ -539,7 +588,9 @@ function TemplateManagement({
   editingTemplateId: string | null;
   draft: TemplateDraft;
   saving: boolean;
+  imageUploading: boolean;
   onDraftChange: (draft: TemplateDraft) => void;
+  onImageUpload: (file: File) => void;
   onCreateClick: () => void;
   onEditClick: (template: BlindDateTemplate) => void;
   onCancel: () => void;
@@ -568,44 +619,55 @@ function TemplateManagement({
 
       {formOpen && (
         <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
-          <div className="grid grid-cols-2 gap-3">
-            <TextField
-              label="템플릿 제목"
-              value={draft.title}
-              onChange={(title) => onDraftChange({ ...draft, title })}
-            />
-            <TextField
-              label="대표 이미지 URL"
-              value={draft.imageUrl}
-              onChange={(imageUrl) => onDraftChange({ ...draft, imageUrl })}
-            />
-            <TextField
-              label="시간대"
-              value={draft.timeLabel}
-              onChange={(timeLabel) => onDraftChange({ ...draft, timeLabel })}
-            />
-            <TextField
-              label="지역"
-              value={draft.region}
-              onChange={(region) => onDraftChange({ ...draft, region })}
-            />
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  label="템플릿 제목"
+                  value={draft.title}
+                  onChange={(title) => onDraftChange({ ...draft, title })}
+                />
+                <TemplateImageUpload
+                  value={draft.imageUrl}
+                  uploading={imageUploading}
+                  disabled={saving}
+                  onUpload={onImageUpload}
+                  onClear={() => onDraftChange({ ...draft, imageUrl: "" })}
+                />
+                <TextField
+                  label="시간대"
+                  value={draft.timeLabel}
+                  onChange={(timeLabel) =>
+                    onDraftChange({ ...draft, timeLabel })
+                  }
+                />
+                <TextField
+                  label="지역"
+                  value={draft.region}
+                  onChange={(region) => onDraftChange({ ...draft, region })}
+                />
+              </div>
+              <TextAreaField
+                className="mt-3"
+                label="짧은 설명"
+                rows={2}
+                value={draft.shortDescription}
+                onChange={(shortDescription) =>
+                  onDraftChange({ ...draft, shortDescription })
+                }
+              />
+              <TextAreaField
+                className="mt-3"
+                label="안내 문구"
+                rows={3}
+                value={draft.guideText}
+                onChange={(guideText) => onDraftChange({ ...draft, guideText })}
+              />
+            </div>
+
+            <BlindDateTicketPreview draft={draft} />
           </div>
-          <TextAreaField
-            className="mt-3"
-            label="짧은 설명"
-            rows={2}
-            value={draft.shortDescription}
-            onChange={(shortDescription) =>
-              onDraftChange({ ...draft, shortDescription })
-            }
-          />
-          <TextAreaField
-            className="mt-3"
-            label="안내 문구"
-            rows={3}
-            value={draft.guideText}
-            onChange={(guideText) => onDraftChange({ ...draft, guideText })}
-          />
+
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <label className="inline-flex items-center gap-2 text-xs font-bold text-black/55">
               <input
@@ -627,7 +689,7 @@ function TemplateManagement({
               </button>
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || imageUploading}
                 onClick={onSave}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-4 text-xs font-bold text-white disabled:bg-black/25"
               >
@@ -678,6 +740,91 @@ function TemplateManagement({
         ))}
       </div>
     </section>
+  );
+}
+
+function TemplateImageUpload({
+  value,
+  uploading,
+  disabled,
+  onUpload,
+  onClear,
+}: {
+  value: string;
+  uploading: boolean;
+  disabled: boolean;
+  onUpload: (file: File) => void;
+  onClear: () => void;
+}) {
+  const inputDisabled = disabled || uploading;
+
+  return (
+    <div className="block">
+      <span className="text-xs font-bold text-black/45">대표 이미지</span>
+      <div className="mt-2 flex h-11 items-center gap-2 rounded-xl border border-black/10 bg-white px-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-black/[0.04] text-black/35">
+          {value ? (
+            <img
+              src={value}
+              alt="대표 이미지 미리보기"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <ImageIcon size={15} aria-hidden />
+          )}
+        </div>
+        <label
+          className={cn(
+            "flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2 text-xs font-bold text-black/55",
+            inputDisabled && "cursor-not-allowed opacity-45",
+          )}
+        >
+          <span className="truncate">
+            {uploading ? "업로드 중..." : value ? "이미지 교체" : "이미지 파일 선택"}
+          </span>
+          <Upload size={14} className="shrink-0" aria-hidden />
+          <input
+            type="file"
+            accept="image/*"
+            disabled={inputDisabled}
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onUpload(file);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {value && (
+          <button
+            type="button"
+            disabled={inputDisabled}
+            onClick={onClear}
+            className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-bold text-black/35 transition hover:text-black disabled:opacity-40"
+          >
+            삭제
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BlindDateTicketPreview({ draft }: { draft: TemplateDraft }) {
+  return (
+    <aside className="self-start">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+        ticket preview
+      </p>
+      <IntersectionTicketCard
+        title={draft.title || "블라인드 데이트"}
+        imageUrl={draft.imageUrl}
+        time={draft.timeLabel || "시간 미정"}
+        location={draft.region || "지역 미정"}
+        tags={["블라인드", "비공개"]}
+        className="mt-3"
+      />
+    </aside>
   );
 }
 
@@ -842,7 +989,7 @@ function OfferList({
                 <Th>참가자 B</Th>
                 <Th>템플릿</Th>
                 <Th>시간 / 지역</Th>
-                <Th>후보 날짜</Th>
+                <Th>가능 날짜</Th>
                 <Th>A 응답</Th>
                 <Th>B 응답</Th>
                 <Th>A 가능 날짜</Th>
@@ -880,7 +1027,7 @@ function OfferList({
                   <Td>
                     {offer.time_label} / {offer.region}
                   </Td>
-                  <Td>{offer.candidate_dates.map(formatDateLabel).join(", ")}</Td>
+                  <Td>{formatDateRangeLabel(offer.candidate_dates)}</Td>
                   <Td>{responseLabel(offer.a_response)}</Td>
                   <Td>{responseLabel(offer.b_response)}</Td>
                   <Td>
@@ -1062,15 +1209,7 @@ function OfferDraftFields({
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)_240px] gap-3">
-        <TextAreaField
-          label="후보 날짜 목록"
-          rows={4}
-          value={draft.candidateDatesText}
-          onChange={(candidateDatesText) =>
-            onDraftChange({ ...draft, candidateDatesText })
-          }
-          placeholder={"2026-06-28\n2026-06-29\n2026-07-05"}
-        />
+        <BlindDateDateWindowPreview />
         <label className="block">
           <span className="text-xs font-bold text-black/45">응답 마감 시간</span>
           <input
@@ -1086,6 +1225,28 @@ function OfferDraftFields({
             뒤입니다.
           </span>
         </label>
+      </div>
+    </div>
+  );
+}
+
+function BlindDateDateWindowPreview() {
+  const dateWindow = blindDateSelectableDateWindowFrom(new Date());
+
+  return (
+    <div className="block">
+      <span className="text-xs font-bold text-black/45">가능 날짜</span>
+      <div className="mt-2 min-h-[118px] rounded-xl border border-black/10 bg-white px-4 py-3">
+        <div className="flex items-center gap-2 text-black/42">
+          <CalendarDays size={15} aria-hidden />
+          <span className="text-[11px] font-bold">제안 생성 기준</span>
+        </div>
+        <p className="mt-3 text-sm font-black text-black">
+          {formatDateLabel(dateWindow.start)} ~ {formatDateLabel(dateWindow.end)}
+        </p>
+        <p className="mt-2 text-[11px] font-semibold leading-4 text-black/35">
+          생성 당일과 다음날을 제외한 뒤 2주간 자동으로 열립니다.
+        </p>
       </div>
     </div>
   );

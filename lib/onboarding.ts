@@ -11,7 +11,9 @@ export function nextOnboardingPathAfterDetails(profile: ProfileRow) {
   if (!profile.browse_seen_at) return "/browse";
   if (!profile.questions_completed) return "/onboarding/questions";
   if (!profile.profile_completed) return "/onboarding/profile";
-  if (!hasUsablePublicIntro(profile.public_intro)) return "/profile/result";
+  if (!hasUsablePublicIntro(profile.public_intro)) {
+    return "/meetings?tab=recommend&profileComplete=1";
+  }
   return "/meetings";
 }
 
