@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { DetailsClient } from "./DetailsClient";
+import { loadTicketQuestionTemplates } from "@/features/onboarding/loadTicketQuestionTemplates";
 import {
   getAuthenticatedProfile,
   nextOnboardingPath,
@@ -27,6 +28,7 @@ export default async function DetailsPage({
 
   const replay = hasReplayParam(resolvedSearchParams);
   const alreadySeen = Boolean(profile.details_seen_at);
+  const ticketQuestionTemplates = await loadTicketQuestionTemplates();
 
   if (alreadySeen && !replay) {
     redirect(nextOnboardingPath(profile));
@@ -36,6 +38,7 @@ export default async function DetailsPage({
     <DetailsClient
       userId={user.id}
       alreadySeen={alreadySeen}
+      ticketQuestionTemplates={ticketQuestionTemplates}
       nextPath={
         alreadySeen
           ? nextOnboardingPath(profile)

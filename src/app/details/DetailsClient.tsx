@@ -8,25 +8,22 @@ import { useEffect, useRef, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { TypingSummary } from "@/features/meetings/TicketDetailContent";
 import { createClient } from "@/lib/supabase/client";
+import type { TicketQuestionTemplate } from "@/types/question";
 
 type DetailsClientProps = {
   userId: string;
   nextPath: string;
   alreadySeen: boolean;
+  ticketQuestionTemplates: TicketQuestionTemplate[];
 };
 
 type ExampleCard = {
   title: string;
-  body: string;
   tags: string[];
   image: string;
-  region: string;
   time: string;
-  area: string;
-  date: string;
   location: string;
-  remainingSeatCount: number;
-  interestText: string;
+  interestText: string | null;
 };
 
 type ProfileCard = {
@@ -38,48 +35,6 @@ type ProfileCard = {
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
-
-const exampleCards: ExampleCard[] = [
-  {
-    title: "조용히 음악듣고,\n천천히 대화하는 LP바 저녁",
-    body: "",
-    tags: ["LP바", "차분한 대화", "가벼운 술"],
-    image: "/images/details/ticket-lpbar.jpg",
-    region: "성수",
-    time: "19:30",
-    area: "조용한 LP바",
-    date: "2026-06-13",
-    location: "서울\n성수",
-    remainingSeatCount: 2,
-    interestText: "깊은 이야기를 좋아하는 3분이 먼저 관심을 보였어요",
-  },
-  {
-    title: "화덕피자 먹으며\n가볍게 친해지는 저녁",
-    body: "",
-    tags: ["맛집", "편한 분위기", "저녁"],
-    image: "/images/details/ticket-pizza.jpg",
-    region: "한남",
-    time: "20:00",
-    area: "작은 다이닝",
-    date: "2026-06-20",
-    location: "서울\n한남",
-    remainingSeatCount: 1,
-    interestText: "맛집 탐방을 좋아하는 4분이 먼저 관심을 보였어요",
-  },
-  {
-    title: "전시보고,\n카페에서 생각 나누기",
-    body: "",
-    tags: ["전시", "카페", "조용한 감상"],
-    image: "/images/details/ticket-exhibition.jpg",
-    region: "서촌",
-    time: "15:00",
-    area: "전시와 카페",
-    date: "2026-06-28",
-    location: "서울\n서촌",
-    remainingSeatCount: 2,
-    interestText: "대화를 중시하는 2분이 먼저 관심을 보였어요",
-  },
-];
 
 const profileCards: ProfileCard[] = [
   {
@@ -153,6 +108,7 @@ export function DetailsClient({
   userId,
   nextPath,
   alreadySeen,
+  ticketQuestionTemplates,
 }: DetailsClientProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -195,7 +151,7 @@ export function DetailsClient({
           <article className="mt-8 space-y-12">
             <section>
               <TicketExampleHeading />
-              <RotatingTicketExamples />
+              <RotatingTicketExamples templates={ticketQuestionTemplates} />
             </section>
 
             <DocumentSection label="교집합 철학" hideLabel>
@@ -532,14 +488,37 @@ function ProfileCarousel() {
   );
 }
 
-function RotatingTicketExamples() {
+function templateToExampleCard(template: TicketQuestionTemplate): ExampleCard {
+  return {
+    title: template.title,
+    tags: template.moodTags,
+    image: template.imageUrl ?? "",
+    time: template.defaultTime ?? "",
+    location: template.defaultRegion ?? "",
+    interestText:
+      template.recommendationCopy?.trim() ||
+      template.shortDescription?.trim() ||
+      template.activityType?.trim() ||
+      null,
+  };
+}
+
+function RotatingTicketExamples({
+  templates,
+}: {
+  templates: TicketQuestionTemplate[];
+}) {
   const reducedMotion = useReducedMotion();
   const shouldReduceMotion = Boolean(reducedMotion);
   const [activeIndex, setActiveIndex] = useState(0);
   const [ticketDrawn, setTicketDrawn] = useState(false);
   const [ticketImageVisible, setTicketImageVisible] = useState(false);
+  const cards = templates.map(templateToExampleCard);
+  const cardCount = cards.length;
 
   useEffect(() => {
+    if (cardCount === 0) return;
+
     setTicketDrawn(shouldReduceMotion ? true : false);
     setTicketImageVisible(shouldReduceMotion ? true : false);
 
@@ -554,7 +533,7 @@ function RotatingTicketExamples() {
         setTicketDrawn(false);
         setTicketImageVisible(false);
       }
-      setActiveIndex((current) => (current + 1) % exampleCards.length);
+      setActiveIndex((current) => (current + 1) % cardCount);
     }, shouldReduceMotion ? 3600 : 4300);
 
     return () => {
@@ -563,9 +542,11 @@ function RotatingTicketExamples() {
       }
       window.clearTimeout(nextTimer);
     };
-  }, [activeIndex, shouldReduceMotion]);
+  }, [activeIndex, cardCount, shouldReduceMotion]);
 
-  const card = exampleCards[activeIndex];
+  if (cardCount === 0) return null;
+
+  const card = cards[activeIndex % cardCount];
 
   return (
     <div data-testid="ticket-example-carousel" className="mt-5">
@@ -604,12 +585,14 @@ function RotatingTicketExamples() {
                   </span>
                 </span>
               </div>
-              <p className="mt-3 bg-black/[0.035] px-4 py-3 text-[14px] font-bold leading-6 text-black/70">
-                <span aria-hidden="true" className="mr-2">
-                  🔔
-                </span>
-                {card.interestText}
-              </p>
+              {card.interestText && (
+                <p className="mt-3 bg-black/[0.035] px-4 py-3 text-[14px] font-bold leading-6 text-black/70">
+                  <span aria-hidden="true" className="mr-2">
+                    🔔
+                  </span>
+                  {card.interestText}
+                </p>
+              )}
             </motion.div>
           ) : (
             <span key={`ticket-drawing-${card.title}`} className="block h-[142px]" />
@@ -641,11 +624,10 @@ function DetailPageExampleCard({
         motionKey={card.title}
         title={card.title}
         imageUrl={card.image}
-        date={card.date}
+        date=""
         time={card.time}
         location={card.location}
         tags={card.tags}
-        remainingSeatCount={card.remainingSeatCount}
         drawn={drawn}
         imageVisible={imageVisible}
         reducedMotion={reducedMotion}
