@@ -3037,25 +3037,21 @@ function ProfileCompletionModal({
 
 function ProfileCompletionLogo() {
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const circleTransition = {
-    duration: shouldReduceMotion ? 0 : 1.7,
+  const leftCirclePath =
+    "M76 22 A42 42 0 1 1 76 106 A42 42 0 1 1 76 22";
+  const rightCirclePath =
+    "M116 22 A42 42 0 1 1 116 106 A42 42 0 1 1 116 22";
+  const lensPath =
+    "M96 24 C110 32 118 47 118 64 C118 81 110 96 96 104 C82 96 74 81 74 64 C74 47 82 32 96 24 Z";
+  const circlePathLength = 270;
+  const lensPathLength = 210;
+  const drawTransition = {
+    duration: shouldReduceMotion ? 0 : 0.9,
     ease: "easeInOut" as const,
-    times: [0, 0.28, 0.56, 0.82, 1] as const,
   };
-  const leftRoll = shouldReduceMotion
+  const hiddenStroke = shouldReduceMotion
     ? false
-    : {
-        x: [-84, -62, -38, -14, 0],
-        y: [6, 2, 6, 1, 0],
-        rotate: [-360, -270, -180, -72, 0],
-      };
-  const rightRoll = shouldReduceMotion
-    ? false
-    : {
-        x: [84, 62, 38, 14, 0],
-        y: [6, 2, 6, 1, 0],
-        rotate: [360, 270, 180, 72, 0],
-      };
+    : { opacity: 0, strokeDashoffset: circlePathLength };
 
   return (
     <div className="relative flex h-28 w-56 items-center justify-center" aria-hidden>
@@ -3063,76 +3059,88 @@ function ProfileCompletionLogo() {
         viewBox="0 0 192 128"
         className="h-28 w-48 overflow-visible drop-shadow-[0_18px_28px_rgba(0,0,0,0.08)]"
       >
+        <defs>
+          <clipPath id="profile-completion-logo-lens-fill">
+            <motion.rect
+              x="72"
+              width="48"
+              initial={shouldReduceMotion ? false : { y: 104, height: 0 }}
+              animate={{ y: 24, height: 82 }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.52,
+                ease: [0.16, 1, 0.3, 1],
+                delay: shouldReduceMotion ? 0 : 1.62,
+              }}
+            />
+          </clipPath>
+        </defs>
+
         <motion.g
-          initial={shouldReduceMotion ? false : { x: -84, y: 6, rotate: -360 }}
-          animate={leftRoll || { x: 0, y: 0, rotate: 0 }}
-          transition={circleTransition}
-          style={{ transformBox: "fill-box", transformOrigin: "center" }}
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
         >
-          <circle
-            cx="76"
-            cy="64"
-            r="42"
-            fill="#fff"
-            stroke="#0b0b0b"
-            strokeWidth="5.5"
-          />
-          <motion.circle
-            cx="76"
-            cy="22"
-            r="3"
-            fill="#0b0b0b"
-            initial={shouldReduceMotion ? false : { opacity: 0.42 }}
-            animate={{ opacity: 0 }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.35,
-              delay: shouldReduceMotion ? 0 : 1.42,
-            }}
-          />
+          <path d={leftCirclePath} fill="#fff" />
+          <path d={rightCirclePath} fill="#fff" />
         </motion.g>
-        <motion.g
-          initial={shouldReduceMotion ? false : { x: 84, y: 6, rotate: 360 }}
-          animate={rightRoll || { x: 0, y: 0, rotate: 0 }}
-          transition={circleTransition}
-          style={{ transformBox: "fill-box", transformOrigin: "center" }}
-        >
-          <circle
-            cx="116"
-            cy="64"
-            r="42"
-            fill="#fff"
-            stroke="#0b0b0b"
-            strokeWidth="5.5"
-          />
-          <motion.circle
-            cx="116"
-            cy="22"
-            r="3"
-            fill="#0b0b0b"
-            initial={shouldReduceMotion ? false : { opacity: 0.42 }}
-            animate={{ opacity: 0 }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.35,
-              delay: shouldReduceMotion ? 0 : 1.42,
-            }}
-          />
-        </motion.g>
+
         <motion.path
-          d="M96 24 C110 32 118 47 118 64 C118 81 110 96 96 104 C82 96 74 81 74 64 C74 47 82 32 96 24 Z"
-          fill="#0b0b0b"
-          initial={shouldReduceMotion ? false : { opacity: 0, scaleY: 0.08 }}
-          animate={
+          d={leftCirclePath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="5.5"
+          strokeDasharray={circlePathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={hiddenStroke}
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
+          transition={drawTransition}
+        />
+        <motion.path
+          d={rightCirclePath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="5.5"
+          strokeDasharray={circlePathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={hiddenStroke}
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
+          transition={{ ...drawTransition, delay: shouldReduceMotion ? 0 : 0.52 }}
+        />
+        <motion.path
+          d={lensPath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="5.5"
+          strokeDasharray={lensPathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={
             shouldReduceMotion
-              ? { opacity: 1, scaleY: 1 }
-              : { opacity: [0, 1, 1], scaleY: [0.08, 0.28, 1] }
+              ? false
+              : { opacity: 0, strokeDashoffset: lensPathLength }
           }
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
           transition={{
-            duration: shouldReduceMotion ? 0 : 0.54,
-            ease: [0.16, 1, 0.3, 1],
-            delay: shouldReduceMotion ? 0 : 1.76,
-            times: [0, 0.22, 1],
+            duration: shouldReduceMotion ? 0 : 0.42,
+            ease: "easeInOut",
+            delay: shouldReduceMotion ? 0 : 1.24,
           }}
-          style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        />
+        <motion.path
+          d={lensPath}
+          fill="#0b0b0b"
+          clipPath="url(#profile-completion-logo-lens-fill)"
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 0.12,
+            delay: shouldReduceMotion ? 0 : 1.62,
+          }}
         />
       </motion.svg>
     </div>
