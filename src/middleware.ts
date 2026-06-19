@@ -35,6 +35,12 @@ function redirectToAuthCallback(request: NextRequest) {
   return NextResponse.redirect(callbackUrl);
 }
 
+function redirectWithoutOAuthParams(request: NextRequest, path = request.nextUrl.pathname) {
+  const cleanUrl = new URL(path, request.url);
+
+  return NextResponse.redirect(cleanUrl);
+}
+
 function requestOrigin(request: NextRequest) {
   const forwardedHost = request.headers.get('x-forwarded-host');
   const host = forwardedHost ?? request.headers.get('host');
@@ -68,13 +74,17 @@ export function middleware(request: NextRequest) {
 
   if (nextUrl.pathname === '/auth/callback') {
     if (hasOAuthError) {
-      return NextResponse.redirect(new URL('/', request.url));
+      return redirectWithoutOAuthParams(request, '/');
     }
 
     return NextResponse.next();
   }
 
   if (hasOAuthParams(request)) {
+    if (nextUrl.pathname === '/') {
+      return redirectWithoutOAuthParams(request);
+    }
+
     return redirectToAuthCallback(request);
   }
 

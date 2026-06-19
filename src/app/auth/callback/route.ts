@@ -1,6 +1,18 @@
 import { NextResponse } from 'next/server';
-import { postLoginPath, safeInternalPath } from '@/lib/authRedirect';
+import {
+  postLoginPath,
+  safeInternalPath,
+  safeLocalOAuthOrigin,
+} from '@/lib/authRedirect';
 import { createClient } from '@/lib/supabase/server';
+
+function cleanRedirect(requestUrl: URL, path = '/') {
+  const redirectUrl = new URL(path, requestUrl.origin);
+  redirectUrl.search = '';
+  redirectUrl.hash = '';
+
+  return NextResponse.redirect(redirectUrl);
+}
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -14,11 +26,23 @@ export async function GET(request: Request) {
   );
 
   if (oauthError) {
-    return NextResponse.redirect(new URL('/', requestUrl.origin));
+    return cleanRedirect(requestUrl);
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL('/', requestUrl.origin));
+    return cleanRedirect(requestUrl);
+  }
+
+  const returnOrigin = safeLocalOAuthOrigin(
+    requestUrl.searchParams.get('return_origin'),
+  );
+
+  if (returnOrigin && returnOrigin !== requestUrl.origin) {
+    const localCallbackUrl = new URL('/auth/callback', returnOrigin);
+    localCallbackUrl.searchParams.set('code', code);
+    localCallbackUrl.searchParams.set('next', redirectPath);
+
+    return NextResponse.redirect(localCallbackUrl);
   }
 
   const supabase = await createClient();
@@ -26,7 +50,7 @@ export async function GET(request: Request) {
 
   if (error) {
     console.error('Supabase auth callback error:', error.message);
-    return NextResponse.redirect(new URL('/', requestUrl.origin));
+    return cleanRedirect(requestUrl);
   }
 
   const {
