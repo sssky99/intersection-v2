@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
+import { TypingSummary } from "@/features/meetings/TicketDetailContent";
 import { createClient } from "@/lib/supabase/client";
 
 type DetailsClientProps = {
@@ -141,12 +142,11 @@ const flowItems = [
 ];
 
 const safetyItems = [
-  "비슷한 나이대 중심으로 조합해요",
-  "과한 술자리나 노골적인 이성 목적은 걸러요",
-  "흡연, 술, 분위기 민감도를 확인해요",
-  "대화 역할이 너무 한쪽으로 쏠리지 않게 봐요",
-  "모임 후 피드백을 받아 다음 추천에 반영해요",
-  "불편한 피드백, 노쇼는 경고 없이 이용을 강력하게 제한해요.",
+  "🧑‍🤝‍🧑비슷한 나이대 중심으로 조합해요.",
+  "💏과한 술자리나 노골적인 이성 목적은 막아요.",
+  "💬E 와 I 성향을 상황에 맞게 조절해요.",
+  "✒️모임 후 피드백을 받아 다음 추천에 반영해요.",
+  "🚫불편한 피드백, 노쇼는 강력하게 제제해요.",
 ];
 
 export function DetailsClient({
@@ -199,15 +199,7 @@ export function DetailsClient({
             </section>
 
             <DocumentSection label="교집합 철학" hideLabel>
-              <div className="space-y-4">
-                <Paragraph>
-                  내가 편한 대화, 분위기, 관계 기대를 바탕으로 잘 어울릴 만한
-                  자리와 사람들을 제안합니다.
-                </Paragraph>
-                <Paragraph>
-                  마음에 드는 제안에만 가볍게 관심을 표시해주세요.
-                </Paragraph>
-              </div>
+              <RecommendationGuideBox />
             </DocumentSection>
 
             <DocumentSection label={"이런 사람들과\n함께할 수 있어요."} prominentLabel>
@@ -220,7 +212,7 @@ export function DetailsClient({
 
             <DocumentSection label="왜 안전하고 덜 어색할까요?" prominentLabel>
               <ImageSlot tone="warm" image="/images/details/safety-friends-booth.png" />
-              <Checklist items={safetyItems} icon="shield" />
+              <Checklist items={safetyItems} icon="none" />
             </DocumentSection>
 
             <DocumentSection label="시작하기" hideLabel>
@@ -265,10 +257,11 @@ function HeroSection() {
       <div className="mt-4">
         <ImageSlot hero tone="green" image="/images/details/lasting-meeting.png" priority />
       </div>
-      <p className="mt-5 bg-black/[0.035] px-4 py-4 text-[18px] font-medium leading-7 text-black/68">
-        교집합이 내가 좋아하는 자리에서 자연스럽게 섞이고, 편하게 대화하고,
-        다시 보고 싶은 사람이 생기는 자리를 다시 찾아줄게요.
-      </p>
+      <TypingSummary
+        text={"교집합이 당신에게 딱 맞는 사람들과\n자리를 추천해드립니다."}
+        className="mb-0 mt-5 rounded-none bg-gradient-to-br from-[#fdfbf5] via-white to-accent/[0.10]"
+        paragraphClassName="min-h-[70px] text-[18px] leading-8"
+      />
     </motion.header>
   );
 }
@@ -389,8 +382,13 @@ function ImageSlot({
   );
 }
 
-function Paragraph({ children }: { children: React.ReactNode }) {
-  return <p className="text-[18px] font-medium leading-7 text-black/62">{children}</p>;
+function RecommendationGuideBox() {
+  return (
+    <div className="bg-black/[0.035] px-4 py-4 text-[17px] font-bold leading-7 text-black/72">
+      <p>📌내 답변을 분석해 최적의 자리를 제안합니다.</p>
+      <p className="mt-3">📌마음에 드는 제안에 YES를 눌러주세요.</p>
+    </div>
+  );
 }
 
 function TicketExampleHeading() {
@@ -418,7 +416,7 @@ function Checklist({
   icon = "check",
 }: {
   items: string[];
-  icon?: "check" | "shield";
+  icon?: "check" | "shield" | "none";
 }) {
   const reducedMotion = useReducedMotion();
 
@@ -442,7 +440,7 @@ function Checklist({
           }}
           className="flex gap-3 text-[18px] font-medium leading-7 text-black/64"
         >
-          {icon === "shield" ? (
+          {icon === "none" ? null : icon === "shield" ? (
             <ShieldCheck
               size={16}
               className="mt-1.5 shrink-0 text-accent"
@@ -579,43 +577,45 @@ function RotatingTicketExamples() {
         reducedMotion={shouldReduceMotion}
       />
 
-      <AnimatePresence mode="wait">
-        {ticketDrawn ? (
-          <motion.div
-            key={`ticket-actions-${card.title}`}
-            data-testid="ticket-example-actions"
-            aria-hidden="true"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
-            transition={{ duration: 0.24, ease: "easeOut" }}
-            className="mx-auto mt-3 w-full max-w-[330px]"
-          >
-            <div className="grid grid-cols-2 gap-2.5">
-              <span className="flex h-[54px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black">
-                <span className="text-sm font-bold">No</span>
-                <span className="mt-0.5 text-[10px] font-medium text-black/40">
-                  다음 티켓 보기
+      <div className="mt-3 min-h-[142px]">
+        <AnimatePresence mode="wait">
+          {ticketDrawn ? (
+            <motion.div
+              key={`ticket-actions-${card.title}`}
+              data-testid="ticket-example-actions"
+              aria-hidden="true"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+              animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+              exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
+              transition={{ duration: 0.24, ease: "easeOut" }}
+              className="mx-auto w-full max-w-[330px]"
+            >
+              <div className="grid grid-cols-2 gap-2.5">
+                <span className="flex h-[54px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black">
+                  <span className="text-sm font-bold">No</span>
+                  <span className="mt-0.5 text-[10px] font-medium text-black/40">
+                    다음 티켓 보기
+                  </span>
                 </span>
-              </span>
-              <span className="flex h-[54px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm">
-                <span className="text-sm font-bold">Yes</span>
-                <span className="mt-0.5 text-[10px] font-medium text-white/60">
-                  참가하기
+                <span className="flex h-[54px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm">
+                  <span className="text-sm font-bold">Yes</span>
+                  <span className="mt-0.5 text-[10px] font-medium text-white/60">
+                    참가하기
+                  </span>
                 </span>
-              </span>
-            </div>
-            <p className="mt-3 bg-black/[0.035] px-4 py-3 text-[14px] font-bold leading-6 text-black/70">
-              <span aria-hidden="true" className="mr-2">
-                🔔
-              </span>
-              {card.interestText}
-            </p>
-          </motion.div>
-        ) : (
-          <span key={`ticket-drawing-${card.title}`} className="block h-[66px]" />
-        )}
-      </AnimatePresence>
+              </div>
+              <p className="mt-3 bg-black/[0.035] px-4 py-3 text-[14px] font-bold leading-6 text-black/70">
+                <span aria-hidden="true" className="mr-2">
+                  🔔
+                </span>
+                {card.interestText}
+              </p>
+            </motion.div>
+          ) : (
+            <span key={`ticket-drawing-${card.title}`} className="block h-[142px]" />
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

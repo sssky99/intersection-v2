@@ -172,7 +172,15 @@ export function TicketDetailContent({
   );
 }
 
-function TypingSummary({ text }: { text: string }) {
+export function TypingSummary({
+  className,
+  paragraphClassName,
+  text,
+}: {
+  className?: string;
+  paragraphClassName?: string;
+  text: string;
+}) {
   const shouldReduceMotion = useReducedMotion();
   const [displayText, setDisplayText] = useState(() =>
     shouldReduceMotion ? text : "",
@@ -196,8 +204,18 @@ function TypingSummary({ text }: { text: string }) {
   }, [shouldReduceMotion, text]);
 
   return (
-    <div className="mb-5 rounded-3xl border border-accent/18 bg-gradient-to-br from-white via-white to-accent/[0.08] px-4 py-4 shadow-[0_10px_24px_rgba(126,179,199,0.08)]">
-      <p className="min-h-[56px] border-l-2 border-accent/70 pl-4 text-[15px] font-black leading-7 text-black/80">
+    <div
+      className={cn(
+        "mb-5 rounded-3xl border border-accent/18 bg-gradient-to-br from-white via-white to-accent/[0.08] px-4 py-4 shadow-[0_10px_24px_rgba(126,179,199,0.08)]",
+        className,
+      )}
+    >
+      <p
+        className={cn(
+          "min-h-[56px] whitespace-pre-line border-l-2 border-accent/70 pl-4 text-[15px] font-black leading-7 text-black/80",
+          paragraphClassName,
+        )}
+      >
         {displayText}
         {!shouldReduceMotion && (
           <span
