@@ -2000,8 +2000,6 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   const meetingRatingsComplete = Object.values(meetingRatings).every(
     (value) => typeof value === "number",
   );
-  const dateSelectionComplete =
-    dateCandidateMembers.length === 0 || dateUnknown || Boolean(dateMember);
   const vibeSelectionComplete =
     otherMembers.length === 0 || vibeUnknown || Boolean(vibeMember);
   const vibeAxisComplete =
@@ -2015,7 +2013,6 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   });
   const canSubmit =
     meetingRatingsComplete &&
-    dateSelectionComplete &&
     vibeSelectionComplete &&
     vibeAxisComplete &&
     negativeFeedbackComplete;
@@ -2113,7 +2110,6 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   const submitLabel = (() => {
     if (submitting) return "저장 중이에요";
     if (!meetingRatingsComplete) return "모임 별점을 남겨주세요";
-    if (!dateSelectionComplete) return "단둘이 만나고 싶은 사람을 선택해주세요";
     if (!vibeSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
     if (!vibeAxisComplete) return "선택한 사람의 분위기를 알려주세요";
     if (!negativeFeedbackComplete) return "부정 피드백 사유를 선택해주세요";
@@ -2223,8 +2219,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
       </section>
 
       <section className="py-5">
-        <h3 className="text-[15px] font-black text-black">모임 피드백</h3>
-        <div className="mt-4 space-y-5">
+        <div className="space-y-5">
           <MeetingStarRating
             label="오늘 자리는 전반적으로 어땠나요?"
             value={meetingRatings.overall}
@@ -2248,7 +2243,6 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           단둘이 만나고 싶어요.
-          <span className="ml-1 text-accent">(필수)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
           블라인드 데이트 제안을 만들 때 참고해요.
@@ -2297,7 +2291,7 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           이런 결의 사람을 만나고 싶어요.
-          <span className="ml-1 text-accent">(필수)</span>
+          <span className="ml-1 font-medium text-black/35">(필수)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
           잘 모르겠다면 답변을 건너뛸 수 있어요.
@@ -2503,6 +2497,8 @@ function MeetingStarRating({
   onChange: (rating: number) => void;
   value: number | null;
 }) {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+
   return (
     <div>
       <p className="text-sm font-black leading-6 text-black">{label}</p>
@@ -2517,23 +2513,44 @@ function MeetingStarRating({
               whileTap={{ scale: 0.9 }}
               onClick={() => onChange(rating)}
               aria-label={`${label} ${rating}점`}
-              className="relative flex h-9 w-9 items-center justify-center text-[29px] leading-none"
+              className="relative flex h-9 w-9 items-center justify-center"
             >
               <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                  key={filled ? "filled" : "empty"}
+                <motion.svg
+                  key={filled ? `filled-${value}` : "empty"}
+                  viewBox="0 0 32 32"
                   initial={
-                    filled
-                      ? { opacity: 0, scale: 0.25, y: 5, rotate: -8 }
-                      : { opacity: 0, scale: 0.9 }
+                    shouldReduceMotion
+                      ? false
+                      : filled
+                        ? { opacity: 0, scale: 0.38, y: 4, rotate: -5 }
+                        : { opacity: 0, scale: 0.94 }
                   }
                   animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
                   exit={{ opacity: 0, scale: 0.8 }}
-                  transition={{ duration: 0.18, ease: "easeOut" }}
-                  className={filled ? "text-[#f8c945]" : "text-black/14"}
+                  transition={{
+                    duration: shouldReduceMotion ? 0 : 0.2,
+                    ease: [0.16, 1, 0.3, 1],
+                    delay:
+                      filled && !shouldReduceMotion ? (rating - 1) * 0.055 : 0,
+                  }}
+                  className={cn(
+                    "h-7 w-7 overflow-visible",
+                    filled ? "text-black" : "text-black/70",
+                  )}
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  ★
-                </motion.span>
+                  <path
+                    d="M16 4.75 L19.35 11.25 L26.55 12.35 L21.35 17.45 L22.6 24.65 L16 21.3 L9.4 24.65 L10.65 17.45 L5.45 12.35 L12.65 11.25 Z"
+                    fill={filled ? "#f8c945" : "none"}
+                    stroke="#0b0b0b"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.9"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </motion.svg>
               </AnimatePresence>
             </motion.button>
           );
