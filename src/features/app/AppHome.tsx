@@ -96,23 +96,29 @@ const feedbackPersonAxes = [
   "rhythm",
 ] as const satisfies readonly VibeAxis[];
 const profileVibeAxes = feedbackPersonAxes;
-const feedbackPlaceAxes = [
-  "temperature",
-  "texture",
-  "tone",
-  "rhythm",
-  "alcohol",
-  "romance",
-] as const satisfies readonly VibeAxis[];
 
 type FeedbackPersonAxis = (typeof feedbackPersonAxes)[number];
 type ProfileVibeAxis = (typeof profileVibeAxes)[number];
-type FeedbackPlaceAxis = (typeof feedbackPlaceAxes)[number];
+type MeetingRatingKey = "overall" | "expectationMatch";
+type MeetingRatings = Record<MeetingRatingKey, number | null>;
+type NegativeFeedbackReason =
+  | "no_show"
+  | "not_my_vibe"
+  | "uncomfortable_conversation"
+  | "rude_or_aggressive"
+  | "romantic_pressure"
+  | "religion_or_sales"
+  | "other";
 
 type MemberFeedbackDraft = {
   status: "pending" | "done" | "skipped";
   values: Record<FeedbackPersonAxis, number>;
   touchedAxes: FeedbackPersonAxis[];
+};
+
+type NegativeMemberFeedbackDraft = {
+  reasons: NegativeFeedbackReason[];
+  otherText: string;
 };
 
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
@@ -1740,18 +1746,6 @@ function createMemberFeedbackDrafts(
   );
 }
 
-function placeFeedbackInitialScores(scores?: VibeScores | null) {
-  return Object.fromEntries(
-    feedbackPlaceAxes.map((axis) => {
-      const value = scores?.[axis];
-      return [
-        axis,
-        typeof value === "number" && value >= 1 && value <= 5 ? value : 3,
-      ];
-    }),
-  ) as Record<FeedbackPlaceAxis, number>;
-}
-
 function scoreToInternal(score: number) {
   return (score - 3) * 50;
 }
@@ -1765,15 +1759,6 @@ function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
   return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
 }
 
-function memberFeedbackStatusLabel(
-  status: MemberFeedbackDraft["status"],
-  active: boolean,
-) {
-  if (status === "done") return "완료";
-  if (status === "skipped") return "건너뜀";
-  return active ? "진행중" : "대기";
-}
-
 function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
   const selfMember = useMemo(
     () => userTicket.members.find((member) => member.isSelf),
@@ -1784,60 +1769,83 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
   );
-  const [selectedMeetAgainIds, setSelectedMeetAgainIds] = useState<string[]>([]);
-  const [meetAgainUnknown, setMeetAgainUnknown] = useState(false);
+  const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
+    overall: null,
+    expectationMatch: null,
+  });
+  const [positiveUnknown, setPositiveUnknown] = useState(false);
+  const [positiveMemberId, setPositiveMemberId] = useState("");
   const [memberFeedback, setMemberFeedback] = useState<
     Record<string, MemberFeedbackDraft>
   >(() => createMemberFeedbackDrafts(otherMembers));
-  const [activeMemberId, setActiveMemberId] = useState(otherMembers[0]?.id ?? "");
-  const [placeFeedback, setPlaceFeedback] = useState<
-    Record<FeedbackPlaceAxis, number>
-  >(() => placeFeedbackInitialScores(userTicket.ticket.vibeScores));
+  const [negativeMemberIds, setNegativeMemberIds] = useState<string[]>([]);
+  const [negativeFeedback, setNegativeFeedback] = useState<
+    Record<string, NegativeMemberFeedbackDraft>
+  >({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedMeetAgainIds([]);
-    setMeetAgainUnknown(false);
+    setMeetingRatings({ overall: null, expectationMatch: null });
+    setPositiveUnknown(false);
+    setPositiveMemberId("");
     setMemberFeedback(createMemberFeedbackDrafts(otherMembers));
-    setActiveMemberId(otherMembers[0]?.id ?? "");
-    setPlaceFeedback(placeFeedbackInitialScores(userTicket.ticket.vibeScores));
+    setNegativeMemberIds([]);
+    setNegativeFeedback({});
     setSubmitting(false);
     setSubmitted(false);
     setSubmitError(null);
-  }, [otherMembers, userTicket.ticket.vibeScores, userTicket.waitlistId]);
+  }, [otherMembers, userTicket.waitlistId]);
 
-  const activeMember =
-    otherMembers.find((member) => member.id === activeMemberId) ?? otherMembers[0];
-  const activeDraft = activeMember ? memberFeedback[activeMember.id] : null;
-  const allMembersHandled = otherMembers.every(
-    (member) => memberFeedback[member.id]?.status !== "pending",
+  const positiveMember = otherMembers.find(
+    (member) => member.id === positiveMemberId,
   );
-
-  const toggleMeetAgain = (memberId: string) => {
-    setMeetAgainUnknown(false);
-    setSelectedMeetAgainIds((current) =>
-      current.includes(memberId)
-        ? current.filter((id) => id !== memberId)
-        : [...current, memberId],
+  const positiveDraft = positiveMember ? memberFeedback[positiveMember.id] : null;
+  const meetingRatingsComplete = Object.values(meetingRatings).every(
+    (value) => typeof value === "number",
+  );
+  const positiveSelectionComplete =
+    otherMembers.length === 0 || positiveUnknown || Boolean(positiveMember);
+  const positiveAxisComplete =
+    !positiveMember || Boolean(positiveDraft?.touchedAxes.length);
+  const negativeFeedbackComplete = negativeMemberIds.every((memberId) => {
+    const draft = negativeFeedback[memberId];
+    if (!draft || draft.reasons.length === 0) return false;
+    return (
+      !draft.reasons.includes("other") || draft.otherText.trim().length > 0
     );
+  });
+  const canSubmit =
+    meetingRatingsComplete &&
+    positiveSelectionComplete &&
+    positiveAxisComplete &&
+    negativeFeedbackComplete;
+  const selectedPositiveMemberIds = positiveMember ? [positiveMember.id] : [];
+  const negativeMembers = negativeMemberIds
+    .map((memberId) => otherMembers.find((member) => member.id === memberId))
+    .filter((member): member is UserTicket["members"][number] => Boolean(member));
+
+  const selectPositiveMember = (memberId: string) => {
+    setPositiveUnknown(false);
+    setPositiveMemberId(memberId);
   };
 
-  const selectUnknownMeetAgain = () => {
-    setSelectedMeetAgainIds([]);
-    setMeetAgainUnknown(true);
+  const selectPositiveUnknown = () => {
+    setPositiveMemberId("");
+    setPositiveUnknown(true);
   };
 
   const updateMemberAxis = (axis: FeedbackPersonAxis, value: number) => {
-    if (!activeMember) return;
+    if (!positiveMember) return;
     setMemberFeedback((current) => {
-      const draft = current[activeMember.id];
+      const draft = current[positiveMember.id];
       if (!draft) return current;
       return {
         ...current,
-        [activeMember.id]: {
+        [positiveMember.id]: {
           ...draft,
+          status: "done",
           values: { ...draft.values, [axis]: value },
           touchedAxes: draft.touchedAxes.includes(axis)
             ? draft.touchedAxes
@@ -1847,68 +1855,109 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
     });
   };
 
-  const moveToNextMember = (memberId: string) => {
-    const currentIndex = otherMembers.findIndex((member) => member.id === memberId);
-    const nextPending =
-      otherMembers
-        .slice(currentIndex + 1)
-        .find((member) => memberFeedback[member.id]?.status === "pending") ??
-      otherMembers.find((member) => memberFeedback[member.id]?.status === "pending");
-
-    if (nextPending) setActiveMemberId(nextPending.id);
-  };
-
-  const completeActiveMember = () => {
-    if (!activeMember || !activeDraft) return;
-    setMemberFeedback((current) => ({
+  const toggleNegativeMember = (memberId: string) => {
+    setNegativeMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
+    setNegativeFeedback((current) => ({
       ...current,
-      [activeMember.id]: {
-        ...activeDraft,
-        status: activeDraft.touchedAxes.length > 0 ? "done" : "skipped",
-      },
+      [memberId]: current[memberId] ?? { reasons: [], otherText: "" },
     }));
-    moveToNextMember(activeMember.id);
   };
 
-  const skipActiveMember = () => {
-    if (!activeMember || !activeDraft) return;
-    setMemberFeedback((current) => ({
-      ...current,
-      [activeMember.id]: {
-        ...activeDraft,
-        status: "skipped",
-      },
-    }));
-    moveToNextMember(activeMember.id);
+  const toggleNegativeReason = (
+    memberId: string,
+    reason: NegativeFeedbackReason,
+  ) => {
+    setNegativeFeedback((current) => {
+      const draft = current[memberId] ?? { reasons: [], otherText: "" };
+      const selected = draft.reasons.includes(reason);
+      const reasons = selected
+        ? draft.reasons.filter((item) => item !== reason)
+        : [...draft.reasons, reason];
+
+      return {
+        ...current,
+        [memberId]: {
+          ...draft,
+          reasons,
+          otherText: reasons.includes("other") ? draft.otherText : "",
+        },
+      };
+    });
   };
 
-  const submitFeedback = async () => {
-    if (submitting || !allMembersHandled) return;
-    setSubmitting(true);
-    setSubmitError(null);
+  const updateNegativeOtherText = (memberId: string, otherText: string) => {
+    setNegativeFeedback((current) => {
+      const draft = current[memberId] ?? { reasons: [], otherText: "" };
+      return {
+        ...current,
+        [memberId]: {
+          ...draft,
+          otherText,
+        },
+      };
+    });
+  };
 
-    const payloadMemberFeedback = Object.fromEntries(
-      otherMembers.map((member) => {
-        const draft = memberFeedback[member.id];
-        const skipped = !draft || draft.status !== "done" || draft.touchedAxes.length === 0;
-        const values = Object.fromEntries(
-          feedbackPersonAxes.map((axis) => [
-            axis,
-            skipped || !draft.touchedAxes.includes(axis)
-              ? null
-              : scoreToInternal(draft.values[axis]),
-          ]),
-        );
+  const submitLabel = (() => {
+    if (submitting) return "저장 중이에요";
+    if (!meetingRatingsComplete) return "모임 별점을 남겨주세요";
+    if (!positiveSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
+    if (!positiveAxisComplete) return "선택한 사람의 분위기를 알려주세요";
+    if (!negativeFeedbackComplete) return "부정 피드백 사유를 선택해주세요";
+    return "피드백 제출하기";
+  })();
+
+  const payloadMemberFeedback = () => {
+    if (!positiveMember || !positiveDraft) return {};
+
+    const values = Object.fromEntries(
+      feedbackPersonAxes.map((axis) => [
+        axis,
+        positiveDraft.touchedAxes.includes(axis)
+          ? scoreToInternal(positiveDraft.values[axis])
+          : null,
+      ]),
+    );
+
+    return {
+      [positiveMember.id]: {
+        status: "done",
+        ...values,
+      },
+    };
+  };
+
+  const payloadMeetingFeedback = () => ({
+    meeting_ratings: {
+      overall: meetingRatings.overall,
+      expectation_match: meetingRatings.expectationMatch,
+    },
+    negative_member_feedback: Object.fromEntries(
+      negativeMemberIds.map((memberId) => {
+        const draft = negativeFeedback[memberId] ?? {
+          reasons: [],
+          otherText: "",
+        };
 
         return [
-          member.id,
+          memberId,
           {
-            status: skipped ? "skipped" : "done",
-            ...values,
+            reasons: draft.reasons,
+            otherText: draft.otherText.trim() || null,
           },
         ];
       }),
-    );
+    ),
+  });
+
+  const submitFeedback = async () => {
+    if (submitting || !canSubmit) return;
+    setSubmitting(true);
+    setSubmitError(null);
 
     try {
       const response = await fetch("/api/meetings/my-tickets/feedback", {
@@ -1916,9 +1965,9 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           waitlistId: userTicket.waitlistId,
-          selectedMemberIds: selectedMeetAgainIds,
-          memberFeedback: payloadMemberFeedback,
-          placeFeedback,
+          selectedMemberIds: selectedPositiveMemberIds,
+          memberFeedback: payloadMemberFeedback(),
+          placeFeedback: payloadMeetingFeedback(),
         }),
       });
 
@@ -1965,151 +2014,186 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
       </section>
 
       <section className="py-5">
-        <h3 className="text-[15px] font-black leading-6 text-black">
-          이번 모임에서 단둘이 다시 만나보고 싶은 분이 있나요?
-        </h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          중복 선택할 수 있어요.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {otherMembers.map((member) => {
-            const selected = selectedMeetAgainIds.includes(member.id);
-            return (
-              <button
-                key={member.id}
-                type="button"
-                onClick={() => toggleMeetAgain(member.id)}
-                className={cn(
-                  "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                  selected
-                    ? "border-accent bg-accent text-white"
-                    : "border-black/10 bg-white text-black/62 hover:border-accent/45",
-                )}
-              >
-                {memberRealName(member)}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={selectUnknownMeetAgain}
-            className={cn(
-              "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-              meetAgainUnknown
-                ? "border-black bg-black text-white"
-                : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
-            )}
-          >
-            잘 모르겠어요
-          </button>
+        <h3 className="text-[15px] font-black text-black">모임 피드백</h3>
+        <div className="mt-4 space-y-5">
+          <MeetingStarRating
+            label="오늘 자리는 전반적으로 어땠나요?"
+            value={meetingRatings.overall}
+            onChange={(rating) =>
+              setMeetingRatings((current) => ({ ...current, overall: rating }))
+            }
+          />
+          <MeetingStarRating
+            label="추천 받기 전 기대한 분위기와 실제 분위기가 비슷했나요?"
+            value={meetingRatings.expectationMatch}
+            onChange={(rating) =>
+              setMeetingRatings((current) => ({
+                ...current,
+                expectationMatch: rating,
+              }))
+            }
+          />
         </div>
       </section>
 
       <section className="border-t border-black/8 py-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="text-[15px] font-black text-black">멤버 피드백</h3>
-            <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-              각 멤버를 한 번씩 지나가며 느낀 분위기만 남겨주세요.
-            </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-black/[0.04] px-3 py-1 text-[11px] font-black text-black/45">
-            {otherMembers.filter((member) => memberFeedback[member.id]?.status !== "pending").length}/
-            {otherMembers.length}
-          </span>
-        </div>
+        <h3 className="text-[15px] font-black leading-6 text-black">
+          이 사람과 결이 비슷한 사람을 더 만나고 싶어요.
+          <span className="ml-1 text-accent">(필수)</span>
+        </h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+          잘 모르겠다면 답변을 건너뛸 수 있어요.
+        </p>
+        {otherMembers.length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {otherMembers.map((member) => {
+              const selected = positiveMemberId === member.id;
 
-        {otherMembers.length === 0 ? (
-          <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => selectPositiveMember(member.id)}
+                  className={cn(
+                    "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                    selected
+                      ? "border-accent bg-accent text-white"
+                      : "border-black/10 bg-white text-black/62 hover:border-accent/45",
+                  )}
+                >
+                  {memberRealName(member)}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={selectPositiveUnknown}
+              className={cn(
+                "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                positiveUnknown
+                  ? "border-black bg-black text-white"
+                  : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
+              )}
+            >
+              잘 모르겠어요
+            </button>
+          </div>
+        ) : (
+          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
             함께한 멤버 정보가 없어 이 단계는 건너뛰어요.
           </p>
-        ) : (
+        )}
+
+        {positiveMember && positiveDraft && (
+          <div className="mt-6">
+            <h4 className="text-[15px] font-black text-black">
+              이 사람은 어떤 사람이었나요?
+            </h4>
+            <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+              {memberRealName(positiveMember)}님과 비슷한 결의 사람을 추천할 때 참고해요.
+            </p>
+            <SharedFeedbackVibeGraphControl
+              className="border-t-0 pt-4"
+              axes={feedbackPersonAxes}
+              values={positiveDraft.values}
+              onChange={updateMemberAxis}
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <h3 className="text-[15px] font-black leading-6 text-black">
+          이 사람과는 다시 같은 자리에 있고 싶지 않아요.
+        </h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
+          선택하지 않아도 괜찮아요.
+        </p>
+        {otherMembers.length > 0 ? (
           <>
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <div className="mt-4 flex flex-wrap gap-2">
               {otherMembers.map((member) => {
-                const selected = activeMember?.id === member.id;
-                const draft = memberFeedback[member.id];
+                const selected = negativeMemberIds.includes(member.id);
 
                 return (
                   <button
                     key={member.id}
                     type="button"
-                    onClick={() => setActiveMemberId(member.id)}
+                    onClick={() => toggleNegativeMember(member.id)}
                     className={cn(
-                      "min-w-[104px] rounded-2xl border px-3 py-3 text-left transition",
+                      "min-h-10 rounded-full border px-4 text-sm font-bold transition",
                       selected
-                        ? "border-accent bg-accent/8"
-                        : "border-black/10 bg-white hover:border-black/20",
+                        ? "border-black bg-black text-white"
+                        : "border-black/10 bg-white text-black/62 hover:border-black/25",
                     )}
                   >
-                    <span className="block truncate text-sm font-black text-black">
-                      {memberRealName(member)}
-                    </span>
-                    <span
-                      className={cn(
-                        "mt-1 block text-[11px] font-bold",
-                        draft?.status === "done"
-                          ? "text-emerald-600"
-                          : draft?.status === "skipped"
-                            ? "text-black/35"
-                            : selected
-                              ? "text-accent"
-                              : "text-black/35",
-                      )}
-                    >
-                      {memberFeedbackStatusLabel(draft?.status ?? "pending", selected)}
-                    </span>
+                    {memberRealName(member)}
                   </button>
                 );
               })}
             </div>
 
-            {activeMember && activeDraft && (
-              <div className="mt-5">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-base font-black text-black">
-                    {memberRealName(activeMember)}
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={skipActiveMember}
-                    className="h-9 rounded-full border border-black/10 bg-white px-3 text-xs font-bold text-black/45"
-                  >
-                    잘 모르겠어요
-                  </button>
-                </div>
-                <SharedFeedbackVibeGraphControl
-                  className="border-t-0 pt-4"
-                  axes={feedbackPersonAxes}
-                  values={activeDraft.values}
-                  onChange={updateMemberAxis}
-                />
-                <button
-                  type="button"
-                  onClick={completeActiveMember}
-                  className="mt-5 h-12 w-full rounded-full bg-black text-sm font-black text-white"
-                >
-                  이 멤버 피드백 완료
-                </button>
+            {negativeMembers.length > 0 && (
+              <div className="mt-5 space-y-4">
+                {negativeMembers.map((member) => {
+                  const draft = negativeFeedback[member.id] ?? {
+                    reasons: [],
+                    otherText: "",
+                  };
+
+                  return (
+                    <div
+                      key={member.id}
+                      className="border border-black/8 bg-black/[0.025] px-4 py-4"
+                    >
+                      <h4 className="text-sm font-black text-black">
+                        {memberRealName(member)}
+                      </h4>
+                      <div className="mt-3 grid gap-2">
+                        {negativeFeedbackReasons.map((reason) => {
+                          const selected = draft.reasons.includes(reason.value);
+
+                          return (
+                            <button
+                              key={reason.value}
+                              type="button"
+                              onClick={() =>
+                                toggleNegativeReason(member.id, reason.value)
+                              }
+                              className={cn(
+                                "flex min-h-10 items-center justify-between border px-3 py-2 text-left text-xs font-bold leading-5 transition",
+                                selected
+                                  ? "border-black bg-black text-white"
+                                  : "border-black/10 bg-white text-black/62 hover:border-black/25",
+                              )}
+                            >
+                              <span>{reason.label}</span>
+                              {selected && <Check size={13} aria-hidden />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {draft.reasons.includes("other") && (
+                        <input
+                          value={draft.otherText}
+                          placeholder="직접 입력해주세요."
+                          onChange={(event) =>
+                            updateNegativeOtherText(member.id, event.target.value)
+                          }
+                          className="mt-3 h-11 w-full border border-black/10 bg-white px-3.5 text-xs font-semibold outline-none placeholder:text-black/25 focus:border-accent"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
+        ) : (
+          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+            함께한 멤버 정보가 없어 이 단계는 건너뛰어요.
+          </p>
         )}
-      </section>
-
-      <section className="border-t border-black/8 py-5">
-        <h3 className="text-[15px] font-black text-black">장소 피드백</h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          이 자리 자체의 분위기를 알려주세요.
-        </p>
-        <SharedFeedbackVibeGraphControl
-          className="border-t-0 pt-5"
-          axes={feedbackPlaceAxes}
-          values={placeFeedback}
-          onChange={(axis, value) =>
-            setPlaceFeedback((current) => ({ ...current, [axis]: value }))
-          }
-        />
       </section>
 
       {submitError && (
@@ -2120,16 +2204,83 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
       <button
         type="button"
-        disabled={submitting || !allMembersHandled}
+        disabled={submitting || !canSubmit}
         onClick={() => void submitFeedback()}
         className="h-12 w-full rounded-full bg-accent text-sm font-black text-white shadow-[0_10px_24px_rgba(126,179,199,0.28)] transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
       >
-        {submitting
-          ? "저장 중이에요"
-          : allMembersHandled
-            ? "피드백 제출하기"
-            : "멤버 피드백을 모두 지나가주세요"}
+        {submitLabel}
       </button>
+    </div>
+  );
+}
+
+const negativeFeedbackReasons: Array<{
+  value: NegativeFeedbackReason;
+  label: string;
+}> = [
+  { value: "no_show", label: "노쇼했어요." },
+  { value: "not_my_vibe", label: "그냥 결이 맞지 않았어요." },
+  { value: "uncomfortable_conversation", label: "대화가 불편했어요." },
+  {
+    value: "rude_or_aggressive",
+    label: "무례하거나 공격적인 표현이 있었어요.",
+  },
+  {
+    value: "romantic_pressure",
+    label: "노골적인 이성 목적이 느껴졌어요.",
+  },
+  {
+    value: "religion_or_sales",
+    label: "종교 포교 / 영업처럼 느껴졌어요.",
+  },
+  { value: "other", label: "기타 / 직접입력" },
+];
+
+function MeetingStarRating({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (rating: number) => void;
+  value: number | null;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-black leading-6 text-black">{label}</p>
+      <div className="mt-2 flex items-center gap-1.5" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((rating) => {
+          const filled = typeof value === "number" && rating <= value;
+
+          return (
+            <motion.button
+              key={rating}
+              type="button"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onChange(rating)}
+              aria-label={`${label} ${rating}점`}
+              className="relative flex h-9 w-9 items-center justify-center text-[29px] leading-none"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={filled ? "filled" : "empty"}
+                  initial={
+                    filled
+                      ? { opacity: 0, scale: 0.25, y: 5, rotate: -8 }
+                      : { opacity: 0, scale: 0.9 }
+                  }
+                  animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className={filled ? "text-[#f8c945]" : "text-black/14"}
+                >
+                  ★
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
+          );
+        })}
+      </div>
     </div>
   );
 }

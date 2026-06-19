@@ -11,6 +11,15 @@ type PlaceAxis =
   | "alcohol"
   | "romance";
 
+type NegativeFeedbackReason =
+  | "no_show"
+  | "not_my_vibe"
+  | "uncomfortable_conversation"
+  | "rude_or_aggressive"
+  | "romantic_pressure"
+  | "religion_or_sales"
+  | "other";
+
 type MemberFeedbackValue = {
   status?: "done" | "skipped";
 } & Partial<Record<PersonAxis, number | null>>;
@@ -53,6 +62,15 @@ const placeAxes: PlaceAxis[] = [
   "romance",
 ];
 const allowedPersonScores = new Set([-100, -50, 0, 50, 100]);
+const allowedNegativeFeedbackReasons = new Set<NegativeFeedbackReason>([
+  "no_show",
+  "not_my_vibe",
+  "uncomfortable_conversation",
+  "rude_or_aggressive",
+  "romantic_pressure",
+  "religion_or_sales",
+  "other",
+]);
 
 function isUuid(value: unknown): value is string {
   return (
@@ -118,10 +136,93 @@ function normalizeMemberFeedback(value: unknown) {
   return result;
 }
 
+function isMeetingRating(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 5
+  );
+}
+
+function normalizeNegativeMemberFeedback(value: unknown) {
+  if (value === null || value === undefined) return {};
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+
+  const result: Record<
+    string,
+    { reasons: NegativeFeedbackReason[]; otherText: string | null }
+  > = {};
+
+  for (const [memberId, rawFeedback] of Object.entries(value)) {
+    if (!isUuid(memberId)) return null;
+    if (!rawFeedback || typeof rawFeedback !== "object" || Array.isArray(rawFeedback)) {
+      return null;
+    }
+
+    const entry = rawFeedback as Record<string, unknown>;
+    if (!Array.isArray(entry.reasons)) return null;
+
+    const reasons = Array.from(new Set(entry.reasons));
+    if (
+      reasons.length === 0 ||
+      !reasons.every(
+        (reason): reason is NegativeFeedbackReason =>
+          typeof reason === "string" &&
+          allowedNegativeFeedbackReasons.has(reason as NegativeFeedbackReason),
+      )
+    ) {
+      return null;
+    }
+
+    const otherTextRaw = entry.otherText ?? entry.other_text;
+    const otherText =
+      typeof otherTextRaw === "string" ? otherTextRaw.trim() : "";
+    if (reasons.includes("other") && !otherText) return null;
+
+    result[memberId] = {
+      reasons,
+      otherText: otherText || null,
+    };
+  }
+
+  return result;
+}
+
 function normalizePlaceFeedback(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 
   const raw = value as Record<string, unknown>;
+  const meetingRatings = raw.meeting_ratings;
+  if (
+    meetingRatings &&
+    typeof meetingRatings === "object" &&
+    !Array.isArray(meetingRatings)
+  ) {
+    const ratingRaw = meetingRatings as Record<string, unknown>;
+    const overall = ratingRaw.overall;
+    const expectationMatch = ratingRaw.expectation_match;
+    const negativeMemberFeedback = normalizeNegativeMemberFeedback(
+      raw.negative_member_feedback ?? {},
+    );
+
+    if (
+      !isMeetingRating(overall) ||
+      !isMeetingRating(expectationMatch) ||
+      !negativeMemberFeedback
+    ) {
+      return null;
+    }
+
+    return {
+      meeting_ratings: {
+        overall,
+        expectation_match: expectationMatch,
+      },
+      negative_member_feedback: negativeMemberFeedback,
+    };
+  }
+
   const result: Partial<Record<PlaceAxis, number>> = {};
   for (const axis of placeAxes) {
     const score = raw[axis];
@@ -136,6 +237,19 @@ function normalizePlaceFeedback(value: unknown) {
     result[axis] = score;
   }
   return result;
+}
+
+function negativeFeedbackTargetIds(placeFeedback: Record<string, unknown>) {
+  const negativeMemberFeedback = placeFeedback.negative_member_feedback;
+  if (
+    !negativeMemberFeedback ||
+    typeof negativeMemberFeedback !== "object" ||
+    Array.isArray(negativeMemberFeedback)
+  ) {
+    return [];
+  }
+
+  return Object.keys(negativeMemberFeedback);
 }
 
 export async function POST(request: Request) {
@@ -224,6 +338,7 @@ export async function POST(request: Request) {
       const allSubmittedMemberIds = new Set([
         ...selectedMemberIds,
         ...Object.keys(memberFeedback),
+        ...negativeFeedbackTargetIds(placeFeedback),
       ]);
       for (const memberId of allSubmittedMemberIds) {
         if (!allowedTargetIds.has(memberId)) {
