@@ -342,8 +342,8 @@ function ImageSlot({
 function RecommendationGuideBox() {
   return (
     <div className="bg-black/[0.035] px-4 py-4 text-[17px] font-bold leading-7 text-black/72">
-      <p>📌내 답변을 분석해 최적의 자리를 제안합니다.</p>
-      <p className="mt-3">📌마음에 드는 제안에 YES를 눌러주세요.</p>
+      <p>📌 내 답변을 분석해 최적의 자리를 제안합니다.</p>
+      <p className="mt-3">📌 마음에 드는 제안에 YES를 눌러주세요.</p>
     </div>
   );
 }
