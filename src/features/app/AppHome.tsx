@@ -2645,6 +2645,7 @@ type ProfileGenerateResponse = {
   intro?: string | null;
   emoji?: string | null;
   generatedAt?: string | null;
+  model?: string | null;
   notice?: string;
   error?: string;
 };
@@ -2771,6 +2772,7 @@ function ProfileCompletionModal({
   const [generatedAt, setGeneratedAt] = useState<string | null>(
     profile.public_intro_generated_at,
   );
+  const [model, setModel] = useState<string | null>(profile.public_intro_model);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [typingDone, setTypingDone] = useState(false);
@@ -2801,6 +2803,7 @@ function ProfileCompletionModal({
     setIntro("");
     setEmoji(profile.public_emoji);
     setGeneratedAt(profile.public_intro_generated_at);
+    setModel(profile.public_intro_model);
     setNotice(null);
     setError(null);
     setTypingDone(false);
@@ -2817,11 +2820,16 @@ function ProfileCompletionModal({
     const loadProfile = async () => {
       const existingIntro = profile.public_intro?.trim();
       try {
-        const profilePromise = existingIntro
+        const shouldGenerate =
+          !existingIntro ||
+          profile.public_intro_model === "fallback" ||
+          profile.public_intro_model?.startsWith("fallback:") === true;
+        const profilePromise = !shouldGenerate
           ? Promise.resolve<ProfileGenerateResponse>({
               intro: existingIntro,
               emoji: profile.public_emoji,
               generatedAt: profile.public_intro_generated_at,
+              model: profile.public_intro_model,
             })
           : fetch("/api/profile/generate", {
               method: "POST",
@@ -2843,6 +2851,7 @@ function ProfileCompletionModal({
         setIntro(result.intro?.trim() || existingIntro || "");
         setEmoji(result.emoji ?? profile.public_emoji);
         setGeneratedAt(result.generatedAt ?? profile.public_intro_generated_at);
+        setModel(result.model ?? profile.public_intro_model);
         setNotice(result.notice ?? null);
         setPhase("typing");
       } catch {
@@ -2870,6 +2879,7 @@ function ProfileCompletionModal({
     profile.public_emoji,
     profile.public_intro,
     profile.public_intro_generated_at,
+    profile.public_intro_model,
   ]);
 
   useEffect(() => {
@@ -2896,6 +2906,7 @@ function ProfileCompletionModal({
       public_emoji: emoji ?? profile.public_emoji,
       public_intro_generated_at: revealedGeneratedAt,
       public_intro_revealed_generated_at: revealedGeneratedAt,
+      public_intro_model: model ?? profile.public_intro_model,
     });
   };
 

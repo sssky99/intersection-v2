@@ -1,20 +1,27 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { createOAuthRedirectUrl } from '@/lib/authRedirect';
+import { createOAuthRedirectUrl, postLoginPath } from '@/lib/authRedirect';
 
 export default function KakaoLoginButton({
   className,
+  nextPath = postLoginPath,
+  loadingLabel = '카카오로 이동 중...',
+  children,
 }: {
   className?: string;
+  nextPath?: string;
+  loadingLabel?: string;
+  children?: ReactNode | ((loading: boolean) => ReactNode);
 }) {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     const supabase = createClient();
     const origin = window.location.origin;
-    const redirectTo = createOAuthRedirectUrl(origin, '/details');
+    const redirectTo = createOAuthRedirectUrl(origin, nextPath);
     setLoading(true);
 
     const { error } = await supabase.auth.signInWithOAuth({
@@ -49,7 +56,9 @@ export default function KakaoLoginButton({
         .filter(Boolean)
         .join(' ')}
     >
-      {loading ? '카카오로 이동 중...' : '카카오로 시작하기'}
+      {typeof children === 'function'
+        ? children(loading)
+        : children || (loading ? loadingLabel : '카카오로 시작하기')}
     </button>
   );
 }

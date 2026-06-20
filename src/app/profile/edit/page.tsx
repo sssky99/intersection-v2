@@ -8,8 +8,6 @@ export default async function ProfileEditPage() {
   const { user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) redirect("/");
-  if (!profile.details_seen_at) redirect("/details");
-  if (!profile.browse_seen_at) redirect("/browse");
   if (!profile.profile_completed) redirect("/onboarding/profile");
 
   return (

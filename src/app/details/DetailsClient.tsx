@@ -5,15 +5,19 @@ import { Check, Hand, MoveHorizontal, ShieldCheck, Sparkles } from "lucide-react
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import KakaoLoginButton from "@/components/KakaoLoginButton";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { TypingSummary } from "@/features/meetings/TicketDetailContent";
 import { createClient } from "@/lib/supabase/client";
 import type { TicketQuestionTemplate } from "@/types/question";
 
+type DetailsCtaState = "guest" | "onboarding" | "complete";
+
 type DetailsClientProps = {
-  userId: string;
+  userId: string | null;
   nextPath: string;
   alreadySeen: boolean;
+  ctaState: DetailsCtaState;
   ticketQuestionTemplates: TicketQuestionTemplate[];
 };
 
@@ -109,14 +113,21 @@ export function DetailsClient({
   userId,
   nextPath,
   alreadySeen,
+  ctaState,
   ticketQuestionTemplates,
 }: DetailsClientProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ctaLabel =
+    ctaState === "guest"
+      ? "카카오로 로그인하고 시작하기"
+      : ctaState === "onboarding"
+        ? "질문 이어가기"
+        : "내게 맞는 자리 보러가기";
 
   const continueNext = async () => {
-    if (saving) return;
+    if (saving || !userId) return;
 
     setSaving(true);
     setError(null);
@@ -186,6 +197,9 @@ export function DetailsClient({
 
         <DetailPageStickyCTA
           saving={saving}
+          state={ctaState}
+          label={ctaLabel}
+          loginNextPath="/onboarding/questions?start=1"
           onClick={() => void continueNext()}
         />
       </div>
@@ -775,12 +789,19 @@ function StepCaptureCarousel({ items }: { items: string[] }) {
 
 function DetailPageStickyCTA({
   saving,
+  state,
+  label,
+  loginNextPath,
   onClick,
 }: {
   saving: boolean;
+  state: DetailsCtaState;
+  label: string;
+  loginNextPath: string;
   onClick: () => void;
 }) {
   const reducedMotion = useReducedMotion();
+  const isLogin = state === "guest";
 
   return (
     <motion.div
@@ -793,16 +814,40 @@ function DetailPageStickyCTA({
         data-testid="details-sticky-cta"
         className="pointer-events-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/95 to-[#f7f7f5]/0 px-4 pb-[calc(12px+env(safe-area-inset-bottom))] pt-8"
       >
-        <button
-          type="button"
-          disabled={saving}
-          onClick={onClick}
-          className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99] disabled:bg-black/20"
-        >
-          <Sparkles size={16} aria-hidden />
-          {saving ? "준비 중..." : "나와 맞을 자리 제안받기"}
-        </button>
+        {isLogin ? (
+          <KakaoLoginButton
+            nextPath={loginNextPath}
+            loadingLabel="카카오로 이동 중..."
+            className="h-14 rounded-full bg-[#FEE500] px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.12)] active:scale-[0.99] disabled:opacity-60"
+          >
+            {(loading) => (
+              <>
+                <KakaoBubbleIcon />
+                {loading ? "카카오로 이동 중..." : label}
+              </>
+            )}
+          </KakaoLoginButton>
+        ) : (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onClick}
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99] disabled:bg-black/20"
+          >
+            <Sparkles size={16} aria-hidden />
+            {saving ? "준비 중..." : label}
+          </button>
+        )}
       </div>
     </motion.div>
+  );
+}
+
+function KakaoBubbleIcon() {
+  return (
+    <span
+      aria-hidden
+      className="relative h-[18px] w-[20px] rounded-[48%] bg-[#191919] after:absolute after:bottom-[-2px] after:left-[4px] after:h-[7px] after:w-[7px] after:rotate-45 after:bg-[#191919]"
+    />
   );
 }

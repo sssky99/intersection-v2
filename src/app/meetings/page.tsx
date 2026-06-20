@@ -22,8 +22,6 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   const { user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) redirect("/");
-  if (!profile.details_seen_at) redirect("/details");
-  if (!profile.browse_seen_at) redirect("/browse");
   if (!profile.questions_completed) redirect("/onboarding/questions");
   if (!profile.profile_completed) redirect("/onboarding/profile");
   const introUsable = hasUsablePublicIntro(profile.public_intro);

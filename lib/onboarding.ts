@@ -2,19 +2,40 @@ import { createClient } from "@/lib/supabase/server";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
 
-export function nextOnboardingPath(profile: ProfileRow) {
-  if (!profile.details_seen_at) return "/details";
-  return nextOnboardingPathAfterDetails(profile);
+type OnboardingPathOptions = {
+  startQuestions?: boolean;
+};
+
+export function nextOnboardingPath(
+  profile: ProfileRow,
+  options: OnboardingPathOptions = {},
+) {
+  return nextOnboardingPathAfterDetails(profile, options);
 }
 
-export function nextOnboardingPathAfterDetails(profile: ProfileRow) {
-  if (!profile.browse_seen_at) return "/browse";
-  if (!profile.questions_completed) return "/onboarding/questions";
+export function nextOnboardingPathAfterDetails(
+  profile: ProfileRow,
+  options: OnboardingPathOptions = {},
+) {
+  if (profile.profile_regeneration_started_at) {
+    if (!profile.profile_regeneration_questions_completed_at) {
+      return "/onboarding/questions?regenerate=1";
+    }
+
+    return "/onboarding/profile?regenerate=1";
+  }
+
+  if (!profile.questions_completed) {
+    return options.startQuestions
+      ? "/onboarding/questions?start=1"
+      : "/onboarding/questions";
+  }
+
   if (!profile.profile_completed) return "/onboarding/profile";
   if (!hasUsablePublicIntro(profile.public_intro)) {
     return "/meetings?tab=recommend&profileComplete=1";
   }
-  return "/meetings";
+  return "/meetings?tab=recommend";
 }
 
 export async function getAuthenticatedProfile() {

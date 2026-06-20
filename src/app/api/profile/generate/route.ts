@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { generateProfileText, publicProfileModel } from "@/lib/openai";
+import { publicProfileModel } from "@/lib/openai";
 import {
   buildFallbackIntro,
-  buildProfileInput,
-  isValidGeneratedIntro,
-  parseGeneratedProfileContent,
-  profileInstructions,
   type PromptAnswerRow,
 } from "@/lib/profilePrompt";
+import {
+  fallbackPublicProfileModel,
+  generatePublicProfile,
+  isFallbackPublicProfileModel,
+} from "@/lib/profileGeneration";
 import { createClient } from "@/lib/supabase/server";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
   if (
     !forceRegenerate &&
     storedIntroIsUsable &&
-    profile.public_intro_model !== "fallback"
+    !isFallbackPublicProfileModel(profile.public_intro_model)
   ) {
     return NextResponse.json({
       intro: profile.public_intro,
@@ -67,137 +68,71 @@ export async function POST(request: Request) {
 
   const promptAnswers = (answers ?? []) as PromptAnswerRow[];
   const fallbackIntro = buildFallbackIntro(profile, promptAnswers);
+  const generation = await generatePublicProfile(profile, promptAnswers);
+  const generatedAt = new Date().toISOString();
 
-  if (!process.env.OPENAI_API_KEY) {
-    const generatedAt = new Date().toISOString();
-    if (!storedIntroIsUsable || forceRegenerate) {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          public_intro: fallbackIntro,
-          public_intro_generated_at: generatedAt,
-          public_intro_model: "fallback",
-        })
-        .eq("user_id", user.id);
-
-      if (error) {
-        console.error("Fallback profile save error:", error.message);
-      }
-    }
-
-    return NextResponse.json({
-      intro: forceRegenerate
-        ? fallbackIntro
-        : storedIntroIsUsable
-          ? profile.public_intro
-          : fallbackIntro,
-      generatedAt,
-      model: "fallback",
-      source: "fallback",
-      notice:
-        "OPENAI_API_KEY가 없어 개발용 임시 공개 프로필을 표시하고 있어요.",
-    });
-  }
-
-  try {
-    const generatedRaw = await generateProfileText({
-      instructions: profileInstructions,
-      input: buildProfileInput(profile, promptAnswers),
-    });
-    const generatedProfile = parseGeneratedProfileContent(generatedRaw);
-    const generatedIntro = generatedProfile?.publicIntro ?? null;
-
-    if (
-      !generatedIntro ||
-      !isValidGeneratedIntro(generatedIntro, profile)
-    ) {
-      const generatedAt = new Date().toISOString();
-      const { error: fallbackSaveError } = await supabase
-        .from("profiles")
-        .update({
-          public_intro: fallbackIntro,
-          public_intro_generated_at: generatedAt,
-          public_intro_model: "fallback",
-        })
-        .eq("user_id", user.id);
-
-      if (fallbackSaveError) {
-        console.error(
-          "Fallback profile save error:",
-          fallbackSaveError.message,
-        );
-      }
-
-      return NextResponse.json({
-        intro: fallbackIntro,
-        emoji: profile.public_emoji,
-        generatedAt,
-        model: "fallback",
-        source: "fallback",
-        notice: generatedRaw
-          ? "생성 문장이 공개 프로필 형식과 맞지 않아 안전한 소개문으로 정리했어요."
-          : undefined,
-      });
-    }
-
-    const intro = generatedIntro.trim();
-    const emoji = generatedProfile?.publicEmoji ?? null;
-    const generatedAt = new Date().toISOString();
+  if (generation.kind === "fallback") {
+    const fallbackModel = fallbackPublicProfileModel(generation.reason);
     const { error } = await supabase
       .from("profiles")
       .update({
-        public_intro: intro,
-        public_emoji: emoji || profile.public_emoji || null,
+        public_intro: fallbackIntro,
+        public_emoji: null,
         public_intro_generated_at: generatedAt,
-        public_intro_model: publicProfileModel,
+        public_intro_model: fallbackModel,
       })
       .eq("user_id", user.id);
 
-    if (error) throw new Error(error.message);
-
-    return NextResponse.json({
-      intro,
-      emoji: emoji || profile.public_emoji,
-      generatedAt,
-      model: publicProfileModel,
-      source: "generated",
-    });
-  } catch (error) {
-    console.error("Public profile generation error:", error);
-    const generatedAt = new Date().toISOString();
-    const { error: fallbackSaveError } = await supabase
-      .from("profiles")
-      .update({
-        public_intro: forceRegenerate
-          ? fallbackIntro
-          : storedIntroIsUsable
-            ? profile.public_intro
-            : fallbackIntro,
-        public_intro_generated_at: generatedAt,
-        public_intro_model: "fallback",
-      })
-      .eq("user_id", user.id);
-
-    if (fallbackSaveError) {
-      console.error(
-        "Fallback profile save error:",
-        fallbackSaveError.message,
+    if (error) {
+      console.error("Fallback profile save error:", error.message);
+      return NextResponse.json(
+        { error: "Profile generation could not be saved." },
+        { status: 500 },
       );
     }
 
+    console.warn("[profile.generate] fallback saved", {
+      userId: user.id,
+      reason: generation.reason,
+      attempts: generation.attempts,
+    });
+
     return NextResponse.json({
-      intro: forceRegenerate
-        ? fallbackIntro
-        : storedIntroIsUsable
-          ? profile.public_intro
-          : fallbackIntro,
-      generatedAt: forceRegenerate || !storedIntroIsUsable
-        ? generatedAt
-        : profile.public_intro_generated_at,
-      model: "fallback",
+      intro: fallbackIntro,
+      emoji: null,
+      generatedAt,
+      model: fallbackModel,
       source: "fallback",
       notice:
-        "공개 프로필 생성이 잠시 지연되어 임시 소개문을 표시하고 있어요.",
+        generation.reason === "missing_api_key"
+          ? "OPENAI_API_KEY가 없어 임시 공개 프로필을 표시하고 있어요."
+          : "공개 프로필 생성이 잠시 지연되어 임시 소개문을 표시하고 있어요.",
     });
   }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      public_intro: generation.intro,
+      public_emoji: generation.emoji || null,
+      public_intro_generated_at: generatedAt,
+      public_intro_model: publicProfileModel,
+    })
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("Generated profile save error:", error.message);
+    return NextResponse.json(
+      { error: "Profile generation could not be saved." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    intro: generation.intro,
+    emoji: generation.emoji,
+    generatedAt,
+    model: publicProfileModel,
+    source: "generated",
+  });
 }

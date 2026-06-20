@@ -1,4 +1,4 @@
-export const postLoginPath = "/details";
+export const postLoginPath = "/onboarding/questions?start=1";
 const defaultProductionOrigin = "https://interv2.netlify.app";
 
 export function isNetlifyBranchDeploy(origin: string) {
@@ -13,7 +13,11 @@ export function isNetlifyBranchDeploy(origin: string) {
 export function productionOAuthOrigin() {
   const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL;
 
-  if (!configuredOrigin || isNetlifyBranchDeploy(configuredOrigin)) {
+  if (
+    !configuredOrigin ||
+    isNetlifyBranchDeploy(configuredOrigin) ||
+    safeLocalOAuthOrigin(configuredOrigin)
+  ) {
     return defaultProductionOrigin;
   }
 
@@ -41,7 +45,7 @@ export function safeLocalOAuthOrigin(value: string | null) {
 }
 
 function oauthOrigin(origin: string) {
-  return isNetlifyBranchDeploy(origin) ? productionOAuthOrigin() : origin;
+  return origin;
 }
 
 export function createOAuthRedirectUrl(

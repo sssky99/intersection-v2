@@ -22,8 +22,6 @@ export default async function OnboardingProfilePage({
   const { user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) redirect("/");
-  if (!profile.details_seen_at) redirect("/details");
-  if (!profile.browse_seen_at) redirect("/browse");
   const isRegeneration = searchValue(params?.regenerate) === "1";
   if (isRegeneration && !profile.profile_regeneration_started_at) {
     redirect("/meetings?tab=profile");

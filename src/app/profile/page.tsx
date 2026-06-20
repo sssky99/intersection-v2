@@ -7,7 +7,7 @@ export default async function ProfilePage() {
   if (!user || !profile) redirect("/");
 
   const nextPath = nextOnboardingPath(profile);
-  if (nextPath !== "/meetings") redirect(nextPath);
+  if (!nextPath.startsWith("/meetings")) redirect(nextPath);
 
   redirect("/profile/result?view=profile");
 }

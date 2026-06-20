@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  recommendTickets,
+  type TicketRecommendationAnswer,
+  type TicketRecommendationProfile,
+} from "@/lib/ticketRecommendation";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +58,12 @@ type AssignmentRow = {
 
 type ProfileAccessRow = {
   is_test_participant: boolean | null;
+  name: string | null;
+  nickname: string | null;
+  score_temperature: number | null;
+  score_texture: number | null;
+  score_tone: number | null;
+  score_rhythm: number | null;
 };
 
 const templateSelect = [
@@ -98,6 +109,14 @@ function dateLabel(value: string) {
   return `${month}월 ${day}일 ${weekday}요일`;
 }
 
+function recommendationName(profile: ProfileAccessRow | null) {
+  const nickname = profile?.nickname?.trim();
+  if (nickname) return nickname;
+
+  const korean = (profile?.name ?? "").replace(/[^가-힣]/g, "");
+  return korean.length >= 2 ? korean.slice(-2) : korean || undefined;
+}
+
 function textList(value: unknown) {
   return Array.isArray(value)
     ? value
@@ -110,6 +129,7 @@ function textList(value: unknown) {
 function toTicket(
   instance: InstanceRow,
   template: TemplateRow,
+  name?: string,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
@@ -131,10 +151,12 @@ function toTicket(
     time,
     area,
     moodTags: template.mood_tags ?? [],
+    activityType: template.activity_type,
     imageUrl: template.image_url ?? undefined,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     peopleHint: template.recommendation_copy ?? subtitle,
     reason: template.recommendation_copy ?? subtitle,
+    recommendationName: name,
     detailSummary: template.detail_summary?.trim() || undefined,
     detailActivities: textList(template.detail_activities),
     detailGoodFor: textList(template.detail_good_for),
@@ -150,7 +172,11 @@ function toTicket(
   };
 }
 
-function groupByDate(tickets: GatheringTicket[]) {
+function groupByDate(
+  tickets: GatheringTicket[],
+  profile: TicketRecommendationProfile | null,
+  answers: TicketRecommendationAnswer[],
+) {
   const groups = new Map<string, GatheringTicket[]>();
 
   for (const ticket of tickets) {
@@ -164,11 +190,20 @@ function groupByDate(tickets: GatheringTicket[]) {
         id: `date-${date}`,
         date,
         label: dateLabel(date),
-        tickets: dateTickets.sort((left, right) =>
-          `${left.time}${left.title}`.localeCompare(`${right.time}${right.title}`),
-        ),
+        tickets: recommendTickets(dateTickets, profile, answers),
       }),
     );
+}
+
+function datesResponse(dates: AvailableDate[]) {
+  return NextResponse.json(
+    { dates },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=20, stale-while-revalidate=60",
+      },
+    },
+  );
 }
 
 export async function GET(request: Request) {
@@ -193,14 +228,37 @@ export async function GET(request: Request) {
 
     const publicInstanceRows = (instances ?? []) as unknown as InstanceRow[];
     let testInstanceRows: InstanceRow[] = [];
+    let recommendationProfile: TicketRecommendationProfile | null = null;
+    let recommendationAnswers: TicketRecommendationAnswer[] = [];
+    let userRecommendationName: string | undefined;
 
     if (user) {
       const { data: profileAccess, error: profileAccessError } = await supabase
         .from("profiles")
-        .select("is_test_participant")
+        .select(
+          "is_test_participant,name,nickname,score_temperature,score_texture,score_tone,score_rhythm",
+        )
         .eq("user_id", user.id)
         .maybeSingle<ProfileAccessRow>();
       if (profileAccessError) throw profileAccessError;
+
+      if (profileAccess) {
+        userRecommendationName = recommendationName(profileAccess);
+        recommendationProfile = {
+          score_temperature: profileAccess.score_temperature,
+          score_texture: profileAccess.score_texture,
+          score_tone: profileAccess.score_tone,
+          score_rhythm: profileAccess.score_rhythm,
+        };
+      }
+
+      const { data: answerRows, error: answersError } = await supabase
+        .from("user_answers")
+        .select("question_order,answer_value,answer_values,answer_text")
+        .eq("user_id", user.id)
+        .returns<TicketRecommendationAnswer[]>();
+      if (answersError) throw answersError;
+      recommendationAnswers = answerRows ?? [];
 
       const canSeeTestTickets = profileAccess?.is_test_participant === true;
 
@@ -243,7 +301,7 @@ export async function GET(request: Request) {
         );
 
         if (templateIds.length === 0) {
-          return NextResponse.json({ dates: [] satisfies AvailableDate[] });
+          return datesResponse([]);
         }
 
         const { data: templates, error: templatesError } = await supabase
@@ -269,11 +327,15 @@ export async function GET(request: Request) {
           )
           .map((instance) => {
             const template = templateMap.get(instance.template_id);
-            return template ? toTicket(instance, template) : null;
+            return template
+              ? toTicket(instance, template, userRecommendationName)
+              : null;
           })
           .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 
-        return NextResponse.json({ dates: groupByDate(tickets) });
+        return datesResponse(
+          groupByDate(tickets, recommendationProfile, recommendationAnswers),
+        );
       }
 
       const { data: assignments, error: assignmentsError } = await supabase
@@ -357,7 +419,7 @@ export async function GET(request: Request) {
     );
 
     if (templateIds.length === 0) {
-      return NextResponse.json({ dates: [] satisfies AvailableDate[] });
+      return datesResponse([]);
     }
 
     const { data: templates, error: templatesError } = await supabase
@@ -383,11 +445,15 @@ export async function GET(request: Request) {
       )
       .map((instance) => {
         const template = templateMap.get(instance.template_id);
-        return template ? toTicket(instance, template) : null;
+        return template
+          ? toTicket(instance, template, userRecommendationName)
+          : null;
       })
       .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 
-    return NextResponse.json({ dates: groupByDate(tickets) });
+    return datesResponse(
+      groupByDate(tickets, recommendationProfile, recommendationAnswers),
+    );
   } catch (error) {
     console.error("[meetings tickets]", error);
     return NextResponse.json(

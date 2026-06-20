@@ -461,6 +461,31 @@ function initialIndexFromSearch(value: string | null, questionCount: number) {
   return parsed - 1;
 }
 
+function clampInternalScore(value: number) {
+  return Math.min(100, Math.max(-100, value));
+}
+
+function answerScoreToInternalScore(value: QuestionAnswer["value"] | undefined) {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) return 0;
+  return clampInternalScore((parsed - 3) * 50);
+}
+
+function profileScoresFromAnswers(answers: AnswerMap) {
+  return {
+    score_temperature: answerScoreToInternalScore(answers[1]?.value),
+    score_texture: answerScoreToInternalScore(answers[2]?.value),
+    score_tone: answerScoreToInternalScore(answers[3]?.value),
+    score_rhythm: answerScoreToInternalScore(answers[4]?.value),
+  };
+}
+
 export function QuestionFlow({
   userId,
   initialRows,
@@ -611,7 +636,10 @@ export function QuestionFlow({
       .update(
         isRegeneration
           ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
-          : { questions_completed: true },
+          : {
+              questions_completed: true,
+              ...profileScoresFromAnswers(nextAnswers),
+            },
       )
       .eq("user_id", userId);
 

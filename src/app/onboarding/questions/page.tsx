@@ -23,8 +23,6 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
   const isRegeneration = searchValue(params?.regenerate) === "1";
 
   if (!user || !profile) redirect("/");
-  if (!profile.details_seen_at) redirect("/details");
-  if (!profile.browse_seen_at) redirect("/browse");
   if (isRegeneration && !profile.profile_regeneration_started_at) {
     redirect("/meetings?tab=profile");
   }

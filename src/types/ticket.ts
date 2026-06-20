@@ -9,10 +9,14 @@ export type GatheringTicket = {
   time: string;
   area: string;
   moodTags: string[];
+  activityType?: string | null;
   imageUrl?: string;
   remainingSeatCount?: number;
   peopleHint: string;
   reason: string;
+  recommendationName?: string;
+  recommendationRank?: number;
+  recommendationReasons?: string[];
   detailSummary?: string;
   detailActivities?: string[];
   detailGoodFor?: string[];

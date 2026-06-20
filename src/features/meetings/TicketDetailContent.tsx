@@ -9,7 +9,6 @@ export type TicketDetailSectionKey =
   | "summary"
   | "activities"
   | "vibe"
-  | "goodFor"
   | "flow"
   | "notice";
 
@@ -21,7 +20,6 @@ const defaultSections: TicketDetailSectionKey[] = [
   "summary",
   "activities",
   "vibe",
-  "goodFor",
   "flow",
   "notice",
 ];
@@ -57,7 +55,7 @@ export function TicketDetailContent({
   startWithBorder?: boolean;
 }) {
   const activities = cleanList(ticket.detailActivities);
-  const goodFor = cleanList(ticket.detailGoodFor);
+  const recommendationReasons = cleanList(ticket.recommendationReasons);
   const customNotice = ticket.detailNotice?.trim();
   const visibleSections = new Set(sections);
   const detailSummary = ticket.detailSummary?.trim();
@@ -67,16 +65,24 @@ export function TicketDetailContent({
       ? "activities"
       : hasSummary && visibleSections.has("vibe")
         ? "vibe"
-        : hasSummary && visibleSections.has("goodFor") && goodFor.length > 0
-          ? "goodFor"
-          : hasSummary && visibleSections.has("flow")
-            ? "flow"
-            : hasSummary && visibleSections.has("notice")
-              ? "notice"
-              : null;
+        : hasSummary && visibleSections.has("flow")
+          ? "flow"
+          : hasSummary && visibleSections.has("notice")
+            ? "notice"
+            : null;
 
   return (
     <div className={cn("mt-5", className)}>
+      {recommendationReasons.length > 0 && (
+        <section className="mb-5 border-b border-black/8 pb-5">
+          <h2 className="text-[15px] font-black text-black">
+            {ticket.recommendationName?.trim() || "회원"}님에게 이 초대장이 추천된 이유
+          </h2>
+          <div className="mt-3">
+            <BulletList items={recommendationReasons} />
+          </div>
+        </section>
+      )}
       {hasSummary && <TypingSummary text={detailSummary!} />}
 
       {visibleSections.has("activities") && activities.length > 0 && (
@@ -118,16 +124,6 @@ export function TicketDetailContent({
             firstSectionAfterSummary === "vibe" && "border-t-0",
           )}
         />
-      )}
-
-      {visibleSections.has("goodFor") && goodFor.length > 0 && (
-        <TicketDetailSection
-          title="이런 분들에게 잘 맞아요"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "goodFor"}
-        >
-          <BulletList items={goodFor} />
-        </TicketDetailSection>
       )}
 
       {visibleSections.has("flow") && (
