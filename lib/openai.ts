@@ -2,6 +2,31 @@ import OpenAI from "openai";
 
 export const publicProfileModel = "gpt-5.4-mini";
 
+const publicProfileTextFormat = {
+  type: "json_schema",
+  name: "public_profile",
+  description:
+    "A short public profile introduction and optional emoji for a member.",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      publicEmoji: {
+        type: ["string", "null"],
+        description:
+          "A single emoji that represents the profile, or null when no suitable emoji is available.",
+      },
+      publicIntro: {
+        type: "string",
+        description:
+          "The complete Korean public introduction text. Preserve paragraph breaks inside this string.",
+      },
+    },
+    required: ["publicEmoji", "publicIntro"],
+  },
+} as const;
+
 export async function generateProfileText({
   instructions,
   input,
@@ -18,6 +43,9 @@ export async function generateProfileText({
     reasoning: { effort: "low" },
     instructions,
     input: JSON.stringify(input, null, 2),
+    text: {
+      format: publicProfileTextFormat,
+    },
     max_output_tokens: 900,
   });
 

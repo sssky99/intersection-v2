@@ -17,6 +17,7 @@ type AdminMembership = {
   user_id: string;
   name: string | null;
   phone: string | null;
+  public_intro_model: string | null;
   membership_status: MembershipStatus | null;
   membership_plan: MembershipPlan | null;
   membership_start_date: string | null;
@@ -374,6 +375,7 @@ export function MembershipAdminPanel() {
                       <AdminMemberName
                         profile={{
                           name: row.name,
+                          public_intro_model: row.public_intro_model,
                           membership_status: statusForDisplay(row),
                           membership_end_date: row.membership_end_date,
                         }}

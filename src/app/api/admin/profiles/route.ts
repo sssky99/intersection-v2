@@ -19,6 +19,7 @@ const baseProfileFields = [
   "photo_url",
   "public_intro",
   "public_emoji",
+  "public_intro_model",
   "created_at",
   "profile_completed",
   "questions_completed",

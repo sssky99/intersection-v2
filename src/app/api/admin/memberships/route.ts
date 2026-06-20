@@ -15,6 +15,7 @@ type AdminMembershipRow = {
   user_id: string;
   name: string | null;
   phone: string | null;
+  public_intro_model: string | null;
   membership_status: MembershipStatus | null;
   membership_plan: MembershipPlan | null;
   membership_start_date: string | null;
@@ -27,6 +28,7 @@ const membershipSelect = [
   "user_id",
   "name",
   "phone",
+  "public_intro_model",
   "membership_status",
   "membership_plan",
   "membership_start_date",

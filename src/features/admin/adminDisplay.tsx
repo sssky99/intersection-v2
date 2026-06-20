@@ -10,6 +10,7 @@ type NameLike = {
   expired_membership?: boolean;
   membership_status?: MembershipStatus | null;
   membership_end_date?: string | null;
+  public_intro_model?: string | null;
 };
 
 type GenderLike = {
@@ -45,13 +46,22 @@ export function hasExpiredMembershipForDisplay(profile: NameLike) {
   return profile.expired_membership ?? membershipStatusForDisplay(profile) === "expired";
 }
 
+function hasFallbackPublicIntro(profile: NameLike) {
+  return (
+    profile.public_intro_model === "fallback" ||
+    profile.public_intro_model?.startsWith("fallback:") === true
+  );
+}
+
 export function AdminMemberName({ profile }: { profile: NameLike }) {
   const active = hasActiveMembershipForDisplay(profile);
   const expired = hasExpiredMembershipForDisplay(profile);
+  const fallbackIntro = hasFallbackPublicIntro(profile);
 
   return (
     <span className="inline-flex min-w-0 items-center gap-1 font-bold text-black">
       <span className="truncate">{profileName(profile)}</span>
+      {fallbackIntro && <span aria-label="폴백 자기소개">❌</span>}
       {active && <span aria-label="멤버십 적용중">💎</span>}
       {expired && (
         <span

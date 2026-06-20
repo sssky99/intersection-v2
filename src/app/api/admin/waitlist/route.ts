@@ -42,6 +42,7 @@ const profileSelect = [
   "phone",
   "photo_url",
   "public_intro",
+  "public_intro_model",
   "created_at",
   "profile_completed",
   "questions_completed",
