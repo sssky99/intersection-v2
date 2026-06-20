@@ -324,25 +324,11 @@ publicIntro는 공백 포함 330~480자.
 
 export function isValidGeneratedIntro(
   intro: string,
-  profile: ProfileRow,
+  _profile: ProfileRow,
 ) {
-  const paragraphs = intro
-    .trim()
-    .split(/\n\s*\n/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-  const forbidden =
-    /입니다|합니다|보여요|인 것 같아요|일 가능성이 있어요|느껴져요|어울려요|분석 결과|성향상/;
-  const firstParagraphSentenceCount =
-    paragraphs[0]?.split(/[.!?]+(?:\s|$)/).filter(Boolean).length ?? 0;
-
-  return (
-    !isCorruptText(intro) &&
-    paragraphs.length === 3 &&
-    paragraphs[0].startsWith(`${publicDisplayName(profile.name)}님은`) &&
-    firstParagraphSentenceCount >= 2 &&
-    !forbidden.test(intro)
-  );
+  // 출력 형식과 문체는 프롬프트가 담당한다. 서버에서는 깨진 응답만 막아
+  // 자연스러운 문단 구성이나 표현 차이 때문에 폴백으로 전환되지 않게 한다.
+  return Boolean(intro.trim()) && !isCorruptText(intro);
 }
 
 export function buildFallbackIntro(

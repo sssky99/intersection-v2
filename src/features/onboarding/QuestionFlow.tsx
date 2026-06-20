@@ -35,10 +35,7 @@ type QuestionFlowMode = "onboarding" | "preview" | "regeneration";
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
 const QUESTION_TYPING_SPEED_MS = 18;
-const SCALE_ANSWER_TYPING_SPEED_MS = 18;
-const ANSWER_AFTER_TYPING_DELAY_MS = 300;
 const TICKET_COACHMARK_SESSION_KEY = "intersection-ticket-question-coachmark-dismissed";
-const scaleAnswerReactions = ["❤️", "❤️"];
 const ticketRatingReactions: Record<string, string[]> = {
   "1": ["👎", "👎"],
   "2": ["👎"],
@@ -77,21 +74,6 @@ function ticketAnswer(value: QuestionAnswer["value"] | undefined) {
     return value as TicketRatingAnswer;
   }
   return null;
-}
-
-function scaleLabelParts(label?: string) {
-  if (!label) return null;
-  const parts = label
-    .split(/\s*(?:↔|<->|←→|~)\s*/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length < 2) return null;
-  return { left: parts[0], right: parts[parts.length - 1] };
-}
-
-function typingDurationMs(text: string, speedMs: number) {
-  return Array.from(text).length * speedMs;
 }
 
 function TypingText({
@@ -232,10 +214,6 @@ function EmojiBurst({ emojis }: { emojis: string[] }) {
 
 function TicketRatingReaction({ rating }: { rating: string }) {
   return <EmojiBurst emojis={ticketRatingReactions[rating] ?? []} />;
-}
-
-function ScaleAnswerReaction() {
-  return <EmojiBurst emojis={scaleAnswerReactions} />;
 }
 
 function TicketCoachmarkOverlay({ onClose }: { onClose: () => void }) {
@@ -552,13 +530,7 @@ export function QuestionFlow({
         )
       : [];
   const usesNumericScale = scaleOptions.length === SCALE_VALUES.length;
-  const selectedScaleOption = usesNumericScale
-    ? scaleOptions.find((option) => optionValue(option) === answer?.value)
-    : undefined;
   const selectedTicketAnswer = ticketAnswer(answer?.value);
-  const numericScaleLabel = usesNumericScale
-    ? scaleLabelParts(question.scaleLabel)
-    : null;
   const shouldShowTicketCoachmark =
     ticketCoachmarkReady &&
     !ticketCoachmarkDismissed &&
@@ -726,20 +698,10 @@ export function QuestionFlow({
 
     const nextAnswer = { questionId: question.id, value };
     const nextAnswers = answerMapWith(nextAnswer);
-    const selectedNumericOption = usesNumericScale
-      ? scaleOptions.find((option) => optionValue(option) === value)
-      : undefined;
-    const selectedNumericLabel = selectedNumericOption
-      ? optionLabel(selectedNumericOption)
-      : "";
-    const nextDelay = usesNumericScale
-      ? typingDurationMs(selectedNumericLabel, SCALE_ANSWER_TYPING_SPEED_MS) +
-        ANSWER_AFTER_TYPING_DELAY_MS
-      : 420;
+    const nextDelay = 420;
 
     updateLocalAnswer(nextAnswer);
     setSaving(true);
-    setSelectedFeedback(value);
     setError(null);
 
     if (isPreview) {
@@ -898,7 +860,7 @@ export function QuestionFlow({
                 question.type !== "ticket_rating" && "mt-2",
               )}
             >
-              <TypingText text={question.question} />
+              {question.question}
             </h1>
             {question.scaleLabel && !usesNumericScale && (
               <p className="mt-2 text-[11px] font-semibold text-black/35">
@@ -913,80 +875,34 @@ export function QuestionFlow({
           </div>
 
           {question.type === "single_choice" && usesNumericScale && (
-            <div className="space-y-3">
-              {numericScaleLabel && (
-                <div className="flex items-end justify-between px-2 text-[11px] font-semibold leading-4 text-black/35">
-                  <span className="max-w-[120px] text-left">
-                    {numericScaleLabel.left}
-                  </span>
-                  <span className="max-w-[120px] text-right">
-                    {numericScaleLabel.right}
-                  </span>
-                </div>
-              )}
-              <div className="flex items-center justify-between px-2">
-                {scaleOptions.map((option) => {
-                  const value = optionValue(option);
-                  const selected = answer?.value === value;
+            <div className="space-y-2">
+              {scaleOptions.map((option) => {
+                const value = optionValue(option);
+                const selected = answer?.value === value;
 
-                  return (
-                    <motion.button
-                      key={value}
-                      type="button"
-                      whileTap={{ scale: 0.9 }}
-                      animate={{
-                        scale: selected ? 1.16 : 1,
-                        y: selected ? -1 : 0,
-                      }}
-                      transition={{ duration: 0.18 }}
-                      disabled={saving}
-                      onClick={() => void selectSingle(value)}
-                      aria-label={`${value}점: ${optionLabel(option)}`}
-                      className={cn(
-                        "relative flex h-10 w-10 items-center justify-center bg-transparent transition-colors disabled:cursor-wait",
-                        selected
-                          ? "text-lg font-extrabold text-black"
-                          : "text-sm font-semibold text-black/40 hover:text-black/65",
-                      )}
-                    >
-                      {value}
-                      {(selected || selectedFeedback === value) && (
-                        <motion.span
-                          layoutId="selected-scale-indicator"
-                          className="absolute bottom-0 h-[2px] w-3 rounded-full bg-accent"
-                        />
-                      )}
-                      <AnimatePresence>
-                        {selectedFeedback === value && (
-                          <ScaleAnswerReaction key={`scale-reaction-${value}`} />
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              <div className="min-h-[210px]">
-                <AnimatePresence mode="wait">
-                  {selectedScaleOption && (
-                    <motion.div
-                      key={optionValue(selectedScaleOption)}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -5 }}
-                      transition={{ duration: 0.2 }}
-                      className="mx-auto flex w-full max-w-[320px] justify-start px-3 pt-24 text-left"
-                    >
-                      <p className="w-full text-xl font-bold leading-8 tracking-tight text-black">
-                        <TypingText
-                          text={optionLabel(selectedScaleOption)}
-                          speedMs={SCALE_ANSWER_TYPING_SPEED_MS}
-                        />
-                      </p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                return (
+                  <motion.button
+                    key={value}
+                    type="button"
+                    whileTap={!saving ? { scale: 0.98 } : undefined}
+                    disabled={saving}
+                    onClick={() => void selectSingle(value)}
+                    aria-label={`${value}. ${optionLabel(option)}`}
+                    className={cn(
+                      "flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all disabled:cursor-wait",
+                      selected
+                        ? "border-black bg-black text-white shadow-sm"
+                        : "border-black/10 bg-white text-black/70 hover:border-black/20",
+                    )}
+                  >
+                    <span className="shrink-0 text-xs font-extrabold tabular-nums opacity-55">
+                      {value}.
+                    </span>
+                    <span className="flex-1">{optionLabel(option)}</span>
+                    {selected && <Check size={16} aria-hidden />}
+                  </motion.button>
+                );
+              })}
             </div>
           )}
 
