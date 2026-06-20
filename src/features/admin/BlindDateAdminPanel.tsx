@@ -5,12 +5,14 @@ import {
   CalendarDays,
   Check,
   Clipboard,
+  Copy,
   Edit3,
   ImageIcon,
   Plus,
   RefreshCw,
   Save,
   Send,
+  Trash2,
   Upload,
   Wand2,
 } from "lucide-react";
@@ -39,7 +41,14 @@ type TemplateDraft = {
   shortDescription: string;
   timeLabel: string;
   region: string;
+  actualPlaceName: string;
+  actualPlaceAddress: string;
   guideText: string;
+  stageInviteText: string;
+  stageWaitingText: string;
+  stageScheduledText: string;
+  stageGuidanceText: string;
+  stageCompletedText: string;
   active: boolean;
 };
 
@@ -49,6 +58,8 @@ type OfferDraft = {
   templateId: string;
   timeLabel: string;
   region: string;
+  actualPlaceName: string;
+  actualPlaceAddress: string;
   expiresAtLocal: string;
 };
 
@@ -66,6 +77,18 @@ const statusLabels: Record<BlindDateOfferStatus, string> = {
 
 const statusOptions = Object.keys(statusLabels) as BlindDateOfferStatus[];
 
+const defaultStageCopy = {
+  invite:
+    "블라인드 데이트 제안이 도착했어요.\n상대방은 현장에서 만날 수 있어요.",
+  waiting: "상대방의 응답을 기다리는 중이에요.",
+  scheduled:
+    "블라인드 데이트 일정이 확정되었어요.\n확정된 날짜와 장소를 확인해주세요.",
+  guidance:
+    "오늘은 블라인드 데이트가 곧 시작돼요.\n장소와 시간을 다시 확인해주세요.",
+  completed:
+    "블라인드 데이트가 완료되었어요.\n짧은 피드백을 남겨주세요.",
+};
+
 const emptyTemplateDraft: TemplateDraft = {
   title: "블라인드 데이트",
   imageUrl: "",
@@ -73,8 +96,15 @@ const emptyTemplateDraft: TemplateDraft = {
     "서로 다시 만나보고 싶다고 선택된 분과 단둘이 만나는 자리예요.",
   timeLabel: "저녁 7시",
   region: "성수",
+  actualPlaceName: "",
+  actualPlaceAddress: "",
   guideText:
     "상대방은 현장에서 알 수 있어요. 정확한 장소는 운영진이 별도로 안내드릴게요.",
+  stageInviteText: defaultStageCopy.invite,
+  stageWaitingText: defaultStageCopy.waiting,
+  stageScheduledText: defaultStageCopy.scheduled,
+  stageGuidanceText: defaultStageCopy.guidance,
+  stageCompletedText: defaultStageCopy.completed,
   active: true,
 };
 
@@ -143,6 +173,8 @@ function emptyOfferDraft(template?: BlindDateTemplate): OfferDraft {
     templateId: template?.id ?? "",
     timeLabel: template?.time_label ?? "저녁 7시",
     region: template?.region ?? "성수",
+    actualPlaceName: template?.actual_place_name ?? "",
+    actualPlaceAddress: template?.actual_place_address ?? "",
     expiresAtLocal: defaultExpiresAtLocal(),
   };
 }
@@ -154,7 +186,16 @@ function templateDraftFrom(template: BlindDateTemplate): TemplateDraft {
     shortDescription: template.short_description ?? "",
     timeLabel: template.time_label ?? "",
     region: template.region ?? "",
+    actualPlaceName: template.actual_place_name ?? "",
+    actualPlaceAddress: template.actual_place_address ?? "",
     guideText: template.guide_text ?? "",
+    stageInviteText: template.stage_copy?.invite ?? defaultStageCopy.invite,
+    stageWaitingText: template.stage_copy?.waiting ?? defaultStageCopy.waiting,
+    stageScheduledText:
+      template.stage_copy?.scheduled ?? defaultStageCopy.scheduled,
+    stageGuidanceText: template.stage_copy?.guidance ?? defaultStageCopy.guidance,
+    stageCompletedText:
+      template.stage_copy?.completed ?? defaultStageCopy.completed,
     active: template.active,
   };
 }
@@ -169,6 +210,10 @@ function applyTemplateToDraft(
     templateId: template.id,
     timeLabel: draft.timeLabel || template.time_label || "저녁 7시",
     region: draft.region || template.region || "성수",
+    actualPlaceName:
+      draft.actualPlaceName || template.actual_place_name || "",
+    actualPlaceAddress:
+      draft.actualPlaceAddress || template.actual_place_address || "",
   };
 }
 
@@ -209,6 +254,8 @@ export function BlindDateAdminPanel() {
   const [templateFormOpen, setTemplateFormOpen] = useState(false);
   const [templateImageUploading, setTemplateImageUploading] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateDeleteTarget, setTemplateDeleteTarget] =
+    useState<BlindDateTemplate | null>(null);
   const [templateDraft, setTemplateDraft] =
     useState<TemplateDraft>(emptyTemplateDraft);
   const [selectedCandidate, setSelectedCandidate] =
@@ -219,19 +266,35 @@ export function BlindDateAdminPanel() {
   const [testDraft, setTestDraft] = useState<OfferDraft>(() => emptyOfferDraft());
 
   const activeTemplates = useMemo(
-    () => (data?.templates ?? []).filter((template) => template.active),
+    () =>
+      (data?.templates ?? []).filter(
+        (template) => template.active && !template.deleted_at,
+      ),
     [data?.templates],
   );
-  const defaultTemplate = activeTemplates[0] ?? data?.templates[0];
+  const defaultTemplate = activeTemplates[0];
   const profileOptions = data?.profiles ?? [];
 
   const applyLoadedData = (nextData: BlindDateAdminData) => {
     setData(nextData);
-    const template = nextData.templates.find((item) => item.active) ?? nextData.templates[0];
-    setCandidateDraft((current) =>
-      current.templateId ? current : emptyOfferDraft(template),
+    const activeTemplateIds = new Set(
+      nextData.templates
+        .filter((item) => item.active && !item.deleted_at)
+        .map((item) => item.id),
     );
-    setTestDraft((current) => (current.templateId ? current : emptyOfferDraft(template)));
+    const template =
+      nextData.templates.find((item) => item.active && !item.deleted_at) ??
+      undefined;
+    setCandidateDraft((current) =>
+      current.templateId && activeTemplateIds.has(current.templateId)
+        ? current
+        : emptyOfferDraft(template),
+    );
+    setTestDraft((current) =>
+      current.templateId && activeTemplateIds.has(current.templateId)
+        ? current
+        : emptyOfferDraft(template),
+    );
   };
 
   const reload = async () => {
@@ -264,7 +327,14 @@ export function BlindDateAdminPanel() {
       shortDescription: templateDraft.shortDescription,
       timeLabel: templateDraft.timeLabel,
       region: templateDraft.region,
+      actualPlaceName: templateDraft.actualPlaceName,
+      actualPlaceAddress: templateDraft.actualPlaceAddress,
       guideText: templateDraft.guideText,
+      stageInviteText: templateDraft.stageInviteText,
+      stageWaitingText: templateDraft.stageWaitingText,
+      stageScheduledText: templateDraft.stageScheduledText,
+      stageGuidanceText: templateDraft.stageGuidanceText,
+      stageCompletedText: templateDraft.stageCompletedText,
       active: templateDraft.active,
     };
 
@@ -354,18 +424,23 @@ export function BlindDateAdminPanel() {
         templateId: draft.templateId,
         timeLabel: draft.timeLabel,
         region: draft.region,
+        actualPlaceName: draft.actualPlaceName,
+        actualPlaceAddress: draft.actualPlaceAddress,
         expiresAt: expiresIso(draft.expiresAtLocal),
         feedbackAId: source?.feedbackAId,
         feedbackBId: source?.feedbackBId,
         ticketInstanceId: source?.ticketInstanceId,
         ticketTemplateId: source?.ticketTemplateId,
       });
+      const nextDefaultTemplate = nextData.templates.find(
+        (template) => template.active && !template.deleted_at,
+      );
       applyLoadedData(nextData);
       if (sourceType === "mutual_feedback") {
         setSelectedCandidate(null);
-        setCandidateDraft(emptyOfferDraft(defaultTemplate));
+        setCandidateDraft(emptyOfferDraft(nextDefaultTemplate));
       } else {
-        setTestDraft(emptyOfferDraft(defaultTemplate));
+        setTestDraft(emptyOfferDraft(nextDefaultTemplate));
       }
       setNotice(
         sourceType === "test"
@@ -401,6 +476,85 @@ export function BlindDateAdminPanel() {
       setNotice("제안 상태를 저장했습니다.");
     } catch {
       setError("제안 상태를 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateOfferPlace = async (
+    offer: BlindDateAdminOffer,
+    actualPlaceName: string,
+    actualPlaceAddress: string,
+  ) => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      applyLoadedData(
+        await requestAdminData("PATCH", {
+          entity: "offer",
+          id: offer.id,
+          actualPlaceName,
+          actualPlaceAddress,
+        }),
+      );
+      setNotice("제안 장소 정보를 저장했습니다.");
+    } catch {
+      setError("제안 장소 정보를 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const duplicateTemplate = async (template: BlindDateTemplate) => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      applyLoadedData(
+        await requestAdminData("POST", {
+          action: "duplicate_template",
+          templateId: template.id,
+        }),
+      );
+      setNotice("템플릿 복사본을 만들었습니다.");
+    } catch (duplicateError) {
+      setError(
+        duplicateError instanceof Error
+          ? duplicateError.message
+          : "템플릿을 복제하지 못했습니다.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteTemplate = async () => {
+    if (saving || !templateDeleteTarget) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      applyLoadedData(
+        await requestAdminData("POST", {
+          action: "delete_template",
+          templateId: templateDeleteTarget.id,
+        }),
+      );
+      if (editingTemplateId === templateDeleteTarget.id) {
+        setTemplateFormOpen(false);
+        setEditingTemplateId(null);
+        setTemplateDraft(emptyTemplateDraft);
+      }
+      setTemplateDeleteTarget(null);
+      setNotice("템플릿을 삭제 처리했습니다.");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "템플릿을 삭제하지 못했습니다.",
+      );
     } finally {
       setSaving(false);
     }
@@ -527,6 +681,8 @@ export function BlindDateAdminPanel() {
               onImageUpload={(file) => void uploadTemplateImage(file)}
               onCreateClick={startCreateTemplate}
               onEditClick={startEditTemplate}
+              onDuplicateClick={(template) => void duplicateTemplate(template)}
+              onDeleteClick={setTemplateDeleteTarget}
               onCancel={() => {
                 setTemplateFormOpen(false);
                 setEditingTemplateId(null);
@@ -539,7 +695,7 @@ export function BlindDateAdminPanel() {
               candidates={data.candidates}
               selectedCandidate={selectedCandidate}
               draft={candidateDraft}
-              templates={data.templates}
+              templates={activeTemplates}
               saving={saving}
               onSelectCandidate={selectCandidate}
               onDraftChange={setCandidateDraft}
@@ -552,11 +708,14 @@ export function BlindDateAdminPanel() {
               offers={data.offers}
               saving={saving}
               onStatusChange={(offer, status) => void updateOfferStatus(offer, status)}
+              onPlaceSave={(offer, actualPlaceName, actualPlaceAddress) =>
+                void updateOfferPlace(offer, actualPlaceName, actualPlaceAddress)
+              }
             />
 
             <TestMatchSection
               profiles={profileOptions}
-              templates={data.templates}
+              templates={activeTemplates}
               draft={testDraft}
               saving={saving}
               onDraftChange={setTestDraft}
@@ -565,6 +724,45 @@ export function BlindDateAdminPanel() {
           </div>
         )}
       </section>
+      {templateDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div className="w-full max-w-[420px] rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <Trash2 size={18} aria-hidden />
+              </div>
+              <div>
+                <h3 className="text-base font-black">
+                  템플릿을 삭제 처리할까요?
+                </h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-black/55">
+                  {templateDeleteTarget.title} 템플릿은 새 제안 생성에서 제외되고,
+                  기존 제안 기록에는 그대로 남습니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setTemplateDeleteTarget(null)}
+                className="h-10 rounded-xl border border-black/10 px-4 text-xs font-bold text-black/55 disabled:opacity-40"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void deleteTemplate()}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-red-600 px-4 text-xs font-bold text-white disabled:bg-red-300"
+              >
+                <Trash2 size={14} aria-hidden />
+                삭제 처리
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -580,6 +778,8 @@ function TemplateManagement({
   onImageUpload,
   onCreateClick,
   onEditClick,
+  onDuplicateClick,
+  onDeleteClick,
   onCancel,
   onSave,
 }: {
@@ -593,6 +793,8 @@ function TemplateManagement({
   onImageUpload: (file: File) => void;
   onCreateClick: () => void;
   onEditClick: (template: BlindDateTemplate) => void;
+  onDuplicateClick: (template: BlindDateTemplate) => void;
+  onDeleteClick: (template: BlindDateTemplate) => void;
   onCancel: () => void;
   onSave: () => void;
 }) {
@@ -646,6 +848,20 @@ function TemplateManagement({
                   value={draft.region}
                   onChange={(region) => onDraftChange({ ...draft, region })}
                 />
+                <TextField
+                  label="실제 장소명"
+                  value={draft.actualPlaceName}
+                  onChange={(actualPlaceName) =>
+                    onDraftChange({ ...draft, actualPlaceName })
+                  }
+                />
+                <TextField
+                  label="실제 주소"
+                  value={draft.actualPlaceAddress}
+                  onChange={(actualPlaceAddress) =>
+                    onDraftChange({ ...draft, actualPlaceAddress })
+                  }
+                />
               </div>
               <TextAreaField
                 className="mt-3"
@@ -663,6 +879,48 @@ function TemplateManagement({
                 value={draft.guideText}
                 onChange={(guideText) => onDraftChange({ ...draft, guideText })}
               />
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <TextAreaField
+                  label="1단계 초대 문구"
+                  rows={3}
+                  value={draft.stageInviteText}
+                  onChange={(stageInviteText) =>
+                    onDraftChange({ ...draft, stageInviteText })
+                  }
+                />
+                <TextAreaField
+                  label="2단계 응답 대기 문구"
+                  rows={3}
+                  value={draft.stageWaitingText}
+                  onChange={(stageWaitingText) =>
+                    onDraftChange({ ...draft, stageWaitingText })
+                  }
+                />
+                <TextAreaField
+                  label="3단계 일정 확정 문구"
+                  rows={3}
+                  value={draft.stageScheduledText}
+                  onChange={(stageScheduledText) =>
+                    onDraftChange({ ...draft, stageScheduledText })
+                  }
+                />
+                <TextAreaField
+                  label="4단계 당일 안내 문구"
+                  rows={3}
+                  value={draft.stageGuidanceText}
+                  onChange={(stageGuidanceText) =>
+                    onDraftChange({ ...draft, stageGuidanceText })
+                  }
+                />
+                <TextAreaField
+                  label="5단계 완료 문구"
+                  rows={3}
+                  value={draft.stageCompletedText}
+                  onChange={(stageCompletedText) =>
+                    onDraftChange({ ...draft, stageCompletedText })
+                  }
+                />
+              </div>
             </div>
 
             <BlindDateTicketPreview draft={draft} />
@@ -702,42 +960,76 @@ function TemplateManagement({
       )}
 
       <div className="mt-4 grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3">
-        {templates.map((template) => (
-          <article
-            key={template.id}
-            className="rounded-2xl border border-black/10 bg-white p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h4 className="truncate text-sm font-black">{template.title}</h4>
-                <p className="mt-1 text-xs font-semibold text-black/45">
-                  {template.time_label ?? "-"} · {template.region ?? "-"}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black",
-                  template.active
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-black/[0.04] text-black/40",
-                )}
-              >
-                {template.active ? "활성" : "비활성"}
-              </span>
-            </div>
-            <p className="mt-3 line-clamp-2 text-xs font-semibold leading-5 text-black/50">
-              {template.short_description ?? "설명 없음"}
-            </p>
-            <button
-              type="button"
-              onClick={() => onEditClick(template)}
-              className="mt-4 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-black/10 text-xs font-bold text-black/55 transition hover:text-black"
+        {templates.map((template) => {
+          const deleted = Boolean(template.deleted_at);
+
+          return (
+            <article
+              key={template.id}
+              className={cn(
+                "rounded-2xl border border-black/10 bg-white p-4",
+                deleted && "bg-black/[0.025] opacity-70",
+              )}
             >
-              <Edit3 size={14} aria-hidden />
-              수정
-            </button>
-          </article>
-        ))}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="truncate text-sm font-black">{template.title}</h4>
+                  <p className="mt-1 text-xs font-semibold text-black/45">
+                    {template.time_label ?? "-"} · {template.region ?? "-"}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black",
+                    deleted
+                      ? "bg-red-50 text-red-600"
+                      : template.active
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-black/[0.04] text-black/40",
+                  )}
+                >
+                  {deleted ? "삭제됨" : template.active ? "활성" : "비활성"}
+                </span>
+              </div>
+              <p className="mt-3 line-clamp-2 text-xs font-semibold leading-5 text-black/50">
+                {template.short_description ?? "설명 없음"}
+              </p>
+              <p className="mt-2 line-clamp-1 text-[11px] font-bold text-black/35">
+                장소: {template.actual_place_name ?? "미입력"} ·{" "}
+                {template.actual_place_address ?? "주소 미입력"}
+              </p>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={deleted}
+                  onClick={() => onEditClick(template)}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-black/10 text-xs font-bold text-black/55 transition hover:text-black disabled:opacity-35"
+                >
+                  <Edit3 size={14} aria-hidden />
+                  수정
+                </button>
+                <button
+                  type="button"
+                  disabled={deleted}
+                  onClick={() => onDuplicateClick(template)}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-black/10 text-xs font-bold text-black/55 transition hover:text-black disabled:opacity-35"
+                >
+                  <Copy size={14} aria-hidden />
+                  복제
+                </button>
+                <button
+                  type="button"
+                  disabled={deleted}
+                  onClick={() => onDeleteClick(template)}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-red-100 text-xs font-bold text-red-500 transition hover:border-red-200 hover:text-red-600 disabled:opacity-35"
+                >
+                  <Trash2 size={14} aria-hidden />
+                  삭제
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -958,12 +1250,18 @@ function OfferList({
   offers,
   saving,
   onStatusChange,
+  onPlaceSave,
 }: {
   offers: BlindDateAdminOffer[];
   saving: boolean;
   onStatusChange: (
     offer: BlindDateAdminOffer,
     status: BlindDateOfferStatus,
+  ) => void;
+  onPlaceSave: (
+    offer: BlindDateAdminOffer,
+    actualPlaceName: string,
+    actualPlaceAddress: string,
   ) => void;
 }) {
   return (
@@ -981,7 +1279,7 @@ function OfferList({
         </p>
       ) : (
         <div className="mt-4 overflow-x-auto">
-          <table className="min-w-[1180px] w-full border-separate border-spacing-0 text-left text-xs">
+          <table className="min-w-[1320px] w-full border-separate border-spacing-0 text-left text-xs">
             <thead className="bg-[#f8f8f6] text-[11px] font-black uppercase tracking-wide text-black/42">
               <tr>
                 <Th>상태</Th>
@@ -989,6 +1287,7 @@ function OfferList({
                 <Th>참가자 B</Th>
                 <Th>템플릿</Th>
                 <Th>시간 / 지역</Th>
+                <Th>실제 장소</Th>
                 <Th>가능 날짜</Th>
                 <Th>A 응답</Th>
                 <Th>B 응답</Th>
@@ -1027,6 +1326,13 @@ function OfferList({
                   <Td>
                     {offer.time_label} / {offer.region}
                   </Td>
+                  <Td>
+                    <OfferPlaceEditor
+                      offer={offer}
+                      saving={saving}
+                      onSave={onPlaceSave}
+                    />
+                  </Td>
                   <Td>{formatDateRangeLabel(offer.candidate_dates)}</Td>
                   <Td>{responseLabel(offer.a_response)}</Td>
                   <Td>{responseLabel(offer.b_response)}</Td>
@@ -1061,6 +1367,63 @@ function OfferList({
         </div>
       )}
     </section>
+  );
+}
+
+function OfferPlaceEditor({
+  offer,
+  saving,
+  onSave,
+}: {
+  offer: BlindDateAdminOffer;
+  saving: boolean;
+  onSave: (
+    offer: BlindDateAdminOffer,
+    actualPlaceName: string,
+    actualPlaceAddress: string,
+  ) => void;
+}) {
+  const [actualPlaceName, setActualPlaceName] = useState(
+    offer.actual_place_name ?? "",
+  );
+  const [actualPlaceAddress, setActualPlaceAddress] = useState(
+    offer.actual_place_address ?? "",
+  );
+
+  useEffect(() => {
+    setActualPlaceName(offer.actual_place_name ?? "");
+    setActualPlaceAddress(offer.actual_place_address ?? "");
+  }, [offer.id, offer.actual_place_name, offer.actual_place_address]);
+
+  const dirty =
+    actualPlaceName !== (offer.actual_place_name ?? "") ||
+    actualPlaceAddress !== (offer.actual_place_address ?? "");
+
+  return (
+    <div className="grid min-w-[230px] gap-2">
+      <input
+        value={actualPlaceName}
+        disabled={saving}
+        placeholder="장소명"
+        onChange={(event) => setActualPlaceName(event.target.value)}
+        className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
+      />
+      <input
+        value={actualPlaceAddress}
+        disabled={saving}
+        placeholder="주소"
+        onChange={(event) => setActualPlaceAddress(event.target.value)}
+        className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
+      />
+      <button
+        type="button"
+        disabled={saving || !dirty}
+        onClick={() => onSave(offer, actualPlaceName, actualPlaceAddress)}
+        className="h-8 rounded-lg bg-black px-3 text-[11px] font-bold text-white disabled:bg-black/20"
+      >
+        장소 저장
+      </button>
+    </div>
   );
 }
 
@@ -1182,6 +1545,10 @@ function OfferDraftFields({
                   templateId,
                   timeLabel: template?.time_label ?? draft.timeLabel,
                   region: template?.region ?? draft.region,
+                  actualPlaceName:
+                    template?.actual_place_name ?? draft.actualPlaceName,
+                  actualPlaceAddress:
+                    template?.actual_place_address ?? draft.actualPlaceAddress,
                 },
                 template,
               ),
@@ -1205,6 +1572,27 @@ function OfferDraftFields({
           label="지역"
           value={draft.region || selectedTemplate?.region || ""}
           onChange={(region) => onDraftChange({ ...draft, region })}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <TextField
+          label="실제 장소명"
+          value={draft.actualPlaceName || selectedTemplate?.actual_place_name || ""}
+          onChange={(actualPlaceName) =>
+            onDraftChange({ ...draft, actualPlaceName })
+          }
+        />
+        <TextField
+          label="실제 주소"
+          value={
+            draft.actualPlaceAddress ||
+            selectedTemplate?.actual_place_address ||
+            ""
+          }
+          onChange={(actualPlaceAddress) =>
+            onDraftChange({ ...draft, actualPlaceAddress })
+          }
         />
       </div>
 

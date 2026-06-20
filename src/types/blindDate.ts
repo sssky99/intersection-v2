@@ -13,6 +13,14 @@ export type BlindDateResponseStatus = "pending" | "yes" | "no";
 
 export type BlindDateSourceType = "mutual_feedback" | "test";
 
+export type BlindDateStageCopy = {
+  invite?: string | null;
+  waiting?: string | null;
+  scheduled?: string | null;
+  guidance?: string | null;
+  completed?: string | null;
+};
+
 export type BlindDateTemplate = {
   id: string;
   title: string;
@@ -20,8 +28,12 @@ export type BlindDateTemplate = {
   short_description: string | null;
   time_label: string | null;
   region: string | null;
+  actual_place_name: string | null;
+  actual_place_address: string | null;
   guide_text: string | null;
+  stage_copy: BlindDateStageCopy | null;
   active: boolean;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +46,7 @@ export type BlindDatePublicTemplate = {
   timeLabel: string | null;
   region: string | null;
   guideText: string | null;
+  stageCopy: BlindDateStageCopy;
 };
 
 export type BlindDateUserOffer = {
@@ -48,6 +61,8 @@ export type BlindDateUserOffer = {
   ownResponse: BlindDateResponseStatus;
   ownAvailableDates: string[];
   scheduledDate: string | null;
+  actualPlaceName: string | null;
+  actualPlaceAddress: string | null;
   isExpired: boolean;
 };
 
@@ -68,6 +83,8 @@ export type BlindDateAdminOffer = {
   template_id: string | null;
   time_label: string;
   region: string;
+  actual_place_name: string | null;
+  actual_place_address: string | null;
   candidate_dates: string[];
   a_response: BlindDateResponseStatus;
   b_response: BlindDateResponseStatus;

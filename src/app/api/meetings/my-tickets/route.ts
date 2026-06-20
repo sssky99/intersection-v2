@@ -390,6 +390,17 @@ function displayNickname(profile: ProfileIntroRow | undefined) {
   return profile?.nickname?.trim() || fallbackNickname(profile?.name);
 }
 
+function ticketsResponse(tickets: UserTicket[]) {
+  return NextResponse.json(
+    { tickets },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=15, stale-while-revalidate=45",
+      },
+    },
+  );
+}
+
 export async function GET() {
   const userSupabase = await createClient();
   const {
@@ -429,7 +440,7 @@ export async function GET() {
     const userAssignments = userAssignmentData ?? [];
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
-      return NextResponse.json({ tickets: [] satisfies UserTicket[] });
+      return ticketsResponse([]);
     }
 
     const instanceIds = unique(
@@ -491,7 +502,7 @@ export async function GET() {
     });
 
     if (ticketSourceRows.length === 0) {
-      return NextResponse.json({ tickets: [] satisfies UserTicket[] });
+      return ticketsResponse([]);
     }
     const templateIds = unique([
       ...ticketSourceRows.map((row) => row.ticket_template_id),
@@ -678,7 +689,7 @@ export async function GET() {
       .filter((ticket): ticket is UserTicket => Boolean(ticket))
       .sort(sortUserTickets);
 
-    return NextResponse.json({ tickets });
+    return ticketsResponse(tickets);
   } catch (error) {
     console.error("[meetings my-tickets]", error);
     return NextResponse.json(

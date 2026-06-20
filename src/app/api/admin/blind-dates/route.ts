@@ -51,6 +51,8 @@ type BlindDateOfferRow = {
   template_id: string | null;
   time_label: string;
   region: string;
+  actual_place_name: string | null;
+  actual_place_address: string | null;
   candidate_dates: unknown;
   a_response: BlindDateResponseStatus;
   b_response: BlindDateResponseStatus;
@@ -85,8 +87,12 @@ const templateSelect = [
   "short_description",
   "time_label",
   "region",
+  "actual_place_name",
+  "actual_place_address",
   "guide_text",
+  "stage_copy",
   "active",
+  "deleted_at",
   "created_at",
   "updated_at",
 ].join(",");
@@ -100,6 +106,8 @@ const offerSelect = [
   "template_id",
   "time_label",
   "region",
+  "actual_place_name",
+  "actual_place_address",
   "candidate_dates",
   "a_response",
   "b_response",
@@ -130,6 +138,16 @@ function unauthorized() {
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() || null : null;
+}
+
+function stageCopyFromBody(body: Record<string, unknown> | null | undefined) {
+  return {
+    invite: text(body?.stageInviteText),
+    waiting: text(body?.stageWaitingText),
+    scheduled: text(body?.stageScheduledText),
+    guidance: text(body?.stageGuidanceText),
+    completed: text(body?.stageCompletedText),
+  };
 }
 
 function uuid(value: unknown) {
@@ -256,7 +274,11 @@ function normalizeOffer(
     template_id: row.template_id,
     time_label: row.time_label,
     region: row.region,
-    candidate_dates: blindDateSelectableDatesFrom(row.created_at),
+    actual_place_name: row.actual_place_name,
+    actual_place_address: row.actual_place_address,
+    candidate_dates: datesFromDb(row.candidate_dates).length
+      ? datesFromDb(row.candidate_dates)
+      : blindDateSelectableDatesFrom(row.created_at),
     a_response: row.a_response,
     b_response: row.b_response,
     a_available_dates: datesFromDb(row.a_available_dates),
@@ -528,9 +550,69 @@ export async function POST(request: NextRequest) {
         short_description: text(body?.shortDescription),
         time_label: text(body?.timeLabel),
         region: text(body?.region),
+        actual_place_name: text(body?.actualPlaceName),
+        actual_place_address: text(body?.actualPlaceAddress),
         guide_text: text(body?.guideText),
+        stage_copy: stageCopyFromBody(body),
         active: body?.active !== false,
       });
+      if (error) throw error;
+
+      return NextResponse.json(await loadData(supabase));
+    }
+
+    if (action === "duplicate_template") {
+      const templateId = uuid(body?.templateId);
+      if (!templateId) {
+        return NextResponse.json({ error: "템플릿을 선택해주세요." }, { status: 400 });
+      }
+
+      const { data: sourceTemplate, error: sourceError } = await supabase
+        .from("blind_date_templates")
+        .select(templateSelect)
+        .eq("id", templateId)
+        .maybeSingle<BlindDateTemplate>();
+      if (sourceError) throw sourceError;
+      if (!sourceTemplate) {
+        return NextResponse.json(
+          { error: "복제할 템플릿을 찾을 수 없습니다." },
+          { status: 404 },
+        );
+      }
+
+      const { error } = await supabase.from("blind_date_templates").insert({
+        title: `${sourceTemplate.title} 복사본`,
+        image_url: sourceTemplate.image_url,
+        short_description: sourceTemplate.short_description,
+        time_label: sourceTemplate.time_label,
+        region: sourceTemplate.region,
+        actual_place_name: sourceTemplate.actual_place_name,
+        actual_place_address: sourceTemplate.actual_place_address,
+        guide_text: sourceTemplate.guide_text,
+        stage_copy: sourceTemplate.stage_copy ?? {},
+        active: sourceTemplate.active,
+        deleted_at: null,
+      });
+      if (error) throw error;
+
+      return NextResponse.json(await loadData(supabase));
+    }
+
+    if (action === "delete_template") {
+      const templateId = uuid(body?.templateId);
+      if (!templateId) {
+        return NextResponse.json({ error: "템플릿을 선택해주세요." }, { status: 400 });
+      }
+
+      const now = new Date().toISOString();
+      const { error } = await supabase
+        .from("blind_date_templates")
+        .update({
+          active: false,
+          deleted_at: now,
+          updated_at: now,
+        })
+        .eq("id", templateId);
       if (error) throw error;
 
       return NextResponse.json(await loadData(supabase));
@@ -570,6 +652,15 @@ export async function POST(request: NextRequest) {
           { status: 404 },
         );
       }
+      if (!template.active || template.deleted_at) {
+        return NextResponse.json(
+          {
+            error:
+              "삭제되었거나 비활성화된 템플릿으로는 새 제안을 만들 수 없습니다.",
+          },
+          { status: 400 },
+        );
+      }
 
       const { error } = await supabase.from("blind_date_offers").insert({
         template_id: templateId,
@@ -583,6 +674,10 @@ export async function POST(request: NextRequest) {
         status: "offered",
         time_label: text(body?.timeLabel) ?? template.time_label ?? "저녁 7시",
         region: text(body?.region) ?? template.region ?? "지역 미정",
+        actual_place_name:
+          text(body?.actualPlaceName) ?? template.actual_place_name,
+        actual_place_address:
+          text(body?.actualPlaceAddress) ?? template.actual_place_address,
         candidate_dates: candidateDates,
         expires_at: validExpiresAt(body?.expiresAt),
         created_at: createdAt.toISOString(),
@@ -636,7 +731,10 @@ export async function PATCH(request: NextRequest) {
           short_description: text(body?.shortDescription),
           time_label: text(body?.timeLabel),
           region: text(body?.region),
+          actual_place_name: text(body?.actualPlaceName),
+          actual_place_address: text(body?.actualPlaceAddress),
           guide_text: text(body?.guideText),
+          stage_copy: stageCopyFromBody(body),
           active: body?.active !== false,
           updated_at: new Date().toISOString(),
         })
@@ -644,21 +742,41 @@ export async function PATCH(request: NextRequest) {
       if (error) throw error;
     } else if (entity === "offer") {
       const status = text(body?.status);
-      if (!status || !adminOfferStatuses.includes(status as BlindDateOfferStatus)) {
+      const hasPlaceUpdate =
+        Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceName") ||
+        Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress");
+      if (
+        status &&
+        !adminOfferStatuses.includes(status as BlindDateOfferStatus)
+      ) {
         return NextResponse.json(
           { error: "상태 값이 올바르지 않습니다." },
+          { status: 400 },
+        );
+      }
+      if (!status && !hasPlaceUpdate) {
+        return NextResponse.json(
+          { error: "변경할 제안 정보가 없습니다." },
           { status: 400 },
         );
       }
 
       const now = new Date().toISOString();
       const updates: Record<string, unknown> = {
-        status,
         updated_at: now,
       };
-      if (status === "cancelled") updates.cancelled_at = now;
-      if (status === "completed") updates.completed_at = now;
-      if (status === "expired") updates.expired_at = now;
+      if (status) {
+        updates.status = status;
+        if (status === "cancelled") updates.cancelled_at = now;
+        if (status === "completed") updates.completed_at = now;
+        if (status === "expired") updates.expired_at = now;
+      }
+      if (Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceName")) {
+        updates.actual_place_name = text(body?.actualPlaceName);
+      }
+      if (Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress")) {
+        updates.actual_place_address = text(body?.actualPlaceAddress);
+      }
 
       const { error } = await supabase
         .from("blind_date_offers")

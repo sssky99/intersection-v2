@@ -6,6 +6,7 @@ import type {
   BlindDateOfferStatus,
   BlindDatePublicTemplate,
   BlindDateResponseStatus,
+  BlindDateStageCopy,
   BlindDateTemplate,
   BlindDateUserOffer,
 } from "@/types/blindDate";
@@ -22,6 +23,8 @@ type BlindDateOfferRow = {
   template_id: string | null;
   time_label: string;
   region: string;
+  actual_place_name: string | null;
+  actual_place_address: string | null;
   candidate_dates: unknown;
   a_response: BlindDateResponseStatus;
   b_response: BlindDateResponseStatus;
@@ -40,8 +43,12 @@ const templateSelect = [
   "short_description",
   "time_label",
   "region",
+  "actual_place_name",
+  "actual_place_address",
   "guide_text",
+  "stage_copy",
   "active",
+  "deleted_at",
   "created_at",
   "updated_at",
 ].join(",");
@@ -54,6 +61,8 @@ const offerSelect = [
   "template_id",
   "time_label",
   "region",
+  "actual_place_name",
+  "actual_place_address",
   "candidate_dates",
   "a_response",
   "b_response",
@@ -81,6 +90,22 @@ function dateList(value: unknown) {
   return Array.from(new Set(values)).sort();
 }
 
+function copyText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function stageCopy(value: unknown): BlindDateStageCopy {
+  if (!value || typeof value !== "object") return {};
+  const source = value as Record<string, unknown>;
+  return {
+    invite: copyText(source.invite),
+    waiting: copyText(source.waiting),
+    scheduled: copyText(source.scheduled),
+    guidance: copyText(source.guidance),
+    completed: copyText(source.completed),
+  };
+}
+
 function publicTemplate(
   template: BlindDateTemplate | undefined,
   offer: BlindDateOfferRow,
@@ -97,11 +122,16 @@ function publicTemplate(
     guideText:
       template?.guide_text ??
       "상대방은 현장에서 알 수 있어요. 정확한 장소는 운영진이 안내드릴게요.",
+    stageCopy: stageCopy(template?.stage_copy),
   };
 }
 
 function isExpired(row: BlindDateOfferRow) {
-  return row.status === "expired" || new Date(row.expires_at).getTime() < Date.now();
+  return (
+    row.status === "expired" ||
+    (["pending_admin", "offered", "waiting_response"].includes(row.status) &&
+      new Date(row.expires_at).getTime() < Date.now())
+  );
 }
 
 function sanitizeOffer(
@@ -115,6 +145,9 @@ function sanitizeOffer(
     ? dateList(row.a_available_dates)
     : dateList(row.b_available_dates);
   const template = row.template_id ? templateMap.get(row.template_id) : undefined;
+  const storedCandidateDates = dateList(row.candidate_dates);
+  const revealPlace = Boolean(row.scheduled_date) &&
+    ["scheduled", "completed"].includes(row.status);
 
   return {
     id: row.id,
@@ -122,12 +155,20 @@ function sanitizeOffer(
     template: publicTemplate(template, row),
     timeLabel: row.time_label,
     region: row.region,
-    candidateDates: blindDateSelectableDatesFrom(row.created_at),
+    candidateDates: storedCandidateDates.length
+      ? storedCandidateDates
+      : blindDateSelectableDatesFrom(row.created_at),
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     ownResponse,
     ownAvailableDates,
     scheduledDate: row.scheduled_date,
+    actualPlaceName: revealPlace
+      ? row.actual_place_name ?? template?.actual_place_name ?? null
+      : null,
+    actualPlaceAddress: revealPlace
+      ? row.actual_place_address ?? template?.actual_place_address ?? null
+      : null,
     isExpired: isExpired(row),
   };
 }
@@ -325,7 +366,10 @@ export async function POST(request: Request) {
       updates.declined_at = now;
     } else {
       const selectedDates = dateList(body?.availableDates);
-      const candidateDates = blindDateSelectableDatesFrom(offer.created_at);
+      const storedCandidateDates = dateList(offer.candidate_dates);
+      const candidateDates = storedCandidateDates.length
+        ? storedCandidateDates
+        : blindDateSelectableDatesFrom(offer.created_at);
       const candidateSet = new Set(candidateDates);
       const validDates = selectedDates.filter((date) => candidateSet.has(date));
 

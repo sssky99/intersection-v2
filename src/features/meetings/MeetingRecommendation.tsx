@@ -26,6 +26,46 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+const ticketDatesCacheTtlMs = 30_000;
+let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
+let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
+
+function cachedTicketDates() {
+  return ticketDatesCache && ticketDatesCache.expiresAt > Date.now()
+    ? ticketDatesCache.dates
+    : null;
+}
+
+async function fetchTicketDates() {
+  const cached = cachedTicketDates();
+  if (cached) return cached;
+  if (ticketDatesRequest) return ticketDatesRequest;
+
+  ticketDatesRequest = fetch("/api/meetings/tickets")
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as
+        | { dates?: AvailableDate[]; error?: string }
+        | null;
+
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "tickets-load-failed");
+      }
+
+      const dates = data.dates ?? [];
+      ticketDatesCache = {
+        dates,
+        expiresAt: Date.now() + ticketDatesCacheTtlMs,
+      };
+
+      return dates;
+    })
+    .finally(() => {
+      ticketDatesRequest = null;
+    });
+
+  return ticketDatesRequest;
+}
+
 export function MeetingRecommendation({
   userId,
   embedded = false,
@@ -58,8 +98,10 @@ export function MeetingRecommendation({
     useState<GatheringTicket | null>(null);
   const [waitlistStatus, setWaitlistStatus] =
     useState<RecommendationWaitlistStatus>("waitlisted");
-  const [ticketDates, setTicketDates] = useState<AvailableDate[]>([]);
-  const [loadingDates, setLoadingDates] = useState(true);
+  const [ticketDates, setTicketDates] = useState<AvailableDate[]>(
+    () => cachedTicketDates() ?? [],
+  );
+  const [loadingDates, setLoadingDates] = useState(() => !cachedTicketDates());
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,16 +147,10 @@ export function MeetingRecommendation({
   useEffect(() => {
     let alive = true;
 
-    fetch("/api/meetings/tickets", { cache: "no-store" })
-      .then(async (response) => {
-        const data = (await response.json().catch(() => null)) as
-          | { dates?: AvailableDate[]; error?: string }
-          | null;
-        if (!response.ok || !data) {
-          throw new Error(data?.error ?? "tickets-load-failed");
-        }
+    fetchTicketDates()
+      .then((dates) => {
         if (alive) {
-          setTicketDates(data.dates ?? []);
+          setTicketDates(dates);
           setNotice(null);
         }
       })
@@ -199,6 +235,7 @@ export function MeetingRecommendation({
 
     setWaitlistedTicket(ticket);
     setWaitlistStatus(data?.status ?? "waitlisted");
+    ticketDatesCache = null;
     onWaitlisted?.(ticket);
     setScreen("waitlisted");
     setSaving(false);
@@ -704,23 +741,6 @@ function dateKey(year: number, month: number, day: number) {
   )}`;
 }
 
-function calendarMonthsForDates(dates: string[]) {
-  const months = new Map<string, { year: number; month: number }>();
-  for (const date of dates) {
-    const parts = isoDateParts(date);
-    if (!parts) continue;
-    months.set(`${parts.year}-${parts.month}`, {
-      year: parts.year,
-      month: parts.month,
-    });
-  }
-
-  return Array.from(months.values()).sort(
-    (left, right) =>
-      left.year - right.year || left.month - right.month,
-  );
-}
-
 function calendarCellsForMonth(year: number, month: number) {
   const firstWeekday = new Date(year, month - 1, 1).getDay();
   const dayCount = new Date(year, month, 0).getDate();
@@ -782,7 +802,14 @@ function BlindDateInvitationFlow({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const remainingText = useBlindDateRemainingText(currentOffer.expiresAt);
-  const expired = currentOffer.isExpired || !remainingText;
+  const responseWindowClosed =
+    currentOffer.isExpired ||
+    (!remainingText &&
+      ["offered", "waiting_response"].includes(currentOffer.status));
+  const inviteCopy =
+    currentOffer.template.stageCopy?.invite?.trim() ||
+    currentOffer.template.shortDescription ||
+    "지난 교집합 자리에서 서로 다시 만나보고 싶다고 선택된 분과 단둘이 만날 수 있는 자리가 준비되었어요.\n상대방은 현장에서 알 수 있어요.";
 
   useEffect(() => {
     setCurrentOffer(offer);
@@ -859,7 +886,7 @@ function BlindDateInvitationFlow({
         <X size={18} aria-hidden />
       </button>
 
-      {expired ? (
+      {step !== "result" && responseWindowClosed ? (
         <BlindDateResultMessage
           tone="muted"
           title="응답 시간이 지나 초대장이 만료되었어요."
@@ -898,7 +925,7 @@ function BlindDateInvitationFlow({
             onClick={() => void respond("yes", selectedDates)}
             className="mt-5 h-[54px] w-full rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/20"
           >
-            {saving ? "저장 중..." : "선택한 날짜 제출"}
+            {saving ? "저장 중..." : "가능한 날짜 제출하기"}
           </button>
         </section>
       ) : step === "result" ? (
@@ -914,10 +941,7 @@ function BlindDateInvitationFlow({
             도착했어요.
           </h1>
           <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
-            지난 교집합 자리에서 서로 다시 만나보고 싶다고 선택된 분과
-            단둘이 만날 수 있는 자리가 준비되었어요.
-            <br />
-            상대방은 현장에서 알 수 있어요.
+            <span className="whitespace-pre-line">{inviteCopy}</span>
           </p>
 
           <div className="mt-6">
@@ -1000,7 +1024,16 @@ function BlindDateDateCalendar({
 }) {
   const enabledDates = new Set(dates);
   const selectedDateSet = new Set(selectedDates);
-  const months = calendarMonthsForDates(dates);
+  const months = dates.length
+    ? Array.from(new Set(dates.map((date) => date.slice(0, 7)))).sort()
+    : [];
+  const [month, setMonth] = useState(months[0] ?? "");
+
+  useEffect(() => {
+    if (months.length > 0 && !months.includes(month)) {
+      setMonth(months[0]);
+    }
+  }, [month, months]);
 
   if (months.length === 0) {
     return (
@@ -1010,71 +1043,103 @@ function BlindDateDateCalendar({
     );
   }
 
+  const visibleMonth = months.includes(month) ? month : months[0];
+  const [year, monthNumber] = visibleMonth.split("-").map(Number);
+  const activeWeekdays = new Set(
+    dates
+      .filter((date) => date.startsWith(`${visibleMonth}-`))
+      .map((date) => {
+        const parts = isoDateParts(date);
+        if (!parts) return -1;
+        return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
+      }),
+  );
+
   return (
-    <div className="mt-6 grid gap-4">
-      {months.map(({ year, month }) => (
-        <section
-          key={`${year}-${month}`}
-          className="rounded-[24px] border border-black/10 bg-white p-3"
-        >
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-black text-black">
-              {year}년 {month}월
-            </h2>
-            <span className="text-[11px] font-bold text-accent">
-              가능한 날짜
-            </span>
-          </div>
+    <section className="mt-6 rounded-[24px] border border-black/10 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-black text-black">
+          {year}년 {monthNumber}월
+        </h2>
+        <div className="flex rounded-full bg-black/[0.04] p-1 text-[10px] font-bold">
+          {months.map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMonth(value)}
+              className={cn(
+                "rounded-full px-3 py-1 transition-all",
+                visibleMonth === value
+                  ? "bg-white text-black shadow-sm"
+                  : "text-black/40",
+              )}
+            >
+              {Number(value.slice(5, 7))}월
+            </button>
+          ))}
+        </div>
+      </div>
 
-          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-black text-black/32">
-            {blindDateCalendarWeekdays.map((weekday) => (
-              <span key={weekday}>{weekday}</span>
-            ))}
-          </div>
+      <div className="mt-4 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-black/35">
+        {blindDateCalendarWeekdays.map((weekday, index) => (
+          <span
+            key={weekday}
+            className={cn(
+              "rounded-full py-1 transition-colors",
+              activeWeekdays.has(index)
+                ? "bg-[#7eb3c7]/15 font-extrabold text-[#4f9bb8]"
+                : "text-black/35",
+            )}
+          >
+            {weekday}
+          </span>
+        ))}
+      </div>
 
-          <div className="mt-2 grid grid-cols-7 gap-1.5">
-            {calendarCellsForMonth(year, month).map((date, index) => {
-              if (!date) {
-                return <span key={`empty-${index}`} className="h-10" />;
-              }
+      <div className="mt-2 grid grid-cols-7 gap-1.5">
+        {calendarCellsForMonth(year, monthNumber).map((date, index) => {
+          if (!date) {
+            return <span key={`empty-${index}`} className="aspect-square" />;
+          }
 
-              const parts = isoDateParts(date);
-              const enabled = enabledDates.has(date);
-              const selected = selectedDateSet.has(date);
+          const parts = isoDateParts(date);
+          const enabled = enabledDates.has(date);
+          const selected = selectedDateSet.has(date);
 
-              return (
-                <button
-                  key={date}
-                  type="button"
-                  disabled={!enabled || saving}
-                  aria-label={blindDateDateLabel(date)}
-                  aria-pressed={selected}
-                  onClick={() => onToggle(date)}
-                  className={cn(
-                    "relative flex h-10 items-center justify-center rounded-xl border text-sm font-black transition disabled:cursor-not-allowed",
-                    selected
-                      ? "border-black bg-black text-white shadow-sm"
-                      : enabled
-                        ? "border-accent/25 bg-accent/[0.08] text-black hover:bg-accent/[0.14]"
-                        : "border-transparent bg-black/[0.025] text-black/18",
-                    saving && enabled && "opacity-45",
-                  )}
-                >
-                  <span>{parts?.day ?? ""}</span>
-                  {selected && (
-                    <Check
-                      size={10}
-                      className="absolute right-1.5 top-1.5"
-                      aria-hidden
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-    </div>
+          return (
+            <button
+              key={date}
+              type="button"
+              disabled={!enabled || saving}
+              aria-label={blindDateDateLabel(date)}
+              aria-pressed={selected}
+              onClick={() => onToggle(date)}
+              className={cn(
+                "relative flex aspect-square items-center justify-center rounded-full border text-xs font-black transition disabled:cursor-not-allowed",
+                selected
+                  ? "border-black bg-black text-white shadow-sm"
+                  : enabled
+                    ? "border-black/10 bg-white text-black hover:border-black/25"
+                    : "border-transparent text-black/15",
+                saving && enabled && "opacity-45",
+              )}
+            >
+              <span>{parts?.day ?? ""}</span>
+              {enabled && !selected && (
+                <span className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-[#7eb3c7] shadow-sm" />
+              )}
+              {selected && (
+                <Check
+                  size={10}
+                  className="absolute right-1.5 top-1.5"
+                  aria-hidden
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -1085,17 +1150,81 @@ function BlindDateResponseResult({
   offer: BlindDateUserOffer;
   remainingText: string | null;
 }) {
-  if (offer.status === "scheduled" && offer.scheduledDate) {
+  const stage = blindDateDisplayStage(offer);
+
+  if (stage === "scheduled" || stage === "guidance" || stage === "completed") {
+    const isGuidance = stage === "guidance";
+    const isCompleted = stage === "completed";
+    const placeName = offer.actualPlaceName || "장소 확인 중";
+    const address = offer.actualPlaceAddress || "주소 확인 중";
+    const title = isCompleted
+      ? "블라인드 데이트가 완료되었어요."
+      : isGuidance
+        ? "오늘 만남을 다시 확인해주세요."
+        : "블라인드 데이트 일정이 확정되었어요.";
+    const body = blindDateStageCopy(
+      offer,
+      isCompleted ? "completed" : isGuidance ? "guidance" : "scheduled",
+      isCompleted
+        ? "짧은 피드백을 남길 수 있도록 준비 중이에요."
+        : isGuidance
+          ? "장소와 시간을 다시 확인해주세요. 상대방은 현장에서 알 수 있어요."
+          : "확정된 날짜와 장소를 확인해주세요. 상대방은 현장에서 알 수 있어요.",
+    );
+
     return (
-      <BlindDateResultMessage
-        tone="success"
-        title="블라인드 데이트 일정이 확정되었어요."
-        body={`${blindDateDateLabel(offer.scheduledDate)}\n${offer.timeLabel}\n${offer.region}\n\n정확한 장소는 운영진이 안내드릴게요.\n상대방은 현장에서 알 수 있어요.`}
-      />
+      <section>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+          {isCompleted ? "feedback" : isGuidance ? "date guidance" : "scheduled"}
+        </p>
+        <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+          {title}
+        </h1>
+        <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-black/48">
+          {body}
+        </p>
+
+        <div className="mt-6">
+          <TicketDrawingFrame
+            motionKey={`${offer.id}-${stage}`}
+            title={offer.template.title}
+            imageUrl={offer.template.imageUrl}
+            time={offer.timeLabel}
+            location={`${offer.region}\n${placeName}`}
+            tags={["블라인드", "확정"]}
+            drawn
+            imageVisible
+            className="!mt-0"
+          />
+        </div>
+
+        <BlindDateDetailList
+          items={[
+            ["날짜", offer.scheduledDate ? blindDateDateLabel(offer.scheduledDate) : "-"],
+            ["시간", offer.timeLabel],
+            ["지역", offer.region],
+            ["장소", placeName],
+            ["주소", address],
+            ["상대", "현장에서 공개"],
+          ]}
+        />
+
+        {offer.template.guideText && (
+          <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-xs font-semibold leading-5 text-black/55">
+            {offer.template.guideText}
+          </p>
+        )}
+
+        {isCompleted && (
+          <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-xs font-semibold leading-5 text-black/55">
+            피드백 기능은 곧 열릴 예정이에요.
+          </p>
+        )}
+      </section>
     );
   }
 
-  if (offer.status === "needs_reschedule") {
+  if (stage === "needs_reschedule") {
     return (
       <BlindDateResultMessage
         tone="muted"
@@ -1105,7 +1234,7 @@ function BlindDateResponseResult({
     );
   }
 
-  if (offer.ownResponse === "no" || offer.status === "declined") {
+  if (stage === "declined") {
     return (
       <BlindDateResultMessage
         tone="muted"
@@ -1115,12 +1244,117 @@ function BlindDateResponseResult({
     );
   }
 
+  if (stage === "expired") {
+    return (
+      <BlindDateResultMessage
+        tone="muted"
+        title="응답 시간이 지나 초대장이 만료되었어요."
+        body="만료된 초대장은 추천탭 알림에서 제외돼요."
+      />
+    );
+  }
+
   return (
-    <BlindDateResultMessage
-      tone="default"
-      title="상대방의 응답을 기다리는 중이에요."
-      body={`${remainingText ?? "응답 마감 시간이 곧 도착해요."}\n상대방도 참여 의사를 남기고 가능한 날짜가 겹치면\n블라인드 데이트 일정이 확정돼요.`}
-    />
+    <section>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+        waiting
+      </p>
+      <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+        상대방의 응답을
+        <br />
+        기다리는 중이에요.
+      </h1>
+      <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-black/48">
+        {blindDateStageCopy(
+          offer,
+          "waiting",
+          "상대방도 참여 의사를 남기고 가능한 날짜가 겹치면 블라인드 데이트 일정이 확정돼요.",
+        )}
+      </p>
+
+      <div className="mt-6">
+        <TicketDrawingFrame
+          motionKey={`${offer.id}-waiting`}
+          title={offer.template.title}
+          imageUrl={offer.template.imageUrl}
+          time={offer.timeLabel}
+          location={`서울\n${offer.region}`}
+          tags={["블라인드", "대기"]}
+          drawn
+          imageVisible
+          className="!mt-0"
+        />
+      </div>
+
+      <BlindDateDetailList
+        items={[
+          ["선택한 날짜", offer.ownAvailableDates.map(blindDateDateLabel).join(", ") || "-"],
+          ["시간", offer.timeLabel],
+          ["지역", offer.region],
+          ["마감", remainingText ?? "응답 마감 시간이 곧 도착해요."],
+          ["상대", "현장에서 공개"],
+        ]}
+      />
+    </section>
+  );
+}
+
+type BlindDateStageKey =
+  | "invite"
+  | "waiting"
+  | "scheduled"
+  | "guidance"
+  | "completed";
+
+function koreaTodayDateKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const partMap = new Map(parts.map((part) => [part.type, part.value]));
+  return `${partMap.get("year")}-${partMap.get("month")}-${partMap.get("day")}`;
+}
+
+function blindDateDisplayStage(offer: BlindDateUserOffer) {
+  if (offer.isExpired || offer.status === "expired") return "expired";
+  if (offer.status === "declined" || offer.ownResponse === "no") return "declined";
+  if (offer.status === "needs_reschedule") return "needs_reschedule";
+  if (offer.status === "completed") return "completed";
+  if (offer.scheduledDate) {
+    const today = koreaTodayDateKey();
+    if (offer.scheduledDate < today) return "completed";
+    if (offer.scheduledDate === today) return "guidance";
+    return "scheduled";
+  }
+  return "waiting";
+}
+
+function blindDateStageCopy(
+  offer: BlindDateUserOffer,
+  key: BlindDateStageKey,
+  fallback: string,
+) {
+  return offer.template.stageCopy?.[key]?.trim() || fallback;
+}
+
+function BlindDateDetailList({
+  items,
+}: {
+  items: Array<[label: string, value: string]>;
+}) {
+  return (
+    <div className="mt-5 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-4 text-xs font-bold text-black/58">
+      {items.map(([label, value]) => (
+        <p key={label} className="grid grid-cols-[74px_minmax(0,1fr)] gap-2">
+          <span className="text-black/35">{label}</span>
+          <span className="min-w-0 whitespace-pre-line break-words text-black/62">
+            {value}
+          </span>
+        </p>
+      ))}
+    </div>
   );
 }
 

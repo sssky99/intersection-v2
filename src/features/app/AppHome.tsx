@@ -264,23 +264,43 @@ function setTabUrl(tab: AppTab) {
   window.history.replaceState(null, "", url.toString());
 }
 
-async function fetchUserTickets() {
-  const response = await fetch("/api/meetings/my-tickets", {
-    cache: "no-store",
-  }).catch(() => null);
-  if (!response) return null;
+const userTicketsCacheTtlMs = 20_000;
+let userTicketsCache: { tickets: UserTicket[]; expiresAt: number } | null = null;
+let userTicketsRequest: Promise<UserTicket[] | null> | null = null;
 
-  const data = (await response.json().catch(() => null)) as
-    | { tickets?: UserTicket[] }
-    | null;
+async function fetchUserTickets({ force = false } = {}) {
+  if (!force && userTicketsCache && userTicketsCache.expiresAt > Date.now()) {
+    return userTicketsCache.tickets;
+  }
 
-  return response.ok ? data?.tickets ?? [] : null;
+  if (!force && userTicketsRequest) return userTicketsRequest;
+
+  userTicketsRequest = fetch("/api/meetings/my-tickets")
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as
+        | { tickets?: UserTicket[] }
+        | null;
+
+      if (!response.ok) return null;
+
+      const tickets = data?.tickets ?? [];
+      userTicketsCache = {
+        tickets,
+        expiresAt: Date.now() + userTicketsCacheTtlMs,
+      };
+
+      return tickets;
+    })
+    .catch(() => null)
+    .finally(() => {
+      userTicketsRequest = null;
+    });
+
+  return userTicketsRequest;
 }
 
 async function fetchBlindDateOffers() {
-  const response = await fetch("/api/meetings/blind-dates", {
-    cache: "no-store",
-  }).catch(() => null);
+  const response = await fetch("/api/meetings/blind-dates").catch(() => null);
   if (!response) return null;
 
   const data = (await response.json().catch(() => null)) as
@@ -507,7 +527,7 @@ export function AppHome({
   };
 
   const addWaitlistedTicket = (_ticket: GatheringTicket) => {
-    void fetchUserTickets().then((tickets) => {
+    void fetchUserTickets({ force: true }).then((tickets) => {
       if (tickets) setWaitlistedTickets(tickets);
     });
   };
@@ -608,50 +628,54 @@ export function AppHome({
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none">
-        <AnimatePresence mode="wait">
-          {activeTab === "browse" && (
-            <TicketListTab
-              key="browse"
-              tickets={waitlistedTickets}
-              onGoRecommend={() => switchTab("recommend")}
-            />
-          )}
-          {activeTab === "recommend" && (
-            <MeetingRecommendation
-              key="recommend"
-              userId={userId}
-              embedded
-              membershipStatus={recommendationMembershipStatus}
-              onWaitlisted={addWaitlistedTicket}
-              onMembershipRequired={() => {
-                setProfilePanelOpen(false);
-                setMembershipModalOpen(true);
-              }}
-              onOpenList={() => switchTab("browse")}
-              blindDateOffers={blindDateOffers}
-              onBlindDateOffersChange={setBlindDateOffers}
-              blindDateOpenRequestId={blindDateOpenRequestId}
-              blindDateOpenRequestPending={blindDateOpenRequestPending}
-              onBlindDateOpenRequestHandled={() =>
-                setBlindDateOpenRequestPending(false)
-              }
-            />
-          )}
-          {activeTab === "profile" && (
-            <ProfileTab
-              key={`profile-${profileVibeAnimationKey}`}
-              profile={currentProfile}
-              answers={answers}
-              vibeAnimationKey={profileVibeAnimationKey}
-              loggingOut={loggingOut}
-              logoutError={logoutError}
-              onOpenQuestionReview={() => setQuestionReviewOpen(true)}
-              onOpenProfileCompletionReplay={openProfileCompletionReplay}
-              onRequestProfileRegeneration={openProfileRegenerationConfirm}
-              onLogout={logout}
-            />
-          )}
-        </AnimatePresence>
+        <div
+          aria-hidden={activeTab !== "browse"}
+          className={cn(activeTab === "browse" ? "block h-full" : "hidden")}
+        >
+          <TicketListTab
+            tickets={waitlistedTickets}
+            onGoRecommend={() => switchTab("recommend")}
+          />
+        </div>
+        <div
+          aria-hidden={activeTab !== "recommend"}
+          className={cn(activeTab === "recommend" ? "block min-h-full" : "hidden")}
+        >
+          <MeetingRecommendation
+            userId={userId}
+            embedded
+            membershipStatus={recommendationMembershipStatus}
+            onWaitlisted={addWaitlistedTicket}
+            onMembershipRequired={() => {
+              setProfilePanelOpen(false);
+              setMembershipModalOpen(true);
+            }}
+            onOpenList={() => switchTab("browse")}
+            blindDateOffers={blindDateOffers}
+            onBlindDateOffersChange={setBlindDateOffers}
+            blindDateOpenRequestId={blindDateOpenRequestId}
+            blindDateOpenRequestPending={blindDateOpenRequestPending}
+            onBlindDateOpenRequestHandled={() =>
+              setBlindDateOpenRequestPending(false)
+            }
+          />
+        </div>
+        <div
+          aria-hidden={activeTab !== "profile"}
+          className={cn(activeTab === "profile" ? "block min-h-full" : "hidden")}
+        >
+          <ProfileTab
+            profile={currentProfile}
+            answers={answers}
+            vibeAnimationKey={profileVibeAnimationKey}
+            loggingOut={loggingOut}
+            logoutError={logoutError}
+            onOpenQuestionReview={() => setQuestionReviewOpen(true)}
+            onOpenProfileCompletionReplay={openProfileCompletionReplay}
+            onRequestProfileRegeneration={openProfileRegenerationConfirm}
+            onLogout={logout}
+          />
+        </div>
       </div>
 
       <nav className="shrink-0 border-t border-black/10 bg-white px-4 pb-[calc(8px+env(safe-area-inset-bottom))] pt-1.5 shadow-lg">
@@ -807,6 +831,9 @@ function TicketListTab({
     );
   };
 
+  const currentSlideIndex = (viewport: HTMLDivElement) =>
+    closestSlide(viewport)?.index ?? activeIndex;
+
   const snapToClosestSlide = (
     viewport = carouselRef.current,
     behavior: ScrollBehavior = "smooth",
@@ -865,7 +892,7 @@ function TicketListTab({
   };
 
   const startDesktopDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
 
     if (snapTimerRef.current !== null) {
       window.clearTimeout(snapTimerRef.current);
@@ -877,7 +904,7 @@ function TicketListTab({
       moved: false,
       startX: event.clientX,
       scrollLeft: event.currentTarget.scrollLeft,
-      startIndex: activeIndex,
+      startIndex: currentSlideIndex(event.currentTarget),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -896,7 +923,7 @@ function TicketListTab({
   const finishDesktopDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const wasActive = dragState.current.active;
     const dragDistance = event.clientX - dragState.current.startX;
-    const threshold = event.pointerType === "touch" ? 54 : 22;
+    const threshold = 22;
     const targetElement = document.elementFromPoint(
       event.clientX,
       event.clientY,
@@ -937,6 +964,59 @@ function TicketListTab({
       );
     } else {
       snapToSlideIndex(dragState.current.startIndex, event.currentTarget);
+    }
+  };
+
+  const startTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+    }
+
+    dragState.current = {
+      active: false,
+      interacting: true,
+      moved: false,
+      startX: touch.clientX,
+      scrollLeft: event.currentTarget.scrollLeft,
+      startIndex: currentSlideIndex(event.currentTarget),
+    };
+  };
+
+  const moveTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch || !dragState.current.interacting) return;
+
+    if (Math.abs(touch.clientX - dragState.current.startX) > 8) {
+      dragState.current.moved = true;
+    }
+  };
+
+  const finishTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (!dragState.current.interacting) return;
+
+    const touch = event.changedTouches[0];
+    const dragDistance = touch
+      ? touch.clientX - dragState.current.startX
+      : 0;
+    const moved = dragState.current.moved;
+    dragState.current.interacting = false;
+
+    if (moved) {
+      if (Math.abs(dragDistance) > 54) {
+        snapToSlideIndex(
+          dragState.current.startIndex + (dragDistance < 0 ? 1 : -1),
+          event.currentTarget,
+        );
+      } else {
+        snapToClosestSlide(event.currentTarget);
+      }
+
+      window.setTimeout(() => {
+        dragState.current.moved = false;
+      }, 180);
     }
   };
 
@@ -995,11 +1075,15 @@ function TicketListTab({
                   onPointerMove={moveDesktopDrag}
                   onPointerUp={finishDesktopDrag}
                   onPointerCancel={finishDesktopDrag}
+                  onTouchStart={startTouchScroll}
+                  onTouchMove={moveTouchScroll}
+                  onTouchEnd={finishTouchScroll}
+                  onTouchCancel={finishTouchScroll}
                   style={{
                     scrollBehavior: "smooth",
                     WebkitOverflowScrolling: "touch",
                   }}
-                  className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-y active:cursor-grabbing"
+                  className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
                 >
                   {tickets.map((userTicket, index) => (
                     <div
@@ -2977,11 +3061,16 @@ function ProfileCompletionModal({
                 <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
                   profile complete
                 </p>
-                <h2 className="mt-2 flex items-center gap-2 text-[24px] font-black leading-8 text-black">
+                <h2 className="mt-2 text-[24px] font-black leading-8 text-black">
                   <span>{displayName}님의 프로필이 만들어졌어요</span>
-                  <span aria-hidden>{emoji ?? profileEmoji(profile)}</span>
                 </h2>
                 <div className="mt-5 min-h-[258px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
+                  <div className="mb-4 flex items-center gap-2 text-xl font-black leading-7 text-black">
+                    <span>{displayName}</span>
+                    <span aria-hidden className="text-base leading-none">
+                      {emoji ?? profileEmoji(profile)}
+                    </span>
+                  </div>
                   <ProfileCompletionTypewriter
                     text={intro}
                     onComplete={() => setTypingDone(true)}
