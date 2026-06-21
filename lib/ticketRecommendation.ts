@@ -21,7 +21,6 @@ type UserPreferences = {
   ratedSignals: Array<{ rating: number; signals: string[] }>;
   roles: string[];
   comfortablePeople: string[];
-  avoidances: Set<string>;
   romancePreference: number | null;
 };
 
@@ -116,10 +115,6 @@ function ticketText(ticket: GatheringTicket) {
     .join(" ");
 }
 
-function includesAny(text: string, keywords: string[]) {
-  return keywords.some((keyword) => text.includes(normalize(keyword)));
-}
-
 function signalOverlap(left: Set<string>, right: string[]) {
   return right.some((signal) => left.has(signal));
 }
@@ -149,7 +144,6 @@ function buildPreferences(
     ratedSignals,
     roles: answerValues(answers, 5),
     comfortablePeople: answerValues(answers, 6),
-    avoidances: new Set(answerValues(answers, 8)),
     romancePreference: ratingValue(answerValues(answers, 7)[0]),
   };
 }
@@ -157,11 +151,6 @@ function buildPreferences(
 function isExcluded(ticket: GatheringTicket, preferences: UserPreferences) {
   const exactRating = preferences.exactRatings.get(ticket.templateId);
   if (exactRating === 1) return true;
-
-  const alcohol = ticket.vibeScores?.alcohol ?? null;
-  if (preferences.avoidances.has("heavy_drinking") && alcohol != null && alcohol >= 4) {
-    return true;
-  }
 
   return false;
 }
@@ -283,33 +272,6 @@ function conditionScore(
       text: "편하게 느끼는 대화 분위기를 반영했어요.",
       weight: matchScore,
     });
-  }
-
-  const temperature = ticket.vibeScores?.temperature ?? null;
-  const texture = ticket.vibeScores?.texture ?? null;
-  const penalties: Array<[string, boolean, number]> = [
-    ["too_loud", temperature != null && temperature >= 4, 16],
-    ["too_quiet", temperature != null && temperature <= 2, 16],
-    ["forced_deep_talk", texture != null && texture >= 4, 12],
-    [
-      "too_active",
-      includesAny(text, ["운동", "러닝", "볼링", "등산", "액티브"]),
-      12,
-    ],
-    [
-      "business_networking",
-      includesAny(text, ["네트워킹", "비즈니스", "커리어"]),
-      18,
-    ],
-    [
-      "long_self_intro",
-      includesAny(text, ["자기소개", "소개 시간"]),
-      8,
-    ],
-  ];
-
-  for (const [avoidance, applies, penalty] of penalties) {
-    if (preferences.avoidances.has(avoidance) && applies) score -= penalty;
   }
 
   return { score, reasons };

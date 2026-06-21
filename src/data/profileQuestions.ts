@@ -8,7 +8,6 @@ export const questionCategories = [
   { key: "모임 역할", label: "모임 역할", icon: "Users" },
   { key: "모임 역할 - 상대", label: "편한 상대", icon: "Users" },
   { key: "관계 기대", label: "관계 기대", icon: "Heart" },
-  { key: "회피 조건", label: "회피 조건", icon: "X" },
   { key: "나이 조건", label: "나이 조건", icon: "Users" },
   { key: "모임 취향", label: "모임 취향", icon: "Ticket" },
   { key: "나의 일", label: "나의 일", icon: "PenLine" },
@@ -165,40 +164,29 @@ const baseQuestions: ProfileQuestion[] = [
     options: [
       {
         value: "1",
-        label: "우선은 편한 대화와 좋은 사람들을 만나는 정도면 좋아요.",
+        label:
+          "연애로 이어질 가능성은 없었으면 좋겠어요. 편한 사람들과 좋은 대화를 나누는 정도를 기대해요.",
       },
       {
         value: "2",
-        label: "친구처럼 편하게 시작하되, 잘 맞으면 설렘도 열려 있어요.",
+        label:
+          "기본적으로는 친구나 지인처럼 편한 만남을 원해요. 연애로 이어지는 흐름은 크게 기대하지 않아요.",
       },
       {
         value: "3",
-        label: "좋은 사람이 있다면 연애 가능성도 자연스럽게 보고 싶어요.",
+        label:
+          "좋은 사람이 있다면 자연스럽게 열어둘 수 있어요. 다만 처음부터 연애를 목표로 오진 않아요.",
       },
-      { value: "4", label: "연애로 이어질 수 있는 만남이면 더 좋아요." },
-      { value: "5", label: "잘 맞는 이성을 만나는 기대가 꽤 커요." },
-    ],
-  },
-  {
-    id: 8,
-    order: 8,
-    category: "회피 조건",
-    type: "multi_choice",
-    question: "아래 중 피하고 싶은 자리가 있다면 골라주세요.",
-    description: "중복 선택이 가능해요.",
-    options: [
-      { value: "heavy_drinking", label: "과한 술자리" },
-      { value: "too_loud", label: "너무 시끄러운 자리" },
-      { value: "too_quiet", label: "너무 조용해서 어색한 자리" },
-      { value: "too_romantic", label: "노골적인 이성 목적의 자리" },
-      { value: "business_networking", label: "비즈니스 네트워킹 같은 자리" },
-      { value: "forced_deep_talk", label: "깊은 이야기를 강요하는 자리" },
-      { value: "long_self_intro", label: "자기소개를 길게 해야 하는 자리" },
-      { value: "too_active", label: "활동량이 너무 많은 자리" },
-      { value: "expensive", label: "비용이 높은 자리" },
-      { value: "photo_heavy", label: "사진을 많이 찍는 분위기" },
-      { value: "none", label: "딱히 없어요", exclusive: true },
-      { value: "other", label: "직접 입력", hasTextInput: true },
+      {
+        value: "4",
+        label:
+          "편하게 시작하되, 잘 맞는 사람이 있다면 연애로 이어질 가능성도 긍정적으로 보고 있어요.",
+      },
+      {
+        value: "5",
+        label:
+          "연애로 이어질 가능성도 생각하고 있어요. 좋은 사람을 만나는 기대가 분명히 있어요.",
+      },
     ],
   },
   {

@@ -25,6 +25,15 @@ const baseProfileFields = [
   "questions_completed",
 ];
 
+const precisionProfileFields = ["matching_precision_bonus"];
+const basePrecisionProfileFields = [
+  ...baseProfileFields,
+  ...precisionProfileFields,
+];
+const testPrecisionProfileFields = [
+  ...basePrecisionProfileFields,
+  "is_test_participant",
+];
 const testProfileFields = [...baseProfileFields, "is_test_participant"];
 
 const scoreProfileFields = [
@@ -43,6 +52,35 @@ const membershipProfileFields = [
   "membership_updated_at",
 ];
 
+const membershipPrecisionProfileSelect = [
+  ...testPrecisionProfileFields,
+  ...membershipProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const membershipPrecisionProfileSelectWithoutTest = [
+  ...basePrecisionProfileFields,
+  ...membershipProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const membershipPrecisionWithoutScoresProfileSelect = [
+  ...testPrecisionProfileFields,
+  ...membershipProfileFields,
+].join(",");
+const membershipPrecisionWithoutScoresProfileSelectWithoutTest = [
+  ...basePrecisionProfileFields,
+  ...membershipProfileFields,
+].join(",");
+const scorePrecisionProfileSelect = [
+  ...testPrecisionProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const scorePrecisionProfileSelectWithoutTest = [
+  ...basePrecisionProfileFields,
+  ...scoreProfileFields,
+].join(",");
+const basePrecisionProfileSelect = testPrecisionProfileFields.join(",");
+const basePrecisionProfileSelectWithoutTest =
+  basePrecisionProfileFields.join(",");
 const membershipProfileSelect = [
   ...testProfileFields,
   ...membershipProfileFields,
@@ -72,6 +110,14 @@ const baseProfileSelect = testProfileFields.join(",");
 const baseProfileSelectWithoutTest = baseProfileFields.join(",");
 
 const profileSelects = [
+  membershipPrecisionProfileSelect,
+  membershipPrecisionProfileSelectWithoutTest,
+  membershipPrecisionWithoutScoresProfileSelect,
+  membershipPrecisionWithoutScoresProfileSelectWithoutTest,
+  scorePrecisionProfileSelect,
+  scorePrecisionProfileSelectWithoutTest,
+  basePrecisionProfileSelect,
+  basePrecisionProfileSelectWithoutTest,
   membershipProfileSelect,
   membershipProfileSelectWithoutTest,
   membershipWithoutScoresProfileSelect,
@@ -107,6 +153,11 @@ function scoreValue(value: unknown) {
   if (value === null) return null;
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return clampScore(value);
+}
+
+function precisionBonusValue(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(5, Math.max(0, Math.round(value)));
 }
 
 function trimmedText(value: unknown) {
@@ -195,6 +246,7 @@ export async function PATCH(request: NextRequest) {
     publicIntro?: unknown;
     publicEmoji?: unknown;
     isTestParticipant?: unknown;
+    matchingPrecisionBonus?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
@@ -251,6 +303,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
     updates.is_test_participant = body.isTestParticipant;
+  }
+
+  if (body && "matchingPrecisionBonus" in body) {
+    const nextBonus = precisionBonusValue(body.matchingPrecisionBonus);
+    if (nextBonus === undefined) {
+      return NextResponse.json(
+        { error: "추천 정교화 보정값은 0부터 5 사이 숫자여야 합니다." },
+        { status: 400 },
+      );
+    }
+    updates.matching_precision_bonus = nextBonus;
   }
 
   if (Object.keys(updates).length === 0) {

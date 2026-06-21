@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
+import type { ReactNode } from "react";
 import {
   vibeAxes,
   vibeAxisConfig,
@@ -158,6 +159,9 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
 
 export function VibeGraph({
   title,
+  titleInlineAccessory,
+  titleAccessory,
+  footer,
   description,
   scores,
   visibleAxes = vibeAxes,
@@ -169,6 +173,9 @@ export function VibeGraph({
   animateBars = true,
 }: {
   title: string;
+  titleInlineAccessory?: ReactNode;
+  titleAccessory?: ReactNode;
+  footer?: ReactNode;
   description?: string;
   scores?: VibeScores | null;
   visibleAxes?: readonly VibeAxis[];
@@ -182,24 +189,38 @@ export function VibeGraph({
   const axes = visibleAxes.filter(
     (axis) => normalizeScore(scores?.[axis], scoreScale) !== null,
   );
+  const hasTitleAccessory = Boolean(titleAccessory);
 
   if (axes.length === 0) return null;
 
   return (
     <section
       className={cn(
-        "rounded-[22px] border border-black/8 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.025)]",
+        "rounded-[22px] border border-black/8 bg-white px-5 shadow-[0_10px_28px_rgba(0,0,0,0.025)]",
+        hasTitleAccessory ? "py-4" : "py-5",
         className,
       )}
     >
-      <h2 className="text-[15px] font-black text-black">{title}</h2>
-      {description && (
-        <p className="mt-2 text-xs font-semibold leading-5 text-black/40">
-          {description}
-        </p>
-      )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-[15px] font-black text-black">{title}</h2>
+            {titleInlineAccessory}
+          </div>
+          {description && (
+            <p className="mt-1.5 text-xs font-semibold leading-5 text-black/40">
+              {description}
+            </p>
+          )}
+        </div>
+        {titleAccessory && <div className="shrink-0">{titleAccessory}</div>}
+      </div>
 
-      <div className="mt-6 space-y-5">
+      <div
+        className={cn(
+          hasTitleAccessory ? "mt-5 space-y-4" : "mt-6 space-y-5",
+        )}
+      >
         {axes.map((axis, index) => (
           <VibeAxisBar
             key={axis}
@@ -214,6 +235,10 @@ export function VibeGraph({
           />
         ))}
       </div>
+
+      {footer && (
+        <div className="mt-5 border-t border-black/8 pt-5">{footer}</div>
+      )}
     </section>
   );
 }

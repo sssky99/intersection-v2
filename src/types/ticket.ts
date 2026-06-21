@@ -100,6 +100,11 @@ export type UserTicket = {
   members: TicketMemberIntro[];
 };
 
+export type UserTicketsResponse = {
+  tickets: UserTicket[];
+  participationCount: number;
+};
+
 export type WaitlistRegistration = {
   ticket: GatheringTicket;
   status: "waitlisted" | "payment_pending";

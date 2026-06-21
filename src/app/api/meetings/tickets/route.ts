@@ -133,8 +133,10 @@ function toTicket(
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
-  const time = instance.event_time?.slice(0, 5) ?? template.default_time?.slice(0, 5);
-  if (!time) return null;
+  const time =
+    instance.event_time?.slice(0, 5) ??
+    template.default_time?.slice(0, 5) ??
+    "시간 미정";
 
   const area = instance.region ?? template.default_region ?? "지역 미정";
   const subtitle =

@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  Gift,
+  Info,
   LogOut,
   MapPin,
   X,
@@ -18,7 +20,7 @@ import {
   Ticket as TicketIcon,
   UserRound,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import {
   formatTicketDateLabel,
@@ -68,6 +70,7 @@ import type {
   TicketProgressStep,
   UserTicket,
   UserTicketStatus,
+  UserTicketsResponse,
 } from "@/types/ticket";
 import type { Gender } from "@/types/user";
 import type { LucideIcon } from "lucide-react";
@@ -223,6 +226,19 @@ function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores 
   };
 }
 
+function participationPrecisionLevel(count: number) {
+  if (!Number.isFinite(count)) return 0;
+  return Math.min(5, Math.max(0, Math.floor(count)));
+}
+
+function profileMatchingPrecisionCount(
+  profile: Pick<ProfileRow, "matching_precision_bonus">,
+  participationCount: number,
+) {
+  const bonus = profile.matching_precision_bonus ?? 0;
+  return participationCount + bonus;
+}
+
 function profileName(profile: ProfileRow) {
   return profile.name?.trim() || "나";
 }
@@ -265,12 +281,14 @@ function setTabUrl(tab: AppTab) {
 }
 
 const userTicketsCacheTtlMs = 20_000;
-let userTicketsCache: { tickets: UserTicket[]; expiresAt: number } | null = null;
-let userTicketsRequest: Promise<UserTicket[] | null> | null = null;
+let userTicketsCache:
+  | { response: UserTicketsResponse; expiresAt: number }
+  | null = null;
+let userTicketsRequest: Promise<UserTicketsResponse | null> | null = null;
 
 async function fetchUserTickets({ force = false } = {}) {
   if (!force && userTicketsCache && userTicketsCache.expiresAt > Date.now()) {
-    return userTicketsCache.tickets;
+    return userTicketsCache.response;
   }
 
   if (!force && userTicketsRequest) return userTicketsRequest;
@@ -278,18 +296,24 @@ async function fetchUserTickets({ force = false } = {}) {
   userTicketsRequest = fetch("/api/meetings/my-tickets")
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
-        | { tickets?: UserTicket[] }
+        | Partial<UserTicketsResponse>
         | null;
 
       if (!response.ok) return null;
 
-      const tickets = data?.tickets ?? [];
+      const responseData: UserTicketsResponse = {
+        tickets: data?.tickets ?? [],
+        participationCount:
+          typeof data?.participationCount === "number"
+            ? data.participationCount
+            : 0,
+      };
       userTicketsCache = {
-        tickets,
+        response: responseData,
         expiresAt: Date.now() + userTicketsCacheTtlMs,
       };
 
-      return tickets;
+      return responseData;
     })
     .catch(() => null)
     .finally(() => {
@@ -343,6 +367,7 @@ export function AppHome({
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
+  const [participationCount, setParticipationCount] = useState(0);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
@@ -411,10 +436,11 @@ export function AppHome({
   useEffect(() => {
     let cancelled = false;
 
-    void fetchUserTickets().then((tickets) => {
-      if (cancelled || !tickets) return;
+    void fetchUserTickets().then((response) => {
+      if (cancelled || !response) return;
 
-      setWaitlistedTickets(tickets);
+      setWaitlistedTickets(response.tickets);
+      setParticipationCount(response.participationCount);
     });
     void fetchBlindDateOffers().then((offers) => {
       if (cancelled || !offers) return;
@@ -527,8 +553,10 @@ export function AppHome({
   };
 
   const addWaitlistedTicket = (_ticket: GatheringTicket) => {
-    void fetchUserTickets({ force: true }).then((tickets) => {
-      if (tickets) setWaitlistedTickets(tickets);
+    void fetchUserTickets({ force: true }).then((response) => {
+      if (!response) return;
+      setWaitlistedTickets(response.tickets);
+      setParticipationCount(response.participationCount);
     });
   };
 
@@ -667,6 +695,7 @@ export function AppHome({
           <ProfileTab
             profile={currentProfile}
             answers={answers}
+            participationCount={participationCount}
             vibeAnimationKey={profileVibeAnimationKey}
             loggingOut={loggingOut}
             logoutError={logoutError}
@@ -3087,8 +3116,8 @@ function ProfileCompletionModal({
                     {introAdvanceVisible && (
                       <motion.button
                         type="button"
-                        title="나의 대화 결 보기"
-                        aria-label="나의 대화 결 보기"
+                        title="나의 대화결 보기"
+                        aria-label="나의 대화결 보기"
                         initial={
                           shouldReduceMotion ? false : { opacity: 0, x: 10 }
                         }
@@ -3121,7 +3150,7 @@ function ProfileCompletionModal({
                   conversation vibe
                 </p>
                 <VibeGraph
-                  title="나의 대화 결"
+                  title="나의 대화결"
                   description="교집합이 자리를 제안할 때 참고하는 분위기예요."
                   scores={modalVibeScores}
                   visibleAxes={profileVibeAxes}
@@ -3345,9 +3374,294 @@ function formatProfileRegenerationDate(value: string) {
   return `${year}.${month}.${day}`;
 }
 
+function ParticipationDiamondNode({
+  step,
+  current,
+  reached,
+  showGift = false,
+}: {
+  step: number;
+  current: boolean;
+  reached: boolean;
+  showGift?: boolean;
+}) {
+  const fill = reached ? "var(--accent)" : "#FFFFFF";
+  const stroke = reached || current ? "var(--accent)" : "rgba(0,0,0,0.16)";
+  const textFill = reached
+    ? "#FFFFFF"
+    : current
+      ? "var(--accent)"
+      : "rgba(0,0,0,0.34)";
+
+  return (
+    <span className="relative inline-flex h-10 w-10 items-center justify-center">
+      <svg
+        viewBox="0 0 32 42"
+        className={cn(
+          "h-10 w-8 shrink-0 overflow-visible transition",
+          current && "drop-shadow-[0_5px_10px_rgba(126,179,199,0.24)]",
+        )}
+        aria-hidden
+      >
+        <path
+          d="M16 2.5 29 21 16 39.5 3 21Z"
+          fill={fill}
+          stroke={stroke}
+          strokeLinejoin="round"
+          strokeWidth={current ? 2.6 : 2}
+        />
+        <text
+          x="16"
+          y="22"
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill={textFill}
+          fontSize="10.5"
+          fontWeight="900"
+        >
+          {step}
+        </text>
+      </svg>
+      {showGift && <ParticipationGiftButton />}
+    </span>
+  );
+}
+
+function ParticipationMilestoneProgress({
+  precisionCount,
+}: {
+  precisionCount: number;
+}) {
+  const level = participationPrecisionLevel(precisionCount);
+  const currentStep = level < 5 ? level + 1 : null;
+
+  return (
+    <div
+      className="mt-4 w-full"
+      title="참여할수록 추천과 분석이 5단계까지 정교해져요."
+      aria-label={`참여 정교화 ${level}/5단계`}
+    >
+      <div className="grid grid-cols-5 place-items-center gap-3">
+        {Array.from({ length: 5 }, (_, index) => {
+          const step = index + 1;
+          const reached = step <= level;
+          const current = step === currentStep;
+
+          return (
+            <ParticipationDiamondNode
+              key={step}
+              step={step}
+              current={current}
+              reached={reached}
+              showGift={step === 5}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ParticipationRecord({
+  precisionCount,
+}: {
+  precisionCount: number;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-[14px] font-black text-black">참여 기록</h3>
+        <ParticipationRecordInfoButton />
+      </div>
+      <p className="mt-1 text-xs font-semibold leading-5 text-black/40">
+        참여할수록 나의 대화결이 정교해져요.
+      </p>
+      <ParticipationMilestoneProgress precisionCount={precisionCount} />
+    </div>
+  );
+}
+
+function InfoTooltipButton({
+  ariaLabel,
+  children,
+}: {
+  ariaLabel: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        containerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-[18px] w-[18px] items-center justify-center rounded-full border border-black/18 bg-white text-black/45 transition hover:border-black/35 hover:text-black/70"
+      >
+        <Info size={12} strokeWidth={2.6} aria-hidden />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="absolute left-0 top-[calc(100%+8px)] z-30 w-[258px] rounded-2xl border border-black/10 bg-white px-4 py-3 text-xs font-semibold leading-5 text-black/62 shadow-[0_14px_36px_rgba(0,0,0,0.14)]"
+          >
+            <span
+              aria-hidden
+              className="absolute -top-[6px] left-3 h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white"
+            />
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function VibeGraphInfoButton() {
+  return (
+    <InfoTooltipButton ariaLabel="나의 대화결 설명 보기">
+      나의 대화결은 질문 답변을 바탕으로 교집합이 자리를 제안할 때 참고하는
+      대화 분위기예요. 참여와 피드백이 쌓일수록 추천이 더 정교해져요.
+    </InfoTooltipButton>
+  );
+}
+
+function ParticipationRecordInfoButton() {
+  return (
+    <InfoTooltipButton ariaLabel="참여 기록 설명 보기">
+      참여와 피드백을 바탕으로 나의 대화결 점수를 정교하게 조정해요. 이를
+      바탕으로 나에게 더 맞는 사람들과 장소가 추천돼요.
+    </InfoTooltipButton>
+  );
+}
+
+function ParticipationGiftButton() {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const shouldReduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        containerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span ref={containerRef} className="absolute -right-2.5 -top-3 z-10">
+      <motion.button
+        type="button"
+        aria-label="5번 참여 멤버십 혜택 보기"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        animate={
+          shouldReduceMotion
+            ? undefined
+            : {
+                scale: [1, 1.08, 1],
+                boxShadow: [
+                  "0 4px 10px rgba(126,179,199,0.24)",
+                  "0 0 0 7px rgba(126,179,199,0.16), 0 8px 18px rgba(126,179,199,0.32)",
+                  "0 4px 10px rgba(126,179,199,0.24)",
+                ],
+              }
+        }
+        transition={
+          shouldReduceMotion
+            ? undefined
+            : {
+                duration: 2.2,
+                ease: "easeInOut",
+                repeat: Infinity,
+                repeatDelay: 0.45,
+              }
+        }
+        whileTap={{ scale: 0.94 }}
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/55 bg-white text-accent shadow-[0_4px_10px_rgba(126,179,199,0.24)] transition hover:-translate-y-0.5 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 focus-visible:ring-offset-2"
+      >
+        <Gift size={16} strokeWidth={2.5} aria-hidden />
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="absolute right-0 top-[calc(100%+10px)] z-40 w-[224px] rounded-2xl border border-black/10 bg-white px-4 py-3 text-xs font-semibold leading-5 text-black/62 shadow-[0_14px_36px_rgba(0,0,0,0.14)]"
+          >
+            <span
+              aria-hidden
+              className="absolute -top-[6px] right-2 h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white"
+            />
+            <strong className="font-black text-black/78">
+              5번 참여 시 1개월 멤버십
+            </strong>
+            을
+            <br />
+            지급해드려요.
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </span>
+  );
+}
+
 function ProfileTab({
   profile,
   answers,
+  participationCount,
   vibeAnimationKey,
   loggingOut,
   logoutError,
@@ -3358,6 +3672,7 @@ function ProfileTab({
 }: {
   profile: ProfileRow;
   answers: AnswerMap;
+  participationCount: number;
   vibeAnimationKey: number;
   loggingOut: boolean;
   logoutError: string | null;
@@ -3367,6 +3682,10 @@ function ProfileTab({
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
+  const matchingPrecisionCount = profileMatchingPrecisionCount(
+    profile,
+    participationCount,
+  );
   const vibeScores = useMemo(
     () => profileVibeScores(profile, answers),
     [answers, profile],
@@ -3400,7 +3719,11 @@ function ProfileTab({
         </section>
 
         <VibeGraph
-          title="나의 대화 결"
+          title="나의 대화결"
+          titleInlineAccessory={<VibeGraphInfoButton />}
+          footer={
+            <ParticipationRecord precisionCount={matchingPrecisionCount} />
+          }
           description="교집합이 자리를 제안할 때 참고하는 분위기예요."
           scores={vibeScores}
           visibleAxes={profileVibeAxes}

@@ -390,9 +390,9 @@ function displayNickname(profile: ProfileIntroRow | undefined) {
   return profile?.nickname?.trim() || fallbackNickname(profile?.name);
 }
 
-function ticketsResponse(tickets: UserTicket[]) {
+function ticketsResponse(tickets: UserTicket[], participationCount: number) {
   return NextResponse.json(
-    { tickets },
+    { tickets, participationCount },
     {
       headers: {
         "Cache-Control": "private, max-age=15, stale-while-revalidate=45",
@@ -429,6 +429,9 @@ export async function GET() {
     if (waitlistError) throw waitlistError;
 
     const waitlistRows = (waitlistData ?? []) as unknown as WaitlistRow[];
+    const participationCount = waitlistRows.filter((row) =>
+      ["completed", "feedback_done"].includes(row.status),
+    ).length;
     const { data: userAssignmentData, error: userAssignmentError } =
       await supabase
         .from("ticket_assignments")
@@ -440,7 +443,7 @@ export async function GET() {
     const userAssignments = userAssignmentData ?? [];
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
-      return ticketsResponse([]);
+      return ticketsResponse([], participationCount);
     }
 
     const instanceIds = unique(
@@ -502,7 +505,7 @@ export async function GET() {
     });
 
     if (ticketSourceRows.length === 0) {
-      return ticketsResponse([]);
+      return ticketsResponse([], participationCount);
     }
     const templateIds = unique([
       ...ticketSourceRows.map((row) => row.ticket_template_id),
@@ -689,7 +692,7 @@ export async function GET() {
       .filter((ticket): ticket is UserTicket => Boolean(ticket))
       .sort(sortUserTickets);
 
-    return ticketsResponse(tickets);
+    return ticketsResponse(tickets, participationCount);
   } catch (error) {
     console.error("[meetings my-tickets]", error);
     return NextResponse.json(

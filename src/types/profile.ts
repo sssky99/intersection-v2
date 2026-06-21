@@ -33,6 +33,7 @@ export type ProfileRow = {
   membership_end_date: string | null;
   membership_purchase_clicked_at: string | null;
   membership_updated_at: string | null;
+  matching_precision_bonus: number | null;
   score_temperature?: number | null;
   score_texture?: number | null;
   score_tone?: number | null;

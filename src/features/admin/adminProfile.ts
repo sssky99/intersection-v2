@@ -24,6 +24,7 @@ export type AdminProfile = {
   membership_end_date?: string | null;
   membership_purchase_clicked_at?: string | null;
   membership_updated_at?: string | null;
+  matching_precision_bonus?: number | null;
   score_temperature?: number | null;
   score_texture?: number | null;
   score_tone?: number | null;
@@ -55,6 +56,7 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
   return {
     ...profile,
     is_test_participant: profile.is_test_participant ?? false,
+    matching_precision_bonus: profile.matching_precision_bonus ?? 0,
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
   };

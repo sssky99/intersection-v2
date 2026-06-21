@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-export const publicProfileModel = "gpt-5.4-mini";
+export const publicProfileModel = "gpt-5.5";
 
 const publicProfileTextFormat = {
   type: "json_schema",

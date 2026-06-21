@@ -36,9 +36,20 @@ type ProfileCard = {
   paragraphs: string[];
 };
 
+type FlowItem = {
+  title: string;
+};
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
+
+const detailsTitleClass =
+  "text-[32px] font-bold leading-[1.3] tracking-tight text-black";
+const detailsBodyClass = "text-[18px] font-medium leading-7 text-black/64";
+const detailsAuxClass =
+  "text-[11px] font-bold uppercase tracking-[0.16em] text-accent";
+const detailsTextPanelClass = "bg-black/[0.035]";
 
 const profileCards: ProfileCard[] = [
   {
@@ -90,22 +101,27 @@ const profileCards: ProfileCard[] = [
 
 const profileRotationMs = 5200;
 
-const flowItems = [
-  "성향과 분위기를 알려주세요",
-  "어울릴 만한 자리를 제안받아요",
-  "관심 있는 자리에 표시해요",
-  "조합이 맞으면 초대받아요",
-  "모임 후 느낌을 남겨요",
-  "다음 추천이 더 나에게 맞아져요",
-  "서로 마음이 겹치면 1:1 후속 자리가 열려요",
+const flowItems: FlowItem[] = [
+  {
+    title: "성향을 알려주세요",
+  },
+  {
+    title: "자리를 제안받아요",
+  },
+  {
+    title: "참여할수록 다음 추천이 더 좋아져요",
+  },
+  {
+    title: "만남 후, 1:1로 이어질 수 있어요",
+  },
 ];
 
 const safetyItems = [
-  "🧑‍🤝‍🧑 비슷한 나이대 중심으로 조합해요.",
-  "💏 과한 술자리나 노골적인 이성 목적은 막아요.",
-  "💬 E 와 I 성향을 상황에 맞게 조절해요.",
-  "✒️ 모임 후 피드백을 받아 다음 추천에 반영해요.",
-  "🚫 불편한 피드백, 노쇼는 강력하게 제제해요.",
+  "비슷한 나이대 중심으로 조합해요.",
+  "과한 술자리나 노골적인 이성 목적은 막아요.",
+  "E 와 I 성향을 상황에 맞게 조절해요.",
+  "모임 후 피드백을 받아 다음 추천에 반영해요.",
+  "불편한 피드백, 노쇼는 강력하게 제재해요.",
 ];
 const exampleInterestCounts = [3, 2, 4, 5, 4];
 
@@ -155,12 +171,12 @@ export function DetailsClient({
     <section className="flex min-h-dvh justify-center bg-[#111715] text-black md:px-4">
       <div
         data-testid="details-mobile-frame"
-        className="relative min-h-dvh w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] pb-[calc(84px+env(safe-area-inset-bottom))] md:my-6 md:min-h-[calc(100dvh-48px)] md:rounded-[32px] md:border md:border-white/10 md:shadow-[0_24px_90px_rgba(0,0,0,0.34)]"
+        className="relative min-h-dvh w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] pb-[calc(64px+env(safe-area-inset-bottom))] md:my-6 md:min-h-[calc(100dvh-48px)] md:rounded-[32px] md:border md:border-white/10 md:shadow-[0_24px_90px_rgba(0,0,0,0.34)]"
       >
-        <main className="w-full px-5 pb-0 pt-5">
+        <main className="w-full px-5 pb-9 pt-5">
           <HeroSection />
 
-          <article className="mt-8 space-y-12">
+          <article className="mt-8 space-y-14">
             <section>
               <TicketExampleHeading />
               <RotatingTicketExamples templates={ticketQuestionTemplates} />
@@ -171,6 +187,7 @@ export function DetailsClient({
             </DocumentSection>
 
             <DocumentSection label={"이런 사람들과\n함께할 수 있어요."} prominentLabel>
+              <ParticipationCountBanner />
               <ProfileCarousel />
             </DocumentSection>
 
@@ -180,11 +197,7 @@ export function DetailsClient({
 
             <DocumentSection label="왜 안전하고 덜 어색할까요?" prominentLabel>
               <ImageSlot tone="warm" image="/images/details/safety-friends-booth.png" />
-              <Checklist items={safetyItems} icon="none" boxed />
-            </DocumentSection>
-
-            <DocumentSection label="시작하기" hideLabel>
-              <ImageSlot compact tone="dark" image="/images/details/start-hero-background.jpg" />
+              <Checklist items={safetyItems} icon="red-check" boxed />
             </DocumentSection>
           </article>
 
@@ -222,16 +235,18 @@ function HeroSection() {
       {...revealProps}
       className="pt-2"
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-accent">
+      <p className={detailsAuxClass}>
         INTERSECTION
       </p>
       <div className="mt-4">
         <ImageSlot hero tone="green" image="/images/details/lasting-meeting.png" priority />
       </div>
       <TypingSummary
-        text={"교집합이 당신에게 딱 맞는 사람들과\n자리를 추천해드립니다."}
-        className="mb-0 mt-5 rounded-none bg-gradient-to-br from-[#fdfbf5] via-white to-accent/[0.10]"
-        paragraphClassName="min-h-[70px] text-[18px] leading-8"
+        text={"당신에게 딱 맞는 사람들과\n자리를 추천해드립니다."}
+        className={cn(
+          "mb-0 mt-7 rounded-none !border-black/8 !bg-black/[0.035] !bg-none !shadow-none",
+        )}
+        paragraphClassName="min-h-[70px] !border-l-0 !pl-0 !text-[18px] !font-medium !leading-7 !text-black/64"
       />
     </motion.header>
   );
@@ -263,16 +278,16 @@ function DocumentSection({
       {!hideLabel && (
         <h2
           className={cn(
-            "whitespace-pre-line font-bold tracking-tight text-black",
+            "whitespace-pre-line",
             prominentLabel
-              ? "text-[32px] leading-[1.3]"
-              : "text-[16px] leading-7",
+              ? detailsTitleClass
+              : "text-[18px] font-bold leading-7 text-black",
           )}
         >
           {label}
         </h2>
       )}
-      <div className={cn("space-y-5", !hideLabel && "mt-5")}>{children}</div>
+      <div className={cn("space-y-8", !hideLabel && "mt-7")}>{children}</div>
     </motion.section>
   );
 }
@@ -344,7 +359,7 @@ function ImageSlot({
       {hero && image && (
         <>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[68%] bg-gradient-to-t from-black via-black/88 via-55% to-transparent" />
-          <p className="pointer-events-none absolute bottom-6 left-5 right-5 whitespace-pre-line text-[36px] font-bold leading-[1.3] tracking-tight text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.9)]">
+          <p className="pointer-events-none absolute bottom-6 left-5 right-5 whitespace-pre-line text-[32px] font-bold leading-[1.3] tracking-tight text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.9)]">
             {"나와 결이 맞는\n사람들을 만나보세요."}
           </p>
         </>
@@ -355,7 +370,7 @@ function ImageSlot({
 
 function RecommendationGuideBox() {
   return (
-    <div className="bg-black/[0.035] px-4 py-4 text-[17px] font-bold leading-7 text-black/72">
+    <div className={cn(detailsTextPanelClass, "px-4 py-4", detailsBodyClass)}>
       <p>📌 내 답변을 분석해 최적의 자리를 제안합니다.</p>
       <p className="mt-3">📌 마음에 드는 제안에 YES를 눌러주세요.</p>
     </div>
@@ -373,7 +388,7 @@ function TicketExampleHeading() {
       transition={{ duration: 0.45, ease: "easeOut" }}
       className="mb-5"
     >
-      <h3 className="text-[32px] font-bold leading-[1.3] tracking-tight text-black">
+      <h3 className={detailsTitleClass}>
         이런 자리를
         <br />
         제안받을 수 있어요.
@@ -389,7 +404,7 @@ function Checklist({
 }: {
   boxed?: boolean;
   items: string[];
-  icon?: "check" | "shield" | "none";
+  icon?: "check" | "shield" | "none" | "red-check";
 }) {
   const reducedMotion = useReducedMotion();
 
@@ -397,8 +412,8 @@ function Checklist({
     <ul
       className={cn(
         "space-y-3",
-        boxed && "bg-black/[0.035] px-4 py-4",
-        icon === "shield" && "bg-black/[0.035] px-4 py-4",
+        boxed && `${detailsTextPanelClass} px-4 py-4`,
+        icon === "shield" && `${detailsTextPanelClass} px-4 py-4`,
       )}
     >
       {items.map((item, index) => (
@@ -412,9 +427,16 @@ function Checklist({
             duration: 0.34,
             ease: "easeOut",
           }}
-          className="flex gap-3 text-[18px] font-medium leading-7 text-black/64"
+          className={cn("flex gap-3", detailsBodyClass)}
         >
-          {icon === "none" ? null : icon === "shield" ? (
+          {icon === "none" ? null : icon === "red-check" ? (
+            <span
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-[18px] font-black leading-7 text-red-500"
+            >
+              ✓
+            </span>
+          ) : icon === "shield" ? (
             <ShieldCheck
               size={16}
               className="mt-1.5 shrink-0 text-accent"
@@ -431,6 +453,17 @@ function Checklist({
         </motion.li>
       ))}
     </ul>
+  );
+}
+
+function ParticipationCountBanner() {
+  return (
+    <p className={cn(detailsTextPanelClass, "px-4 py-3", detailsBodyClass)}>
+      <span aria-hidden="true" className="mr-2">
+        🙌
+      </span>
+      2주만에 461명의 멤버가 참여를 신청했어요!
+    </p>
   );
 }
 
@@ -474,13 +507,16 @@ function ProfileCarousel() {
           animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
           exit={shouldReduceMotion ? undefined : { opacity: 0, y: -10 }}
           transition={{ duration: 0.28, ease: "easeOut" }}
-          className="h-[520px] overflow-hidden rounded-lg bg-white px-5 py-5 shadow-[0_16px_48px_rgba(0,0,0,0.045)]"
+          className={cn(
+            "h-[520px] overflow-hidden rounded-lg px-5 py-5 shadow-[0_16px_48px_rgba(0,0,0,0.045)]",
+            detailsTextPanelClass,
+          )}
         >
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+            <p className={detailsAuxClass}>
               프로필
             </p>
-            <h3 className="mt-2 flex items-center gap-2 text-[30px] font-bold leading-none tracking-tight text-black">
+            <h3 className={cn("mt-2 flex items-center gap-2", detailsTitleClass)}>
               <span>{activeProfile.name}</span>
               <span aria-hidden="true" className="text-[24px] leading-none">
                 {activeProfile.emoji}
@@ -489,19 +525,13 @@ function ProfileCarousel() {
           </div>
           <div className="mt-5 space-y-4">
             {activeProfile.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-[18px] font-medium leading-7 text-black/64">
+              <p key={paragraph} className={detailsBodyClass}>
                 {paragraph}
               </p>
             ))}
           </div>
         </motion.article>
       </AnimatePresence>
-      <p className="bg-black/[0.035] px-4 py-3 text-[15px] font-bold leading-6 text-black/72">
-        <span aria-hidden="true" className="mr-2">
-          🙌
-        </span>
-        2주만에 461명의 멤버가 참여를 신청했어요!
-      </p>
     </div>
   );
 }
@@ -604,7 +634,7 @@ function RotatingTicketExamples({
                 </span>
               </div>
               {card.interestText && (
-                <p className="mt-3 bg-black/[0.035] px-4 py-3 text-[14px] font-bold leading-6 text-black/70">
+                <p className={cn("mt-4 px-4 py-3", detailsTextPanelClass, detailsBodyClass)}>
                   <span aria-hidden="true" className="mr-2">
                     🔔
                   </span>
@@ -655,7 +685,7 @@ function DetailPageExampleCard({
   );
 }
 
-function StepCaptureCarousel({ items }: { items: string[] }) {
+function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
   const reducedMotion = useReducedMotion();
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef({ dragging: false, scrollLeft: 0, startX: 0 });
@@ -767,17 +797,17 @@ function StepCaptureCarousel({ items }: { items: string[] }) {
       >
         {items.map((item, index) => (
           <article
-            key={item}
-            data-step-slide
-            className="w-full shrink-0 snap-center"
-          >
+          key={item.title}
+          data-step-slide
+          className="w-full shrink-0 snap-center"
+        >
             <div className="aspect-[4/5] w-full bg-[#ece9df] shadow-[0_16px_46px_rgba(0,0,0,0.045)]" />
-            <div className="mt-3 text-center">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-accent">
+            <div className="mt-5 px-4 py-2 text-center">
+              <p className={detailsAuxClass}>
                 {index + 1}단계
               </p>
-              <p className="mt-1 text-[16px] font-bold leading-7 text-black">
-                {item}
+              <p className="mt-2 text-[16px] font-bold leading-6 text-black">
+                {item.title}
               </p>
             </div>
           </article>

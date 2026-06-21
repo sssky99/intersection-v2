@@ -493,16 +493,15 @@ function TicketDrawingCard({
               <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
                 invitation
               </p>
-              <motion.h1
-                key={isDrawn ? "drawn-title" : "drawing-title"}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black"
-              >
-                {isDrawn
-                  ? "이 초대장이 마음에 드나요?"
-                  : "초대장을 그리고 있어요"}
-              </motion.h1>
+              {!isDrawn && (
+                <motion.h1
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black"
+                >
+                  초대장을 그리고 있어요
+                </motion.h1>
+              )}
             </div>
 
             <motion.div

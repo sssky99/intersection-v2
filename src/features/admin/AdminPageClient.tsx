@@ -147,6 +147,7 @@ type ProfileDetailPatch = {
   publicIntro?: string;
   publicEmoji?: string;
   isTestParticipant?: boolean;
+  matchingPrecisionBonus?: number;
 };
 
 const adminProfileScoreColumns = {
@@ -160,6 +161,17 @@ const defaultProfileEmoji = "💎";
 
 function clampAdminScore(value: number) {
   return Math.min(100, Math.max(-100, Math.round(value)));
+}
+
+function clampMatchingPrecisionBonus(value: number) {
+  return Math.min(5, Math.max(0, Math.round(value)));
+}
+
+function adminMatchingPrecisionBonus(profile: AdminProfile | null) {
+  const value = profile?.matching_precision_bonus;
+  return typeof value === "number" && Number.isFinite(value)
+    ? clampMatchingPrecisionBonus(value)
+    : 0;
 }
 
 function adminProfileScore(profile: AdminProfile, axis: AdminProfileAxis) {
@@ -1009,13 +1021,24 @@ function ProfileDetailPanel({
   ) => Promise<void>;
 }) {
   const initialScoreDraft = useMemo(() => adminScoreDraft(profile), [profile]);
+  const initialPrecisionBonusDraft = useMemo(
+    () => adminMatchingPrecisionBonus(profile),
+    [profile],
+  );
   const [scoreDraft, setScoreDraft] = useState(initialScoreDraft);
+  const [precisionBonusDraft, setPrecisionBonusDraft] = useState(
+    initialPrecisionBonusDraft,
+  );
   const [introDraft, setIntroDraft] = useState(profile?.public_intro ?? "");
   const [emojiDraft, setEmojiDraft] = useState(profile?.public_emoji ?? "");
 
   useEffect(() => {
     setScoreDraft(initialScoreDraft);
   }, [initialScoreDraft]);
+
+  useEffect(() => {
+    setPrecisionBonusDraft(initialPrecisionBonusDraft);
+  }, [initialPrecisionBonusDraft]);
 
   useEffect(() => {
     setIntroDraft(profile?.public_intro ?? "");
@@ -1032,6 +1055,10 @@ function ProfileDetailPanel({
     profile &&
       (introDraft !== (profile.public_intro ?? "") ||
         emojiDraft !== (profile.public_emoji ?? "")),
+  );
+  const precisionBonusDirty = Boolean(
+    profile &&
+      precisionBonusDraft !== adminMatchingPrecisionBonus(profile),
   );
   const isTestParticipant = Boolean(profile?.is_test_participant);
 
@@ -1059,6 +1086,13 @@ function ProfileDetailPanel({
     void onProfileDetailSave(profile.user_id, {
       publicIntro: introDraft,
       publicEmoji: emojiDraft,
+    });
+  };
+
+  const savePrecisionBonus = () => {
+    if (!profile || !precisionBonusDirty || profileSaving) return;
+    void onProfileDetailSave(profile.user_id, {
+      matchingPrecisionBonus: precisionBonusDraft,
     });
   };
 
@@ -1162,6 +1196,49 @@ function ProfileDetailPanel({
               />
             </button>
           </div>
+        </section>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold">추천 정교화 보정값</h3>
+              <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+                실제 참여 완료 횟수에 더해지는 값이에요. 별은 최대 5칸까지
+                채워져요.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
+              +{precisionBonusDraft}
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-6 gap-2">
+            {Array.from({ length: 6 }, (_, value) => (
+              <button
+                key={value}
+                type="button"
+                disabled={profileSaving}
+                aria-pressed={precisionBonusDraft === value}
+                onClick={() => setPrecisionBonusDraft(value)}
+                className={cn(
+                  "h-10 rounded-xl border text-sm font-black transition disabled:cursor-wait disabled:opacity-45",
+                  precisionBonusDraft === value
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-[#f7f7f5] text-black/50 hover:border-black/20 hover:text-black",
+                )}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={!precisionBonusDirty || profileSaving}
+            onClick={savePrecisionBonus}
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25"
+          >
+            <Save size={15} aria-hidden />
+            {profileSaving ? "저장 중..." : "보정값 저장"}
+          </button>
         </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
