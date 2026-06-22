@@ -27,6 +27,7 @@ type ExampleCard = {
   image: string;
   time: string;
   location: string;
+  proposerLabel: string;
   interestText: string | null;
 };
 
@@ -552,8 +553,9 @@ function templateToExampleCard(template: TicketQuestionTemplate): ExampleCard {
     title: template.title,
     tags: template.moodTags,
     image: template.imageUrl ?? "",
-    time: template.defaultTime ?? "",
-    location: template.defaultRegion ?? "",
+    time: "",
+    location: "",
+    proposerLabel: template.proposerLabel,
     interestText: `${interestCount}명이 관심을 보였어요.`,
   };
 }
@@ -683,6 +685,7 @@ function DetailPageExampleCard({
         time={card.time}
         location={card.location}
         tags={card.tags}
+        proposerLabel={card.proposerLabel}
         drawn={drawn}
         imageVisible={imageVisible}
         reducedMotion={reducedMotion}

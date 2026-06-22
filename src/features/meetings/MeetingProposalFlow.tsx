@@ -106,7 +106,7 @@ function cleanTime(value: string) {
 }
 
 function proposerLabel(profile: ProposalMemberProfile) {
-  return `${profile.displayName}님이 제안한 교집합`;
+  return `${profile.displayName}님의 제안`;
 }
 
 function ticketFromProposal({
@@ -705,7 +705,7 @@ function ProposalPreview({
         </p>
         <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
           운영팀 검수 후 실제 초대장으로 열릴 수 있어요. 제안이 선정되면 이
-          자리는 {profile.displayName}님이 제안한 교집합으로 공개되고,{" "}
+          자리는 {profile.displayName}님의 제안으로 공개되고,{" "}
           {profile.displayName}님은 자동 참여 확정돼요.
         </p>
       </div>
@@ -1004,8 +1004,8 @@ function ProposalSubmitted({
       <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-black/55">
         운영팀이 사진, 문구, 일정, 장소를 검수한 뒤{"\n"}
         실제 초대장으로 열릴 수 있어요.{"\n\n"}
-        제안이 선정되면 이 자리는 {profile.displayName}님이 제안한
-        교집합으로 공개되고,{"\n"}
+        제안이 선정되면 이 자리는 {profile.displayName}님의 제안으로 공개되고,
+        {"\n"}
         {profile.displayName}님은 해당 자리에 자동 참여 확정돼요.
       </p>
       <button

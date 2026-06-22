@@ -33,6 +33,7 @@ export type TicketRatingQuestionTicket = {
   dateLabel: string;
   timeLabel: string;
   locationLabel: string;
+  proposerLabel?: string;
   tags: string[];
 };
 
@@ -53,6 +54,7 @@ export type TicketQuestionTemplate = {
   recommendationCopy: string | null;
   defaultRegion: string | null;
   defaultTime: string | null;
+  proposerLabel: string;
   questionOrder: number;
 };
 

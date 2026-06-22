@@ -27,8 +27,9 @@ function toTicketQuestionTemplate(
     moodTags: row.mood_tags ?? [],
     activityType: row.activity_type,
     recommendationCopy: row.recommendation_copy,
-    defaultRegion: row.default_region,
-    defaultTime: row.default_time?.slice(0, 5) ?? null,
+    defaultRegion: null,
+    defaultTime: null,
+    proposerLabel: "OO님의 제안",
     questionOrder: row.question_order,
   };
 }
@@ -39,6 +40,7 @@ export async function loadTicketQuestionTemplates() {
     .select(
       "id,title,short_description,image_url,mood_tags,activity_type,recommendation_copy,default_region,default_time,question_order",
     )
+    .eq("visibility", "question")
     .not("question_order", "is", null)
     .order("question_order", { ascending: true })
     .order("updated_at", { ascending: false });

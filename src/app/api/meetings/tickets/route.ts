@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import {
   recommendTickets,
   type TicketRecommendationAnswer,
@@ -70,6 +71,12 @@ type ProfileAccessRow = {
   score_texture: number | null;
   score_tone: number | null;
   score_rhythm: number | null;
+};
+
+type ProposerProfileRow = {
+  user_id: string;
+  name: string | null;
+  nickname: string | null;
 };
 
 const templateSelect = [
@@ -142,6 +149,7 @@ function toTicket(
   instance: InstanceRow,
   template: TemplateRow,
   name?: string,
+  proposerProfile?: ProposerProfileRow,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
@@ -155,9 +163,11 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
-  const proposerDisplayName = template.proposer_display_name?.trim();
+  const proposerDisplayName =
+    (proposerProfile ? meetingProposalDisplayName(proposerProfile) : null) ||
+    template.proposer_display_name?.trim();
   const proposerLabel = proposerDisplayName
-    ? `${proposerDisplayName}님이 제안한 교집합`
+    ? `${proposerDisplayName}님의 제안`
     : undefined;
 
   return {
@@ -198,6 +208,33 @@ function toTicket(
       romance: template.score_romance,
     },
   };
+}
+
+async function fetchProposerProfileMap(
+  supabase: ReturnType<typeof createAdminClient>,
+  templates: TemplateRow[],
+) {
+  const proposerIds = Array.from(
+    new Set(
+      templates
+        .map((template) => template.proposer_user_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  if (proposerIds.length === 0) return new Map<string, ProposerProfileRow>();
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id,name,nickname")
+    .in("user_id", proposerIds);
+  if (error) throw error;
+
+  return new Map(
+    ((data ?? []) as unknown as ProposerProfileRow[]).map((profile) => [
+      profile.user_id,
+      profile,
+    ]),
+  );
 }
 
 function groupByDate(
@@ -339,8 +376,13 @@ export async function GET(request: Request) {
 
         if (templatesError) throw templatesError;
 
+        const templateRows = (templates ?? []) as unknown as TemplateRow[];
+        const proposerProfileMap = await fetchProposerProfileMap(
+          supabase,
+          templateRows,
+        );
         const templateMap = new Map(
-          ((templates ?? []) as unknown as TemplateRow[]).map((template) => [
+          templateRows.map((template) => [
             template.id,
             template,
           ]),
@@ -356,7 +398,14 @@ export async function GET(request: Request) {
           .map((instance) => {
             const template = templateMap.get(instance.template_id);
             return template
-              ? toTicket(instance, template, userRecommendationName)
+              ? toTicket(
+                  instance,
+                  template,
+                  userRecommendationName,
+                  template.proposer_user_id
+                    ? proposerProfileMap.get(template.proposer_user_id)
+                    : undefined,
+                )
               : null;
           })
           .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
@@ -457,8 +506,13 @@ export async function GET(request: Request) {
 
     if (templatesError) throw templatesError;
 
+    const templateRows = (templates ?? []) as unknown as TemplateRow[];
+    const proposerProfileMap = await fetchProposerProfileMap(
+      supabase,
+      templateRows,
+    );
     const templateMap = new Map(
-      ((templates ?? []) as unknown as TemplateRow[]).map((template) => [
+      templateRows.map((template) => [
         template.id,
         template,
       ]),
@@ -474,7 +528,14 @@ export async function GET(request: Request) {
       .map((instance) => {
         const template = templateMap.get(instance.template_id);
         return template
-          ? toTicket(instance, template, userRecommendationName)
+          ? toTicket(
+              instance,
+              template,
+              userRecommendationName,
+              template.proposer_user_id
+                ? proposerProfileMap.get(template.proposer_user_id)
+                : undefined,
+            )
           : null;
       })
       .filter((ticket): ticket is GatheringTicket => Boolean(ticket));

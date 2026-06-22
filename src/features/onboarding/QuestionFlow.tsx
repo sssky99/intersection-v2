@@ -171,6 +171,7 @@ function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
       time={question.ticket.timeLabel}
       location={question.ticket.locationLabel}
       tags={question.ticket.tags}
+      proposerLabel={question.ticket.proposerLabel}
       drawn={drawn}
       imageVisible={imageVisible}
       className="!w-[82%] !max-w-[292px] sm:!max-w-[310px]"
@@ -321,8 +322,9 @@ function templateToTicketQuestion(
       title: template.title,
       imageUrl: template.imageUrl ?? "",
       dateLabel: "",
-      timeLabel: template.defaultTime ?? "",
-      locationLabel: template.defaultRegion ?? "",
+      timeLabel: "",
+      locationLabel: "",
+      proposerLabel: template.proposerLabel,
       tags: template.moodTags,
     },
     intent:

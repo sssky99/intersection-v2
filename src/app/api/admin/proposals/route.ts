@@ -163,8 +163,7 @@ function toAdminProposal(
   profile?: MeetingProposalProfileRow,
 ): AdminMeetingProposal {
   const displayName =
-    row.proposer_public_display_name ||
-    (profile ? meetingProposalDisplayName(profile) : "멤버");
+    profile ? meetingProposalDisplayName(profile) : row.proposer_public_display_name;
 
   return {
     id: row.id,
@@ -280,9 +279,9 @@ function convertedTicketSnapshot(
   proposal: ProposalRow,
   templateId: string,
   instanceId: string,
+  displayName: string,
 ) {
-  const displayName = proposal.proposer_public_display_name;
-  const proposerLabel = `${displayName}님이 제안한 교집합`;
+  const proposerLabel = `${displayName}님의 제안`;
   const eventTime = proposal.event_time?.slice(0, 5) ?? "";
 
   return {
@@ -326,6 +325,19 @@ async function convertProposal(proposalId: string) {
   if (!ensureConvertible(proposal)) {
     throw new Error("proposal-not-convertible");
   }
+  const { data: profileData, error: profileError } = await supabase
+    .from("profiles")
+    .select(profileSelect)
+    .eq("user_id", proposal.proposer_id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  const proposerProfile = profileData as unknown as
+    | MeetingProposalProfileRow
+    | null;
+  const proposerDisplayName = proposerProfile
+    ? meetingProposalDisplayName(proposerProfile)
+    : proposal.proposer_public_display_name;
 
   const proposalVibe = vibe(proposal.vibe);
   const { data: template, error: templateError } = await supabase
@@ -363,7 +375,7 @@ async function convertProposal(proposalId: string) {
       score_romance: proposalVibe.romance,
       proposal_id: proposal.id,
       proposer_user_id: proposal.proposer_id,
-      proposer_display_name: proposal.proposer_public_display_name,
+      proposer_display_name: proposerDisplayName,
       proposer_public_intro: proposal.proposer_public_intro,
       proposer_public_emoji: proposal.proposer_public_emoji,
     })
@@ -393,7 +405,12 @@ async function convertProposal(proposalId: string) {
 
   if (instanceError) throw instanceError;
 
-  const snapshot = convertedTicketSnapshot(proposal, template.id, instance.id);
+  const snapshot = convertedTicketSnapshot(
+    proposal,
+    template.id,
+    instance.id,
+    proposerDisplayName,
+  );
   const { data: existingWaitlist, error: existingWaitlistError } = await supabase
     .from("meeting_waitlist")
     .select("id")

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
@@ -206,6 +207,7 @@ function toTicket(
   row: WaitlistRow,
   instance: InstanceRow | null,
   template: TemplateRow | null,
+  proposerProfile?: ProfileIntroRow,
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
@@ -229,10 +231,11 @@ function toTicket(
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
   const proposerDisplayName =
+    (proposerProfile ? meetingProposalDisplayName(proposerProfile) : null) ??
     template.proposer_display_name?.trim() ??
     snapshot?.proposerProfile?.displayName;
   const proposerLabel = proposerDisplayName
-    ? `${proposerDisplayName}님이 제안한 교집합`
+    ? `${proposerDisplayName}님의 제안`
     : snapshot?.proposerLabel;
 
   return {
@@ -606,6 +609,7 @@ export async function GET() {
     const profileIds = unique([
       user.id,
       ...assignments.map((assignment) => assignment.profile_id),
+      ...templates.map((template) => template.proposer_user_id),
     ]);
 
     let profileRows: ProfileIntroRow[] = [];
@@ -648,7 +652,10 @@ export async function GET() {
           row.ticket_snapshot?.templateId ??
           null;
         const template = templateId ? templateMap.get(templateId) ?? null : null;
-        const ticket = toTicket(row, instance, template);
+        const proposerProfile = template?.proposer_user_id
+          ? profileMap.get(template.proposer_user_id)
+          : undefined;
+        const ticket = toTicket(row, instance, template, proposerProfile);
         if (!ticket) return null;
 
         const startAt = toStartAt(ticket.date, ticket.time);

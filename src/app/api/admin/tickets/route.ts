@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeAdminProfile,
@@ -39,6 +40,7 @@ const candidateWaitlistStatuses = [
 const profileSelect = [
   "user_id",
   "name",
+  "nickname",
   "gender",
   "birth_year",
   "mbti",
@@ -62,6 +64,7 @@ const profileSelect = [
 const profileSelectWithoutTestParticipant = [
   "user_id",
   "name",
+  "nickname",
   "gender",
   "birth_year",
   "mbti",
@@ -270,10 +273,7 @@ function kstDateTimePayload(date: Date) {
 }
 
 function operationalVisibility(value: unknown) {
-  const visibility = isTicketVisibility(value)
-    ? value
-    : ("draft" as TicketVisibility);
-  return visibility === "question" ? "public" : visibility;
+  return isTicketVisibility(value) ? value : ("draft" as TicketVisibility);
 }
 
 function templatePayload(body: Record<string, unknown>) {
@@ -365,7 +365,7 @@ async function operatorProposerPayload(
 
   return {
     proposer_user_id: profile.user_id,
-    proposer_display_name: publicProfileText(profile.name) ?? "운영자",
+    proposer_display_name: meetingProposalDisplayName(profile),
     proposer_public_intro: publicProfileText(profile.public_intro),
     proposer_public_emoji: publicProfileText(profile.public_emoji),
   };
@@ -380,6 +380,22 @@ async function unifiedTicketPayload(
 
   if (!payload.title) {
     throw new AdminTicketRequestError("티켓 제목을 입력해주세요.");
+  }
+  if (payload.visibility === "question") {
+    if (!payload.question_order) {
+      throw new AdminTicketRequestError("샘플 티켓 순서를 선택해주세요.");
+    }
+
+    return {
+      ...payload,
+      proposer_user_id: null as string | null,
+      proposer_display_name: null as string | null,
+      proposer_public_intro: null as string | null,
+      proposer_public_emoji: null as string | null,
+      default_region: payload.default_region ?? payload.region,
+      default_time: payload.default_time ?? payload.event_time,
+      max_participant_count: 6,
+    };
   }
   if (!proposerUserId) {
     throw new AdminTicketRequestError("제안자를 운영자 중에서 선택해주세요.");
@@ -594,9 +610,15 @@ async function loadTicketData() {
       const templateInstances = instances.filter(
         (instance) => instance.template_id === template.id,
       );
+      const proposerProfile = template.proposer_user_id
+        ? profileMap.get(template.proposer_user_id)
+        : null;
 
       return {
         ...template,
+        proposer_display_name: proposerProfile
+          ? meetingProposalDisplayName(proposerProfile)
+          : template.proposer_display_name,
         detail_activities: dbTextList(template.detail_activities),
         detail_flow: dbTextList(template.detail_flow),
         detail_good_for: dbTextList(template.detail_good_for),
@@ -727,10 +749,7 @@ export async function POST(request: NextRequest) {
           remaining_seat_label_count:
             sourceTemplate.remaining_seat_label_count ?? 0,
           max_participant_count: 6,
-          visibility:
-            sourceTemplate.visibility === "question"
-              ? "public"
-              : sourceTemplate.visibility,
+          visibility: sourceTemplate.visibility,
           question_order: null,
           proposal_id: sourceTemplate.proposal_id,
           proposer_user_id: sourceTemplate.proposer_user_id,

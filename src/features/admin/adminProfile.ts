@@ -6,6 +6,7 @@ import {
 export type AdminProfile = {
   user_id: string;
   name: string | null;
+  nickname: string | null;
   gender: string | null;
   birth_year: string | number | null;
   mbti: string | null;
@@ -55,6 +56,7 @@ export function hasExpiredMembership(profile: AdminProfile) {
 export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
   return {
     ...profile,
+    nickname: profile.nickname ?? null,
     is_test_participant: profile.is_test_participant ?? false,
     matching_precision_bonus: profile.matching_precision_bonus ?? 0,
     active_membership: hasActiveMembership(profile),

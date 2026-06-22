@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Copy,
   Image as ImageIcon,
   Plus,
   RefreshCw,
@@ -12,8 +13,11 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import { VibeAxisBar } from "@/components/vibe/VibeGraph";
+import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import {
   AdminMemberName,
   membershipLabel,
@@ -63,6 +67,7 @@ type TicketDraft = {
   operationNote: string;
   placeVisibility: PlaceVisibility;
   visibility: TicketVisibility;
+  questionOrder: string;
   remainingSeatLabelCount: string;
   scoreTemperature: string;
   scoreTexture: string;
@@ -83,51 +88,56 @@ type ScoreDraftKey =
 let ticketDataCache: TicketData | null = null;
 let ticketDataRequest: Promise<TicketData> | null = null;
 
-const scoreValues = [1, 2, 3, 4, 5] as const;
 const minuteSteps = ["00", "15", "30", "45"] as const;
-const hourOptions = Array.from({ length: 24 }, (_, hour) =>
-  String(hour).padStart(2, "0"),
+const timePeriods = ["오전", "오후"] as const;
+const timeHours = Array.from({ length: 12 }, (_, hour) =>
+  String(hour + 1).padStart(2, "0"),
 );
-const editableTicketVisibilities = ticketVisibilities.filter(
-  (visibility) => visibility !== "question",
-);
+type TimePeriod = (typeof timePeriods)[number];
+const editableTicketVisibilities = ticketVisibilities;
 
 const scoreFields: Array<{
   key: ScoreDraftKey;
-  label: string;
-  guide: string;
+  axis: VibeAxis;
 }> = [
   {
     key: "scoreTemperature",
-    label: "온도",
-    guide: "조용함 1 / 활기참 5",
+    axis: "temperature",
   },
   {
     key: "scoreTexture",
-    label: "결",
-    guide: "현실·경험 1 / 의미·아이디어 5",
+    axis: "texture",
   },
   {
     key: "scoreTone",
-    label: "톤",
-    guide: "공감 1 / 분석·해결 5",
+    axis: "tone",
   },
   {
     key: "scoreRhythm",
-    label: "리듬",
-    guide: "계획적 1 / 즉흥적 5",
+    axis: "rhythm",
   },
   {
     key: "scoreAlcohol",
-    label: "술",
-    guide: "술 거의 없음 1 / 술 중심 5",
+    axis: "alcohol",
   },
   {
     key: "scoreRomance",
-    label: "설렘",
-    guide: "편한 관계 1 / 설렘 가능성 5",
+    axis: "romance",
   },
 ];
+
+const ticketVibeAxisOverrides: Partial<
+  Record<VibeAxis, { leftLabel?: string; rightLabel?: string }>
+> = {
+  alcohol: {
+    leftLabel: "술이 없는",
+    rightLabel: "술이 있는",
+  },
+  romance: {
+    leftLabel: "편한",
+    rightLabel: "설레는",
+  },
+};
 
 async function fetchTicketData(force = false) {
   if (!force && ticketDataCache) return ticketDataCache;
@@ -175,36 +185,55 @@ function limitTagInput(value: string) {
   return tags(value).join(", ");
 }
 
-function splitTimeValue(value: string) {
-  const [hour, minute] = value.split(":");
+function parseTimeParts(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  const hour24 = match ? Number(match[1]) : 15;
+  const minute = match ? match[2] : "00";
+  const period: TimePeriod = hour24 >= 12 ? "오후" : "오전";
+  const hour12 = hour24 % 12 || 12;
+
   return {
-    hour: typeof hour === "string" && hourOptions.includes(hour) ? hour : "",
-    minute:
-      typeof minute === "string" &&
-      minuteSteps.includes(minute as (typeof minuteSteps)[number])
-        ? minute
-        : "",
+    period,
+    hour: String(hour12).padStart(2, "0"),
+    minute: minuteSteps.includes(minute as (typeof minuteSteps)[number])
+      ? minute
+      : "00",
   };
 }
 
-function joinTimeValue(
-  currentValue: string,
-  patch: Partial<{ hour: string; minute: string }>,
-) {
-  if (patch.hour === "" || patch.minute === "") return "";
+function composeTimeValue({
+  period,
+  hour,
+  minute,
+}: {
+  period: TimePeriod;
+  hour: string;
+  minute: string;
+}) {
+  const hourNumber = Number(hour);
+  const hour24 =
+    period === "오전"
+      ? hourNumber === 12
+        ? 0
+        : hourNumber
+      : hourNumber === 12
+        ? 12
+        : hourNumber + 12;
 
-  const current = splitTimeValue(currentValue);
-  const hour = patch.hour ?? current.hour;
-  const minute = patch.minute ?? current.minute;
-  if (!hour && !minute) return "";
-  return `${hour || "00"}:${minute || "00"}`;
+  return `${String(hour24).padStart(2, "0")}:${minute}`;
 }
 
-function hourLabel(hour: string) {
-  const number = Number.parseInt(hour, 10);
-  const period = number < 12 ? "오전" : "오후";
-  const displayHour = number % 12 || 12;
-  return `${period} ${String(displayHour).padStart(2, "0")}시`;
+function displayTimeValue(value: string) {
+  if (!value) return "시간 선택";
+  const parts = parseTimeParts(value);
+  return `${parts.period} ${parts.hour}:${parts.minute}`;
+}
+
+function splitEditableLines(value: string) {
+  const items = value.split(/\r?\n/);
+  return items.length === 0 || (items.length === 1 && items[0] === "")
+    ? [""]
+    : items;
 }
 
 function primaryInstance(template: AdminTicketTemplate | null) {
@@ -257,10 +286,12 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
     operationNote: template.operation_note ?? instance?.operation_note ?? "",
     placeVisibility:
       template.place_visibility ?? instance?.place_visibility ?? "confirmed_only",
-    visibility:
-      template.visibility === "question"
-        ? "public"
-        : template.visibility ?? instance?.visibility ?? "draft",
+    visibility: template.visibility ?? instance?.visibility ?? "draft",
+    questionOrder: template.question_order
+      ? String(template.question_order)
+      : template.visibility === "question"
+        ? "1"
+        : "",
     remainingSeatLabelCount: String(
       template.remaining_seat_label_count ??
         instance?.remaining_seat_label_count ??
@@ -300,6 +331,7 @@ function ticketRequestBody(draft: TicketDraft) {
     operationNote: draft.operationNote,
     placeVisibility: draft.placeVisibility,
     visibility: draft.visibility,
+    questionOrder: draft.visibility === "question" ? draft.questionOrder : null,
     remainingSeatLabelCount: draft.remainingSeatLabelCount,
     scoreTemperature: draft.scoreTemperature || null,
     scoreTexture: draft.scoreTexture || null,
@@ -323,7 +355,7 @@ function updatedDate(value: string) {
 
 function operatorSummary(profile: AdminProfile | null | undefined) {
   if (!profile) return "제안자 미지정";
-  return `${profileName(profile)} 운영자`;
+  return `${meetingProposalDisplayName(profile)} 운영자`;
 }
 
 function ticketPreview(
@@ -332,8 +364,13 @@ function ticketPreview(
   instance: AdminTicketInstance | null,
   proposer: AdminProfile | null,
 ): GatheringTicket {
+  const isSampleTicket = draft.visibility === "question";
   const proposerName =
-    proposer?.name?.trim() || template?.proposer_display_name?.trim() || "운영자";
+    isSampleTicket
+      ? "OO"
+      : (proposer ? meetingProposalDisplayName(proposer) : null) ||
+        template?.proposer_display_name?.trim() ||
+        "운영자";
   const shortDescription =
     draft.shortDescription.trim() || draft.recommendationCopy.trim();
 
@@ -342,9 +379,9 @@ function ticketPreview(
     templateId: template?.id ?? "preview",
     title: draft.title.trim() || "새 초대장",
     subtitle: shortDescription || "교집합 초대장",
-    date: draft.eventDate,
-    time: draft.eventTime || "시간 미정",
-    area: draft.region.trim() || "지역 미정",
+    date: isSampleTicket ? "" : draft.eventDate,
+    time: isSampleTicket ? "" : draft.eventTime || "시간 미정",
+    area: isSampleTicket ? "" : draft.region.trim() || "지역 미정",
     moodTags: tags(draft.moodTags),
     activityType: draft.activityType.trim() || "admin_ticket",
     imageUrl: draft.imageUrl.trim() || undefined,
@@ -356,14 +393,18 @@ function ticketPreview(
     detailFlow: lines(draft.detailFlow, 6),
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
-    proposerLabel: `${proposerName}님이 제안한 교집합`,
+    proposerLabel: `${proposerName}님의 제안`,
     proposerProfile: {
-      userId: proposer?.user_id ?? template?.proposer_user_id,
+      userId: isSampleTicket
+        ? undefined
+        : proposer?.user_id ?? template?.proposer_user_id,
       displayName: proposerName,
-      publicIntro:
-        proposer?.public_intro ?? template?.proposer_public_intro ?? null,
-      publicEmoji:
-        proposer?.public_emoji ?? template?.proposer_public_emoji ?? null,
+      publicIntro: isSampleTicket
+        ? null
+        : proposer?.public_intro ?? template?.proposer_public_intro ?? null,
+      publicEmoji: isSampleTicket
+        ? null
+        : proposer?.public_emoji ?? template?.proposer_public_emoji ?? null,
     },
     vibeScores: {
       temperature: Number.parseInt(draft.scoreTemperature, 10) || null,
@@ -501,6 +542,7 @@ export function TicketAdminPanel() {
 
   const previewTicket =
     draft && ticketPreview(draft, selectedTicket, selectedInstance, proposer);
+  const isSampleTicket = draft?.visibility === "question";
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -582,6 +624,26 @@ export function TicketAdminPanel() {
       "새 초대장을 만들었습니다.",
     );
     if (data?.templates[0]) setSelectedTicketId(data.templates[0].id);
+  };
+
+  const duplicateTicket = async () => {
+    if (!selectedTicket) return;
+
+    const data = await runAction(
+      "POST",
+      {
+        action: "duplicate_template",
+        templateId: selectedTicket.id,
+        includeInstances: false,
+      },
+      "템플릿을 복제했습니다.",
+    );
+    const copiedTitle = `${selectedTicket.title} 복사본`;
+    setSelectedTicketId(
+      data?.templates.find((template) => template.title === copiedTitle)?.id ??
+        data?.templates[0]?.id ??
+        selectedTicket.id,
+    );
   };
 
   const saveTicket = async () => {
@@ -749,6 +811,7 @@ export function TicketAdminPanel() {
                   operators={operatorProfiles}
                   saving={saving}
                   onDraftChange={setDraft}
+                  onDuplicate={() => void duplicateTicket()}
                   onSave={() => void saveTicket()}
                   onDelete={() => void deleteTicket()}
                 />
@@ -756,22 +819,24 @@ export function TicketAdminPanel() {
                 <BasicEditor
                   draft={draft}
                   saving={saving}
+                  sampleOnly={isSampleTicket}
                   onDraftChange={setDraft}
                   onUploadImage={(file) => void uploadImage(file)}
                 />
 
-                <ContentEditor
-                  draft={draft}
-                  onDraftChange={setDraft}
-                />
+                {!isSampleTicket && (
+                  <>
+                    <ContentEditor draft={draft} onDraftChange={setDraft} />
 
-                <ScoreEditor
-                  draft={draft}
-                  saving={saving}
-                  onDraftChange={setDraft}
-                />
+                    <ScoreEditor
+                      draft={draft}
+                      saving={saving}
+                      onDraftChange={setDraft}
+                    />
+                  </>
+                )}
 
-                {selectedInstance && (
+                {!isSampleTicket && selectedInstance && (
                   <ParticipantPanel
                     instance={selectedInstance}
                     assignedProfiles={assignedProfiles}
@@ -803,7 +868,10 @@ export function TicketAdminPanel() {
               </div>
 
               {previewTicket && (
-                <TicketPreviewPanel ticket={previewTicket} />
+                <TicketPreviewPanel
+                  ticket={previewTicket}
+                  sampleOnly={isSampleTicket}
+                />
               )}
             </div>
           )}
@@ -823,6 +891,7 @@ function TicketListCard({
   onClick: () => void;
 }) {
   const instance = primaryInstance(template);
+  const isSampleTicket = template.visibility === "question";
   const dateTime = [
     template.event_date ?? instance?.event_date,
     (template.event_time ?? instance?.event_time)?.slice(0, 5),
@@ -856,12 +925,16 @@ function TicketListCard({
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-bold">{template.title}</h3>
         <p className="mt-1 truncate text-xs font-semibold text-black/42">
-          {template.proposer_display_name
+          {isSampleTicket
+            ? "OO님의 제안"
+            : template.proposer_display_name
             ? `${template.proposer_display_name} 제안`
             : "제안자 미지정"}
         </p>
         <p className="mt-1 truncate text-[11px] font-semibold text-black/38">
-          {dateTime || "일정 미정"} · {region || "지역 미정"}
+          {isSampleTicket
+            ? `샘플 ${template.question_order ?? "-"}번째`
+            : `${dateTime || "일정 미정"} · ${region || "지역 미정"}`}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <VisibilityBadge visibility={template.visibility} />
@@ -886,6 +959,7 @@ function TicketEditorHeader({
   operators,
   saving,
   onDraftChange,
+  onDuplicate,
   onSave,
   onDelete,
 }: {
@@ -895,9 +969,12 @@ function TicketEditorHeader({
   operators: AdminProfile[];
   saving: boolean;
   onDraftChange: (draft: TicketDraft) => void;
+  onDuplicate: () => void;
   onSave: () => void;
   onDelete: () => void;
 }) {
+  const isSampleTicket = draft.visibility === "question";
+
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -907,11 +984,15 @@ function TicketEditorHeader({
           </p>
           <h3 className="mt-1 text-xl font-bold">{draft.title || "새 초대장"}</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            {operatorSummary(proposer)} · {ticketVisibilityLabels[draft.visibility]} ·{" "}
+            {isSampleTicket ? "OO님의 제안" : operatorSummary(proposer)} ·{" "}
+            {ticketVisibilityLabels[draft.visibility]} ·{" "}
             수정 {updatedDate(ticket.updated_at)}
           </p>
         </div>
         <div className="flex gap-2">
+          <IconButton disabled={saving} onClick={onDuplicate} icon={Copy}>
+            복제
+          </IconButton>
           <IconButton disabled={saving} onClick={onDelete} icon={Trash2}>
             삭제
           </IconButton>
@@ -921,21 +1002,39 @@ function TicketEditorHeader({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-        <SelectField
-          label="제안자"
-          value={draft.proposerUserId}
-          options={[
-            { value: "", label: "운영자 선택" },
-            ...operators.map((profile) => ({
-              value: profile.user_id,
-              label: `${profileName(profile)} · ${membershipLabel(profile)}`,
-            })),
-          ]}
-          onChange={(proposerUserId) =>
-            onDraftChange({ ...draft, proposerUserId })
-          }
-        />
+      <div
+        className={cn(
+          "mt-5 grid gap-4",
+          isSampleTicket
+            ? "md:grid-cols-[minmax(0,1fr)_220px_160px]"
+            : "md:grid-cols-[minmax(0,1fr)_220px]",
+        )}
+      >
+        {isSampleTicket ? (
+          <div className="block">
+            <span className="text-xs font-semibold text-black/50">
+              샘플 제안자
+            </span>
+            <div className="mt-1.5 flex h-11 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-sm font-bold text-black/70">
+              OO님의 제안
+            </div>
+          </div>
+        ) : (
+          <SelectField
+            label="제안자"
+            value={draft.proposerUserId}
+            options={[
+              { value: "", label: "운영자 선택" },
+              ...operators.map((profile) => ({
+                value: profile.user_id,
+                label: `${meetingProposalDisplayName(profile)} · ${membershipLabel(profile)}`,
+              })),
+            ]}
+            onChange={(proposerUserId) =>
+              onDraftChange({ ...draft, proposerUserId })
+            }
+          />
+        )}
         <SelectField
           label="공개 상태"
           value={draft.visibility}
@@ -943,10 +1042,31 @@ function TicketEditorHeader({
             value,
             label: ticketVisibilityLabels[value],
           }))}
-          onChange={(visibility) =>
-            onDraftChange({ ...draft, visibility: visibility as TicketVisibility })
-          }
+          onChange={(visibility) => {
+            const nextVisibility = visibility as TicketVisibility;
+            onDraftChange({
+              ...draft,
+              visibility: nextVisibility,
+              questionOrder:
+                nextVisibility === "question"
+                  ? draft.questionOrder || "1"
+                  : draft.questionOrder,
+            });
+          }}
         />
+        {isSampleTicket && (
+          <SelectField
+            label="샘플 순서"
+            value={draft.questionOrder}
+            options={Array.from({ length: 5 }, (_, index) => {
+              const value = String(index + 1);
+              return { value, label: `${value}번째` };
+            })}
+            onChange={(questionOrder) =>
+              onDraftChange({ ...draft, questionOrder })
+            }
+          />
+        )}
       </div>
     </section>
   );
@@ -955,64 +1075,48 @@ function TicketEditorHeader({
 function BasicEditor({
   draft,
   saving,
+  sampleOnly,
   onDraftChange,
   onUploadImage,
 }: {
   draft: TicketDraft;
   saving: boolean;
+  sampleOnly: boolean;
   onDraftChange: (draft: TicketDraft) => void;
   onUploadImage: (file: File) => void;
 }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <h3 className="font-bold">기본 정보</h3>
-      <div className="mt-4 grid grid-cols-[220px_minmax(0,1fr)] gap-5">
-        <div>
-          <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
-            {draft.imageUrl ? (
-              <img
-                src={draft.imageUrl}
-                alt="티켓 대표 이미지 미리보기"
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="text-center text-xs font-semibold text-black/35">
-                <ImageIcon size={30} className="mx-auto mb-2" aria-hidden />
-                대표 이미지 없음
-              </div>
-            )}
-          </div>
-          <label className="mt-3 flex h-10 cursor-pointer items-center justify-center rounded-xl border border-black/10 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black">
-            이미지 선택
-            <input
-              type="file"
-              accept="image/*"
-              disabled={saving}
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onUploadImage(file);
-                event.target.value = "";
-              }}
-            />
-          </label>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
+      <div className="mt-4 grid grid-cols-2 gap-4">
           <TextAreaField
             label="초대장 제목"
             className="col-span-2"
             value={draft.title}
             onChange={(title) => onDraftChange({ ...draft, title })}
           />
-          <FormField
-            label="한 줄 설명"
-            className="col-span-2"
-            value={draft.shortDescription}
-            onChange={(shortDescription) =>
-              onDraftChange({ ...draft, shortDescription })
-            }
-          />
+          <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 py-2.5">
+            <div>
+              <p className="text-xs font-semibold text-black/50">대표 이미지</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-black/35">
+                {draft.imageUrl ? "오른쪽 미리보기에 반영돼요." : "이미지 없음"}
+              </p>
+            </div>
+            <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
+              이미지 선택
+              <input
+                type="file"
+                accept="image/*"
+                disabled={saving}
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onUploadImage(file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
+          </div>
           <FormField
             label="분위기 태그"
             className="col-span-2"
@@ -1041,64 +1145,67 @@ function BasicEditor({
               onDraftChange({ ...draft, remainingSeatLabelCount })
             }
           />
-          <FormField
-            label="날짜"
-            type="date"
-            value={draft.eventDate}
-            onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
-          />
-          <TimeSplitField
-            label="시간"
-            value={draft.eventTime}
-            onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
-          />
-          <FormField
-            label="지역"
-            value={draft.region}
-            placeholder="성수, 을지로, 강남"
-            onChange={(region) => onDraftChange({ ...draft, region })}
-          />
-          <FormField
-            label="상세 장소명"
-            value={draft.placeName}
-            onChange={(placeName) => onDraftChange({ ...draft, placeName })}
-          />
-          <FormField
-            label="상세 주소"
-            className="col-span-2"
-            value={draft.address}
-            onChange={(address) => onDraftChange({ ...draft, address })}
-          />
-          <SelectField
-            label="장소 공개"
-            value={draft.placeVisibility}
-            options={placeVisibilities.map((value) => ({
-              value,
-              label: placeVisibilityLabels[value],
-            }))}
-            onChange={(placeVisibility) =>
-              onDraftChange({
-                ...draft,
-                placeVisibility: placeVisibility as PlaceVisibility,
-              })
-            }
-          />
-          <FormField
-            label="운영 코드"
-            value={draft.operationCode}
-            onChange={(operationCode) =>
-              onDraftChange({ ...draft, operationCode })
-            }
-          />
-          <TextAreaField
-            label="운영 메모"
-            className="col-span-2"
-            value={draft.operationNote}
-            onChange={(operationNote) =>
-              onDraftChange({ ...draft, operationNote })
-            }
-          />
-        </div>
+          {!sampleOnly && (
+            <>
+              <FormField
+                label="날짜"
+                type="date"
+                value={draft.eventDate}
+                onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
+              />
+              <TimeSplitField
+                label="시간"
+                value={draft.eventTime}
+                onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
+              />
+              <FormField
+                label="지역"
+                value={draft.region}
+                placeholder="성수, 을지로, 강남"
+                onChange={(region) => onDraftChange({ ...draft, region })}
+              />
+              <FormField
+                label="상세 장소명"
+                value={draft.placeName}
+                onChange={(placeName) => onDraftChange({ ...draft, placeName })}
+              />
+              <FormField
+                label="상세 주소"
+                className="col-span-2"
+                value={draft.address}
+                onChange={(address) => onDraftChange({ ...draft, address })}
+              />
+              <SelectField
+                label="장소 공개"
+                value={draft.placeVisibility}
+                options={placeVisibilities.map((value) => ({
+                  value,
+                  label: placeVisibilityLabels[value],
+                }))}
+                onChange={(placeVisibility) =>
+                  onDraftChange({
+                    ...draft,
+                    placeVisibility: placeVisibility as PlaceVisibility,
+                  })
+                }
+              />
+              <FormField
+                label="운영 코드"
+                value={draft.operationCode}
+                onChange={(operationCode) =>
+                  onDraftChange({ ...draft, operationCode })
+                }
+              />
+              <TextAreaField
+                label="운영 메모"
+                className="col-span-2"
+                value={draft.operationNote}
+                onChange={(operationNote) =>
+                  onDraftChange({ ...draft, operationNote })
+                }
+              />
+            </>
+          )}
       </div>
     </section>
   );
@@ -1116,7 +1223,7 @@ function ContentEditor({
       <h3 className="font-bold">상세 화면 문구</h3>
       <div className="mt-4 grid grid-cols-2 gap-4">
         <TextAreaField
-          label="자리 분위기 초안"
+          label="한 줄 요약"
           className="col-span-2"
           value={draft.detailSummary}
           onChange={(detailSummary) =>
@@ -1132,19 +1239,9 @@ function ContentEditor({
             onDraftChange({ ...draft, detailActivities })
           }
         />
-        <TextAreaField
-          label="이렇게 진행돼요"
-          className="col-span-2"
+        <FlowStepEditor
           value={draft.detailFlow}
-          placeholder={"가볍게 인사해요\n영화를 함께 봐요\n근처에서 짧게 이야기해요"}
           onChange={(detailFlow) => onDraftChange({ ...draft, detailFlow })}
-        />
-        <TextAreaField
-          label="잘 맞는 사람"
-          value={draft.detailGoodFor}
-          onChange={(detailGoodFor) =>
-            onDraftChange({ ...draft, detailGoodFor })
-          }
         />
         <TextAreaField
           label="안내사항"
@@ -1166,6 +1263,81 @@ function ContentEditor({
   );
 }
 
+function FlowStepEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const steps = splitEditableLines(value);
+
+  const updateStep = (index: number, nextValue: string) => {
+    const nextSteps = [...steps];
+    nextSteps[index] = nextValue;
+    onChange(nextSteps.join("\n"));
+  };
+
+  const addStep = () => {
+    onChange([...steps, ""].join("\n"));
+  };
+
+  const removeStep = (index: number) => {
+    const nextSteps = steps.filter((_, stepIndex) => stepIndex !== index);
+    onChange((nextSteps.length ? nextSteps : [""]).join("\n"));
+  };
+
+  return (
+    <div className="col-span-2">
+      <span className="text-xs font-semibold text-black/50">
+        이렇게 진행돼요
+      </span>
+      <div className="mt-1.5 space-y-2">
+        {steps.map((step, index) => (
+          <div
+            key={index}
+            className="grid grid-cols-[34px_minmax(0,1fr)_36px] items-center gap-2"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-xs font-black text-white">
+              {index + 1}
+            </span>
+            <input
+              type="text"
+              value={step}
+              placeholder={
+                index === 0
+                  ? "가볍게 인사해요"
+                  : index === 1
+                    ? "함께 시간을 보내요"
+                    : "다음 순서를 입력해요"
+              }
+              onChange={(event) => updateStep(index, event.target.value)}
+              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={() => removeStep(index)}
+              disabled={steps.length === 1 && !step.trim()}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/35 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+              aria-label={`${index + 1}번 순서 삭제`}
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addStep}
+        className="mt-2 inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
+      >
+        <Plus size={14} aria-hidden />
+        순서 추가
+      </button>
+    </div>
+  );
+}
+
 function ScoreEditor({
   draft,
   saving,
@@ -1178,57 +1350,33 @@ function ScoreEditor({
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <h3 className="font-bold">자리 분위기 점수</h3>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 space-y-5 rounded-2xl border border-black/8 bg-black/[0.025] px-4 py-4">
         {scoreFields.map((field) => {
-          const selectedValue = draft[field.key];
+          const score = Number.parseInt(draft[field.key], 10);
+          const hasScore =
+            Number.isFinite(score) && score >= 1 && score <= 5;
+          const value = hasScore ? score : 3;
 
           return (
-            <div
+            <VibeAxisBar
               key={field.key}
-              className="grid grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-black/8 px-3 py-3"
-            >
-              <div>
-                <p className="text-sm font-bold text-black">{field.label}</p>
-                <p className="mt-0.5 text-[10px] font-semibold text-black/38">
-                  {field.guide}
-                </p>
-              </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {scoreValues.map((value) => {
-                  const selected = selectedValue === String(value);
-
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={saving}
-                      onClick={() =>
-                        onDraftChange({
-                          ...draft,
-                          [field.key]: selected ? "" : String(value),
-                        })
-                      }
-                      className={cn(
-                        "flex h-9 items-center justify-center rounded-lg border text-sm font-bold transition disabled:opacity-45",
-                        selected
-                          ? "border-black bg-black text-white"
-                          : "border-black/10 bg-white text-black/55 hover:border-accent/50 hover:text-black",
-                      )}
-                    >
-                      {value}
-                    </button>
-                  );
-                })}
-              </div>
-              <button
-                type="button"
-                disabled={saving || !selectedValue}
-                onClick={() => onDraftChange({ ...draft, [field.key]: "" })}
-                className="h-9 rounded-lg border border-black/10 px-3 text-xs font-bold text-black/42 transition hover:border-black/20 hover:text-black disabled:opacity-30"
-              >
-                비움
-              </button>
-            </div>
+              axis={field.axis}
+              score={hasScore ? value : null}
+              axisLabelOverrides={ticketVibeAxisOverrides[field.axis]}
+              valueLabel={hasScore ? `${value} / 5` : "미설정"}
+              input={{
+                value,
+                min: 1,
+                max: 5,
+                step: 1,
+                disabled: saving,
+                onChange: (nextValue) =>
+                  onDraftChange({
+                    ...draft,
+                    [field.key]: String(nextValue),
+                  }),
+              }}
+            />
           );
         })}
       </div>
@@ -1352,7 +1500,13 @@ function ParticipantPanel({
   );
 }
 
-function TicketPreviewPanel({ ticket }: { ticket: GatheringTicket }) {
+function TicketPreviewPanel({
+  ticket,
+  sampleOnly,
+}: {
+  ticket: GatheringTicket;
+  sampleOnly: boolean;
+}) {
   return (
     <aside className="sticky top-5 self-start space-y-4">
       <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
@@ -1372,19 +1526,21 @@ function TicketPreviewPanel({ ticket }: { ticket: GatheringTicket }) {
         />
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-        <p className="px-4 pt-4 text-xs font-bold uppercase tracking-[0.14em] text-accent">
-          detail
-        </p>
-        <div className="mt-3 overflow-hidden border-t border-black/8">
-          <TicketDetailHero ticket={ticket} />
-          <TicketDetailContent
-            ticket={ticket}
-            className="px-5 pb-5"
-            startWithBorder
-          />
-        </div>
-      </section>
+      {!sampleOnly && (
+        <section className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+          <p className="px-4 pt-4 text-xs font-bold uppercase tracking-[0.14em] text-accent">
+            detail
+          </p>
+          <div className="mt-3 overflow-hidden border-t border-black/8">
+            <TicketDetailHero ticket={ticket} />
+            <TicketDetailContent
+              ticket={ticket}
+              className="px-5 pb-5"
+              startWithBorder
+            />
+          </div>
+        </section>
+      )}
     </aside>
   );
 }
@@ -1492,64 +1648,108 @@ function TimeSplitField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const { hour, minute } = splitTimeValue(value);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const parts = parseTimeParts(value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        containerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const updatePart = (
+    patch: Partial<{ period: TimePeriod; hour: string; minute: string }>,
+  ) => {
+    onChange(composeTimeValue({ ...parts, ...patch }));
+  };
 
   return (
-    <label className="block">
+    <div ref={containerRef} className="relative block">
       <span className="text-xs font-semibold text-black/50">{label}</span>
-      <div className="mt-1.5 grid grid-cols-2 gap-2">
-        <div className="relative">
-          <Clock3
-            size={15}
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
-          />
-          <select
-            value={hour}
-            aria-label={`${label} 시간`}
-            onChange={(event) =>
-              onChange(joinTimeValue(value, { hour: event.target.value }))
-            }
-            className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] pl-9 pr-8 text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
-          >
-            <option value="">시간</option>
-            {hourOptions.map((option) => (
-              <option key={option} value={option}>
-                {hourLabel(option)}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={15}
-            aria-hidden
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
-          />
-        </div>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="mt-1.5 flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-left text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+      >
+        <span>{displayTimeValue(value)}</span>
+        <Clock3 size={15} className="text-black/35" aria-hidden />
+      </button>
 
-        <div className="relative">
-          <select
-            value={minute}
-            aria-label={`${label} 분`}
-            onChange={(event) =>
-              onChange(joinTimeValue(value, { minute: event.target.value }))
-            }
-            className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] px-3 pr-8 text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
-          >
-            <option value="">분</option>
-            {minuteSteps.map((option) => (
-              <option key={option} value={option}>
-                {option}분
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            size={15}
-            aria-hidden
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+6px)] z-50 grid w-[196px] grid-cols-3 overflow-hidden rounded-sm border border-black/20 bg-white py-1 shadow-[0_16px_42px_rgba(0,0,0,0.16)]">
+          <TimePickerColumn
+            values={timePeriods}
+            selected={parts.period}
+            onSelect={(period) => updatePart({ period })}
+          />
+          <TimePickerColumn
+            values={timeHours}
+            selected={parts.hour}
+            onSelect={(hour) => updatePart({ hour })}
+          />
+          <TimePickerColumn
+            values={minuteSteps}
+            selected={parts.minute}
+            onSelect={(minute) => {
+              updatePart({ minute });
+              setOpen(false);
+            }}
           />
         </div>
-      </div>
-    </label>
+      )}
+    </div>
+  );
+}
+
+function TimePickerColumn<TValue extends string>({
+  values,
+  selected,
+  onSelect,
+}: {
+  values: readonly TValue[];
+  selected: string;
+  onSelect: (value: TValue) => void;
+}) {
+  return (
+    <div className="max-h-[224px] overflow-y-auto px-1 scrollbar-none">
+      {values.map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onSelect(value)}
+          className={cn(
+            "flex h-9 w-full items-center justify-center rounded-sm text-sm font-semibold transition",
+            selected === value
+              ? "bg-[#0b7cff] text-white"
+              : "text-black/78 hover:bg-black/[0.04]",
+          )}
+        >
+          {value}
+        </button>
+      ))}
+    </div>
   );
 }
 

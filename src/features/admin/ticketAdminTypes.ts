@@ -110,7 +110,7 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
   draft: "미공개",
   test_only: "운영자에게만 공개",
   public: "전체 공개",
-  question: "질문",
+  question: "샘플 티켓",
   closed: "마감",
   archived: "보관",
 };
