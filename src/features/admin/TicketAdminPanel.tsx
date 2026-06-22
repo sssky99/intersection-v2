@@ -1,25 +1,27 @@
 "use client";
 
 import {
-  CalendarDays,
   Check,
   ChevronDown,
   Clock3,
-  Copy,
   Image as ImageIcon,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import {
   AdminMemberName,
+  membershipLabel,
   profileName,
 } from "@/features/admin/adminDisplay";
 import type { AdminProfile } from "@/features/admin/adminProfile";
-import { membershipStatusLabels } from "@/features/membership/membershipTypes";
+import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import {
   placeVisibilities,
   placeVisibilityLabels,
@@ -31,6 +33,7 @@ import {
   type PlaceVisibility,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
+import type { GatheringTicket } from "@/types/ticket";
 
 type TicketData = {
   templates: AdminTicketTemplate[];
@@ -38,34 +41,19 @@ type TicketData = {
   waitlist: AdminTicketWaitlistEntry[];
 };
 
-let ticketDataCache: TicketData | null = null;
-let ticketDataRequest: Promise<TicketData> | null = null;
-
-type TemplateDraft = {
+type TicketDraft = {
+  proposerUserId: string;
   title: string;
   shortDescription: string;
   detailSummary: string;
   detailActivities: string;
+  detailFlow: string;
   detailGoodFor: string;
   detailNotice: string;
   imageUrl: string;
   moodTags: string;
   activityType: string;
   recommendationCopy: string;
-  defaultRegion: string;
-  defaultTime: string;
-  visibility: TicketVisibility;
-  questionOrder: string;
-  scoreTemperature: string;
-  scoreTexture: string;
-  scoreTone: string;
-  scoreRhythm: string;
-  scoreAlcohol: string;
-  scoreRomance: string;
-};
-
-type InstanceDraft = {
-  title: string;
   eventDate: string;
   eventTime: string;
   region: string;
@@ -76,24 +64,15 @@ type InstanceDraft = {
   placeVisibility: PlaceVisibility;
   visibility: TicketVisibility;
   remainingSeatLabelCount: string;
+  scoreTemperature: string;
+  scoreTexture: string;
+  scoreTone: string;
+  scoreRhythm: string;
+  scoreAlcohol: string;
+  scoreRomance: string;
 };
 
-type ListMode = "templates" | "dates";
-type TestTimeMode =
-  | "applied"
-  | "approved"
-  | "pre_start"
-  | "in_progress"
-  | "feedback";
-
-const testTimeSteps: Array<{ mode: TestTimeMode; label: string }> = [
-  { mode: "applied", label: "신청 완료" },
-  { mode: "approved", label: "참여 확정" },
-  { mode: "pre_start", label: "시작 전 안내" },
-  { mode: "in_progress", label: "진행 중" },
-  { mode: "feedback", label: "피드백 작성" },
-];
-type TemplateScoreDraftKey =
+type ScoreDraftKey =
   | "scoreTemperature"
   | "scoreTexture"
   | "scoreTone"
@@ -101,83 +80,53 @@ type TemplateScoreDraftKey =
   | "scoreAlcohol"
   | "scoreRomance";
 
-const questionOrders = [1, 2, 3, 4, 5] as const;
+let ticketDataCache: TicketData | null = null;
+let ticketDataRequest: Promise<TicketData> | null = null;
+
 const scoreValues = [1, 2, 3, 4, 5] as const;
 const minuteSteps = ["00", "15", "30", "45"] as const;
 const hourOptions = Array.from({ length: 24 }, (_, hour) =>
   String(hour).padStart(2, "0"),
 );
-const templateTicketVisibilities = ticketVisibilities.filter(
-  (visibility) => visibility !== "question",
-);
-const instanceTicketVisibilities = ticketVisibilities.filter(
+const editableTicketVisibilities = ticketVisibilities.filter(
   (visibility) => visibility !== "question",
 );
 
 const scoreFields: Array<{
-  key: TemplateScoreDraftKey;
-  column:
-    | "score_temperature"
-    | "score_texture"
-    | "score_tone"
-    | "score_rhythm"
-    | "score_alcohol"
-    | "score_romance";
+  key: ScoreDraftKey;
   label: string;
-  shortLabel: string;
   guide: string;
 }> = [
   {
     key: "scoreTemperature",
-    column: "score_temperature",
     label: "온도",
-    shortLabel: "온",
-    guide: "조용함 1 ↔ 활기참 5",
+    guide: "조용함 1 / 활기참 5",
   },
   {
     key: "scoreTexture",
-    column: "score_texture",
     label: "결",
-    shortLabel: "결",
-    guide: "현실·경험 1 ↔ 의미·아이디어 5",
+    guide: "현실·경험 1 / 의미·아이디어 5",
   },
   {
     key: "scoreTone",
-    column: "score_tone",
     label: "톤",
-    shortLabel: "톤",
-    guide: "공감 1 ↔ 분석·해결 5",
+    guide: "공감 1 / 분석·해결 5",
   },
   {
     key: "scoreRhythm",
-    column: "score_rhythm",
     label: "리듬",
-    shortLabel: "리듬",
-    guide: "계획적 1 ↔ 즉흥적 5",
+    guide: "계획적 1 / 즉흥적 5",
   },
   {
     key: "scoreAlcohol",
-    column: "score_alcohol",
     label: "술",
-    shortLabel: "술",
-    guide: "술 거의 없음 1 ↔ 술 중심 5",
+    guide: "술 거의 없음 1 / 술 중심 5",
   },
   {
     key: "scoreRomance",
-    column: "score_romance",
     label: "설렘",
-    shortLabel: "설렘",
-    guide: "편한 관계 1 ↔ 설렘 가능성 5",
+    guide: "편한 관계 1 / 설렘 가능성 5",
   },
-];
-
-const scoreGuideExamples = [
-  "화덕피자: 온3 / 결2 / 톤2 / 리듬3 / 술2 / 설렘3",
-  "일 얘기 밤: 온2 / 결4 / 톤4 / 리듬2 / 술2 / 설렘2",
-  "전시+카페: 온2 / 결4 / 톤2 / 리듬2 / 술1 / 설렘2",
-  "볼링: 온5 / 결1 / 톤2 / 리듬4 / 술2 / 설렘3",
-  "망한 연애 썰: 온4 / 결3 / 톤1 / 리듬4 / 술3 / 설렘4",
-  "트레일러닝: 온5 / 결2 / 톤3 / 리듬3 / 술1 / 설렘2",
 ];
 
 async function fetchTicketData(force = false) {
@@ -206,6 +155,26 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+function lines(value: string, limit?: number) {
+  const items = value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return typeof limit === "number" ? items.slice(0, limit) : items;
+}
+
+function tags(value: string) {
+  return value
+    .split(/[#,\s]+/)
+    .map((tag) => tag.trim().replace(/^#/, ""))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function limitTagInput(value: string) {
+  return tags(value).join(", ");
+}
+
 function splitTimeValue(value: string) {
   const [hour, minute] = value.split(":");
   return {
@@ -213,8 +182,8 @@ function splitTimeValue(value: string) {
     minute:
       typeof minute === "string" &&
       minuteSteps.includes(minute as (typeof minuteSteps)[number])
-      ? minute
-      : "",
+        ? minute
+        : "",
   };
 }
 
@@ -238,90 +207,90 @@ function hourLabel(hour: string) {
   return `${period} ${String(displayHour).padStart(2, "0")}시`;
 }
 
-function templateDraft(template: AdminTicketTemplate): TemplateDraft {
+function primaryInstance(template: AdminTicketTemplate | null) {
+  if (!template?.instances.length) return null;
+
+  return [...template.instances]
+    .sort((left, right) => {
+      const leftArchived = left.visibility === "archived" ? 1 : 0;
+      const rightArchived = right.visibility === "archived" ? 1 : 0;
+      return (
+        leftArchived - rightArchived ||
+        `${left.event_date ?? "9999"}${left.event_time ?? ""}${left.created_at}`.localeCompare(
+          `${right.event_date ?? "9999"}${right.event_time ?? ""}${right.created_at}`,
+        )
+      );
+    })
+    .at(0)!;
+}
+
+function scoreDraft(value: number | null) {
+  return value == null ? "" : String(value);
+}
+
+function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
+  const instance = primaryInstance(template);
+
   return {
+    proposerUserId: template.proposer_user_id ?? "",
     title: template.title,
     shortDescription: template.short_description ?? "",
     detailSummary: template.detail_summary ?? "",
     detailActivities: template.detail_activities.join("\n"),
+    detailFlow: template.detail_flow.join("\n"),
     detailGoodFor: template.detail_good_for.join("\n"),
     detailNotice: template.detail_notice ?? "",
     imageUrl: template.image_url ?? "",
     moodTags: template.mood_tags.join(", "),
     activityType: template.activity_type ?? "",
     recommendationCopy: template.recommendation_copy ?? "",
-    defaultRegion: template.default_region ?? "",
-    defaultTime: template.default_time?.slice(0, 5) ?? "",
-    visibility: template.visibility === "question" ? "public" : template.visibility,
-    questionOrder:
-      template.question_order == null ? "" : String(template.question_order),
-    scoreTemperature:
-      template.score_temperature == null ? "" : String(template.score_temperature),
-    scoreTexture:
-      template.score_texture == null ? "" : String(template.score_texture),
-    scoreTone: template.score_tone == null ? "" : String(template.score_tone),
-    scoreRhythm:
-      template.score_rhythm == null ? "" : String(template.score_rhythm),
-    scoreAlcohol:
-      template.score_alcohol == null ? "" : String(template.score_alcohol),
-    scoreRomance:
-      template.score_romance == null ? "" : String(template.score_romance),
+    eventDate: template.event_date ?? instance?.event_date ?? "",
+    eventTime:
+      template.event_time?.slice(0, 5) ??
+      instance?.event_time?.slice(0, 5) ??
+      template.default_time?.slice(0, 5) ??
+      "",
+    region: template.region ?? instance?.region ?? template.default_region ?? "",
+    placeName: template.place_name ?? instance?.place_name ?? "",
+    address: template.address ?? instance?.address ?? "",
+    operationCode: template.operation_code ?? instance?.operation_code ?? "",
+    operationNote: template.operation_note ?? instance?.operation_note ?? "",
+    placeVisibility:
+      template.place_visibility ?? instance?.place_visibility ?? "confirmed_only",
+    visibility:
+      template.visibility === "question"
+        ? "public"
+        : template.visibility ?? instance?.visibility ?? "draft",
+    remainingSeatLabelCount: String(
+      template.remaining_seat_label_count ??
+        instance?.remaining_seat_label_count ??
+        0,
+    ),
+    scoreTemperature: scoreDraft(template.score_temperature),
+    scoreTexture: scoreDraft(template.score_texture),
+    scoreTone: scoreDraft(template.score_tone),
+    scoreRhythm: scoreDraft(template.score_rhythm),
+    scoreAlcohol: scoreDraft(template.score_alcohol),
+    scoreRomance: scoreDraft(template.score_romance),
   };
 }
 
-function instanceDraft(instance: AdminTicketInstance): InstanceDraft {
+function ticketRequestBody(draft: TicketDraft) {
   return {
-    title: instance.title,
-    eventDate: instance.event_date ?? "",
-    eventTime: instance.event_time?.slice(0, 5) ?? "",
-    region: instance.region ?? "",
-    placeName: instance.place_name ?? "",
-    address: instance.address ?? "",
-    operationCode: instance.operation_code ?? "",
-    operationNote: instance.operation_note ?? "",
-    placeVisibility: instance.place_visibility,
-    visibility: instance.visibility,
-    remainingSeatLabelCount: String(instance.remaining_seat_label_count ?? 0),
-  };
-}
-
-function requestBody(draft: TemplateDraft) {
-  return {
+    proposerUserId: draft.proposerUserId,
     title: draft.title,
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
-    detailActivities: draft.detailActivities
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean),
-    detailGoodFor: draft.detailGoodFor
-      .split(/\r?\n/)
-      .map((item) => item.trim())
-      .filter(Boolean),
+    detailActivities: lines(draft.detailActivities, 4),
+    detailFlow: lines(draft.detailFlow, 6),
+    detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice,
     imageUrl: draft.imageUrl,
-    moodTags: draft.moodTags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean),
+    moodTags: tags(draft.moodTags),
     activityType: draft.activityType,
     recommendationCopy: draft.recommendationCopy,
-    defaultRegion: draft.defaultRegion,
-    defaultTime: draft.defaultTime,
-    visibility: draft.visibility,
-    questionOrder: draft.questionOrder || null,
-    scoreTemperature: draft.scoreTemperature || null,
-    scoreTexture: draft.scoreTexture || null,
-    scoreTone: draft.scoreTone || null,
-    scoreRhythm: draft.scoreRhythm || null,
-    scoreAlcohol: draft.scoreAlcohol || null,
-    scoreRomance: draft.scoreRomance || null,
-  };
-}
-
-function instanceRequestBody(draft: InstanceDraft) {
-  return {
-    title: draft.title,
+    defaultRegion: draft.region,
+    defaultTime: draft.eventTime,
     eventDate: draft.eventDate,
     eventTime: draft.eventTime,
     region: draft.region,
@@ -332,60 +301,13 @@ function instanceRequestBody(draft: InstanceDraft) {
     placeVisibility: draft.placeVisibility,
     visibility: draft.visibility,
     remainingSeatLabelCount: draft.remainingSeatLabelCount,
+    scoreTemperature: draft.scoreTemperature || null,
+    scoreTexture: draft.scoreTexture || null,
+    scoreTone: draft.scoreTone || null,
+    scoreRhythm: draft.scoreRhythm || null,
+    scoreAlcohol: draft.scoreAlcohol || null,
+    scoreRomance: draft.scoreRomance || null,
   };
-}
-
-function limitTagInput(value: string) {
-  return value
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(", ");
-}
-
-function dateTimeText(instance: AdminTicketInstance) {
-  return [instance.event_date, instance.event_time?.slice(0, 5)]
-    .filter(Boolean)
-    .join(" ") || "일정 미정";
-}
-
-function instanceStartDate(instance: AdminTicketInstance) {
-  if (!instance.event_date) return null;
-  const time = instance.event_time?.slice(0, 5) || "00:00";
-  const date = new Date(`${instance.event_date}T${time}:00+09:00`);
-  return Number.isFinite(date.getTime()) ? date : null;
-}
-
-function testTimeModeForInstance(instance: AdminTicketInstance) {
-  const startAt = instanceStartDate(instance);
-  if (!startAt) return null;
-
-  const now = new Date();
-  const diffMs = startAt.getTime() - now.getTime();
-  const hourMs = 60 * 60 * 1000;
-
-  if (diffMs > 24 * hourMs) return "applied" satisfies TestTimeMode;
-  if (diffMs > 3 * hourMs) return "approved" satisfies TestTimeMode;
-  if (diffMs > 0) return "pre_start" satisfies TestTimeMode;
-  if (diffMs > -3 * hourMs) return "in_progress" satisfies TestTimeMode;
-  return "feedback" satisfies TestTimeMode;
-}
-
-function shortDateText(value: string | null) {
-  if (!value) return "날짜 미정";
-  const [, month, day] = value.split("-");
-  return month && day ? `${month}.${day}` : value;
-}
-
-function instanceDisplayTitle(instance: AdminTicketInstance) {
-  return instance.operation_code
-    ? `[${instance.operation_code}] ${instance.title}`
-    : instance.title;
-}
-
-function membershipText(profile: AdminProfile) {
-  return membershipStatusLabels[profile.membership_status ?? "none"];
 }
 
 function updatedDate(value: string) {
@@ -399,34 +321,69 @@ function updatedDate(value: string) {
   }).format(date);
 }
 
-function scoreSummary(template: AdminTicketTemplate) {
-  const items = scoreFields
-    .map((field) => {
-      const value = template[field.column];
-      return value == null ? null : `${field.shortLabel}${value}`;
-    })
-    .filter(Boolean);
+function operatorSummary(profile: AdminProfile | null | undefined) {
+  if (!profile) return "제안자 미지정";
+  return `${profileName(profile)} 운영자`;
+}
 
-  return items.length ? items.join(" · ") : "성향 점수 미입력";
+function ticketPreview(
+  draft: TicketDraft,
+  template: AdminTicketTemplate | null,
+  instance: AdminTicketInstance | null,
+  proposer: AdminProfile | null,
+): GatheringTicket {
+  const proposerName =
+    proposer?.name?.trim() || template?.proposer_display_name?.trim() || "운영자";
+  const shortDescription =
+    draft.shortDescription.trim() || draft.recommendationCopy.trim();
+
+  return {
+    id: instance?.id ?? template?.id ?? "preview",
+    templateId: template?.id ?? "preview",
+    title: draft.title.trim() || "새 초대장",
+    subtitle: shortDescription || "교집합 초대장",
+    date: draft.eventDate,
+    time: draft.eventTime || "시간 미정",
+    area: draft.region.trim() || "지역 미정",
+    moodTags: tags(draft.moodTags),
+    activityType: draft.activityType.trim() || "admin_ticket",
+    imageUrl: draft.imageUrl.trim() || undefined,
+    remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
+    peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
+    reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
+    detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
+    detailActivities: lines(draft.detailActivities, 4),
+    detailFlow: lines(draft.detailFlow, 6),
+    detailGoodFor: lines(draft.detailGoodFor),
+    detailNotice: draft.detailNotice.trim() || undefined,
+    proposerLabel: `${proposerName}님이 제안한 교집합`,
+    proposerProfile: {
+      userId: proposer?.user_id ?? template?.proposer_user_id,
+      displayName: proposerName,
+      publicIntro:
+        proposer?.public_intro ?? template?.proposer_public_intro ?? null,
+      publicEmoji:
+        proposer?.public_emoji ?? template?.proposer_public_emoji ?? null,
+    },
+    vibeScores: {
+      temperature: Number.parseInt(draft.scoreTemperature, 10) || null,
+      texture: Number.parseInt(draft.scoreTexture, 10) || null,
+      tone: Number.parseInt(draft.scoreTone, 10) || null,
+      rhythm: Number.parseInt(draft.scoreRhythm, 10) || null,
+      alcohol: Number.parseInt(draft.scoreAlcohol, 10) || null,
+      romance: Number.parseInt(draft.scoreRomance, 10) || null,
+    },
+  };
 }
 
 export function TicketAdminPanel() {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [waitlist, setWaitlist] = useState<AdminTicketWaitlistEntry[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
-    null,
-  );
-  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
-    null,
-  );
-  const [selectedDate, setSelectedDate] = useState<string>("");
-  const [openDateTemplateIds, setOpenDateTemplateIds] = useState<string[]>([]);
-  const [listMode, setListMode] = useState<ListMode>("templates");
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<TicketDraft | null>(null);
   const [query, setQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
-  const [templateForm, setTemplateForm] = useState<TemplateDraft | null>(null);
-  const [instanceForm, setInstanceForm] = useState<InstanceDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -437,7 +394,7 @@ export function TicketAdminPanel() {
     setTemplates(data.templates ?? []);
     setProfiles(data.profiles ?? []);
     setWaitlist(data.waitlist ?? []);
-    setSelectedTemplateId((current) => {
+    setSelectedTicketId((current) => {
       if (current && data.templates.some((template) => template.id === current)) {
         return current;
       }
@@ -449,8 +406,7 @@ export function TicketAdminPanel() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchTicketData(force);
-      hydrate(data);
+      hydrate(await fetchTicketData(force));
     } catch {
       setError("티켓 정보를 불러오지 못했습니다.");
     } finally {
@@ -462,345 +418,61 @@ export function TicketAdminPanel() {
     void load();
   }, [load]);
 
-  const selectedTemplate =
-    templates.find((template) => template.id === selectedTemplateId) ?? null;
-  const selectedInstance =
-    selectedTemplate?.instances.find(
-      (instance) => instance.id === selectedInstanceId,
-    ) ?? null;
+  const selectedTicket =
+    templates.find((template) => template.id === selectedTicketId) ?? null;
+  const selectedInstance = primaryInstance(selectedTicket);
+  const operatorProfiles = useMemo(
+    () => profiles.filter((profile) => profile.is_test_participant === true),
+    [profiles],
+  );
+  const proposer =
+    operatorProfiles.find((profile) => profile.user_id === draft?.proposerUserId) ??
+    profiles.find((profile) => profile.user_id === selectedTicket?.proposer_user_id) ??
+    null;
 
   useEffect(() => {
-    setTemplateForm(selectedTemplate ? templateDraft(selectedTemplate) : null);
-    if (
-      selectedInstanceId &&
-      !selectedTemplate?.instances.some(
-        (instance) => instance.id === selectedInstanceId,
-      )
-    ) {
-      setSelectedInstanceId(null);
-    }
-  }, [selectedInstanceId, selectedTemplate]);
+    setDraft(selectedTicket ? draftFromTicket(selectedTicket) : null);
+    setMemberQuery("");
+  }, [selectedTicket]);
 
-  useEffect(() => {
-    setInstanceForm(selectedInstance ? instanceDraft(selectedInstance) : null);
+  const instanceById = useMemo(() => {
+    const pairs = templates.flatMap((template) =>
+      template.instances.map((instance) => [instance.id, instance] as const),
+    );
+    return new Map(pairs);
+  }, [templates]);
+
+  const assignedProfiles = useMemo(() => {
+    if (!selectedInstance) return [];
+    return selectedInstance.assignments
+      .map((assignment) => assignment.profile)
+      .filter((profile): profile is AdminProfile => Boolean(profile));
   }, [selectedInstance]);
 
-  const applyResponse = async (response: Response, successMessage: string) => {
-    const data = (await response.json().catch(() => null)) as
-      | (TicketData & { error?: string })
-      | null;
-    if (!response.ok || !data) {
-      throw new Error(data?.error ?? "ticket-action-failed");
-    }
-    hydrate(data);
-    setNotice(successMessage);
-  };
-
-  const runAction = async (
-    method: "POST" | "PATCH" | "DELETE",
-    body: Record<string, unknown> | null,
-    successMessage: string,
-    queryString = "",
-  ) => {
-    if (saving) return false;
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch(`/api/admin/tickets${queryString}`, {
-        method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      await applyResponse(response, successMessage);
-      return true;
-    } catch (actionError) {
-      setError(
-        actionError instanceof Error
-          ? actionError.message
-          : "티켓 작업을 처리하지 못했습니다.",
-      );
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const createTemplate = async () => {
-    const created = await runAction(
-      "POST",
-      {
-        action: "create_template",
-        title: "새 티켓 템플릿",
-        visibility: "draft",
-      },
-      "새 템플릿을 만들었습니다.",
-    );
-    if (created) setSelectedInstanceId(null);
-  };
-
-  const saveTemplate = async () => {
-    if (!selectedTemplate || !templateForm) return;
-    await runAction(
-      "PATCH",
-      {
-        entity: "template",
-        id: selectedTemplate.id,
-        ...requestBody(templateForm),
-      },
-      "템플릿을 저장했습니다.",
-    );
-  };
-
-  const duplicateTemplate = async () => {
-    if (!selectedTemplate) return;
-    const includeInstances = window.confirm(
-      "세부 티켓도 함께 복제할까요?\n확인: 함께 복제 / 취소: 템플릿만 복제",
-    );
-    await runAction(
-      "POST",
-      {
-        action: "duplicate_template",
-        templateId: selectedTemplate.id,
-        includeInstances,
-      },
-      "템플릿을 복제했습니다.",
-    );
-  };
-
-  const deleteTemplate = async () => {
-    if (!selectedTemplate) return;
-    const confirmed = window.confirm(
-      `"${selectedTemplate.title}" 템플릿을 삭제할까요?\n연결된 세부 티켓과 배정 정보도 함께 삭제됩니다.`,
-    );
-    if (!confirmed) return;
-
-    const deleted = await runAction(
-      "DELETE",
-      null,
-      "템플릿을 삭제했습니다.",
-      `?templateId=${encodeURIComponent(selectedTemplate.id)}`,
-    );
-    if (deleted) setSelectedInstanceId(null);
-  };
-
-  const createInstance = async () => {
-    if (!selectedTemplate) return;
-    const created = await runAction(
-      "POST",
-      {
-        action: "create_instance",
-        templateId: selectedTemplate.id,
-        title: selectedTemplate.title,
-        eventTime: selectedTemplate.default_time?.slice(0, 5) ?? "",
-        region: selectedTemplate.default_region ?? "",
-        visibility: "draft",
-        placeVisibility: "confirmed_only",
-      },
-      "세부 티켓을 만들었습니다.",
-    );
-    if (created) {
-      const latestTemplate = templates.find(
-        (template) => template.id === selectedTemplate.id,
-      );
-      setSelectedInstanceId(latestTemplate?.instances.at(-1)?.id ?? null);
-    }
-  };
-
-  const saveInstance = async () => {
-    if (!selectedInstance || !instanceForm) return;
-    await runAction(
-      "PATCH",
-      {
-        entity: "instance",
-        id: selectedInstance.id,
-        ...instanceRequestBody(instanceForm),
-      },
-      "세부 티켓을 저장했습니다.",
-    );
-  };
-
-  const duplicateInstance = async () => {
-    if (!selectedInstance) return;
-    await runAction(
-      "POST",
-      { action: "duplicate_instance", instanceId: selectedInstance.id },
-      "세부 티켓을 복제했습니다.",
-    );
-  };
-
-  const shiftTestInstanceTime = async (mode: TestTimeMode) => {
-    if (!selectedInstance) return;
-    await runAction(
-      "POST",
-      {
-        action: "set_instance_test_time",
-        instanceId: selectedInstance.id,
-        mode,
-      },
-      "테스트 티켓 시간을 이동했습니다.",
-    );
-  };
-
-  const uploadImage = async (file: File) => {
-    if (!selectedTemplate || saving) return;
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("templateId", selectedTemplate.id);
-      const uploadResponse = await fetch("/api/admin/tickets/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadData = (await uploadResponse.json().catch(() => null)) as {
-        imageUrl?: string;
-        error?: string;
-      } | null;
-      if (!uploadResponse.ok || !uploadData?.imageUrl) {
-        throw new Error(uploadData?.error ?? "이미지를 업로드하지 못했습니다.");
-      }
-
-      const nextForm = { ...templateForm!, imageUrl: uploadData.imageUrl };
-      setTemplateForm(nextForm);
-      const saveResponse = await fetch("/api/admin/tickets", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity: "template",
-          id: selectedTemplate.id,
-          ...requestBody(nextForm),
-        }),
-      });
-      await applyResponse(saveResponse, "대표 이미지를 교체했습니다.");
-    } catch (uploadError) {
-      setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : "이미지를 업로드하지 못했습니다.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const allInstances = useMemo(
-    () =>
-      templates
-        .flatMap((template) =>
-          template.instances.map((instance) => ({ template, instance })),
-        )
-        .sort((left, right) =>
-          `${left.instance.event_date ?? "9999"}${left.instance.event_time ?? ""}`.localeCompare(
-            `${right.instance.event_date ?? "9999"}${right.instance.event_time ?? ""}`,
-          ),
-        ),
-    [templates],
-  );
-  const instanceById = useMemo(
-    () =>
-      new Map(
-        allInstances.map(({ instance, template }) => [
-          instance.id,
-          { instance, template },
-        ]),
-      ),
-    [allInstances],
-  );
-  const dateOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          allInstances
-            .map(({ instance }) => instance.event_date)
-            .filter((date): date is string => Boolean(date)),
-        ),
-      ).sort(),
-    [allInstances],
-  );
-  const dateTemplateGroups = useMemo(
-    () =>
-      selectedDate
-        ? templates
-            .map((template) => ({
-              template,
-              instances: template.instances
-                .filter((instance) => instance.event_date === selectedDate)
-                .sort((left, right) =>
-                  `${left.event_time ?? ""}${left.operation_code ?? ""}${left.title}`.localeCompare(
-                    `${right.event_time ?? ""}${right.operation_code ?? ""}${right.title}`,
-                  ),
-                ),
-            }))
-            .filter((group) => group.instances.length > 0)
-        : [],
-    [selectedDate, templates],
-  );
-
-  useEffect(() => {
-    if (listMode !== "dates") return;
-    if (!dateOptions.length) {
-      setSelectedDate("");
-      return;
-    }
-    setSelectedDate((current) =>
-      current && dateOptions.includes(current) ? current : dateOptions[0],
-    );
-  }, [dateOptions, listMode]);
-
-  useEffect(() => {
-    setOpenDateTemplateIds([]);
-  }, [selectedDate]);
-
-  const filteredTemplates = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return templates;
-    return templates.filter((template) =>
-      `${template.title} ${template.activity_type ?? ""} ${template.default_region ?? ""}`
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [query, templates]);
-
   const assignableProfiles = useMemo(() => {
-    if (!selectedInstance || !selectedTemplate || !selectedInstance.event_date) {
-      return [];
-    }
+    if (!selectedTicket || !selectedInstance) return [];
+
     const assignedIds = new Set(
       selectedInstance.assignments.map((assignment) => assignment.profile_id),
     );
-    for (const { instance } of allInstances) {
-      if (instance.event_date === selectedInstance.event_date) {
-        for (const assignment of instance.assignments) {
-          assignedIds.add(assignment.profile_id);
-        }
-      }
-    }
-    const isTestOnly = selectedInstance.visibility === "test_only";
     const candidateIds = new Set<string>();
 
-    if (isTestOnly) {
-      for (const profile of profiles) {
-        if (profile.is_test_participant) {
-          candidateIds.add(profile.user_id);
-        }
-      }
+    if (selectedInstance.visibility === "test_only") {
+      for (const profile of operatorProfiles) candidateIds.add(profile.user_id);
     } else {
       for (const row of waitlist) {
         const rowInstance = row.ticket_instance_id
-          ? instanceById.get(row.ticket_instance_id)?.instance
-          : instanceById.get(row.ticket_id)?.instance;
-        const rowTemplateId =
-          row.ticket_template_id ?? rowInstance?.template_id ?? null;
-        const rowDate = row.meeting_date ?? rowInstance?.event_date ?? null;
+          ? instanceById.get(row.ticket_instance_id)
+          : row.ticket_id
+            ? instanceById.get(row.ticket_id)
+            : null;
+        const rowTemplateId = row.ticket_template_id ?? rowInstance?.template_id;
+        const rowDate = row.meeting_date ?? rowInstance?.event_date;
 
         if (
           row.user_id &&
-          rowDate === selectedInstance.event_date &&
-          rowTemplateId === selectedTemplate.id &&
-          !assignedIds.has(row.user_id)
+          rowTemplateId === selectedTicket.id &&
+          rowDate === selectedInstance.event_date
         ) {
           candidateIds.add(row.user_id);
         }
@@ -816,64 +488,203 @@ export function TicketAdminPanel() {
           .toLowerCase()
           .includes(normalized),
       )
-      .slice(0, 8);
+      .slice(0, 10);
   }, [
-    allInstances,
     instanceById,
     memberQuery,
+    operatorProfiles,
     profiles,
     selectedInstance,
-    selectedTemplate,
+    selectedTicket,
     waitlist,
   ]);
 
+  const previewTicket =
+    draft && ticketPreview(draft, selectedTicket, selectedInstance, proposer);
+
+  const filteredTickets = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return templates;
+    return templates.filter((template) =>
+      [
+        template.title,
+        template.proposer_display_name,
+        template.region,
+        template.default_region,
+        template.activity_type,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
+    );
+  }, [query, templates]);
+
+  const applyResponse = async (response: Response, successMessage: string) => {
+    const data = (await response.json().catch(() => null)) as
+      | (TicketData & { error?: string })
+      | null;
+    if (!response.ok || !data) {
+      throw new Error(data?.error ?? "ticket-action-failed");
+    }
+    hydrate(data);
+    setNotice(successMessage);
+    return data;
+  };
+
+  const runAction = async (
+    method: "POST" | "PATCH" | "DELETE",
+    body: Record<string, unknown> | null,
+    successMessage: string,
+    queryString = "",
+  ) => {
+    if (saving) return null;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/admin/tickets${queryString}`, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return await applyResponse(response, successMessage);
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : "티켓 작업을 처리하지 못했습니다.",
+      );
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createTicket = async () => {
+    const firstOperator = operatorProfiles[0];
+    if (!firstOperator) {
+      setError("운영자로 표시된 프로필을 먼저 만들어주세요.");
+      return;
+    }
+
+    const data = await runAction(
+      "POST",
+      {
+        action: "create_ticket",
+        title: "새 초대장",
+        proposerUserId: firstOperator.user_id,
+        visibility: "draft",
+        placeVisibility: "confirmed_only",
+        remainingSeatLabelCount: "0",
+        eventTime: "19:00",
+        region: "",
+      },
+      "새 초대장을 만들었습니다.",
+    );
+    if (data?.templates[0]) setSelectedTicketId(data.templates[0].id);
+  };
+
+  const saveTicket = async () => {
+    if (!selectedTicket || !draft) return;
+    await runAction(
+      "PATCH",
+      {
+        entity: "ticket",
+        id: selectedTicket.id,
+        ...ticketRequestBody(draft),
+      },
+      "초대장을 저장했습니다.",
+    );
+  };
+
+  const deleteTicket = async () => {
+    if (!selectedTicket) return;
+    const confirmed = window.confirm(
+      `"${selectedTicket.title}" 초대장을 삭제할까요?\n연결된 운영 티켓과 배정 정보도 함께 삭제됩니다.`,
+    );
+    if (!confirmed) return;
+
+    const data = await runAction(
+      "DELETE",
+      null,
+      "초대장을 삭제했습니다.",
+      `?templateId=${encodeURIComponent(selectedTicket.id)}`,
+    );
+    setSelectedTicketId(data?.templates[0]?.id ?? null);
+  };
+
+  const uploadImage = async (file: File) => {
+    if (!selectedTicket || !draft || saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("templateId", selectedTicket.id);
+
+      const uploadResponse = await fetch("/api/admin/tickets/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const uploadData = (await uploadResponse.json().catch(() => null)) as {
+        imageUrl?: string;
+        error?: string;
+      } | null;
+      if (!uploadResponse.ok || !uploadData?.imageUrl) {
+        throw new Error(uploadData?.error ?? "이미지를 업로드하지 못했습니다.");
+      }
+
+      const nextDraft = { ...draft, imageUrl: uploadData.imageUrl };
+      setDraft(nextDraft);
+      const saveResponse = await fetch("/api/admin/tickets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "ticket",
+          id: selectedTicket.id,
+          ...ticketRequestBody(nextDraft),
+        }),
+      });
+      await applyResponse(saveResponse, "대표 이미지를 교체했습니다.");
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "이미지를 업로드하지 못했습니다.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <section className="flex h-[calc(100dvh-190px)] min-h-[680px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+    <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold">티켓 관리</h2>
-            <p className="mt-1 text-xs text-black/45">
-              템플릿과 실제 운영 티켓, 배정 멤버를 한곳에서 관리합니다.
+            <p className="mt-1 text-xs font-semibold text-black/42">
+              제안자, 초대장 문구, 일정과 장소를 한 티켓 안에서 관리합니다.
             </p>
-            {loading && templates.length > 0 && (
-              <p className="mt-1 text-[11px] font-semibold text-accent">
-                새로고침 중입니다.
-              </p>
-            )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex rounded-xl bg-[#f2f3f1] p-1">
-              <ModeButton
-                selected={listMode === "templates"}
-                onClick={() => setListMode("templates")}
-              >
-                템플릿 보기
-              </ModeButton>
-              <ModeButton
-                selected={listMode === "dates"}
-                onClick={() => setListMode("dates")}
-              >
-                날짜별 보기
-              </ModeButton>
-            </div>
-            <button
-              type="button"
+            <IconButton
               disabled={loading || saving}
               onClick={() => void load(true)}
-              className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
+              icon={RefreshCw}
             >
               새로고침
-            </button>
-            <button
-              type="button"
+            </IconButton>
+            <IconButton
+              primary
               disabled={saving}
-              onClick={() => void createTemplate()}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white disabled:bg-black/30"
+              onClick={() => void createTicket()}
+              icon={Plus}
             >
-              <Plus size={16} aria-hidden />
-              티켓 템플릿 만들기
-            </button>
+              초대장 만들기
+            </IconButton>
           </div>
         </div>
 
@@ -889,7 +700,7 @@ export function TicketAdminPanel() {
         )}
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[390px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[350px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-r border-black/10">
           <label className="relative m-4 block">
             <Search
@@ -900,7 +711,7 @@ export function TicketAdminPanel() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="템플릿 제목, 유형, 지역 검색"
+              placeholder="제목, 제안자, 지역 검색"
               className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>
@@ -908,182 +719,93 @@ export function TicketAdminPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
             {loading && templates.length === 0 ? (
               <PanelMessage>티켓 정보를 불러오는 중입니다.</PanelMessage>
-            ) : listMode === "templates" ? (
-              filteredTemplates.length ? (
-                <div className="space-y-3">
-                  {filteredTemplates.map((template) => (
-                    <TemplateListCard
-                      key={template.id}
-                      template={template}
-                      selected={template.id === selectedTemplateId}
-                      onClick={() => {
-                        setSelectedTemplateId(template.id);
-                        setSelectedInstanceId(null);
-                      }}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <PanelMessage>등록된 티켓 템플릿이 없습니다.</PanelMessage>
-              )
-            ) : dateOptions.length ? (
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-black/10 bg-white p-3">
-                  <p className="text-[11px] font-bold text-black/45">
-                    날짜 선택
-                  </p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {dateOptions.map((date) => (
-                      <button
-                        key={date}
-                        type="button"
-                        onClick={() => setSelectedDate(date)}
-                        className={cn(
-                          "rounded-xl border px-3 py-2 text-left text-xs font-bold transition",
-                          selectedDate === date
-                            ? "border-accent bg-accent/12 text-black"
-                            : "border-black/10 text-black/45 hover:border-black/20",
-                        )}
-                      >
-                        {date}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {selectedDate && dateTemplateGroups.length ? (
-                  <div className="space-y-2">
-                    {dateTemplateGroups.map(({ template, instances }) => {
-                      const open = openDateTemplateIds.includes(template.id);
-                      const assignmentCount = instances.reduce(
-                        (sum, instance) => sum + instance.assignment_count,
-                        0,
-                      );
-                      const waitlistCount = instances.reduce(
-                        (sum, instance) => sum + instance.waitlist_count,
-                        0,
-                      );
-
-                      return (
-                        <section
-                          key={template.id}
-                          className="overflow-hidden rounded-2xl border border-black/10 bg-white"
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpenDateTemplateIds((current) =>
-                                current.includes(template.id)
-                                  ? current.filter((id) => id !== template.id)
-                                  : [...current, template.id],
-                              )
-                            }
-                            className="w-full px-4 py-3 text-left transition hover:bg-black/[0.02]"
-                          >
-                            <h3 className="text-sm font-bold text-black">
-                              {template.title}
-                            </h3>
-                            <p className="mt-1 text-[11px] font-semibold text-black/42">
-                              세부 {instances.length}개 · 배정 {assignmentCount}명 · 신청{" "}
-                              {waitlistCount}명
-                            </p>
-                          </button>
-
-                          {open && (
-                            <div className="border-t border-black/8 p-2">
-                              {instances.map((instance) => (
-                                <button
-                                  key={instance.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedTemplateId(template.id);
-                                    setSelectedInstanceId(instance.id);
-                                  }}
-                                  className={cn(
-                                    "w-full rounded-xl px-3 py-2.5 text-left transition",
-                                    instance.id === selectedInstanceId
-                                      ? "bg-accent/12"
-                                      : "hover:bg-black/[0.03]",
-                                  )}
-                                >
-                                  <p className="text-xs font-bold text-black">
-                                    {instanceDisplayTitle(instance)}
-                                  </p>
-                                  <p className="mt-1 text-[11px] font-semibold text-black/42">
-                                    {instance.event_time?.slice(0, 5) ?? "시간 미정"} ·{" "}
-                                    {instance.region ?? "지역 미정"} · 배정{" "}
-                                    {instance.assignment_count}명
-                                  </p>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <PanelMessage>
-                    해당 날짜에 등록된 티켓이 없습니다.
-                  </PanelMessage>
-                )}
+            ) : filteredTickets.length ? (
+              <div className="space-y-3">
+                {filteredTickets.map((template) => (
+                  <TicketListCard
+                    key={template.id}
+                    template={template}
+                    selected={template.id === selectedTicketId}
+                    onClick={() => setSelectedTicketId(template.id)}
+                  />
+                ))}
               </div>
             ) : (
-              <PanelMessage>등록된 세부 티켓이 없습니다.</PanelMessage>
+              <PanelMessage>등록된 초대장이 없습니다.</PanelMessage>
             )}
           </div>
         </aside>
 
         <main className="min-h-0 overflow-y-auto bg-[#fbfbfa] p-5">
-          {!selectedTemplate || !templateForm ? (
-            <PanelMessage>템플릿을 선택하거나 새로 만들어주세요.</PanelMessage>
-          ) : selectedInstance && instanceForm ? (
-            <InstanceEditor
-              template={selectedTemplate}
-              instance={selectedInstance}
-              draft={instanceForm}
-              profiles={assignableProfiles}
-              memberQuery={memberQuery}
-              saving={saving}
-              onDraftChange={setInstanceForm}
-              onMemberQueryChange={setMemberQuery}
-              onBack={() => setSelectedInstanceId(null)}
-              onSave={() => void saveInstance()}
-              onDuplicate={() => void duplicateInstance()}
-              onShiftTestTime={(mode) => void shiftTestInstanceTime(mode)}
-              onAddMember={(profileId) =>
-                void runAction(
-                  "POST",
-                  {
-                    action: "add_assignment",
-                    instanceId: selectedInstance.id,
-                    profileId,
-                  },
-                  "멤버를 배정했습니다.",
-                )
-              }
-              onRemoveMember={(profileId) =>
-                void runAction(
-                  "DELETE",
-                  null,
-                  "멤버를 제거했습니다.",
-                  `?instanceId=${encodeURIComponent(selectedInstance.id)}&profileId=${encodeURIComponent(profileId)}`,
-                )
-              }
-            />
+          {!selectedTicket || !draft ? (
+            <PanelMessage>초대장을 선택하거나 새로 만들어주세요.</PanelMessage>
           ) : (
-            <TemplateEditor
-              template={selectedTemplate}
-              draft={templateForm}
-              saving={saving}
-              onDraftChange={setTemplateForm}
-              onSave={() => void saveTemplate()}
-              onDuplicate={() => void duplicateTemplate()}
-              onDelete={() => void deleteTemplate()}
-              onCreateInstance={() => void createInstance()}
-              onSelectInstance={setSelectedInstanceId}
-              onUploadImage={(file) => void uploadImage(file)}
-            />
+            <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_390px] gap-5">
+              <div className="min-w-0 space-y-5">
+                <TicketEditorHeader
+                  ticket={selectedTicket}
+                  draft={draft}
+                  proposer={proposer}
+                  operators={operatorProfiles}
+                  saving={saving}
+                  onDraftChange={setDraft}
+                  onSave={() => void saveTicket()}
+                  onDelete={() => void deleteTicket()}
+                />
+
+                <BasicEditor
+                  draft={draft}
+                  saving={saving}
+                  onDraftChange={setDraft}
+                  onUploadImage={(file) => void uploadImage(file)}
+                />
+
+                <ContentEditor
+                  draft={draft}
+                  onDraftChange={setDraft}
+                />
+
+                <ScoreEditor
+                  draft={draft}
+                  saving={saving}
+                  onDraftChange={setDraft}
+                />
+
+                {selectedInstance && (
+                  <ParticipantPanel
+                    instance={selectedInstance}
+                    assignedProfiles={assignedProfiles}
+                    assignableProfiles={assignableProfiles}
+                    memberQuery={memberQuery}
+                    saving={saving}
+                    onMemberQueryChange={setMemberQuery}
+                    onAddMember={(profileId) =>
+                      void runAction(
+                        "POST",
+                        {
+                          action: "add_assignment",
+                          instanceId: selectedInstance.id,
+                          profileId,
+                        },
+                        "멤버를 배정했습니다.",
+                      )
+                    }
+                    onRemoveMember={(profileId) =>
+                      void runAction(
+                        "DELETE",
+                        null,
+                        "멤버를 제거했습니다.",
+                        `?instanceId=${encodeURIComponent(selectedInstance.id)}&profileId=${encodeURIComponent(profileId)}`,
+                      )
+                    }
+                  />
+                )}
+              </div>
+
+              {previewTicket && (
+                <TicketPreviewPanel ticket={previewTicket} />
+              )}
+            </div>
           )}
         </main>
       </div>
@@ -1091,7 +813,7 @@ export function TicketAdminPanel() {
   );
 }
 
-function TemplateListCard({
+function TicketListCard({
   template,
   selected,
   onClick,
@@ -1100,6 +822,15 @@ function TemplateListCard({
   selected: boolean;
   onClick: () => void;
 }) {
+  const instance = primaryInstance(template);
+  const dateTime = [
+    template.event_date ?? instance?.event_date,
+    (template.event_time ?? instance?.event_time)?.slice(0, 5),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const region = template.region ?? instance?.region ?? template.default_region;
+
   return (
     <button
       type="button"
@@ -1125,20 +856,22 @@ function TemplateListCard({
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-bold">{template.title}</h3>
         <p className="mt-1 truncate text-xs font-semibold text-black/42">
-          {template.activity_type || "유형 미정"} ·{" "}
-          {template.default_region || "지역 미정"}
+          {template.proposer_display_name
+            ? `${template.proposer_display_name} 제안`
+            : "제안자 미지정"}
         </p>
-        <p className="mt-2 text-[11px] font-semibold text-accent">
-          {ticketVisibilityLabels[template.visibility]}
+        <p className="mt-1 truncate text-[11px] font-semibold text-black/38">
+          {dateTime || "일정 미정"} · {region || "지역 미정"}
         </p>
-        <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
-          {scoreSummary(template)}
-        </p>
-        <p className="mt-1 text-[10px] text-black/38">
-          세부 {template.instance_count} · 배정 {template.assignment_count} · 대기열{" "}
-          {template.waitlist_count}
-        </p>
-        <p className="mt-1 text-[10px] text-black/30">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <VisibilityBadge visibility={template.visibility} />
+          {template.instance_count > 1 && (
+            <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+              기존 세부 {template.instance_count}
+            </span>
+          )}
+        </div>
+        <p className="mt-2 text-[10px] text-black/30">
           수정 {updatedDate(template.updated_at)}
         </p>
       </div>
@@ -1146,317 +879,290 @@ function TemplateListCard({
   );
 }
 
-function TemplateEditor({
-  template,
+function TicketEditorHeader({
+  ticket,
   draft,
+  proposer,
+  operators,
   saving,
   onDraftChange,
   onSave,
-  onDuplicate,
   onDelete,
-  onCreateInstance,
-  onSelectInstance,
+}: {
+  ticket: AdminTicketTemplate;
+  draft: TicketDraft;
+  proposer: AdminProfile | null;
+  operators: AdminProfile[];
+  saving: boolean;
+  onDraftChange: (draft: TicketDraft) => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+            invitation
+          </p>
+          <h3 className="mt-1 text-xl font-bold">{draft.title || "새 초대장"}</h3>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            {operatorSummary(proposer)} · {ticketVisibilityLabels[draft.visibility]} ·{" "}
+            수정 {updatedDate(ticket.updated_at)}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <IconButton disabled={saving} onClick={onDelete} icon={Trash2}>
+            삭제
+          </IconButton>
+          <IconButton primary disabled={saving} onClick={onSave} icon={Check}>
+            저장
+          </IconButton>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <SelectField
+          label="제안자"
+          value={draft.proposerUserId}
+          options={[
+            { value: "", label: "운영자 선택" },
+            ...operators.map((profile) => ({
+              value: profile.user_id,
+              label: `${profileName(profile)} · ${membershipLabel(profile)}`,
+            })),
+          ]}
+          onChange={(proposerUserId) =>
+            onDraftChange({ ...draft, proposerUserId })
+          }
+        />
+        <SelectField
+          label="공개 상태"
+          value={draft.visibility}
+          options={editableTicketVisibilities.map((value) => ({
+            value,
+            label: ticketVisibilityLabels[value],
+          }))}
+          onChange={(visibility) =>
+            onDraftChange({ ...draft, visibility: visibility as TicketVisibility })
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
+function BasicEditor({
+  draft,
+  saving,
+  onDraftChange,
   onUploadImage,
 }: {
-  template: AdminTicketTemplate;
-  draft: TemplateDraft;
+  draft: TicketDraft;
   saving: boolean;
-  onDraftChange: (draft: TemplateDraft) => void;
-  onSave: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  onCreateInstance: () => void;
-  onSelectInstance: (id: string) => void;
+  onDraftChange: (draft: TicketDraft) => void;
   onUploadImage: (file: File) => void;
 }) {
   return (
-    <div className="mx-auto max-w-[980px] space-y-5">
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-              ticket template
-            </p>
-            <h3 className="mt-1 text-xl font-bold">템플릿 상세</h3>
-          </div>
-          <div className="flex gap-2">
-            <ActionButton disabled={saving} onClick={onDelete} icon={Trash2}>
-              삭제
-            </ActionButton>
-            <ActionButton disabled={saving} onClick={onDuplicate} icon={Copy}>
-              복제
-            </ActionButton>
-            <ActionButton primary disabled={saving} onClick={onSave} icon={Check}>
-              저장
-            </ActionButton>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-[260px_minmax(0,1fr)] gap-5">
-          <div>
-            <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
-              {draft.imageUrl ? (
-                <img
-                  src={draft.imageUrl}
-                  alt="티켓 대표 이미지 미리보기"
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <div className="text-center text-xs font-semibold text-black/35">
-                  <ImageIcon size={30} className="mx-auto mb-2" aria-hidden />
-                  대표 이미지 없음
-                </div>
-              )}
-            </div>
-            <label className="mt-3 flex h-10 cursor-pointer items-center justify-center rounded-xl border border-black/10 text-sm font-semibold text-black/55">
-              이미지 업로드/교체
-              <input
-                type="file"
-                accept="image/*"
-                disabled={saving}
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) onUploadImage(file);
-                  event.target.value = "";
-                }}
-              />
-            </label>
-            <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-xs font-bold text-black/60">
-              <input
-                type="checkbox"
-                checked={Boolean(draft.questionOrder)}
-                disabled={saving}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    questionOrder: event.target.checked
-                      ? draft.questionOrder || "1"
-                      : "",
-                  })
-                }
-                className="h-4 w-4 accent-black disabled:opacity-40"
-              />
-              질문 샘플 티켓 사용
-            </label>
-            {draft.questionOrder ? (
-              <div className="mt-3 rounded-2xl border border-accent/20 bg-accent/[0.06] p-3">
-                <p className="text-[11px] font-bold text-black/55">
-                  질문 노출 순서
-                </p>
-                <div className="mt-2 grid grid-cols-5 gap-1.5">
-                  {questionOrders.map((order) => {
-                    const selected = draft.questionOrder === String(order);
-                    return (
-                      <button
-                        key={order}
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          onDraftChange({
-                            ...draft,
-                            questionOrder: String(order),
-                          })
-                        }
-                        className={cn(
-                          "flex h-8 items-center justify-center rounded-lg border text-sm font-bold transition",
-                          selected
-                            ? "border-accent bg-accent text-white"
-                            : "border-black/10 bg-white text-black/55 hover:border-accent/50",
-                        )}
-                      >
-                        {order}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-            <p className="mt-2 text-[10px] leading-4 text-black/35">
-              원본 파일을 리사이즈 없이 `ticket-images`에 저장합니다.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <TextAreaField
-              label="템플릿 제목"
-              className="col-span-2"
-              value={draft.title}
-              onChange={(title) => onDraftChange({ ...draft, title })}
-            />
-            <FormField
-              label="한 줄 설명"
-              className="col-span-2"
-              value={draft.shortDescription}
-              onChange={(shortDescription) =>
-                onDraftChange({ ...draft, shortDescription })
-              }
-            />
-            <FormField
-              label="활동 유형"
-              value={draft.activityType}
-              placeholder="cafe"
-              onChange={(activityType) =>
-                onDraftChange({ ...draft, activityType })
-              }
-            />
-            <SelectField
-              label="공개 범위"
-              value={draft.visibility}
-              options={templateTicketVisibilities.map((value) => ({
-                value,
-                label: ticketVisibilityLabels[value],
-              }))}
-              onChange={(visibility) =>
-                onDraftChange({
-                  ...draft,
-                  visibility: visibility as TicketVisibility,
-                })
-              }
-            />
-            <FormField
-              label="기본 지역"
-              value={draft.defaultRegion}
-              onChange={(defaultRegion) =>
-                onDraftChange({ ...draft, defaultRegion })
-              }
-            />
-            <TimeSplitField
-              label="기본 시간"
-              value={draft.defaultTime}
-              onChange={(defaultTime) =>
-                onDraftChange({ ...draft, defaultTime })
-              }
-            />
-            <FormField
-              label="분위기 태그"
-              className="col-span-2"
-              value={draft.moodTags}
-              placeholder="카페, 가벼운 대화, 조용한 분위기"
-              onChange={(moodTags) =>
-                onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
-              }
-            />
-            <TextAreaField
-              label="추천 문구"
-              className="col-span-2"
-              value={draft.recommendationCopy}
-              onChange={(recommendationCopy) =>
-                onDraftChange({ ...draft, recommendationCopy })
-              }
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">기본 정보</h3>
+      <div className="mt-4 grid grid-cols-[220px_minmax(0,1fr)] gap-5">
         <div>
-          <h3 className="font-bold">사용자 상세 콘텐츠</h3>
-          <p className="mt-1 text-xs leading-5 text-black/45">
-            사용자가 티켓을 자세히 볼 때 카드 아래에 표시되는 템플릿 설명입니다.
-            세부 티켓의 운영 코드/운영 메모와 분리해서 관리합니다.
-          </p>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <TextAreaField
-            label="상세 한 줄 요약"
-            className="col-span-2"
-            value={draft.detailSummary}
-            onChange={(detailSummary) =>
-              onDraftChange({ ...draft, detailSummary })
-            }
-          />
-          <TextAreaField
-            label="이 자리에서는 이런 걸 해요"
-            className="col-span-2"
-            value={draft.detailActivities}
-            placeholder={"최근 기억에 남는 이야기\n가볍게 나누는 실패담\n서로의 취향과 생각"}
-            onChange={(detailActivities) =>
-              onDraftChange({ ...draft, detailActivities })
-            }
-          />
-          <TextAreaField
-            label="이런 결의 분들에게 잘 맞아요"
-            className="col-span-2"
-            value={draft.detailGoodFor}
-            placeholder={"처음 보는 사람과도 편하게 대화하는 분\n너무 무겁지 않은 이야기가 좋은 분"}
-            onChange={(detailGoodFor) =>
-              onDraftChange({ ...draft, detailGoodFor })
-            }
-          />
-          <TextAreaField
-            label="티켓별 안내사항"
-            className="col-span-2"
-            value={draft.detailNotice}
-            onChange={(detailNotice) =>
-              onDraftChange({ ...draft, detailNotice })
-            }
-          />
-        </div>
-      </section>
-
-      <ScoreEditor draft={draft} saving={saving} onDraftChange={onDraftChange} />
-
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="font-bold">세부 티켓</h3>
-            <p className="mt-1 text-xs text-black/40">
-              정원 없이 현재 배정 인원과 대기열만 집계합니다.
-            </p>
+          <div className="flex aspect-[4/5] items-center justify-center overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
+            {draft.imageUrl ? (
+              <img
+                src={draft.imageUrl}
+                alt="티켓 대표 이미지 미리보기"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="text-center text-xs font-semibold text-black/35">
+                <ImageIcon size={30} className="mx-auto mb-2" aria-hidden />
+                대표 이미지 없음
+              </div>
+            )}
           </div>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCreateInstance}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white disabled:bg-black/30"
-          >
-            <Plus size={16} aria-hidden />
-            세부 티켓 만들기
-          </button>
+          <label className="mt-3 flex h-10 cursor-pointer items-center justify-center rounded-xl border border-black/10 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black">
+            이미지 선택
+            <input
+              type="file"
+              accept="image/*"
+              disabled={saving}
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onUploadImage(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {template.instances.length ? (
-            template.instances.map((instance) => (
-              <button
-                key={instance.id}
-                type="button"
-                onClick={() => onSelectInstance(instance.id)}
-                className="rounded-2xl border border-black/10 p-4 text-left transition hover:border-accent hover:bg-accent/5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="font-bold">{instanceDisplayTitle(instance)}</h4>
-                    <p className="mt-1 text-xs text-black/45">
-                      {dateTimeText(instance)}
-                    </p>
-                    <p className="mt-1 text-xs text-black/45">
-                      {instance.region ?? "지역 미정"} ·{" "}
-                      {instance.place_name ?? "장소 미정"}
-                    </p>
-                    {instance.operation_note && (
-                      <p className="mt-2 line-clamp-2 text-[11px] font-semibold text-black/38">
-                        {instance.operation_note}
-                      </p>
-                    )}
-                  </div>
-                  <VisibilityBadge visibility={instance.visibility} />
-                </div>
-                <div className="mt-4 flex gap-4 text-xs font-semibold text-black/50">
-                  <span>배정 {instance.assignment_count}명</span>
-                  <span>대기열 {instance.waitlist_count}명</span>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="col-span-2 rounded-2xl border border-dashed border-black/15 py-10 text-center text-sm font-semibold text-black/40">
-              아직 세부 티켓이 없습니다.
-            </div>
-          )}
+        <div className="grid grid-cols-2 gap-4">
+          <TextAreaField
+            label="초대장 제목"
+            className="col-span-2"
+            value={draft.title}
+            onChange={(title) => onDraftChange({ ...draft, title })}
+          />
+          <FormField
+            label="한 줄 설명"
+            className="col-span-2"
+            value={draft.shortDescription}
+            onChange={(shortDescription) =>
+              onDraftChange({ ...draft, shortDescription })
+            }
+          />
+          <FormField
+            label="분위기 태그"
+            className="col-span-2"
+            value={draft.moodTags}
+            placeholder="영화, 산책, 편한 대화"
+            onChange={(moodTags) =>
+              onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
+            }
+          />
+          <FormField
+            label="활동 유형"
+            value={draft.activityType}
+            placeholder="movie"
+            onChange={(activityType) =>
+              onDraftChange({ ...draft, activityType })
+            }
+          />
+          <SelectField
+            label="잔여 자리 문구"
+            value={draft.remainingSeatLabelCount}
+            options={Array.from({ length: 7 }, (_, count) => ({
+              value: String(count),
+              label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
+            }))}
+            onChange={(remainingSeatLabelCount) =>
+              onDraftChange({ ...draft, remainingSeatLabelCount })
+            }
+          />
+          <FormField
+            label="날짜"
+            type="date"
+            value={draft.eventDate}
+            onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
+          />
+          <TimeSplitField
+            label="시간"
+            value={draft.eventTime}
+            onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
+          />
+          <FormField
+            label="지역"
+            value={draft.region}
+            placeholder="성수, 을지로, 강남"
+            onChange={(region) => onDraftChange({ ...draft, region })}
+          />
+          <FormField
+            label="상세 장소명"
+            value={draft.placeName}
+            onChange={(placeName) => onDraftChange({ ...draft, placeName })}
+          />
+          <FormField
+            label="상세 주소"
+            className="col-span-2"
+            value={draft.address}
+            onChange={(address) => onDraftChange({ ...draft, address })}
+          />
+          <SelectField
+            label="장소 공개"
+            value={draft.placeVisibility}
+            options={placeVisibilities.map((value) => ({
+              value,
+              label: placeVisibilityLabels[value],
+            }))}
+            onChange={(placeVisibility) =>
+              onDraftChange({
+                ...draft,
+                placeVisibility: placeVisibility as PlaceVisibility,
+              })
+            }
+          />
+          <FormField
+            label="운영 코드"
+            value={draft.operationCode}
+            onChange={(operationCode) =>
+              onDraftChange({ ...draft, operationCode })
+            }
+          />
+          <TextAreaField
+            label="운영 메모"
+            className="col-span-2"
+            value={draft.operationNote}
+            onChange={(operationNote) =>
+              onDraftChange({ ...draft, operationNote })
+            }
+          />
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
+  );
+}
+
+function ContentEditor({
+  draft,
+  onDraftChange,
+}: {
+  draft: TicketDraft;
+  onDraftChange: (draft: TicketDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">상세 화면 문구</h3>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <TextAreaField
+          label="자리 분위기 초안"
+          className="col-span-2"
+          value={draft.detailSummary}
+          onChange={(detailSummary) =>
+            onDraftChange({ ...draft, detailSummary })
+          }
+        />
+        <TextAreaField
+          label="이 자리에서는 이런 걸 해요"
+          className="col-span-2"
+          value={draft.detailActivities}
+          placeholder={"영화를 함께 보고 감상을 나눠요\n좋아하는 장면과 캐릭터 이야기를 해요"}
+          onChange={(detailActivities) =>
+            onDraftChange({ ...draft, detailActivities })
+          }
+        />
+        <TextAreaField
+          label="이렇게 진행돼요"
+          className="col-span-2"
+          value={draft.detailFlow}
+          placeholder={"가볍게 인사해요\n영화를 함께 봐요\n근처에서 짧게 이야기해요"}
+          onChange={(detailFlow) => onDraftChange({ ...draft, detailFlow })}
+        />
+        <TextAreaField
+          label="잘 맞는 사람"
+          value={draft.detailGoodFor}
+          onChange={(detailGoodFor) =>
+            onDraftChange({ ...draft, detailGoodFor })
+          }
+        />
+        <TextAreaField
+          label="안내사항"
+          value={draft.detailNotice}
+          onChange={(detailNotice) =>
+            onDraftChange({ ...draft, detailNotice })
+          }
+        />
+        <TextAreaField
+          label="추천 문구"
+          className="col-span-2"
+          value={draft.recommendationCopy}
+          onChange={(recommendationCopy) =>
+            onDraftChange({ ...draft, recommendationCopy })
+          }
+        />
+      </div>
+    </section>
   );
 }
 
@@ -1465,27 +1171,13 @@ function ScoreEditor({
   saving,
   onDraftChange,
 }: {
-  draft: TemplateDraft;
+  draft: TicketDraft;
   saving: boolean;
-  onDraftChange: (draft: TemplateDraft) => void;
+  onDraftChange: (draft: TicketDraft) => void;
 }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h3 className="font-bold">모임 성향 점수</h3>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-black/45">
-            이 점수는 사람과 모임을 같은 기준으로 비교하기 위한 운영용
-            점수입니다. 사용자에게 직접 노출되지 않습니다.
-          </p>
-        </div>
-        <div className="rounded-xl bg-[#f7f7f5] px-3 py-2 text-[10px] font-semibold leading-4 text-black/42">
-          {scoreGuideExamples.slice(0, 2).map((item) => (
-            <p key={item}>{item}</p>
-          ))}
-        </div>
-      </div>
-
+      <h3 className="font-bold">자리 분위기 점수</h3>
       <div className="mt-4 grid gap-3">
         {scoreFields.map((field) => {
           const selectedValue = draft[field.key];
@@ -1493,7 +1185,7 @@ function ScoreEditor({
           return (
             <div
               key={field.key}
-              className="grid grid-cols-[96px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-black/8 px-3 py-3"
+              className="grid grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-black/8 px-3 py-3"
             >
               <div>
                 <p className="text-sm font-bold text-black">{field.label}</p>
@@ -1540,362 +1232,159 @@ function ScoreEditor({
           );
         })}
       </div>
-
-      <details className="mt-4 rounded-xl bg-[#f7f7f5] px-4 py-3 text-xs leading-5 text-black/50">
-        <summary className="cursor-pointer font-bold text-black/55">
-          모임 점수 참고표
-        </summary>
-        <div className="mt-2 grid gap-1 sm:grid-cols-2">
-          {scoreGuideExamples.map((item) => (
-            <p key={item}>{item}</p>
-          ))}
-        </div>
-      </details>
     </section>
   );
 }
 
-function InstanceEditor({
-  template,
+function ParticipantPanel({
   instance,
-  draft,
-  profiles,
+  assignedProfiles,
+  assignableProfiles,
   memberQuery,
   saving,
-  onDraftChange,
   onMemberQueryChange,
-  onBack,
-  onSave,
-  onDuplicate,
-  onShiftTestTime,
   onAddMember,
   onRemoveMember,
 }: {
-  template: AdminTicketTemplate;
   instance: AdminTicketInstance;
-  draft: InstanceDraft;
-  profiles: AdminProfile[];
+  assignedProfiles: AdminProfile[];
+  assignableProfiles: AdminProfile[];
   memberQuery: string;
   saving: boolean;
-  onDraftChange: (draft: InstanceDraft) => void;
   onMemberQueryChange: (query: string) => void;
-  onBack: () => void;
-  onSave: () => void;
-  onDuplicate: () => void;
-  onShiftTestTime: (mode: TestTimeMode) => void;
   onAddMember: (profileId: string) => void;
   onRemoveMember: (profileId: string) => void;
 }) {
-  const currentTestTimeMode = testTimeModeForInstance(instance);
-
   return (
-    <div className="mx-auto max-w-[980px] space-y-5">
-      <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <button
-              type="button"
-              onClick={onBack}
-              className="text-xs font-semibold text-black/45 underline underline-offset-4"
-            >
-              템플릿 상세로 돌아가기
-            </button>
-            <h3 className="mt-3 text-xl font-bold">세부 티켓 수정</h3>
-            <p className="mt-1 text-xs text-black/40">{template.title}</p>
-          </div>
-          <div className="flex gap-2">
-            <ActionButton disabled={saving} onClick={onDuplicate} icon={Copy}>
-              복제
-            </ActionButton>
-            <ActionButton primary disabled={saving} onClick={onSave} icon={Check}>
-              저장
-            </ActionButton>
-          </div>
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-bold">참여자</h3>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            배정 {instance.assignment_count}명 · 대기열 {instance.waitlist_count}명
+          </p>
+        </div>
+        <Users size={20} className="text-black/30" aria-hidden />
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="space-y-2">
+          {assignedProfiles.length ? (
+            assignedProfiles.map((profile) => (
+              <div
+                key={profile.user_id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
+              >
+                <div className="min-w-0">
+                  <AdminMemberName profile={profile} />
+                  <p className="mt-1 truncate text-[11px] text-black/42">
+                    {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
+                    {profile.mbti ?? "-"} · {profile.phone ?? "-"}
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold text-accent">
+                    {membershipLabel(profile)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onRemoveMember(profile.user_id)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40"
+                  aria-label={`${profileName(profile)} 배정 제거`}
+                >
+                  <Trash2 size={15} aria-hidden />
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
+              아직 배정된 멤버가 없습니다.
+            </p>
+          )}
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-4">
-          <TextAreaField
-            label="세부 티켓명"
-            className="col-span-2"
-            value={draft.title}
-            onChange={(title) => onDraftChange({ ...draft, title })}
-          />
-          <FormField
-            label="운영 코드"
-            value={draft.operationCode}
-            placeholder="LOVE-0620-A"
-            onChange={(operationCode) =>
-              onDraftChange({ ...draft, operationCode })
-            }
-          />
-          <FormField
-            label="운영 메모"
-            value={draft.operationNote}
-            placeholder="A조 / 차분한 대화형"
-            onChange={(operationNote) =>
-              onDraftChange({ ...draft, operationNote })
-            }
-          />
-          <FormField
-            label="날짜"
-            type="date"
-            value={draft.eventDate}
-            onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
-          />
-          <TimeSplitField
-            label="시간"
-            value={draft.eventTime}
-            onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
-          />
-          <TextAreaField
-            label="지역"
-            value={draft.region}
-            onChange={(region) => onDraftChange({ ...draft, region })}
-          />
-          <FormField
-            label="상세 장소명"
-            value={draft.placeName}
-            onChange={(placeName) => onDraftChange({ ...draft, placeName })}
-          />
-          <FormField
-            label="상세 주소"
-            className="col-span-2"
-            value={draft.address}
-            onChange={(address) => onDraftChange({ ...draft, address })}
-          />
-          <SelectField
-            label="장소 공개 상태"
-            value={draft.placeVisibility}
-            options={placeVisibilities.map((value) => ({
-              value,
-              label: placeVisibilityLabels[value],
-            }))}
-            onChange={(placeVisibility) =>
-              onDraftChange({
-                ...draft,
-                placeVisibility: placeVisibility as PlaceVisibility,
-              })
-            }
-          />
-          <SelectField
-            label="공개 범위"
-            value={draft.visibility}
-            options={instanceTicketVisibilities.map((value) => ({
-              value,
-              label: ticketVisibilityLabels[value],
-            }))}
-            onChange={(visibility) =>
-              onDraftChange({
-                ...draft,
-                visibility: visibility as TicketVisibility,
-              })
-            }
-          />
-          <SelectField
-            label="잔여 자리 문구"
-            value={draft.remainingSeatLabelCount}
-            options={Array.from({ length: 7 }, (_, count) => ({
-              value: String(count),
-              label: count === 0 ? "표시 안 함" : `🚨 ${count}자리 남았어요`,
-            }))}
-            onChange={(remainingSeatLabelCount) =>
-              onDraftChange({ ...draft, remainingSeatLabelCount })
-            }
-          />
-        </div>
-      </section>
-
-      {instance.visibility === "test_only" && (
-        <section className="rounded-2xl border border-accent/20 bg-accent/[0.06] p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h3 className="font-bold">테스트 시간 이동</h3>
-              <p className="mt-1 text-xs leading-5 text-black/45">
-                테스트 전용 티켓에서만 사용자 진행 화면을 빠르게 확인합니다.
-              </p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-5">
-              {testTimeSteps.map((step) => {
-                const active = currentTestTimeMode === step.mode;
-
-                return (
-                  <button
-                    key={step.mode}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => onShiftTestTime(step.mode)}
-                    className={cn(
-                      "h-10 rounded-xl border bg-white px-3 text-xs font-bold transition disabled:opacity-40",
-                      active
-                        ? "border-accent bg-accent/10 text-black shadow-[0_0_0_3px_rgba(126,179,199,0.18)]"
-                        : "border-black/10 text-black/60 hover:border-accent hover:text-black",
-                    )}
-                  >
-                    {step.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
-
-      <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
-        <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-bold">현재 배정 멤버</h3>
-              <p className="mt-1 text-xs text-black/40">
-                배정 {instance.assignment_count}명 · 대기열{" "}
-                {instance.waitlist_count}명
-              </p>
-            </div>
-            <Users size={20} className="text-black/30" aria-hidden />
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {instance.assignments.length ? (
-              instance.assignments.map((assignment) => {
-                const profile = assignment.profile;
-                if (!profile) return null;
-                return (
-                  <div
-                    key={assignment.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
-                  >
-                    <div className="min-w-0">
-                      <AdminMemberName profile={profile} />
-                      <p className="mt-1 truncate text-[11px] text-black/42">
-                        {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
-                        {profile.mbti ?? "-"} · {profile.phone ?? "-"}
-                      </p>
-                      <p className="mt-1 text-[10px] font-semibold text-accent">
-                        {membershipText(profile)}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => onRemoveMember(profile.user_id)}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40"
-                      aria-label={`${profileName(profile)} 배정 제거`}
-                    >
-                      <Trash2 size={15} aria-hidden />
-                    </button>
+        <div>
+          <label className="relative block">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
+              aria-hidden
+            />
+            <input
+              value={memberQuery}
+              onChange={(event) => onMemberQueryChange(event.target.value)}
+              placeholder="이름 또는 전화번호 검색"
+              className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
+            />
+          </label>
+          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+            {assignableProfiles.length ? (
+              assignableProfiles.map((profile) => (
+                <button
+                  key={profile.user_id}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => onAddMember(profile.user_id)}
+                  className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
+                >
+                  <div>
+                    <AdminMemberName profile={profile} />
+                    <p className="mt-0.5 text-[10px] text-black/40">
+                      {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
+                      {profile.mbti ?? "-"} · {profile.phone ?? "-"}
+                    </p>
+                    <p className="mt-0.5 text-[10px] font-semibold text-accent">
+                      {membershipLabel(profile)}
+                    </p>
                   </div>
-                );
-              })
+                  <Plus size={15} aria-hidden />
+                </button>
+              ))
             ) : (
-              <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-                아직 배정된 멤버가 없습니다.
+              <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
+                추가할 후보가 없습니다.
               </p>
             )}
           </div>
-
-          <div className="mt-5 border-t border-black/8 pt-5">
-            <h4 className="text-sm font-bold">멤버 추가</h4>
-            <p className="mt-1 text-[11px] font-semibold leading-4 text-black/38">
-              {instance.visibility === "test_only"
-                ? "테스트 참가자로 표시된 사람만 이름이나 전화번호로 검색해 배정할 수 있습니다."
-                : "기본 후보는 이 날짜와 이 티켓 템플릿에 신청한 사람만 표시됩니다."}
-            </p>
-            <label className="relative mt-3 block">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
-                aria-hidden
-              />
-              <input
-                value={memberQuery}
-                onChange={(event) => onMemberQueryChange(event.target.value)}
-                placeholder="이름 또는 전화번호 검색"
-                className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
-              />
-            </label>
-            <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">
-              {profiles.length ? (
-                profiles.map((profile) => (
-                  <button
-                    key={profile.user_id}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => onAddMember(profile.user_id)}
-                    className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
-                  >
-                    <div>
-                      <AdminMemberName profile={profile} />
-                      <p className="mt-0.5 text-[10px] text-black/40">
-                        {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
-                        {profile.mbti ?? "-"} · {profile.phone ?? "-"}
-                      </p>
-                      <p className="mt-0.5 text-[10px] font-semibold text-accent">
-                        {membershipText(profile)}
-                      </p>
-                    </div>
-                    <Plus size={15} aria-hidden />
-                  </button>
-                ))
-              ) : (
-                <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
-                  {instance.visibility === "test_only"
-                    ? "검색 조건에 맞는 테스트 참가자 후보가 없습니다."
-                    : "이 날짜와 템플릿에 신청한 추가 후보가 없습니다."}
-                </p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <TicketPreview
-          template={template}
-          instance={{ ...instance, ...draftToInstanceFields(draft) }}
-        />
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
-function draftToInstanceFields(draft: InstanceDraft) {
-  return {
-    title: draft.title,
-    event_date: draft.eventDate || null,
-    event_time: draft.eventTime || null,
-    region: draft.region || null,
-    place_name: draft.placeName || null,
-    address: draft.address || null,
-    operation_code: draft.operationCode || null,
-    operation_note: draft.operationNote || null,
-    place_visibility: draft.placeVisibility,
-    visibility: draft.visibility,
-    remaining_seat_label_count: Number.parseInt(
-      draft.remainingSeatLabelCount,
-      10,
-    ),
-  };
-}
-
-function TicketPreview({
-  template,
-  instance,
-}: {
-  template: AdminTicketTemplate;
-  instance: AdminTicketInstance;
-}) {
+function TicketPreviewPanel({ ticket }: { ticket: GatheringTicket }) {
   return (
-    <aside className="self-start rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-        user preview
-      </p>
-      <IntersectionTicketCard
-        title={instance.title || template.title}
-        imageUrl={template.image_url}
-        date={instance.event_date}
-        time={instance.event_time?.slice(0, 5)}
-        location={instance.region || template.default_region || "지역 미정"}
-        tags={template.mood_tags}
-        remainingSeatCount={instance.remaining_seat_label_count}
-        className="mt-3"
-      />
+    <aside className="sticky top-5 self-start space-y-4">
+      <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+          ticket card
+        </p>
+        <IntersectionTicketCard
+          title={ticket.title}
+          imageUrl={ticket.imageUrl}
+          date={ticket.date}
+          time={ticket.time}
+          location={ticket.area}
+          tags={ticket.moodTags}
+          proposerLabel={ticket.proposerLabel}
+          remainingSeatCount={ticket.remainingSeatCount}
+          className="mt-3"
+        />
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+        <p className="px-4 pt-4 text-xs font-bold uppercase tracking-[0.14em] text-accent">
+          detail
+        </p>
+        <div className="mt-3 overflow-hidden border-t border-black/8">
+          <TicketDetailHero ticket={ticket} />
+          <TicketDetailContent
+            ticket={ticket}
+            className="px-5 pb-5"
+            startWithBorder
+          />
+        </div>
+      </section>
     </aside>
   );
 }
@@ -1908,30 +1397,7 @@ function VisibilityBadge({ visibility }: { visibility: TicketVisibility }) {
   );
 }
 
-function ModeButton({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "h-8 rounded-lg px-3 text-xs font-semibold",
-        selected ? "bg-white text-black shadow-sm" : "text-black/45",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function ActionButton({
+function IconButton({
   primary = false,
   disabled,
   onClick,
@@ -1941,7 +1407,7 @@ function ActionButton({
   primary?: boolean;
   disabled: boolean;
   onClick: () => void;
-  icon: typeof Copy;
+  icon: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
@@ -1953,7 +1419,7 @@ function ActionButton({
         "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold disabled:opacity-40",
         primary
           ? "bg-black text-white"
-          : "border border-black/10 bg-white text-black/55",
+          : "border border-black/10 bg-white text-black/55 hover:border-black/20 hover:text-black",
       )}
     >
       <Icon size={15} aria-hidden />

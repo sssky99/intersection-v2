@@ -16,6 +16,7 @@ type TemplateRow = {
   short_description: string | null;
   detail_summary: string | null;
   detail_activities: unknown;
+  detail_flow: unknown;
   detail_good_for: unknown;
   detail_notice: string | null;
   image_url: string | null;
@@ -31,6 +32,11 @@ type TemplateRow = {
   score_rhythm: number | null;
   score_alcohol: number | null;
   score_romance: number | null;
+  proposal_id: string | null;
+  proposer_user_id: string | null;
+  proposer_display_name: string | null;
+  proposer_public_intro: string | null;
+  proposer_public_emoji: string | null;
 };
 
 type InstanceRow = {
@@ -72,6 +78,7 @@ const templateSelect = [
   "short_description",
   "detail_summary",
   "detail_activities",
+  "detail_flow",
   "detail_good_for",
   "detail_notice",
   "image_url",
@@ -87,6 +94,11 @@ const templateSelect = [
   "score_rhythm",
   "score_alcohol",
   "score_romance",
+  "proposal_id",
+  "proposer_user_id",
+  "proposer_display_name",
+  "proposer_public_intro",
+  "proposer_public_emoji",
 ].join(",");
 
 const instanceSelect = [
@@ -143,6 +155,10 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
+  const proposerDisplayName = template.proposer_display_name?.trim();
+  const proposerLabel = proposerDisplayName
+    ? `${proposerDisplayName}님이 제안한 교집합`
+    : undefined;
 
   return {
     id: instance.id,
@@ -161,8 +177,18 @@ function toTicket(
     recommendationName: name,
     detailSummary: template.detail_summary?.trim() || undefined,
     detailActivities: textList(template.detail_activities),
+    detailFlow: textList(template.detail_flow),
     detailGoodFor: textList(template.detail_good_for),
     detailNotice: template.detail_notice?.trim() || undefined,
+    proposerLabel,
+    proposerProfile: proposerDisplayName
+      ? {
+          userId: template.proposer_user_id,
+          displayName: proposerDisplayName,
+          publicIntro: template.proposer_public_intro,
+          publicEmoji: template.proposer_public_emoji,
+        }
+      : undefined,
     vibeScores: {
       temperature: template.score_temperature,
       texture: template.score_texture,

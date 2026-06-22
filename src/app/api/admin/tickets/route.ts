@@ -43,7 +43,13 @@ const profileSelect = [
   "birth_year",
   "mbti",
   "phone",
+  "photo_url",
+  "public_intro",
+  "public_emoji",
   "public_intro_model",
+  "created_at",
+  "profile_completed",
+  "questions_completed",
   "membership_status",
   "membership_plan",
   "membership_start_date",
@@ -60,7 +66,13 @@ const profileSelectWithoutTestParticipant = [
   "birth_year",
   "mbti",
   "phone",
+  "photo_url",
+  "public_intro",
+  "public_emoji",
   "public_intro_model",
+  "created_at",
+  "profile_completed",
+  "questions_completed",
   "membership_status",
   "membership_plan",
   "membership_start_date",
@@ -75,6 +87,7 @@ const templateSelect = [
   "short_description",
   "detail_summary",
   "detail_activities",
+  "detail_flow",
   "detail_good_for",
   "detail_notice",
   "image_url",
@@ -83,8 +96,23 @@ const templateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
+  "event_date",
+  "event_time",
+  "region",
+  "place_name",
+  "address",
+  "place_visibility",
+  "operation_code",
+  "operation_note",
+  "remaining_seat_label_count",
+  "max_participant_count",
   "visibility",
   "question_order",
+  "proposal_id",
+  "proposer_user_id",
+  "proposer_display_name",
+  "proposer_public_intro",
+  "proposer_public_emoji",
   "score_temperature",
   "score_texture",
   "score_tone",
@@ -94,6 +122,15 @@ const templateSelect = [
   "created_at",
   "updated_at",
 ].join(",");
+
+class AdminTicketRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const instanceSelect = [
   "id",
@@ -247,6 +284,7 @@ function templatePayload(body: Record<string, unknown>) {
     short_description: text(body.shortDescription),
     detail_summary: text(body.detailSummary),
     detail_activities: textList(body.detailActivities),
+    detail_flow: textList(body.detailFlow),
     detail_good_for: textList(body.detailGoodFor),
     detail_notice: text(body.detailNotice),
     image_url: text(body.imageUrl),
@@ -255,8 +293,26 @@ function templatePayload(body: Record<string, unknown>) {
     recommendation_copy: text(body.recommendationCopy),
     default_region: text(body.defaultRegion),
     default_time: text(body.defaultTime),
+    event_date: text(body.eventDate),
+    event_time: text(body.eventTime),
+    region: text(body.region),
+    place_name: text(body.placeName),
+    address: text(body.address),
+    place_visibility: isPlaceVisibility(body.placeVisibility)
+      ? body.placeVisibility
+      : ("confirmed_only" as PlaceVisibility),
+    operation_code: text(body.operationCode),
+    operation_note: text(body.operationNote),
+    remaining_seat_label_count: remainingSeatCount(
+      body.remainingSeatLabelCount,
+    ),
+    max_participant_count: 6,
     visibility,
     question_order: questionOrder(body.questionOrder),
+    proposer_user_id: text(body.proposerUserId),
+    proposer_display_name: text(body.proposerDisplayName),
+    proposer_public_intro: text(body.proposerPublicIntro),
+    proposer_public_emoji: text(body.proposerPublicEmoji),
     score_temperature: scoreValue(body.scoreTemperature),
     score_texture: scoreValue(body.scoreTexture),
     score_tone: scoreValue(body.scoreTone),
@@ -286,6 +342,193 @@ function instancePayload(body: Record<string, unknown>) {
     ),
     updated_at: new Date().toISOString(),
   };
+}
+
+type TemplatePayload = ReturnType<typeof templatePayload>;
+
+function publicProfileText(value: string | null | undefined) {
+  return value?.trim() || null;
+}
+
+async function operatorProposerPayload(
+  supabase: ReturnType<typeof createAdminClient>,
+  proposerUserId: string,
+) {
+  const profiles = await fetchProfiles(supabase);
+  const profile = profiles.find((item) => item.user_id === proposerUserId);
+
+  if (!profile || profile.is_test_participant !== true) {
+    throw new AdminTicketRequestError(
+      "관리자에서 직접 만드는 티켓의 제안자는 운영자 중에서 선택해주세요.",
+    );
+  }
+
+  return {
+    proposer_user_id: profile.user_id,
+    proposer_display_name: publicProfileText(profile.name) ?? "운영자",
+    proposer_public_intro: publicProfileText(profile.public_intro),
+    proposer_public_emoji: publicProfileText(profile.public_emoji),
+  };
+}
+
+async function unifiedTicketPayload(
+  supabase: ReturnType<typeof createAdminClient>,
+  body: Record<string, unknown>,
+) {
+  const payload = templatePayload(body);
+  const proposerUserId = text(body.proposerUserId);
+
+  if (!payload.title) {
+    throw new AdminTicketRequestError("티켓 제목을 입력해주세요.");
+  }
+  if (!proposerUserId) {
+    throw new AdminTicketRequestError("제안자를 운영자 중에서 선택해주세요.");
+  }
+
+  const proposer = await operatorProposerPayload(supabase, proposerUserId);
+
+  return {
+    ...payload,
+    ...proposer,
+    default_region: payload.default_region ?? payload.region,
+    default_time: payload.default_time ?? payload.event_time,
+    max_participant_count: 6,
+  };
+}
+
+function instancePayloadFromTemplate(
+  templateId: string,
+  payload: TemplatePayload,
+) {
+  return {
+    template_id: templateId,
+    title: payload.title,
+    event_date: payload.event_date,
+    event_time: payload.event_time ?? payload.default_time,
+    region: payload.region ?? payload.default_region,
+    place_name: payload.place_name,
+    address: payload.address,
+    operation_code: payload.operation_code,
+    operation_note: payload.operation_note,
+    place_visibility: payload.place_visibility,
+    visibility: payload.visibility,
+    remaining_seat_label_count: payload.remaining_seat_label_count,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function syncProposerParticipation({
+  supabase,
+  instanceId,
+  templateId,
+  proposerUserId,
+  eventDate,
+}: {
+  supabase: ReturnType<typeof createAdminClient>;
+  instanceId: string;
+  templateId: string;
+  proposerUserId: string | null;
+  eventDate: string | null;
+}) {
+  if (!proposerUserId) return;
+
+  const { error: assignmentError } = await supabase
+    .from("ticket_assignments")
+    .insert({
+      ticket_instance_id: instanceId,
+      profile_id: proposerUserId,
+    });
+  if (assignmentError && assignmentError.code !== "23505") {
+    throw assignmentError;
+  }
+
+  if (!eventDate) return;
+
+  const { data: existingWaitlist, error: existingWaitlistError } =
+    await supabase
+      .from("meeting_waitlist")
+      .select("id")
+      .eq("user_id", proposerUserId)
+      .eq("ticket_instance_id", instanceId)
+      .maybeSingle();
+  if (existingWaitlistError) throw existingWaitlistError;
+
+  const waitlistPayload = {
+    status: "approved",
+    ticket_id: instanceId,
+    ticket_instance_id: instanceId,
+    ticket_template_id: templateId,
+    meeting_date: eventDate,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existingWaitlist?.id) {
+    const { error } = await supabase
+      .from("meeting_waitlist")
+      .update(waitlistPayload)
+      .eq("id", existingWaitlist.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error: waitlistInsertError } = await supabase
+    .from("meeting_waitlist")
+    .insert({
+      ...waitlistPayload,
+      user_id: proposerUserId,
+    });
+  if (waitlistInsertError && waitlistInsertError.code !== "23505") {
+    throw waitlistInsertError;
+  }
+}
+
+async function syncTemplateInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  templateId: string,
+  payload: TemplatePayload,
+) {
+  const { data: existing, error: existingError } = await supabase
+    .from("ticket_instances")
+    .select("id")
+    .eq("template_id", templateId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  const nextInstancePayload = instancePayloadFromTemplate(templateId, payload);
+  const mutation = existing?.id
+    ? supabase
+        .from("ticket_instances")
+        .update(nextInstancePayload)
+        .eq("id", existing.id)
+        .select("id")
+        .single()
+    : supabase
+        .from("ticket_instances")
+        .insert(nextInstancePayload)
+        .select("id")
+        .single();
+
+  const { data: instance, error } = await mutation;
+  if (error) throw error;
+
+  const { error: archiveError } = await supabase
+    .from("ticket_instances")
+    .update({ visibility: "archived", updated_at: new Date().toISOString() })
+    .eq("template_id", templateId)
+    .neq("id", instance.id);
+  if (archiveError) throw archiveError;
+
+  await syncProposerParticipation({
+    supabase,
+    instanceId: instance.id,
+    templateId,
+    proposerUserId: payload.proposer_user_id,
+    eventDate: payload.event_date,
+  });
+
+  return instance.id as string;
 }
 
 async function loadTicketData() {
@@ -355,7 +598,15 @@ async function loadTicketData() {
       return {
         ...template,
         detail_activities: dbTextList(template.detail_activities),
+        detail_flow: dbTextList(template.detail_flow),
         detail_good_for: dbTextList(template.detail_good_for),
+        place_visibility: isPlaceVisibility(template.place_visibility)
+          ? template.place_visibility
+          : "confirmed_only",
+        remaining_seat_label_count: remainingSeatCount(
+          template.remaining_seat_label_count,
+        ),
+        max_participant_count: 6,
         instances: templateInstances,
         instance_count: templateInstances.length,
         assignment_count: templateInstances.reduce(
@@ -418,7 +669,16 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createAdminClient();
 
-    if (action === "create_template") {
+    if (action === "create_ticket") {
+      const payload = await unifiedTicketPayload(supabase, body ?? {});
+      const { data: template, error } = await supabase
+        .from("ticket_templates")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (error) throw error;
+      await syncTemplateInstance(supabase, template.id, payload);
+    } else if (action === "create_template") {
       const payload = templatePayload(body ?? {});
       if (!payload.title) {
         return NextResponse.json(
@@ -447,6 +707,7 @@ export async function POST(request: NextRequest) {
           short_description: sourceTemplate.short_description,
           detail_summary: sourceTemplate.detail_summary,
           detail_activities: sourceTemplate.detail_activities,
+          detail_flow: sourceTemplate.detail_flow,
           detail_good_for: sourceTemplate.detail_good_for,
           detail_notice: sourceTemplate.detail_notice,
           image_url: sourceTemplate.image_url,
@@ -455,11 +716,27 @@ export async function POST(request: NextRequest) {
           recommendation_copy: sourceTemplate.recommendation_copy,
           default_region: sourceTemplate.default_region,
           default_time: sourceTemplate.default_time,
+          event_date: sourceTemplate.event_date,
+          event_time: sourceTemplate.event_time,
+          region: sourceTemplate.region,
+          place_name: sourceTemplate.place_name,
+          address: sourceTemplate.address,
+          place_visibility: sourceTemplate.place_visibility,
+          operation_code: sourceTemplate.operation_code,
+          operation_note: sourceTemplate.operation_note,
+          remaining_seat_label_count:
+            sourceTemplate.remaining_seat_label_count ?? 0,
+          max_participant_count: 6,
           visibility:
             sourceTemplate.visibility === "question"
               ? "public"
               : sourceTemplate.visibility,
           question_order: null,
+          proposal_id: sourceTemplate.proposal_id,
+          proposer_user_id: sourceTemplate.proposer_user_id,
+          proposer_display_name: sourceTemplate.proposer_display_name,
+          proposer_public_intro: sourceTemplate.proposer_public_intro,
+          proposer_public_emoji: sourceTemplate.proposer_public_emoji,
           score_temperature: sourceTemplate.score_temperature ?? null,
           score_texture: sourceTemplate.score_texture ?? null,
           score_tone: sourceTemplate.score_tone ?? null,
@@ -542,7 +819,7 @@ export async function POST(request: NextRequest) {
       const target = testTimeTarget(body?.mode);
       if (!instanceId || !target) {
         return NextResponse.json(
-          { error: "잘못된 테스트 시간 요청입니다." },
+          { error: "잘못된 운영자 시간 이동 요청입니다." },
           { status: 400 },
         );
       }
@@ -556,7 +833,7 @@ export async function POST(request: NextRequest) {
 
       if (instance.visibility !== "test_only") {
         return NextResponse.json(
-          { error: "테스트 전용 티켓에서만 시간을 이동할 수 있습니다." },
+          { error: "운영자 전용 티켓에서만 시간을 이동할 수 있습니다." },
           { status: 403 },
         );
       }
@@ -590,7 +867,7 @@ export async function POST(request: NextRequest) {
 
         if (profile?.is_test_participant !== true) {
           return NextResponse.json(
-            { error: "테스트 참가자만 테스트 티켓에 배정할 수 있습니다." },
+            { error: "운영자만 운영자 전용 티켓에 배정할 수 있습니다." },
             { status: 403 },
           );
         }
@@ -646,6 +923,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
+    if (error instanceof AdminTicketRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[admin tickets]", { action, error });
     return NextResponse.json(
       { error: "티켓 작업을 처리하지 못했습니다." },
@@ -667,7 +947,15 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
-    if (entity === "template") {
+    if (entity === "ticket") {
+      const payload = await unifiedTicketPayload(supabase, body ?? {});
+      const { error } = await supabase
+        .from("ticket_templates")
+        .update(payload)
+        .eq("id", id);
+      if (error) throw error;
+      await syncTemplateInstance(supabase, id, payload);
+    } else if (entity === "template") {
       const payload = templatePayload(body ?? {});
       if (!payload.title) {
         return NextResponse.json({ error: "템플릿 제목을 입력해주세요." }, { status: 400 });
@@ -687,6 +975,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
+    if (error instanceof AdminTicketRequestError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     console.error("[admin tickets]", { entity, id, error });
     return NextResponse.json(
       { error: "티켓 정보를 저장하지 못했습니다." },

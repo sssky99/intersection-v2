@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
   if (instance?.visibility === "test_only" && !profile.is_test_participant) {
     return NextResponse.json(
-      { error: "Test ticket access is not available." },
+      { error: "운영자 전용 티켓 접근 권한이 없습니다." },
       { status: 403 },
     );
   }

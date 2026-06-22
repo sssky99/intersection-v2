@@ -679,6 +679,12 @@ export function AppHome({
               setMembershipModalOpen(true);
             }}
             onOpenList={() => switchTab("browse")}
+            proposalProfile={{
+              userId,
+              displayName: profileNickname(currentProfile),
+              publicIntro: currentProfile.public_intro,
+              publicEmoji: profileEmoji(currentProfile),
+            }}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}
@@ -1185,6 +1191,7 @@ function StoredTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
+        proposerLabel={ticket.proposerLabel}
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />
@@ -2801,31 +2808,34 @@ function ProfileRegenerationConfirmModal({
         transition={{ duration: 0.22, ease: "easeOut" }}
         className="w-full max-w-[390px] rounded-[26px] border border-black/10 bg-white px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.16)]"
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
             <AlertTriangle size={20} aria-hidden />
           </span>
-          <div>
-            <h2
-              id="profile-regeneration-title"
-              className="text-[21px] font-black leading-7 text-black"
-            >
-              프로필을 다시 만들까요?
-            </h2>
-            <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-black/58">
-              <p>프로필을 새로 만들면 1번 질문부터 다시 답변하게 됩니다.</p>
-              <p>기존 답변과 공개 프로필은 새 답변으로 덮어씌워집니다.</p>
-              <p>
-                또한 이전 교집합 참여와 피드백을 통해 보정되었던 대화 결
-                점수는 초기화됩니다.
-              </p>
-              <p>
-                원본 참여 기록과 피드백 기록은 삭제되지 않지만, 새 프로필에는
-                기존 보정치가 다시 반영되지 않습니다.
-              </p>
-              <p>프로필 새로 만들기는 한 달에 한 번만 가능합니다.</p>
-            </div>
-          </div>
+          <h2
+            id="profile-regeneration-title"
+            className="text-[21px] font-black leading-7 text-black"
+          >
+            프로필을 다시 만들까요?
+          </h2>
+        </div>
+
+        <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-black/58">
+          <p>프로필을 새로 만들면 1번 질문부터 다시 답변하게 됩니다.</p>
+          <p>
+            또한 이전 교집합 참여와 피드백을 통해 보정되었던 대화 결 점수는
+            초기화됩니다.
+          </p>
+          <p>
+            원본 참여 기록과 피드백 기록은 삭제되지 않지만, 새 프로필에는 기존
+            보정치가 다시 반영되지 않습니다.
+          </p>
+          <p>
+            <strong className="font-black text-black/75">
+              프로필 새로 만들기는 한 달에 한 번만 가능
+            </strong>
+            합니다.
+          </p>
         </div>
 
         {error && (

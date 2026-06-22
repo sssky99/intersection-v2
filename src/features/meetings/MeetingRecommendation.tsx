@@ -6,6 +6,8 @@ import {
   Check,
   Clock3,
   MapPin,
+  Plus,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -16,10 +18,20 @@ import {
   TicketDetailHero,
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
+import {
+  MeetingProposalFlow,
+  type ProposalMemberProfile,
+} from "@/features/meetings/MeetingProposalFlow";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
-type Screen = "calendar" | "drawing" | "waitlisted" | "blindDate";
+type Screen =
+  | "calendar"
+  | "drawing"
+  | "waitlisted"
+  | "blindDate"
+  | "proposal"
+  | "proposalMembershipRequired";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -73,6 +85,7 @@ export function MeetingRecommendation({
   onWaitlisted,
   onMembershipRequired,
   onOpenList,
+  proposalProfile,
   blindDateOffers = [],
   onBlindDateOffersChange,
   blindDateOpenRequestId = 0,
@@ -85,6 +98,7 @@ export function MeetingRecommendation({
   onWaitlisted?: (ticket: GatheringTicket) => void;
   onMembershipRequired?: () => void;
   onOpenList?: () => void;
+  proposalProfile: ProposalMemberProfile;
   blindDateOffers?: BlindDateUserOffer[];
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
   blindDateOpenRequestId?: number;
@@ -241,6 +255,21 @@ export function MeetingRecommendation({
     setSaving(false);
   };
 
+  const openProposal = () => {
+    setNotice(null);
+    setError(null);
+    setSelectedDate(null);
+    setTicketIndex(0);
+    setWaitlistedTicket(null);
+
+    if (membershipStatus !== "active") {
+      setScreen("proposalMembershipRequired");
+      return;
+    }
+
+    setScreen("proposal");
+  };
+
   return (
     <section
       className={cn(
@@ -275,6 +304,24 @@ export function MeetingRecommendation({
               loading={loadingDates}
               onSelect={selectDate}
             />
+
+            <button
+              type="button"
+              onClick={openProposal}
+              className="mt-4 flex min-h-[62px] w-full items-center justify-between gap-4 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-3 text-left shadow-sm transition hover:border-accent/45 hover:bg-accent/[0.12] active:scale-[0.99]"
+            >
+              <span>
+                <span className="block text-sm font-black text-black">
+                  내가 원하는 교집합 제안하기
+                </span>
+                <span className="mt-1 block text-xs font-semibold leading-5 text-black/45">
+                  원하는 자리가 없다면, 직접 교집합을 제안해보세요.
+                </span>
+              </span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                <Plus size={18} aria-hidden />
+              </span>
+            </button>
 
             {activeBlindDateOffers.length > 0 && (
               <button
@@ -422,6 +469,21 @@ export function MeetingRecommendation({
             onOffersChange={onBlindDateOffersChange}
           />
         )}
+
+        {screen === "proposalMembershipRequired" && (
+          <ProposalMembershipRequired
+            onBack={() => setScreen("calendar")}
+            onMembershipClick={onMembershipRequired}
+          />
+        )}
+
+        {screen === "proposal" && (
+          <MeetingProposalFlow
+            profile={proposalProfile}
+            onBack={() => setScreen("calendar")}
+            onDone={() => setScreen("calendar")}
+          />
+        )}
       </AnimatePresence>
     </section>
   );
@@ -528,6 +590,7 @@ function TicketDrawingCard({
                 time={ticket.time}
                 location={`서울\n${ticket.area}`}
                 tags={ticket.moodTags}
+                proposerLabel={ticket.proposerLabel}
                 remainingSeatCount={ticket.remainingSeatCount}
                 drawn={isDrawn}
                 imageVisible={isImageVisible}
@@ -595,6 +658,52 @@ function TicketDrawingCard({
           </motion.div>
         )}
       </AnimatePresence>
+    </motion.section>
+  );
+}
+
+function ProposalMembershipRequired({
+  onBack,
+  onMembershipClick,
+}: {
+  onBack: () => void;
+  onMembershipClick?: () => void;
+}) {
+  return (
+    <motion.section
+      key="proposal-membership-required"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      className="pt-[calc(28px+env(safe-area-inset-top))]"
+    >
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:text-black"
+        aria-label="추천탭으로 돌아가기"
+      >
+        <X size={18} aria-hidden />
+      </button>
+
+      <div className="mt-8 rounded-[28px] border border-black/10 bg-white px-5 py-7 text-center shadow-[0_18px_45px_rgba(0,0,0,0.045)]">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/12 text-accent">
+          <Sparkles size={24} aria-hidden />
+        </div>
+        <h1 className="mt-6 text-[24px] font-bold leading-8 text-black">
+          교집합 제안은 멤버십 사용자만 이용할 수 있어요.
+        </h1>
+        <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
+          멤버십을 시작하면 원하는 자리도 직접 제안할 수 있어요.
+        </p>
+        <button
+          type="button"
+          onClick={onMembershipClick}
+          className="mt-6 h-[52px] w-full rounded-full bg-black text-sm font-bold text-white"
+        >
+          멤버십 보러가기
+        </button>
+      </div>
     </motion.section>
   );
 }

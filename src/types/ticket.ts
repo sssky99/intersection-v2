@@ -19,8 +19,16 @@ export type GatheringTicket = {
   recommendationReasons?: string[];
   detailSummary?: string;
   detailActivities?: string[];
+  detailFlow?: string[];
   detailGoodFor?: string[];
   detailNotice?: string;
+  proposerLabel?: string;
+  proposerProfile?: {
+    userId?: string | null;
+    displayName: string;
+    publicIntro?: string | null;
+    publicEmoji?: string | null;
+  };
   vibeScores?: {
     temperature?: number | null;
     texture?: number | null;

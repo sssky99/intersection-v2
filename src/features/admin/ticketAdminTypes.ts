@@ -63,6 +63,7 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   short_description: string | null;
   detail_summary: string | null;
   detail_activities: string[];
+  detail_flow: string[];
   detail_good_for: string[];
   detail_notice: string | null;
   image_url: string | null;
@@ -71,8 +72,23 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
+  event_date: string | null;
+  event_time: string | null;
+  region: string | null;
+  place_name: string | null;
+  address: string | null;
+  place_visibility: PlaceVisibility;
+  operation_code: string | null;
+  operation_note: string | null;
+  remaining_seat_label_count: number;
+  max_participant_count: number;
   visibility: TicketVisibility;
   question_order: number | null;
+  proposal_id: string | null;
+  proposer_user_id: string | null;
+  proposer_display_name: string | null;
+  proposer_public_intro: string | null;
+  proposer_public_emoji: string | null;
   created_at: string;
   updated_at: string;
   instances: AdminTicketInstance[];
@@ -92,7 +108,7 @@ export const ticketVisibilities: TicketVisibility[] = [
 
 export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
   draft: "미공개",
-  test_only: "테스트 유저에게만 공개",
+  test_only: "운영자에게만 공개",
   public: "전체 공개",
   question: "질문",
   closed: "마감",

@@ -11,6 +11,7 @@ type TicketDrawingFrameProps = {
   time?: string | null;
   location?: string | null;
   tags?: string[] | null;
+  proposerLabel?: string | null;
   remainingSeatCount?: number | null;
   drawn?: boolean;
   imageVisible?: boolean;
@@ -32,6 +33,7 @@ export function TicketDrawingFrame({
   time,
   location,
   tags,
+  proposerLabel,
   remainingSeatCount,
   drawn = true,
   imageVisible = true,
@@ -66,6 +68,7 @@ export function TicketDrawingFrame({
               time={time}
               location={location}
               tags={tags}
+              proposerLabel={proposerLabel}
               remainingSeatCount={remainingSeatCount}
               contentVisible={drawn}
               imageVisible={imageVisible}

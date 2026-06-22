@@ -14,6 +14,7 @@ import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
+import { ProposalAdminPanel } from "@/features/admin/ProposalAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
 import {
@@ -34,6 +35,7 @@ type AdminTab =
   | "applicants"
   | "membership"
   | "tickets"
+  | "proposals"
   | "waitlist"
   | "rooms"
   | "feedback"
@@ -55,6 +57,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "티켓 관리" },
+  { id: "proposals", label: "제안 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
@@ -621,6 +624,11 @@ export function AdminPageClient({
               <TicketAdminPanel />
             </div>
           )}
+          {visitedTabs.proposals && (
+            <div className={cn(activeTab === "proposals" ? "block" : "hidden")}>
+              <ProposalAdminPanel />
+            </div>
+          )}
           {visitedTabs.waitlist && (
             <div className={cn(activeTab === "waitlist" ? "block" : "hidden")}>
               <WaitlistAdminPanel />
@@ -1172,9 +1180,9 @@ function ProfileDetailPanel({
         <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h3 className="text-sm font-bold">테스트 참가자</h3>
+              <h3 className="text-sm font-bold">운영자</h3>
               <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
-                켜진 신청자에게만 테스트 티켓과 질문 다시보기가 표시됩니다.
+                켜진 신청자에게만 운영자 전용 티켓과 질문 다시보기가 표시됩니다.
               </p>
             </div>
             <button

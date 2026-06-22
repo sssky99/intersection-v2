@@ -116,6 +116,13 @@ const flowItems: FlowItem[] = [
   },
 ];
 
+const flowCaptureImages = [
+  "/images/details/participation-step-1.png",
+  "/images/details/participation-step-2.png",
+  "/images/details/participation-step-3.png",
+  "/images/details/participation-step-4.png",
+] as const;
+
 const safetyItems = [
   "비슷한 나이대 중심으로 조합해요.",
   "과한 술자리나 노골적인 이성 목적은 막아요.",
@@ -801,7 +808,15 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
           data-step-slide
           className="w-full shrink-0 snap-center"
         >
-            <div className="aspect-[4/5] w-full bg-[#ece9df] shadow-[0_16px_46px_rgba(0,0,0,0.045)]" />
+            <div className="relative aspect-[9/14] w-full overflow-hidden rounded-[26px] border border-black/8 bg-white shadow-[0_16px_46px_rgba(0,0,0,0.045)]">
+              <Image
+                src={flowCaptureImages[index]}
+                alt={`${index + 1}단계 참여 화면`}
+                fill
+                sizes="(max-width: 430px) 74vw, 300px"
+                className="object-contain"
+              />
+            </div>
             <div className="mt-5 px-4 py-2 text-center">
               <p className={detailsAuxClass}>
                 {index + 1}단계

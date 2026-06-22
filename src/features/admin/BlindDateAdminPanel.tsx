@@ -119,7 +119,7 @@ function profileName(profile: BlindDateAdminProfile | null | undefined) {
 function profileLabel(profile: BlindDateAdminProfile) {
   const name = profileName(profile);
   const phone = profile.phone?.trim();
-  return [name, phone, profile.is_test_participant ? "테스트" : null]
+  return [name, phone, profile.is_test_participant ? "운영자" : null]
     .filter(Boolean)
     .join(" · ");
 }
@@ -444,7 +444,7 @@ export function BlindDateAdminPanel() {
       }
       setNotice(
         sourceType === "test"
-          ? "테스트 블라인드 데이트 제안을 생성했습니다."
+          ? "운영자 블라인드 데이트 제안을 생성했습니다."
           : "상호 선택 후보로 블라인드 데이트 제안을 생성했습니다.",
       );
     } catch (saveError) {
@@ -1357,7 +1357,7 @@ function OfferList({
                           : "bg-emerald-50 text-emerald-700",
                       )}
                     >
-                      {offer.is_test ? "테스트 제안" : "상호 선택"}
+                      {offer.is_test ? "운영자 제안" : "상호 선택"}
                     </span>
                   </Td>
                 </tr>
@@ -1450,11 +1450,11 @@ function TestMatchSection({
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
-            test matching
+            operator matching
           </p>
-          <h3 className="mt-1 text-lg font-bold">테스트 매칭 생성</h3>
+          <h3 className="mt-1 text-lg font-bold">운영자 매칭 생성</h3>
           <p className="mt-1 text-xs font-semibold text-black/45">
-            피드백 상호 선택 없이 임의 참가자 2명에게 실제 사용자 화면용 테스트
+            피드백 상호 선택 없이 운영자가 확인할 수 있는 실제 사용자 화면용
             초대장을 생성합니다.
           </p>
         </div>
@@ -1474,7 +1474,7 @@ function TestMatchSection({
         className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white disabled:bg-black/25"
       >
         <Check size={16} aria-hidden />
-        테스트 제안 생성
+        운영자 제안 생성
       </button>
     </section>
   );

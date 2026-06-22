@@ -298,7 +298,7 @@ export async function PATCH(request: NextRequest) {
   if (body && "isTestParticipant" in body) {
     if (typeof body.isTestParticipant !== "boolean") {
       return NextResponse.json(
-        { error: "테스트 참가자 값이 올바르지 않습니다." },
+        { error: "운영자 값이 올바르지 않습니다." },
         { status: 400 },
       );
     }

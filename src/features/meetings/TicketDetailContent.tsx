@@ -10,6 +10,7 @@ export type TicketDetailSectionKey =
   | "activities"
   | "vibe"
   | "flow"
+  | "proposer"
   | "notice";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -21,6 +22,7 @@ const defaultSections: TicketDetailSectionKey[] = [
   "activities",
   "vibe",
   "flow",
+  "proposer",
   "notice",
 ];
 
@@ -55,6 +57,7 @@ export function TicketDetailContent({
   startWithBorder?: boolean;
 }) {
   const activities = cleanList(ticket.detailActivities);
+  const detailFlow = cleanList(ticket.detailFlow);
   const recommendationReasons = cleanList(ticket.recommendationReasons);
   const customNotice = ticket.detailNotice?.trim();
   const visibleSections = new Set(sections);
@@ -133,7 +136,7 @@ export function TicketDetailContent({
           hideTopBorder={firstSectionAfterSummary === "flow"}
         >
           <ol className="space-y-2.5">
-            {flowSteps.map((step, index) => (
+            {(detailFlow.length > 0 ? detailFlow : flowSteps).map((step, index) => (
               <li
                 key={step}
                 className="grid grid-cols-[28px_minmax(0,1fr)] gap-3"
@@ -147,6 +150,36 @@ export function TicketDetailContent({
               </li>
             ))}
           </ol>
+        </TicketDetailSection>
+      )}
+
+      {visibleSections.has("proposer") && ticket.proposerProfile && (
+        <TicketDetailSection
+          title="이 자리를 제안한 멤버"
+          startWithBorder={startWithBorder}
+        >
+          <div className="rounded-3xl border border-black/8 bg-black/[0.025] px-4 py-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
+                {ticket.proposerProfile.publicEmoji?.trim() || "💎"}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-black text-black">
+                  {ticket.proposerProfile.displayName}
+                </p>
+                {ticket.proposerLabel && (
+                  <p className="mt-1 text-[11px] font-bold text-accent">
+                    {ticket.proposerLabel}
+                  </p>
+                )}
+              </div>
+            </div>
+            {ticket.proposerProfile.publicIntro && (
+              <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
+                {ticket.proposerProfile.publicIntro}
+              </p>
+            )}
+          </div>
         </TicketDetailSection>
       )}
 
