@@ -151,6 +151,7 @@ export async function POST(request: Request) {
         proposer_public_intro: profile.public_intro,
         proposer_public_emoji: profile.public_emoji,
         image_url: payload.imageUrl,
+        original_image_url: payload.imageUrl,
         title: payload.title,
         activity_description: payload.activityDescription,
         event_date: payload.eventDate,

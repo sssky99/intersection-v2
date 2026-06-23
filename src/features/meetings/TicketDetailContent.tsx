@@ -36,9 +36,7 @@ const flowSteps = [
 
 const commonNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
-  "모임은 6명 내외로 진행돼요.",
-  "무리한 연락처 교환이나 불편한 행동은 제한돼요.",
-  "결제 확인 후 대기열 등록이 완료돼요.",
+  "결제 확인 후 대기열 등록이 완료 돼요.",
 ];
 
 function cleanList(items: string[] | undefined) {
@@ -59,7 +57,10 @@ export function TicketDetailContent({
   const activities = cleanList(ticket.detailActivities);
   const detailFlow = cleanList(ticket.detailFlow);
   const recommendationReasons = cleanList(ticket.recommendationReasons);
-  const customNotice = ticket.detailNotice?.trim();
+  const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
+    (notice) => !commonNotices.includes(notice),
+  );
+  const noticeItems = [...commonNotices, ...customNotices];
   const visibleSections = new Set(sections);
   const detailSummary = ticket.detailSummary?.trim();
   const hasSummary = Boolean(visibleSections.has("summary") && detailSummary);
@@ -189,12 +190,7 @@ export function TicketDetailContent({
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "notice"}
         >
-          {customNotice && (
-            <p className="mb-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-sm font-semibold leading-6 text-black/62">
-              {customNotice}
-            </p>
-          )}
-          <BulletList items={commonNotices} />
+          <BulletList items={noticeItems} />
         </TicketDetailSection>
       )}
     </div>

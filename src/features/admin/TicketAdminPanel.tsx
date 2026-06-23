@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Clock3,
   Copy,
+  Eye,
   Image as ImageIcon,
   Plus,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
   profileName,
 } from "@/features/admin/adminDisplay";
 import type { AdminProfile } from "@/features/admin/adminProfile";
+import { StoredTicketDetailView } from "@/features/app/AppHome";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import {
@@ -37,7 +39,13 @@ import {
   type PlaceVisibility,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
-import type { GatheringTicket } from "@/types/ticket";
+import type {
+  GatheringTicket,
+  TicketArrivalStatus,
+  TicketMemberIntro,
+  UserTicket,
+} from "@/types/ticket";
+import type { Gender } from "@/types/user";
 
 type TicketData = {
   templates: AdminTicketTemplate[];
@@ -95,6 +103,11 @@ const timeHours = Array.from({ length: 12 }, (_, hour) =>
 );
 type TimePeriod = (typeof timePeriods)[number];
 const editableTicketVisibilities = ticketVisibilities;
+
+const fixedDetailNotices = [
+  "상세 장소는 참여 확정 후 안내돼요.",
+  "결제 확인 후 대기열 등록이 완료 돼요.",
+];
 
 const scoreFields: Array<{
   key: ScoreDraftKey;
@@ -173,20 +186,52 @@ function lines(value: string, limit?: number) {
   return typeof limit === "number" ? items.slice(0, limit) : items;
 }
 
+function customNoticeLines(value: string) {
+  return lines(value).filter((item) => !fixedDetailNotices.includes(item));
+}
+
+function customNoticeText(value: string) {
+  return customNoticeLines(value).join("\n");
+}
+
 function tags(value: string) {
   return value
-    .split(/[#,\s]+/)
-    .map((tag) => tag.trim().replace(/^#/, ""))
+    .split("#")
+    .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 3);
 }
 
 function limitTagInput(value: string) {
-  return tags(value).join(", ");
+  return value;
+}
+
+function normalizeTimeValue(value: string | null | undefined) {
+  const match = value?.trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour)) return "";
+
+  const minute = minuteSteps.includes(match[2] as (typeof minuteSteps)[number])
+    ? match[2]
+    : "00";
+
+  return `${String(Math.max(0, Math.min(23, hour))).padStart(2, "0")}:${minute}`;
+}
+
+function firstNormalizedTimeValue(
+  ...values: Array<string | null | undefined>
+) {
+  for (const value of values) {
+    const normalized = normalizeTimeValue(value);
+    if (normalized) return normalized;
+  }
+  return "";
 }
 
 function parseTimeParts(value: string) {
-  const match = value.match(/^(\d{2}):(\d{2})$/);
+  const match = normalizeTimeValue(value).match(/^(\d{2}):(\d{2})$/);
   const hour24 = match ? Number(match[1]) : 15;
   const minute = match ? match[2] : "00";
   const period: TimePeriod = hour24 >= 12 ? "오후" : "오전";
@@ -224,8 +269,9 @@ function composeTimeValue({
 }
 
 function displayTimeValue(value: string) {
-  if (!value) return "시간 선택";
-  const parts = parseTimeParts(value);
+  const normalized = normalizeTimeValue(value);
+  if (!normalized) return "시간 선택";
+  const parts = parseTimeParts(normalized);
   return `${parts.period} ${parts.hour}:${parts.minute}`;
 }
 
@@ -268,17 +314,17 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
     detailActivities: template.detail_activities.join("\n"),
     detailFlow: template.detail_flow.join("\n"),
     detailGoodFor: template.detail_good_for.join("\n"),
-    detailNotice: template.detail_notice ?? "",
+    detailNotice: customNoticeText(template.detail_notice ?? ""),
     imageUrl: template.image_url ?? "",
-    moodTags: template.mood_tags.join(", "),
+    moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
     activityType: template.activity_type ?? "",
     recommendationCopy: template.recommendation_copy ?? "",
     eventDate: template.event_date ?? instance?.event_date ?? "",
-    eventTime:
-      template.event_time?.slice(0, 5) ??
-      instance?.event_time?.slice(0, 5) ??
-      template.default_time?.slice(0, 5) ??
-      "",
+    eventTime: firstNormalizedTimeValue(
+      template.event_time,
+      instance?.event_time,
+      template.default_time,
+    ),
     region: template.region ?? instance?.region ?? template.default_region ?? "",
     placeName: template.place_name ?? instance?.place_name ?? "",
     address: template.address ?? instance?.address ?? "",
@@ -307,6 +353,8 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
 }
 
 function ticketRequestBody(draft: TicketDraft) {
+  const eventTime = normalizeTimeValue(draft.eventTime);
+
   return {
     proposerUserId: draft.proposerUserId,
     title: draft.title,
@@ -321,9 +369,9 @@ function ticketRequestBody(draft: TicketDraft) {
     activityType: draft.activityType,
     recommendationCopy: draft.recommendationCopy,
     defaultRegion: draft.region,
-    defaultTime: draft.eventTime,
+    defaultTime: eventTime,
     eventDate: draft.eventDate,
-    eventTime: draft.eventTime,
+    eventTime,
     region: draft.region,
     placeName: draft.placeName,
     address: draft.address,
@@ -380,7 +428,9 @@ function ticketPreview(
     title: draft.title.trim() || "새 초대장",
     subtitle: shortDescription || "교집합 초대장",
     date: isSampleTicket ? "" : draft.eventDate,
-    time: isSampleTicket ? "" : draft.eventTime || "시간 미정",
+    time: isSampleTicket
+      ? ""
+      : normalizeTimeValue(draft.eventTime) || "시간 미정",
     area: isSampleTicket ? "" : draft.region.trim() || "지역 미정",
     moodTags: tags(draft.moodTags),
     activityType: draft.activityType.trim() || "admin_ticket",
@@ -417,6 +467,128 @@ function ticketPreview(
   };
 }
 
+function profileGender(profile: AdminProfile | null | undefined): Gender | null {
+  if (
+    profile?.gender === "여성" ||
+    profile?.gender === "남성" ||
+    profile?.gender === "비공개" ||
+    profile?.gender === ""
+  ) {
+    return profile.gender;
+  }
+  return null;
+}
+
+function profileEmoji(profile: AdminProfile | null | undefined) {
+  return profile?.public_emoji?.trim() || "🙂";
+}
+
+function ticketStartIso(ticket: GatheringTicket) {
+  if (!ticket.date || !ticket.time) return null;
+  const normalizedTime = ticket.time.slice(0, 5);
+  const date = new Date(`${ticket.date}T${normalizedTime}:00+09:00`);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function addHoursIso(iso: string | null, hours: number) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Date(date.getTime() + hours * 60 * 60 * 1000).toISOString();
+}
+
+function memberFromProfile({
+  profile,
+  fallbackDisplayName,
+  fallbackIntro,
+  fallbackEmoji,
+  isSelf,
+  arrivalStatus,
+}: {
+  profile: AdminProfile | null;
+  fallbackDisplayName: string;
+  fallbackIntro?: string | null;
+  fallbackEmoji?: string | null;
+  isSelf: boolean;
+  arrivalStatus: TicketArrivalStatus | null;
+}): TicketMemberIntro {
+  return {
+    id: profile?.user_id ?? `preview-${fallbackDisplayName}`,
+    name: profile?.name ?? fallbackDisplayName,
+    nickname: profile?.nickname ?? fallbackDisplayName,
+    gender: profileGender(profile),
+    emoji: profileEmoji(profile) || fallbackEmoji?.trim() || "🙂",
+    publicIntro: profile?.public_intro ?? fallbackIntro ?? null,
+    arrivalStatus,
+    arrivalStatusUpdatedAt: arrivalStatus ? new Date().toISOString() : null,
+    isSelf,
+  };
+}
+
+function progressPreviewUserTicket({
+  ticket,
+  draft,
+  proposer,
+  assignedProfiles,
+  selectedInstance,
+}: {
+  ticket: GatheringTicket;
+  draft: TicketDraft;
+  proposer: AdminProfile | null;
+  assignedProfiles: AdminProfile[];
+  selectedInstance: AdminTicketInstance | null;
+}): UserTicket {
+  const startAt = ticketStartIso(ticket);
+  const proposerName =
+    proposer
+      ? meetingProposalDisplayName(proposer)
+      : ticket.proposerProfile?.displayName ?? "제안자";
+  const proposerId =
+    proposer?.user_id ?? ticket.proposerProfile?.userId ?? "preview-proposer";
+  const members = [
+    memberFromProfile({
+      profile: proposer,
+      fallbackDisplayName: proposerName,
+      fallbackIntro: ticket.proposerProfile?.publicIntro,
+      fallbackEmoji: ticket.proposerProfile?.publicEmoji,
+      isSelf: true,
+      arrivalStatus: "on_time",
+    }),
+    ...assignedProfiles
+      .filter((profile) => profile.user_id !== proposerId)
+      .map((profile, index) =>
+        memberFromProfile({
+          profile,
+          fallbackDisplayName: profileName(profile),
+          isSelf: false,
+          arrivalStatus: index % 2 === 0 ? "on_time" : null,
+        }),
+      ),
+  ];
+
+  return {
+    id: `admin-preview:${ticket.id}`,
+    waitlistId: `admin-preview:${ticket.id}`,
+    ticket,
+    rawStatus: "feedback_open",
+    status: "feedback_open",
+    statusLabel: "피드백 작성 가능",
+    progressStep: "feedback",
+    progressIndex: 4,
+    meetingStartAt: startAt,
+    arrivalOpensAt: addHoursIso(startAt, -3),
+    feedbackOpensAt: addHoursIso(startAt, 3),
+    canSetArrival: true,
+    arrivalStatus: "on_time",
+    arrivalStatusUpdatedAt: new Date().toISOString(),
+    place: {
+      name: selectedInstance?.place_name ?? (draft.placeName.trim() || null),
+      address: selectedInstance?.address ?? (draft.address.trim() || null),
+    },
+    members,
+  };
+}
+
 export function TicketAdminPanel() {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
@@ -429,6 +601,7 @@ export function TicketAdminPanel() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressPreviewOpen, setProgressPreviewOpen] = useState(false);
 
   const hydrate = useCallback((data: TicketData) => {
     ticketDataCache = data;
@@ -474,6 +647,7 @@ export function TicketAdminPanel() {
   useEffect(() => {
     setDraft(selectedTicket ? draftFromTicket(selectedTicket) : null);
     setMemberQuery("");
+    setProgressPreviewOpen(false);
   }, [selectedTicket]);
 
   const instanceById = useMemo(() => {
@@ -540,8 +714,19 @@ export function TicketAdminPanel() {
     waitlist,
   ]);
 
-  const previewTicket =
-    draft && ticketPreview(draft, selectedTicket, selectedInstance, proposer);
+  const previewTicket = draft
+    ? ticketPreview(draft, selectedTicket, selectedInstance, proposer)
+    : null;
+  const progressPreviewTicket =
+    previewTicket && draft
+      ? progressPreviewUserTicket({
+          ticket: previewTicket,
+          draft,
+          proposer,
+          assignedProfiles,
+          selectedInstance,
+        })
+      : null;
   const isSampleTicket = draft?.visibility === "question";
 
   const filteredTickets = useMemo(() => {
@@ -826,13 +1011,24 @@ export function TicketAdminPanel() {
 
                 {!isSampleTicket && (
                   <>
-                    <ContentEditor draft={draft} onDraftChange={setDraft} />
+                    {previewTicket && (
+                      <ContentEditor
+                        draft={draft}
+                        onDraftChange={setDraft}
+                      />
+                    )}
 
                     <ScoreEditor
                       draft={draft}
                       saving={saving}
                       onDraftChange={setDraft}
                     />
+
+                    {progressPreviewTicket && (
+                      <ProgressPreviewLauncher
+                        onClick={() => setProgressPreviewOpen(true)}
+                      />
+                    )}
                   </>
                 )}
 
@@ -873,6 +1069,13 @@ export function TicketAdminPanel() {
                   sampleOnly={isSampleTicket}
                 />
               )}
+
+              {progressPreviewOpen && progressPreviewTicket && (
+                <AdminProgressPreviewModal
+                  userTicket={progressPreviewTicket}
+                  onClose={() => setProgressPreviewOpen(false)}
+                />
+              )}
             </div>
           )}
         </main>
@@ -894,7 +1097,11 @@ function TicketListCard({
   const isSampleTicket = template.visibility === "question";
   const dateTime = [
     template.event_date ?? instance?.event_date,
-    (template.event_time ?? instance?.event_time)?.slice(0, 5),
+    firstNormalizedTimeValue(
+      template.event_time,
+      instance?.event_time,
+      template.default_time,
+    ),
   ]
     .filter(Boolean)
     .join(" ");
@@ -1118,10 +1325,10 @@ function BasicEditor({
             </label>
           </div>
           <FormField
-            label="분위기 태그"
-            className="col-span-2"
-            value={draft.moodTags}
-            placeholder="영화, 산책, 편한 대화"
+          label="분위기 태그"
+          className="col-span-2"
+          value={draft.moodTags}
+          placeholder="#영화 #산책 #편한 대화"
             onChange={(moodTags) =>
               onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
             }
@@ -1243,23 +1450,117 @@ function ContentEditor({
           value={draft.detailFlow}
           onChange={(detailFlow) => onDraftChange({ ...draft, detailFlow })}
         />
-        <TextAreaField
-          label="안내사항"
+        <NoticeEditor
           value={draft.detailNotice}
           onChange={(detailNotice) =>
             onDraftChange({ ...draft, detailNotice })
           }
         />
-        <TextAreaField
-          label="추천 문구"
-          className="col-span-2"
-          value={draft.recommendationCopy}
-          onChange={(recommendationCopy) =>
-            onDraftChange({ ...draft, recommendationCopy })
-          }
-        />
       </div>
     </section>
+  );
+}
+
+function NoticeEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [editableItems, setEditableItems] = useState(() => {
+    const customItems = customNoticeLines(value);
+    return customItems.length ? customItems : [""];
+  });
+
+  useEffect(() => {
+    const customItems = customNoticeLines(value);
+    setEditableItems(customItems.length ? customItems : [""]);
+  }, [value]);
+
+  const commit = (items: string[]) => {
+    setEditableItems(items.length ? items : [""]);
+    onChange(
+      items
+        .map((item) => item.trim())
+        .filter((item) => item && !fixedDetailNotices.includes(item))
+        .join("\n"),
+    );
+  };
+
+  const updateItem = (index: number, nextValue: string) => {
+    const nextItems = [...editableItems];
+    nextItems[index] = nextValue;
+    commit(nextItems);
+  };
+
+  const addItem = () => {
+    commit([...editableItems, ""]);
+  };
+
+  const removeItem = (index: number) => {
+    const nextItems = editableItems.filter((_, itemIndex) => itemIndex !== index);
+    commit(nextItems.length ? nextItems : [""]);
+  };
+
+  return (
+    <div className="col-span-2">
+      <span className="text-xs font-semibold text-black/50">안내사항</span>
+      <div className="mt-1.5 rounded-2xl border border-black/10 bg-black/[0.025] px-4 py-4">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-accent">
+          fixed
+        </p>
+        <div className="mt-2 space-y-2">
+          {fixedDetailNotices.map((notice) => (
+            <div
+              key={notice}
+              className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-black/62"
+            >
+              <Check size={14} className="shrink-0 text-accent" aria-hidden />
+              <span>{notice}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {editableItems.map((item, index) => (
+          <div
+            key={index}
+            className="grid grid-cols-[minmax(0,1fr)_36px] items-center gap-2"
+          >
+            <input
+              type="text"
+              value={item}
+              placeholder={
+                index === 0
+                  ? "추가 안내를 입력해요"
+                  : "다음 안내를 입력해요"
+              }
+              onChange={(event) => updateItem(index, event.target.value)}
+              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={() => removeItem(index)}
+              disabled={editableItems.length === 1 && !item.trim()}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/35 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+              aria-label={`${index + 1}번 추가 안내 삭제`}
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addItem}
+        className="mt-2 inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
+      >
+        <Plus size={14} aria-hidden />
+        안내 추가
+      </button>
+    </div>
   );
 }
 
@@ -1334,6 +1635,46 @@ function FlowStepEditor({
         <Plus size={14} aria-hidden />
         순서 추가
       </button>
+    </div>
+  );
+}
+
+function ProgressPreviewLauncher({ onClick }: { onClick: () => void }) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-black text-sm font-black text-white transition hover:bg-black/85"
+      >
+        <Eye size={16} aria-hidden />
+        실제 진행상황 보기
+      </button>
+    </section>
+  );
+}
+
+function AdminProgressPreviewModal({
+  userTicket,
+  onClose,
+}: {
+  userTicket: UserTicket;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="실제 진행상황 미리보기"
+    >
+      <div className="relative max-h-[92dvh] w-full max-w-[430px] overflow-y-auto rounded-[32px] bg-white shadow-[0_30px_100px_rgba(0,0,0,0.28)]">
+        <StoredTicketDetailView
+          userTicket={userTicket}
+          onClose={onClose}
+          previewMode
+        />
+      </div>
     </div>
   );
 }
@@ -1513,17 +1854,18 @@ function TicketPreviewPanel({
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
           ticket card
         </p>
-        <IntersectionTicketCard
-          title={ticket.title}
-          imageUrl={ticket.imageUrl}
-          date={ticket.date}
-          time={ticket.time}
-          location={ticket.area}
-          tags={ticket.moodTags}
-          proposerLabel={ticket.proposerLabel}
-          remainingSeatCount={ticket.remainingSeatCount}
-          className="mt-3"
-        />
+        <div className="mx-auto mt-3 w-[min(78vw,320px,calc(61.73dvh-121px))]">
+          <IntersectionTicketCard
+            title={ticket.title}
+            imageUrl={ticket.imageUrl}
+            date={ticket.date}
+            time={ticket.time}
+            location={ticket.area}
+            tags={ticket.moodTags}
+            proposerLabel={ticket.proposerLabel}
+            remainingSeatCount={ticket.remainingSeatCount}
+          />
+        </div>
       </section>
 
       {!sampleOnly && (

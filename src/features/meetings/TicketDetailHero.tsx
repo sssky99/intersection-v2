@@ -19,8 +19,8 @@ function normalizeTags(tags?: string[] | null) {
     .flatMap((tag) =>
       tag
         .trim()
-        .split(/(?=#)|[\s,]+/)
-        .map((item) => item.trim().replace(/^#/, "")),
+        .split("#")
+        .map((item) => item.trim()),
     )
     .filter(Boolean)
     .slice(0, 3);
@@ -85,7 +85,7 @@ export function TicketDetailHero({
           {ticket.proposerLabel}
         </div>
       )}
-      <div className="absolute inset-x-5 bottom-5 pr-28">
+      <div className={cn("absolute inset-x-5 bottom-5", badgeLabel && "pr-28")}>
         <h2 className="whitespace-pre-line text-[29px] font-extrabold leading-[1.12] tracking-normal text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.72)]">
           {ticket.title}
         </h2>
@@ -95,11 +95,11 @@ export function TicketDetailHero({
           </p>
         )}
         {tags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="scrollbar-none mt-3 flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5">
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
+                className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
               >
                 {tag}
               </span>

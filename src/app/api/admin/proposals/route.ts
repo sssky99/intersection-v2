@@ -22,6 +22,7 @@ type ProposalRow = {
   proposer_public_intro: string | null;
   proposer_public_emoji: string | null;
   image_url: string | null;
+  original_image_url: string | null;
   title: string;
   activity_description: string;
   event_date: string;
@@ -52,6 +53,7 @@ const proposalSelect = [
   "proposer_public_intro",
   "proposer_public_emoji",
   "image_url",
+  "original_image_url",
   "title",
   "activity_description",
   "event_date",
@@ -177,6 +179,7 @@ function toAdminProposal(
       publicEmoji: row.proposer_public_emoji ?? profile?.public_emoji ?? null,
     },
     imageUrl: row.image_url,
+    originalImageUrl: row.original_image_url,
     title: row.title,
     activityDescription: row.activity_description,
     eventDate: row.event_date,

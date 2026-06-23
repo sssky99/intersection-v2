@@ -177,6 +177,17 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() || null : null;
 }
 
+function timeText(value: unknown) {
+  const raw = text(value);
+  const match = raw?.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return raw;
+
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour)) return null;
+
+  return `${String(Math.max(0, Math.min(23, hour))).padStart(2, "0")}:${match[2]}`;
+}
+
 function tags(value: unknown) {
   return Array.isArray(value)
     ? value
@@ -292,9 +303,9 @@ function templatePayload(body: Record<string, unknown>) {
     activity_type: text(body.activityType),
     recommendation_copy: text(body.recommendationCopy),
     default_region: text(body.defaultRegion),
-    default_time: text(body.defaultTime),
+    default_time: timeText(body.defaultTime),
     event_date: text(body.eventDate),
-    event_time: text(body.eventTime),
+    event_time: timeText(body.eventTime),
     region: text(body.region),
     place_name: text(body.placeName),
     address: text(body.address),
@@ -327,7 +338,7 @@ function instancePayload(body: Record<string, unknown>) {
   return {
     title: text(body.title),
     event_date: text(body.eventDate),
-    event_time: text(body.eventTime),
+    event_time: timeText(body.eventTime),
     region: text(body.region),
     place_name: text(body.placeName),
     address: text(body.address),

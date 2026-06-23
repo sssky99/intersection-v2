@@ -197,6 +197,7 @@ async function requestGptDraft(client: OpenAI, input: MeetingProposalInput) {
       "You write Korean drafts for an operator-reviewed gathering proposal feature.",
       "Do not imply that the user is directly publishing an invitation.",
       "Use warm, concise Korean copy that fits a small curated offline gathering.",
+      "For hashtags, use mood, interest, or activity keywords only. Do not use region or place names, or generic gathering words such as 모임, 만남, 자리, or 교집합.",
       "Return only JSON matching the provided schema.",
       "Vibe scores must use the existing legacy 1-5 scale: 1 means the left label, 5 means the right label.",
       "Vibe axes: temperature calm to lively, texture everyday to deep, tone empathy to analysis, rhythm planned to spontaneous, alcohol no alcohol to alcohol, romance comfortable to possibility of romance.",

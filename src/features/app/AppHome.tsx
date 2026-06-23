@@ -372,6 +372,10 @@ export function AppHome({
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
+  const [proposalAcceptedNoticeOpen, setProposalAcceptedNoticeOpen] =
+    useState(false);
+  const [dismissedProposalNotificationIds, setDismissedProposalNotificationIds] =
+    useState<string[]>([]);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
@@ -424,6 +428,18 @@ export function AppHome({
       ).length,
     [blindDateOffers],
   );
+  const acceptedProposalNotifications = useMemo(
+    () =>
+      waitlistedTickets.filter(
+        (userTicket) =>
+          userTicket.rawStatus === "approved" &&
+          userTicket.ticket.activityType === "member_proposal" &&
+          userTicket.ticket.proposerProfile?.userId === userId &&
+          !dismissedProposalNotificationIds.includes(userTicket.waitlistId),
+      ),
+    [dismissedProposalNotificationIds, userId, waitlistedTickets],
+  );
+  const acceptedProposalCount = acceptedProposalNotifications.length;
 
   useEffect(() => {
     setCurrentProfile(profile);
@@ -432,6 +448,39 @@ export function AppHome({
   useEffect(() => {
     if (initialProfileCompletionOpen) setProfileCompletionOpen(true);
   }, [initialProfileCompletionOpen]);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(
+        `dismissed-proposal-notifications:${userId}`,
+      );
+      const notificationIds = stored ? JSON.parse(stored) : [];
+      setDismissedProposalNotificationIds(
+        Array.isArray(notificationIds)
+          ? notificationIds.filter(
+              (value): value is string => typeof value === "string",
+            )
+          : [],
+      );
+    } catch {
+      setDismissedProposalNotificationIds([]);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `dismissed-proposal-notifications:${userId}`,
+        JSON.stringify(dismissedProposalNotificationIds),
+      );
+    } catch {
+      // Keep in-memory dismissal working if local storage is unavailable.
+    }
+  }, [dismissedProposalNotificationIds, userId]);
+
+  useEffect(() => {
+    if (acceptedProposalCount === 0) setProposalAcceptedNoticeOpen(false);
+  }, [acceptedProposalCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,6 +524,19 @@ export function AppHome({
     };
   }, [userId]);
 
+  useEffect(() => {
+    const refreshTickets = () => {
+      void fetchUserTickets({ force: true }).then((response) => {
+        if (!response) return;
+        setWaitlistedTickets(response.tickets);
+        setParticipationCount(response.participationCount);
+      });
+    };
+
+    const intervalId = window.setInterval(refreshTickets, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   const switchTab = (tab: AppTab) => {
     if (tab === "profile") {
       setProfileVibeAnimationKey((current) => current + 1);
@@ -492,9 +554,24 @@ export function AppHome({
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
+    setProposalAcceptedNoticeOpen(false);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
+  };
+
+  const openProposalAcceptedNotification = () => {
+    setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
+    setMembershipModalOpen(false);
+    setProposalAcceptedNoticeOpen(acceptedProposalCount > 0);
+  };
+
+  const dismissProposalAcceptedNotification = (notificationId: string) => {
+    setDismissedProposalNotificationIds((current) =>
+      current.includes(notificationId) ? current : [...current, notificationId],
+    );
+    if (acceptedProposalCount === 1) setProposalAcceptedNoticeOpen(false);
   };
 
   const openProfileCompletionReplay = () => {
@@ -596,7 +673,7 @@ export function AppHome({
               ? `메시지 ${pendingBlindDateOfferCount}개`
               : "블라인드 데이트 상태 확인"
           }
-          className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+          className="absolute right-[164px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
         >
           <span className="text-lg leading-none" aria-hidden>
             ✉️
@@ -611,8 +688,30 @@ export function AppHome({
 
       <button
         type="button"
+        onClick={openProposalAcceptedNotification}
+        title="제안 수락 알림"
+        aria-label={
+          acceptedProposalCount > 0
+            ? `내가 제안한 모임 수락 알림 ${acceptedProposalCount}개`
+            : "새 제안 수락 알림 없음"
+        }
+        className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+      >
+        <span className="text-lg leading-none" aria-hidden>
+          🔔
+        </span>
+        {acceptedProposalCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
+            {acceptedProposalCount}
+          </span>
+        )}
+      </button>
+
+      <button
+        type="button"
         onClick={() => {
           setMembershipModalOpen(false);
+          setProposalAcceptedNoticeOpen(false);
           setProfilePanelOpen((open) => !open);
         }}
         aria-label="기본정보 카드 열기"
@@ -626,6 +725,57 @@ export function AppHome({
       >
         {profileInitial(currentProfile)}
       </button>
+
+      <AnimatePresence>
+        {proposalAcceptedNoticeOpen && acceptedProposalCount > 0 && (
+          <motion.div
+            key="proposal-accepted-notice"
+            initial={{ opacity: 0, y: -8, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 420, damping: 28 }}
+            role="status"
+            className="absolute right-4 top-[calc(66px+env(safe-area-inset-top))] z-30 w-[272px] rounded-2xl border border-black/10 bg-white p-2 shadow-[0_14px_36px_rgba(0,0,0,0.16)]"
+          >
+            <span className="absolute -top-1 right-[114px] h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white" />
+            <button
+              type="button"
+              onClick={() => setProposalAcceptedNoticeOpen(false)}
+              aria-label="제안 수락 알림 닫기"
+              className="absolute right-2 top-2 rounded-full p-1 text-black/35 transition hover:bg-black/[0.05] hover:text-black"
+            >
+              <X size={14} aria-hidden />
+            </button>
+            <div className="max-h-[calc(100dvh-132px)] space-y-2 overflow-y-auto p-1 pr-5 scrollbar-none">
+              {acceptedProposalNotifications.map((notification) => (
+                <section
+                  key={notification.waitlistId}
+                  className="rounded-xl bg-black/[0.055] px-3 py-2.5"
+                >
+                  <p className="text-sm font-bold leading-5 text-black/78">
+                    내가 제안한 모임이 수락되었어요.
+                    <br />
+                    티켓 탭에서 확인할 수 있어요.
+                  </p>
+                  <div className="mt-1.5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        dismissProposalAcceptedNotification(
+                          notification.waitlistId,
+                        )
+                      }
+                      className="text-[10px] font-bold text-black/42 underline underline-offset-2 transition hover:text-black"
+                    >
+                      지우기
+                    </button>
+                  </div>
+                </section>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {profilePanelOpen && (
@@ -662,6 +812,7 @@ export function AppHome({
         >
           <TicketListTab
             tickets={waitlistedTickets}
+            userId={userId}
             onGoRecommend={() => switchTab("recommend")}
           />
         </div>
@@ -811,9 +962,11 @@ export function AppHome({
 
 function TicketListTab({
   tickets,
+  userId,
   onGoRecommend,
 }: {
   tickets: UserTicket[];
+  userId: string;
   onGoRecommend: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -1129,6 +1282,7 @@ function TicketListTab({
                     >
                       <StoredTicketCard
                         userTicket={userTicket}
+                        userId={userId}
                         onOpen={() => openStoredTicket(userTicket)}
                       />
                     </div>
@@ -1162,12 +1316,17 @@ function TicketListTab({
 
 function StoredTicketCard({
   userTicket,
+  userId,
   onOpen,
 }: {
   userTicket: UserTicket;
+  userId: string;
   onOpen: () => void;
 }) {
   const ticket = userTicket.ticket;
+  const isMyProposal =
+    ticket.activityType === "member_proposal" &&
+    ticket.proposerProfile?.userId === userId;
 
   return (
     <motion.div
@@ -1192,27 +1351,23 @@ function StoredTicketCard({
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
         proposerLabel={ticket.proposerLabel}
+        badgeLabel={isMyProposal ? "✦ 나의 제안" : userTicket.statusLabel}
+        badgeClassName={statusBadgeClass(userTicket.status, isMyProposal)}
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />
-      <span
-        className={cn(
-          "absolute left-4 top-4 rounded-full border px-3 py-1.5 text-[11px] font-black backdrop-blur",
-          statusBadgeClass(userTicket.status),
-        )}
-      >
-        {userTicket.statusLabel}
-      </span>
     </motion.div>
   );
 }
 
-function StoredTicketDetailView({
+export function StoredTicketDetailView({
   userTicket,
   onClose,
+  previewMode = false,
 }: {
   userTicket: UserTicket;
   onClose: () => void;
+  previewMode?: boolean;
 }) {
   const ticket = userTicket.ticket;
   const [statusOpen, setStatusOpen] = useState(true);
@@ -1268,6 +1423,7 @@ function StoredTicketDetailView({
           <TicketStageContent
             userTicket={userTicket}
             progressStep={selectedProgressStep}
+            previewMode={previewMode}
           />
         </motion.div>
       </motion.article>
@@ -1276,7 +1432,11 @@ function StoredTicketDetailView({
   );
 }
 
-function statusBadgeClass(_status: UserTicketStatus) {
+function statusBadgeClass(_status: UserTicketStatus, isMyProposal = false) {
+  if (isMyProposal) {
+    return "border-[#9ad5e3] bg-[#e8f8fc]/95 text-[#15586b] shadow-[0_10px_22px_rgba(21,88,107,0.2)]";
+  }
+
   return "border-white/25 bg-white/20 text-white shadow-[0_10px_22px_rgba(0,0,0,0.2)]";
 }
 
@@ -1585,9 +1745,11 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
 function TicketStageContent({
   userTicket,
   progressStep,
+  previewMode = false,
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressStep;
+  previewMode?: boolean;
 }) {
   const ticket = userTicket.ticket;
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
@@ -1600,7 +1762,7 @@ function TicketStageContent({
   }, [userTicket.arrivalStatus, userTicket.waitlistId]);
 
   if (progressStep === "feedback") {
-    return <TicketFeedbackForm userTicket={userTicket} />;
+    return <TicketFeedbackForm userTicket={userTicket} previewMode={previewMode} />;
   }
 
   if (progressStep === "in_progress") {
@@ -1610,6 +1772,7 @@ function TicketStageContent({
           userTicket={userTicket}
           selectedArrivalStatus={arrivalStatus}
           onArrivalStatusChange={setArrivalStatus}
+          previewMode={previewMode}
         />
         {placeUnlocked ? (
           <PlaceSection userTicket={userTicket} />
@@ -1639,6 +1802,7 @@ function TicketStageContent({
           userTicket={userTicket}
           selectedArrivalStatus={arrivalStatus}
           onArrivalStatusChange={setArrivalStatus}
+          previewMode={previewMode}
         />
         {placeUnlocked ? (
           <PlaceSection userTicket={userTicket} />
@@ -1846,10 +2010,12 @@ function ArrivalStatusPanel({
   userTicket,
   selectedArrivalStatus,
   onArrivalStatusChange,
+  previewMode = false,
 }: {
   userTicket: UserTicket;
   selectedArrivalStatus?: TicketArrivalStatus | null;
   onArrivalStatusChange?: (arrivalStatus: TicketArrivalStatus) => void;
+  previewMode?: boolean;
 }) {
   const [selected, setSelected] = useState<TicketArrivalStatus | null>(
     selectedArrivalStatus ?? userTicket.arrivalStatus,
@@ -1863,6 +2029,12 @@ function ArrivalStatusPanel({
 
   const saveArrivalStatus = async (arrivalStatus: TicketArrivalStatus) => {
     if (saving || !userTicket.canSetArrival) return;
+    if (previewMode) {
+      setSelected(arrivalStatus);
+      onArrivalStatusChange?.(arrivalStatus);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -2064,7 +2236,13 @@ function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
   return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
 }
 
-function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
+function TicketFeedbackForm({
+  userTicket,
+  previewMode = false,
+}: {
+  userTicket: UserTicket;
+  previewMode?: boolean;
+}) {
   const selfMember = useMemo(
     () => userTicket.members.find((member) => member.isSelf),
     [userTicket.members],
@@ -2281,6 +2459,11 @@ function TicketFeedbackForm({ userTicket }: { userTicket: UserTicket }) {
 
   const submitFeedback = async () => {
     if (submitting || !canSubmit) return;
+    if (previewMode) {
+      setSubmitted(true);
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
 

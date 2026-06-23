@@ -1,11 +1,12 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, Hand, MoveHorizontal, ShieldCheck, Sparkles } from "lucide-react";
+import { Check, Hand, MoveHorizontal, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import KakaoLoginButton from "@/components/KakaoLoginButton";
+import { LocalTestLoginMenu } from "@/components/LocalTestLoginMenu";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { TypingSummary } from "@/features/meetings/TicketDetailContent";
 import { createClient } from "@/lib/supabase/client";
@@ -28,7 +29,6 @@ type ExampleCard = {
   time: string;
   location: string;
   proposerLabel: string;
-  interestText: string | null;
 };
 
 type ProfileCard = {
@@ -131,8 +131,6 @@ const safetyItems = [
   "모임 후 피드백을 받아 다음 추천에 반영해요.",
   "불편한 피드백, 노쇼는 강력하게 제재해요.",
 ];
-const exampleInterestCounts = [3, 2, 4, 5, 4];
-
 export function DetailsClient({
   userId,
   nextPath,
@@ -545,10 +543,6 @@ function ProfileCarousel() {
 }
 
 function templateToExampleCard(template: TicketQuestionTemplate): ExampleCard {
-  const interestCount =
-    exampleInterestCounts[template.questionOrder - 1] ??
-    exampleInterestCounts[0];
-
   return {
     title: template.title,
     tags: template.moodTags,
@@ -556,7 +550,6 @@ function templateToExampleCard(template: TicketQuestionTemplate): ExampleCard {
     time: "",
     location: "",
     proposerLabel: template.proposerLabel,
-    interestText: `${interestCount}명이 관심을 보였어요.`,
   };
 }
 
@@ -642,14 +635,6 @@ function RotatingTicketExamples({
                   </span>
                 </span>
               </div>
-              {card.interestText && (
-                <p className={cn("mt-4 px-4 py-3", detailsTextPanelClass, detailsBodyClass)}>
-                  <span aria-hidden="true" className="mr-2">
-                    🔔
-                  </span>
-                  {card.interestText}
-                </p>
-              )}
             </motion.div>
           ) : (
             <span key={`ticket-drawing-${card.title}`} className="block h-[142px]" />
@@ -698,7 +683,12 @@ function DetailPageExampleCard({
 function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
   const reducedMotion = useReducedMotion();
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const dragStateRef = useRef({ dragging: false, scrollLeft: 0, startX: 0 });
+  const dragStateRef = useRef({
+    dragging: false,
+    pointerId: -1,
+    scrollLeft: 0,
+    startX: 0,
+  });
   const [activeIndex, setActiveIndex] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -729,10 +719,14 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
 
   const startMouseDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const viewport = viewportRef.current;
-    if (!viewport || event.pointerType !== "mouse" || event.button !== 0) return;
+    if (!viewport || (event.pointerType === "mouse" && event.button !== 0)) {
+      return;
+    }
 
+    event.preventDefault();
     dragStateRef.current = {
       dragging: true,
+      pointerId: event.pointerId,
       scrollLeft: viewport.scrollLeft,
       startX: event.clientX,
     };
@@ -743,7 +737,13 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
   const moveMouseDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const viewport = viewportRef.current;
     const dragState = dragStateRef.current;
-    if (!viewport || !dragState.dragging) return;
+    if (
+      !viewport ||
+      !dragState.dragging ||
+      dragState.pointerId !== event.pointerId
+    ) {
+      return;
+    }
 
     event.preventDefault();
     viewport.scrollLeft = dragState.scrollLeft - (event.clientX - dragState.startX);
@@ -751,9 +751,20 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
 
   const endMouseDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const viewport = viewportRef.current;
-    if (!viewport || !dragStateRef.current.dragging) return;
+    if (
+      !viewport ||
+      !dragStateRef.current.dragging ||
+      dragStateRef.current.pointerId !== event.pointerId
+    ) {
+      return;
+    }
 
-    dragStateRef.current.dragging = false;
+    dragStateRef.current = {
+      dragging: false,
+      pointerId: -1,
+      scrollLeft: viewport.scrollLeft,
+      startX: event.clientX,
+    };
     if (viewport.hasPointerCapture(event.pointerId)) {
       viewport.releasePointerCapture(event.pointerId);
     }
@@ -799,25 +810,28 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
         onPointerMove={moveMouseDrag}
         onPointerUp={endMouseDrag}
         onPointerCancel={endMouseDrag}
+        onLostPointerCapture={endMouseDrag}
+        onDragStart={(event) => event.preventDefault()}
         className={cn(
           "flex snap-x snap-mandatory gap-3 overflow-x-auto px-[13%] pb-1 scrollbar-none overscroll-x-contain scroll-smooth select-none",
           isDragging ? "cursor-grabbing" : "cursor-grab",
         )}
-        style={{ WebkitOverflowScrolling: "touch" }}
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
       >
         {items.map((item, index) => (
           <article
-          key={item.title}
-          data-step-slide
-          className="w-full shrink-0 snap-center"
-        >
+            key={item.title}
+            data-step-slide
+            className="w-full shrink-0 snap-center"
+          >
             <div className="relative aspect-[9/14] w-full overflow-hidden rounded-[26px] border border-black/8 bg-white shadow-[0_16px_46px_rgba(0,0,0,0.045)]">
               <Image
                 src={flowCaptureImages[index]}
                 alt={`${index + 1}단계 참여 화면`}
                 fill
+                draggable={false}
                 sizes="(max-width: 430px) 74vw, 300px"
-                className="object-contain"
+                className="pointer-events-none object-contain"
               />
             </div>
             <div className="mt-5 px-4 py-2 text-center">
@@ -863,18 +877,18 @@ function DetailPageStickyCTA({
         className="pointer-events-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/95 to-[#f7f7f5]/0 px-4 pb-[calc(12px+env(safe-area-inset-bottom))] pt-8"
       >
         {isLogin ? (
-          <KakaoLoginButton
-            nextPath={loginNextPath}
-            loadingLabel="카카오로 이동 중..."
-            className="h-14 rounded-full bg-[#FEE500] px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.12)] active:scale-[0.99] disabled:opacity-60"
-          >
-            {(loading) => (
-              <>
-                <KakaoBubbleIcon />
-                {loading ? "카카오로 이동 중..." : label}
-              </>
-            )}
-          </KakaoLoginButton>
+          <div className="flex items-center gap-2">
+            <KakaoLoginButton
+              nextPath={loginNextPath}
+              loadingLabel="카카오로 이동 중..."
+              className="h-14 flex-1 rounded-full bg-[#FEE500] px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.12)] active:scale-[0.99] disabled:opacity-60"
+            >
+              {(loading) => (
+                <>{loading ? "카카오로 이동 중..." : label}</>
+              )}
+            </KakaoLoginButton>
+            <LocalTestLoginMenu nextPath="/meetings?tab=recommend" />
+          </div>
         ) : (
           <button
             type="button"
@@ -882,20 +896,10 @@ function DetailPageStickyCTA({
             onClick={onClick}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black px-5 text-sm font-semibold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99] disabled:bg-black/20"
           >
-            <Sparkles size={16} aria-hidden />
             {saving ? "준비 중..." : label}
           </button>
         )}
       </div>
     </motion.div>
-  );
-}
-
-function KakaoBubbleIcon() {
-  return (
-    <span
-      aria-hidden
-      className="relative h-[18px] w-[20px] rounded-[48%] bg-[#191919] after:absolute after:bottom-[-2px] after:left-[4px] after:h-[7px] after:w-[7px] after:rotate-45 after:bg-[#191919]"
-    />
   );
 }

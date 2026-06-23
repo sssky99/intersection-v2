@@ -45,7 +45,10 @@ export function safeLocalOAuthOrigin(value: string | null) {
 }
 
 function oauthOrigin(origin: string) {
-  return origin;
+  // Kakao cannot return directly to a private local development server.
+  // Use the already-authorized production callback as a bridge, then the
+  // callback route safely forwards the one-time code back to localhost.
+  return safeLocalOAuthOrigin(origin) ? productionOAuthOrigin() : origin;
 }
 
 export function createOAuthRedirectUrl(

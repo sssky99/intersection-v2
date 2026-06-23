@@ -247,6 +247,7 @@ function toTicket(
     time,
     area,
     moodTags: template.mood_tags ?? snapshot?.moodTags ?? [],
+    activityType: template.activity_type ?? snapshot?.activityType,
     imageUrl: template.image_url ?? snapshot?.imageUrl,
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,

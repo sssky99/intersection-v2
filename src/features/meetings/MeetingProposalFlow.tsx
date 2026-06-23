@@ -53,7 +53,7 @@ const emptyForm: ProposalFormState = {
   eventDate: "",
   eventTime: "",
   region: "",
-  specificPlace: "",
+  specificPlace: null,
   userHashtags: [],
   proposerRoleAgreed: false,
 };
@@ -87,10 +87,14 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 function splitTags(value: string) {
   return value
-    .split(/[#,\s]+/)
-    .map((item) => item.trim().replace(/^#/, ""))
+    .split("#")
+    .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+function tagInputValue(tags: string[]) {
+  return tags.map((tag) => `#${tag}`).join(" ");
 }
 
 function splitLines(value: string, limit = 5) {
@@ -404,13 +408,58 @@ function ProposalForm({
           내가 원하는 교집합 제안하기
         </h1>
         <p className="mt-2 text-sm font-semibold leading-6 text-black/48">
-          원하는 자리를 제안하면 AI가 초안을 만들고, 운영팀 검수 후 실제
-          초대장으로 열릴 수 있어요.
+          간단한 정보만 입력해도 AI가 초안을 만들어줘요.
         </p>
       </header>
 
-      <div className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_330px] lg:items-start">
+      <div className="mt-7 grid gap-6">
         <div className="space-y-5">
+          <ProposalTextField
+            label="제목을 작성해주세요."
+            value={form.title}
+            onChange={(value) => onChange("title", value)}
+            placeholder="전시보고, 카페에서 감상 나누기"
+            required
+          />
+
+          <ProposalTextarea
+            label="이 자리에서는 무엇을 하나요?"
+            value={form.activityDescription}
+            onChange={(value) => onChange("activityDescription", value)}
+            placeholder="예: 전시를 보고 근처 카페에서 이야기해요."
+          />
+
+          <section className="rounded-[24px] border border-black/10 bg-white px-5 py-4">
+            <span className="text-sm font-black text-black">언제 열고 싶나요?</span>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="sr-only">날짜</span>
+                <input
+                  type="date"
+                  value={form.eventDate}
+                  onChange={(event) => onChange("eventDate", event.target.value)}
+                  className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition focus:border-accent"
+                />
+              </label>
+              <ProposalTimeField
+                compact
+                label="시간 선택"
+                value={form.eventTime}
+                onChange={(value) => onChange("eventTime", value)}
+              />
+            </div>
+          </section>
+
+          <ProposalTextField
+            label="어디에서 열고 싶나요?"
+            value={form.region}
+            onChange={(value) => {
+              onChange("region", value);
+              onChange("specificPlace", null);
+            }}
+            placeholder="성수, 을지로, 강남, 홍대, 상관없어요"
+          />
+
           <section className="rounded-[24px] border border-black/10 bg-white px-5 py-5">
             <h2 className="text-sm font-black text-black">
               이 자리를 표현할 사진이 있다면 올려주세요.
@@ -418,11 +467,6 @@ function ProposalForm({
                 선택
               </span>
             </h2>
-            <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
-              사진이 있다면 운영팀 검수 후 초대장 이미지로 사용될 수 있어요.
-              사진을 올리지 않아도 제안할 수 있고, 필요하면 운영팀이 어울리는
-              이미지를 넣을게요.
-            </p>
             <label className="mt-4 flex min-h-[118px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-black/18 bg-black/[0.025] px-4 py-5 text-center transition hover:border-accent/70 hover:bg-accent/[0.06]">
               <ImageIcon size={24} className="text-black/35" aria-hidden />
               <span className="mt-2 text-xs font-bold text-black/55">
@@ -441,57 +485,6 @@ function ProposalForm({
               />
             </label>
           </section>
-
-          <ProposalTextField
-            label="어떤 교집합을 열고 싶나요?"
-            value={form.title}
-            onChange={(value) => onChange("title", value)}
-            placeholder="예: 조용한 와인바에서 취향을 나누는 밤"
-          />
-
-          <ProposalTextarea
-            label="이 자리에서는 무엇을 하나요?"
-            value={form.activityDescription}
-            onChange={(value) => onChange("activityDescription", value)}
-            placeholder="예: 전시를 보고 근처 카페에서 이야기해요."
-          />
-
-          <section className="grid grid-cols-2 gap-3">
-            <ProposalTextField
-              label="언제 열고 싶나요?"
-              type="date"
-              value={form.eventDate}
-              onChange={(value) => onChange("eventDate", value)}
-            />
-            <ProposalTimeField
-              label="정확한 시간"
-              value={form.eventTime}
-              onChange={(value) => onChange("eventTime", value)}
-            />
-          </section>
-
-          <ProposalTextField
-            label="어디에서 열고 싶나요?"
-            value={form.region}
-            onChange={(value) => onChange("region", value)}
-            placeholder="성수, 을지로, 강남, 홍대, 상관없어요"
-          />
-
-          <ProposalTextarea
-            label="원하는 구체적 장소가 있다면 적어주세요."
-            value={form.specificPlace ?? ""}
-            onChange={(value) => onChange("specificPlace", value)}
-            placeholder="예: 을지로에 있는 조용한 와인바를 생각하고 있어요."
-            optional
-          />
-
-          <ProposalTextField
-            label="원하는 해시태그가 있다면 적어주세요."
-            value={(form.userHashtags ?? []).join(", ")}
-            onChange={(value) => onChange("userHashtags", splitTags(value))}
-            placeholder="예: 와인, 취향대화, 차분한저녁"
-            optional
-          />
 
           <label className="block rounded-[24px] border border-black/10 bg-white px-5 py-5">
             <span className="flex items-start gap-3">
@@ -538,7 +531,7 @@ function ProposalForm({
           </button>
         </div>
 
-        <aside className="lg:sticky lg:top-5">
+        <aside>
           <p className="mb-3 text-xs font-black text-black/48">
             티켓 외부 화면 실시간 미리보기
           </p>
@@ -597,7 +590,9 @@ function ProposalPreview({
       )}
 
       <section className="mt-6 rounded-[28px] border border-black/10 bg-white px-5 py-5">
-        <EditableHeader title="티켓 외부 화면 미리보기" onEdit={() => onEdit("title")} />
+        <h2 className="text-[15px] font-black text-black">
+          티켓 외부 화면 미리보기
+        </h2>
         <div className="mx-auto mt-4 w-full max-w-[330px]">
           <IntersectionTicketCard
             title={ticket.title}
@@ -755,6 +750,9 @@ function EditSheet({
   onDraftChange: (draft: MeetingProposalDraft) => void;
   onUpload: (file: File) => Promise<void>;
 }) {
+  const [hashtagsInput, setHashtagsInput] = useState(() =>
+    tagInputValue(draft.hashtags),
+  );
   const titleMap: Record<EditTarget, string> = {
     title: "제목 수정",
     image: "사진 수정",
@@ -805,6 +803,7 @@ function EditSheet({
               label="제목"
               value={draft.title}
               onChange={(value) => updateDraft({ title: value })}
+              multiline
             />
           )}
 
@@ -829,19 +828,14 @@ function EditSheet({
           )}
 
           {target === "location" && (
-            <>
-              <ProposalTextField
-                label="지역"
-                value={form.region}
-                onChange={(value) => onFormChange("region", value)}
-              />
-              <ProposalTextarea
-                label="구체적 장소"
-                value={form.specificPlace ?? ""}
-                onChange={(value) => onFormChange("specificPlace", value)}
-                optional
-              />
-            </>
+            <ProposalTextField
+              label="지역"
+              value={form.region}
+              onChange={(value) => {
+                onFormChange("region", value);
+                onFormChange("specificPlace", null);
+              }}
+            />
           )}
 
           {target === "datetime" && (
@@ -863,9 +857,12 @@ function EditSheet({
           {target === "hashtags" && (
             <ProposalTextField
               label="해시태그"
-              value={draft.hashtags.join(", ")}
-              onChange={(value) => updateDraft({ hashtags: splitTags(value) })}
-              placeholder="와인, 취향대화, 차분한저녁"
+              value={hashtagsInput}
+              onChange={(value) => {
+                setHashtagsInput(value);
+                updateDraft({ hashtags: splitTags(value) });
+              }}
+              placeholder="#와인 #취향대화 #차분한저녁"
             />
           )}
 
@@ -1002,11 +999,11 @@ function ProposalSubmitted({
         제안이 접수됐어요.
       </h1>
       <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-black/55">
-        운영팀이 사진, 문구, 일정, 장소를 검수한 뒤{"\n"}
-        실제 초대장으로 열릴 수 있어요.{"\n\n"}
+        운영팀이 해당 제안을 검수한 뒤{"\n"}
+        실제 초대장으로 만들어드려요.{"\n\n"}
         제안이 선정되면 이 자리는 {profile.displayName}님의 제안으로 공개되고,
         {"\n"}
-        {profile.displayName}님은 해당 자리에 자동 참여 확정돼요.
+        {profile.displayName}님은 해당 자리의 첫번째 멤버가 돼요.
       </p>
       <button
         type="button"
@@ -1026,6 +1023,8 @@ function ProposalTextField({
   placeholder,
   type = "text",
   optional = false,
+  required = false,
+  multiline = false,
 }: {
   label: string;
   value: string;
@@ -1033,6 +1032,8 @@ function ProposalTextField({
   placeholder?: string;
   type?: "text" | "date" | "time";
   optional?: boolean;
+  required?: boolean;
+  multiline?: boolean;
 }) {
   return (
     <label className="block rounded-[24px] border border-black/10 bg-white px-5 py-4">
@@ -1041,15 +1042,28 @@ function ProposalTextField({
         {optional && (
           <span className="text-[10px] font-bold text-black/30">선택</span>
         )}
+        {required && (
+          <span className="text-[10px] font-bold text-red-500">필수</span>
+        )}
       </span>
-      <input
-        type={type}
-        step={type === "time" ? 900 : undefined}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="mt-3 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition placeholder:text-black/25 focus:border-accent"
-      />
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          rows={2}
+          className="mt-3 min-h-[76px] w-full resize-y rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-5 outline-none transition placeholder:text-black/25 focus:border-accent"
+        />
+      ) : (
+        <input
+          type={type}
+          step={type === "time" ? 900 : undefined}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="mt-3 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition placeholder:text-black/25 focus:border-accent"
+        />
+      )}
     </label>
   );
 }
@@ -1102,10 +1116,12 @@ function ProposalTimeField({
   label,
   value,
   onChange,
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1145,22 +1161,33 @@ function ProposalTimeField({
   return (
     <div
       ref={containerRef}
-      className="relative block rounded-[24px] border border-black/10 bg-white px-5 py-4"
+      className={cn(
+        "relative block",
+        compact ? "" : "rounded-[24px] border border-black/10 bg-white px-5 py-4",
+      )}
     >
-      <span className="text-sm font-black text-black">{label}</span>
+      {!compact && <span className="text-sm font-black text-black">{label}</span>}
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="mt-3 flex h-12 w-full items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white px-4 text-left text-sm font-semibold text-black outline-none transition focus:border-accent"
+        className={cn(
+          "flex h-12 w-full items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white px-4 text-left text-sm font-semibold text-black outline-none transition focus:border-accent",
+          compact ? "" : "mt-3",
+        )}
       >
         <span>{displayTimeValue(value)}</span>
         <Clock3 size={15} className="text-black/55" aria-hidden />
       </button>
 
       {open && (
-        <div className="absolute left-5 top-[calc(100%-10px)] z-50 grid w-[172px] grid-cols-3 overflow-hidden rounded-sm border border-black/20 bg-white py-1 shadow-[0_16px_42px_rgba(0,0,0,0.16)]">
+        <div
+          className={cn(
+            "absolute z-50 grid w-[172px] grid-cols-3 overflow-hidden rounded-sm border border-black/20 bg-white py-1 shadow-[0_16px_42px_rgba(0,0,0,0.16)]",
+            compact ? "left-0 top-[calc(100%+6px)]" : "left-5 top-[calc(100%-10px)]",
+          )}
+        >
           <TimePickerColumn
             values={timePeriods}
             selected={parts.period}

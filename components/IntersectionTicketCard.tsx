@@ -8,6 +8,8 @@ type IntersectionTicketCardProps = {
   location?: string | null;
   tags?: string[] | null;
   proposerLabel?: string | null;
+  badgeLabel?: string | null;
+  badgeClassName?: string;
   remainingSeatCount?: number | null;
   className?: string;
   contentVisible?: boolean;
@@ -43,8 +45,8 @@ function normalizeTags(tags?: string[] | null) {
     .flatMap((tag) =>
       tag
         .trim()
-        .split(/(?=#)|[\s,]+/)
-        .map((item) => item.trim().replace(/^#/, "")),
+        .split("#")
+        .map((item) => item.trim()),
     )
     .filter(Boolean)
     .slice(0, 3);
@@ -67,6 +69,8 @@ export function IntersectionTicketCard({
   location,
   tags,
   proposerLabel,
+  badgeLabel,
+  badgeClassName,
   className,
   contentVisible = true,
   imageVisible = true,
@@ -131,6 +135,17 @@ export function IntersectionTicketCard({
           contentVisible ? "opacity-100" : "opacity-0",
         )}
       >
+        {badgeLabel && (
+          <span
+            className={cn(
+              "absolute left-4 top-4 inline-flex items-center rounded-full border px-3 py-1.5 text-[11px] font-black shadow-[0_10px_22px_rgba(0,0,0,0.2)] backdrop-blur",
+              badgeClassName ??
+                "border-white/25 bg-white/20 text-white shadow-[0_10px_22px_rgba(0,0,0,0.2)]",
+            )}
+          >
+            {badgeLabel}
+          </span>
+        )}
         <div className="absolute inset-x-5 bottom-7 text-left">
           {proposerLabel && (
             <p className="mb-3 inline-flex rounded-full border border-white/[0.22] bg-white/[0.16] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px] [text-shadow:0_2px_10px_rgba(0,0,0,0.55)]">
@@ -145,11 +160,11 @@ export function IntersectionTicketCard({
               {metaLabel}
             </p>
           )}
-          <div className="mt-3 flex flex-wrap gap-1.5">
+          <div className="scrollbar-none mt-3 flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5">
             {tagItems.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
+                className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
               >
                 {tag}
               </span>

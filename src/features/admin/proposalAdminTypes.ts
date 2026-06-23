@@ -11,6 +11,7 @@ export type AdminMeetingProposal = {
   proposerCurrentMembershipStatus: string | null;
   proposerProfile: MeetingProposalPublicProfile;
   imageUrl: string | null;
+  originalImageUrl: string | null;
   title: string;
   activityDescription: string;
   eventDate: string;

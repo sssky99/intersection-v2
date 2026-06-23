@@ -1,17 +1,25 @@
 "use client";
 
 import {
+  Clock3,
   Image as ImageIcon,
+  ImagePlus,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   WandSparkles,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import { vibeAxes, type VibeScores } from "@/components/vibe/vibeGraphConfig";
 import type { AdminMeetingProposal } from "@/features/admin/proposalAdminTypes";
+import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
+import type { GatheringTicket } from "@/types/ticket";
 import {
   meetingProposalStatusLabels,
   meetingProposalStatuses,
@@ -40,6 +48,13 @@ type ProposalDraft = {
   adminNote: string;
 };
 
+const minuteSteps = ["00", "15", "30", "45"] as const;
+const timePeriods = ["오전", "오후"] as const;
+const timeHours = Array.from({ length: 12 }, (_, hour) =>
+  String(hour + 1).padStart(2, "0"),
+);
+type TimePeriod = (typeof timePeriods)[number];
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
@@ -64,12 +79,27 @@ function formatDateTime(value: string | null) {
   }).format(date);
 }
 
+function updatedDate(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function splitTags(value: string) {
   return value
-    .split(/[#,\s]+/)
-    .map((item) => item.trim().replace(/^#/, ""))
+    .split("#")
+    .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 3);
+}
+
+function limitTagInput(value: string) {
+  return value;
 }
 
 function splitLines(value: string, limit = 5) {
@@ -80,16 +110,82 @@ function splitLines(value: string, limit = 5) {
     .slice(0, limit);
 }
 
+function splitEditableLines(value: string) {
+  const items = value.split(/\r?\n/);
+  return items.length === 0 || (items.length === 1 && items[0] === "")
+    ? [""]
+    : items;
+}
+
+function normalizeTimeValue(value: string | null | undefined) {
+  const match = value?.trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour)) return "";
+
+  const minute = minuteSteps.includes(match[2] as (typeof minuteSteps)[number])
+    ? match[2]
+    : "00";
+
+  return `${String(Math.max(0, Math.min(23, hour))).padStart(2, "0")}:${minute}`;
+}
+
+function parseTimeParts(value: string) {
+  const match = normalizeTimeValue(value).match(/^(\d{2}):(\d{2})$/);
+  const hour24 = match ? Number(match[1]) : 15;
+  const minute = match ? match[2] : "00";
+  const period: TimePeriod = hour24 >= 12 ? "오후" : "오전";
+  const hour12 = hour24 % 12 || 12;
+
+  return {
+    period,
+    hour: String(hour12).padStart(2, "0"),
+    minute: minuteSteps.includes(minute as (typeof minuteSteps)[number])
+      ? minute
+      : "00",
+  };
+}
+
+function composeTimeValue({
+  period,
+  hour,
+  minute,
+}: {
+  period: TimePeriod;
+  hour: string;
+  minute: string;
+}) {
+  const hourNumber = Number(hour);
+  const hour24 =
+    period === "오전"
+      ? hourNumber === 12
+        ? 0
+        : hourNumber
+      : hourNumber === 12
+        ? 12
+        : hourNumber + 12;
+
+  return `${String(hour24).padStart(2, "0")}:${minute}`;
+}
+
+function displayTimeValue(value: string) {
+  const normalized = normalizeTimeValue(value);
+  if (!normalized) return "시간 선택";
+  const parts = parseTimeParts(normalized);
+  return `${parts.period} ${parts.hour}:${parts.minute}`;
+}
+
 function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
   return {
     imageUrl: proposal.imageUrl ?? "",
     title: proposal.title,
     activityDescription: proposal.activityDescription,
     eventDate: proposal.eventDate,
-    eventTime: proposal.eventTime,
+    eventTime: normalizeTimeValue(proposal.eventTime),
     region: proposal.region,
     specificPlace: proposal.specificPlace ?? "",
-    hashtagsText: proposal.hashtags.join(", "),
+    hashtagsText: proposal.hashtags.map((tag) => `#${tag}`).join(" "),
     shortDescription: proposal.shortDescription,
     activitiesText: proposal.activities.join("\n"),
     flowText: proposal.flow.join("\n"),
@@ -99,19 +195,69 @@ function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
   };
 }
 
+function proposalPreview(
+  proposal: AdminMeetingProposal,
+  draft: ProposalDraft,
+): GatheringTicket {
+  const tags = splitTags(draft.hashtagsText);
+  const summary =
+    draft.shortDescription.trim() || draft.activityDescription.trim();
+  const activities = splitLines(draft.activitiesText, 4);
+
+  return {
+    id: proposal.convertedInstanceId ?? proposal.id,
+    templateId: proposal.convertedTemplateId ?? proposal.id,
+    title: draft.title.trim() || "제안할 교집합",
+    subtitle: summary || "멤버가 제안한 교집합",
+    date: draft.eventDate,
+    time: normalizeTimeValue(draft.eventTime) || "시간 미정",
+    area: draft.region.trim() || "지역 미정",
+    moodTags: tags,
+    activityType: "member_proposal",
+    imageUrl: draft.imageUrl.trim() || undefined,
+    remainingSeatCount: 0,
+    peopleHint: summary || "멤버 제안",
+    reason: summary || "멤버 제안",
+    detailSummary: summary || undefined,
+    detailActivities: activities.length
+      ? activities
+      : splitLines(draft.activityDescription, 4),
+    detailFlow: splitLines(draft.flowText, 6),
+    proposerLabel: `${proposal.proposerProfile.displayName}님의 제안`,
+    proposerProfile: {
+      userId: proposal.proposerId,
+      displayName: proposal.proposerProfile.displayName,
+      publicIntro: proposal.proposerProfile.publicIntro,
+      publicEmoji: proposal.proposerProfile.publicEmoji,
+    },
+    vibeScores: {
+      temperature: draft.vibe.temperature ?? null,
+      texture: draft.vibe.texture ?? null,
+      tone: draft.vibe.tone ?? null,
+      rhythm: draft.vibe.rhythm ?? null,
+      alcohol: draft.vibe.alcohol ?? null,
+      romance: draft.vibe.romance ?? null,
+    },
+  };
+}
+
 export function ProposalAdminPanel() {
   const [proposals, setProposals] = useState<AdminMeetingProposal[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<ProposalDraft | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const selectedIdRef = useRef<string | null>(null);
 
   const selectedProposal =
     proposals.find((proposal) => proposal.id === selectedId) ?? null;
+  const previewTicket =
+    selectedProposal && draft ? proposalPreview(selectedProposal, draft) : null;
 
   const filteredProposals = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -163,7 +309,11 @@ export function ProposalAdminPanel() {
 
   useEffect(() => {
     setDraft(selectedProposal ? draftFromProposal(selectedProposal) : null);
-  }, [selectedProposal?.id]);
+  }, [selectedProposal]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
 
   const replaceFromResponse = (nextProposals: AdminMeetingProposal[]) => {
     setProposals(nextProposals);
@@ -176,7 +326,7 @@ export function ProposalAdminPanel() {
   };
 
   const saveDraft = async ({ silent = false } = {}) => {
-    if (!selectedProposal || !draft || saving) return false;
+    if (!selectedProposal || !draft || saving || imageUploading) return false;
 
     setSaving(true);
     setError(null);
@@ -191,14 +341,14 @@ export function ProposalAdminPanel() {
         title: draft.title,
         activityDescription: draft.activityDescription,
         eventDate: draft.eventDate,
-        eventTime: draft.eventTime,
+        eventTime: normalizeTimeValue(draft.eventTime),
         region: draft.region,
         specificPlace: draft.specificPlace,
         hashtags: splitTags(draft.hashtagsText),
         shortDescription: draft.shortDescription,
         activities: splitLines(draft.activitiesText, 4),
         vibe: draft.vibe,
-        flow: splitLines(draft.flowText, 5),
+        flow: splitLines(draft.flowText, 6),
         status: draft.status,
         adminNote: draft.adminNote,
       }),
@@ -217,6 +367,48 @@ export function ProposalAdminPanel() {
     if (!silent) setNotice("제안 내용을 저장했어요.");
     setSaving(false);
     return true;
+  };
+
+  const uploadImage = async (file: File) => {
+    if (!selectedProposal || imageUploading) return;
+
+    const proposalId = selectedProposal.id;
+    setImageUploading(true);
+    setError(null);
+    setNotice(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/admin/proposals/upload", {
+      method: "POST",
+      body: formData,
+    }).catch(() => null);
+    const data = response
+      ? ((await response.json().catch(() => null)) as
+          | { imageUrl?: string; error?: string }
+          | null)
+      : null;
+
+    if (!response?.ok || !data?.imageUrl) {
+      setError(data?.error ?? "이미지를 업로드하지 못했습니다.");
+      setImageUploading(false);
+      return;
+    }
+
+    if (selectedIdRef.current === proposalId) {
+      setDraft((current) =>
+        current ? { ...current, imageUrl: data.imageUrl ?? current.imageUrl } : current,
+      );
+      setNotice("새 대표 이미지를 적용했어요. 저장하면 초대장에 반영됩니다.");
+    }
+    setImageUploading(false);
+  };
+
+  const restoreOriginalImage = () => {
+    if (!selectedProposal?.originalImageUrl || !draft) return;
+
+    setDraft({ ...draft, imageUrl: selectedProposal.originalImageUrl });
+    setNotice("제안자가 올린 원본 이미지로 되돌렸어요. 저장하면 초대장에 반영됩니다.");
   };
 
   const convertToTicket = async () => {
@@ -252,317 +444,572 @@ export function ProposalAdminPanel() {
     setConverting(false);
   };
 
-  if (loading && proposals.length === 0) {
-    return <StateMessage message="제안 목록을 불러오고 있어요." />;
-  }
+  const convertDisabled =
+    !selectedProposal ||
+    !draft ||
+    saving ||
+    imageUploading ||
+    converting ||
+    selectedProposal.status === "converted_to_ticket";
 
   return (
-    <section className="grid min-h-[calc(100dvh-180px)] grid-cols-[360px_minmax(0,1fr)] gap-5">
-      <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-        <header className="shrink-0 border-b border-black/10 px-5 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
-                proposals
-              </p>
-              <h2 className="mt-1 text-xl font-bold">제안 관리</h2>
-            </div>
-            <button
-              type="button"
-              onClick={() => void loadProposals()}
-              disabled={loading}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/45"
-              aria-label="제안 새로고침"
-            >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-            </button>
+    <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+      <header className="shrink-0 border-b border-black/10 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-bold">제안 관리</h2>
+            <p className="mt-1 text-xs font-semibold text-black/42">
+              멤버가 제안한 자리를 검수하고 동일한 미리보기로 초대장 전환을 준비합니다.
+            </p>
           </div>
-          <label className="mt-4 flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-[#f7f7f5] px-3">
-            <Search size={15} className="text-black/32" aria-hidden />
+          <div className="flex items-center gap-2">
+            <IconButton
+              disabled={loading || saving || converting}
+              onClick={() => void loadProposals()}
+              icon={RefreshCw}
+            >
+              새로고침
+            </IconButton>
+            <IconButton
+              primary
+              disabled={convertDisabled}
+              onClick={() => void convertToTicket()}
+              icon={converting ? Loader2 : WandSparkles}
+              spin={converting}
+            >
+              초대장으로 만들기
+            </IconButton>
+          </div>
+        </div>
+
+        {(notice || error) && (
+          <p
+            className={cn(
+              "mt-3 rounded-xl px-4 py-2 text-sm font-semibold",
+              error ? "bg-red-50 text-red-600" : "bg-accent/12 text-black/65",
+            )}
+          >
+            {error ?? notice}
+          </p>
+        )}
+      </header>
+
+      <div className="grid min-h-0 flex-1 grid-cols-[350px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r border-black/10">
+          <label className="relative m-4 block">
+            <Search
+              size={16}
+              aria-hidden
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
+            />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="제목, 지역, 제안자 검색"
-              className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-black/30"
+              placeholder="제목, 제안자, 지역 검색"
+              className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>
-        </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {filteredProposals.length === 0 ? (
-            <StateMessage message="확인할 제안이 없습니다." />
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            {loading && proposals.length === 0 ? (
+              <PanelMessage>제안 정보를 불러오는 중입니다.</PanelMessage>
+            ) : filteredProposals.length ? (
+              <div className="space-y-3">
+                {filteredProposals.map((proposal) => (
+                  <ProposalListCard
+                    key={proposal.id}
+                    proposal={proposal}
+                    selected={proposal.id === selectedId}
+                    onClick={() => setSelectedId(proposal.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <PanelMessage>확인할 제안이 없습니다.</PanelMessage>
+            )}
+          </div>
+        </aside>
+
+        <main className="min-h-0 overflow-y-auto bg-[#fbfbfa] p-5">
+          {!selectedProposal || !draft ? (
+            <PanelMessage>제안을 선택하면 상세 정보가 표시됩니다.</PanelMessage>
           ) : (
-            <div className="space-y-2">
-              {filteredProposals.map((proposal) => (
-                <button
-                  key={proposal.id}
-                  type="button"
-                  onClick={() => setSelectedId(proposal.id)}
-                  className={cn(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition hover:border-accent/60",
-                    selectedId === proposal.id
-                      ? "border-accent bg-accent/[0.08]"
-                      : "border-black/8 bg-white",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-black">
-                        {proposal.title}
-                      </p>
-                      <p className="mt-1 text-xs font-semibold text-black/45">
-                        {proposal.proposerProfile.displayName} · {proposal.region}
-                      </p>
-                    </div>
-                    <StatusBadge status={proposal.status} />
-                  </div>
-                  <p className="mt-2 text-[11px] font-semibold text-black/35">
-                    {formatDateTime(proposal.submittedAt)}
-                  </p>
-                </button>
-              ))}
+            <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_390px] gap-5">
+              <div className="min-w-0 space-y-5">
+                <ProposalEditorHeader
+                  proposal={selectedProposal}
+                  draft={draft}
+                  saving={saving}
+                  onDraftChange={setDraft}
+                  onSave={() => void saveDraft()}
+                />
+
+                <ProposalBasicEditor
+                  proposal={selectedProposal}
+                  draft={draft}
+                  saving={saving || imageUploading || converting}
+                  onDraftChange={setDraft}
+                  onImageUpload={uploadImage}
+                  onRestoreOriginalImage={restoreOriginalImage}
+                />
+
+                <ProposalContentEditor
+                  draft={draft}
+                  onDraftChange={setDraft}
+                />
+
+                <ProposalScoreEditor
+                  draft={draft}
+                  saving={saving || converting}
+                  onDraftChange={setDraft}
+                />
+
+                <ProposalMetaPanel
+                  proposal={selectedProposal}
+                  draft={draft}
+                  onDraftChange={setDraft}
+                />
+              </div>
+
+              {previewTicket && <ProposalPreviewPanel ticket={previewTicket} />}
             </div>
           )}
-        </div>
-      </aside>
+        </main>
+      </div>
+    </section>
+  );
+}
 
-      <main className="min-h-0 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-        {!selectedProposal || !draft ? (
-          <StateMessage message="제안을 선택하면 상세 정보가 표시됩니다." />
+function ProposalListCard({
+  proposal,
+  selected,
+  onClick,
+}: {
+  proposal: AdminMeetingProposal;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const dateTime = [
+    proposal.eventDate,
+    normalizeTimeValue(proposal.eventTime),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full gap-3 rounded-2xl border p-3 text-left transition",
+        selected
+          ? "border-accent bg-accent/10 ring-2 ring-accent/10"
+          : "border-black/10 hover:border-black/20",
+      )}
+    >
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/[0.04]">
+        {proposal.imageUrl ? (
+          <img
+            src={proposal.imageUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
         ) : (
-          <div className="flex h-full min-h-0 flex-col">
-            <header className="shrink-0 border-b border-black/10 px-6 py-5">
-              <div className="flex items-start justify-between gap-5">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
-                    proposal detail
-                  </p>
-                  <h2 className="mt-1 text-2xl font-bold">
-                    {selectedProposal.title}
-                  </h2>
-                  <p className="mt-2 text-sm font-semibold text-black/45">
-                    {selectedProposal.proposerProfile.displayName}님 제안 · 제출{" "}
-                    {formatDateTime(selectedProposal.submittedAt)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void saveDraft()}
-                    disabled={saving || converting}
-                    className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-4 text-sm font-bold text-black/62 disabled:opacity-45"
-                  >
-                    {saving ? (
-                      <Loader2 size={15} className="animate-spin" aria-hidden />
-                    ) : (
-                      <Save size={15} aria-hidden />
-                    )}
-                    저장
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void convertToTicket()}
-                    disabled={
-                      saving ||
-                      converting ||
-                      selectedProposal.status === "converted_to_ticket"
-                    }
-                    className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white disabled:bg-black/25"
-                  >
-                    {converting ? (
-                      <Loader2 size={15} className="animate-spin" aria-hidden />
-                    ) : (
-                      <WandSparkles size={15} aria-hidden />
-                    )}
-                    초대장으로 만들기
-                  </button>
-                </div>
-              </div>
-            </header>
+          <ImageIcon size={22} className="text-black/25" aria-hidden />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-sm font-bold">{proposal.title}</h3>
+        <p className="mt-1 truncate text-xs font-semibold text-black/42">
+          {proposal.proposerProfile.displayName}님의 제안
+        </p>
+        <p className="mt-1 truncate text-[11px] font-semibold text-black/38">
+          {dateTime || "일정 미정"} · {proposal.region || "지역 미정"}
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={proposal.status} />
+        </div>
+        <p className="mt-2 text-[10px] text-black/30">
+          제출 {updatedDate(proposal.submittedAt)}
+        </p>
+      </div>
+    </button>
+  );
+}
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-              {(error || notice) && (
-                <p
-                  className={cn(
-                    "mb-5 rounded-2xl px-4 py-3 text-sm font-semibold",
-                    error ? "bg-red-50 text-red-600" : "bg-accent/10 text-black/65",
-                  )}
-                >
-                  {error ?? notice}
-                </p>
+function ProposalEditorHeader({
+  proposal,
+  draft,
+  saving,
+  onDraftChange,
+  onSave,
+}: {
+  proposal: AdminMeetingProposal;
+  draft: ProposalDraft;
+  saving: boolean;
+  onDraftChange: (draft: ProposalDraft) => void;
+  onSave: () => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+            proposal
+          </p>
+          <h3 className="mt-1 text-xl font-bold">
+            {draft.title || "멤버 제안"}
+          </h3>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            {proposal.proposerProfile.displayName}님의 제안 ·{" "}
+            {meetingProposalStatusLabels[draft.status]} · 제출{" "}
+            {formatDateTime(proposal.submittedAt)}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <IconButton
+            primary
+            disabled={saving}
+            onClick={onSave}
+            icon={saving ? Loader2 : Save}
+            spin={saving}
+          >
+            저장
+          </IconButton>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="block">
+          <span className="text-xs font-semibold text-black/50">제안자</span>
+          <div className="mt-1.5 flex h-11 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-sm font-bold text-black/70">
+            {proposal.proposerProfile.displayName}님의 제안
+          </div>
+        </div>
+        <SelectField
+          label="상태"
+          value={draft.status}
+          options={meetingProposalStatuses.map((status) => ({
+            value: status,
+            label: meetingProposalStatusLabels[status],
+          }))}
+          onChange={(status) =>
+            onDraftChange({
+              ...draft,
+              status: status as MeetingProposalStatus,
+            })
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
+function ProposalBasicEditor({
+  proposal,
+  draft,
+  saving,
+  onDraftChange,
+  onImageUpload,
+  onRestoreOriginalImage,
+}: {
+  proposal: AdminMeetingProposal;
+  draft: ProposalDraft;
+  saving: boolean;
+  onDraftChange: (draft: ProposalDraft) => void;
+  onImageUpload: (file: File) => Promise<void>;
+  onRestoreOriginalImage: () => void;
+}) {
+  const hasOriginalImage = Boolean(proposal.originalImageUrl);
+  const isOriginalImage = draft.imageUrl === proposal.originalImageUrl;
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">기본 정보</h3>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <TextAreaField
+          label="초대장 제목"
+          className="col-span-2"
+          value={draft.title}
+          onChange={(title) => onDraftChange({ ...draft, title })}
+        />
+        <div className="col-span-2">
+          <span className="text-xs font-semibold text-black/50">대표 이미지</span>
+          <div className="mt-1.5 flex flex-col gap-4 rounded-2xl border border-black/10 bg-[#fbfbfa] p-3 sm:flex-row sm:items-center">
+            <div className="flex h-24 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/[0.05] sm:w-32">
+              {draft.imageUrl ? (
+                <img
+                  src={draft.imageUrl}
+                  alt="현재 초대장 대표 이미지"
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <ImageIcon size={22} className="text-black/25" aria-hidden />
               )}
-
-              <div className="grid grid-cols-[300px_minmax(0,1fr)] gap-6">
-                <aside className="space-y-4">
-                  <div className="overflow-hidden rounded-2xl border border-black/10 bg-[#f7f7f5]">
-                    {draft.imageUrl ? (
-                      <img
-                        src={draft.imageUrl}
-                        alt=""
-                        className="h-[360px] w-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-[360px] items-center justify-center text-black/30">
-                        <ImageIcon size={32} aria-hidden />
-                      </div>
-                    )}
-                  </div>
-                  <InfoCard
-                    title="제안자"
-                    rows={[
-                      ["공개 이름", selectedProposal.proposerProfile.displayName],
-                      ["제출 당시 멤버십", display(selectedProposal.proposerMembershipStatus)],
-                      ["현재 멤버십", display(selectedProposal.proposerCurrentMembershipStatus)],
-                      ["역할 동의", selectedProposal.proposerRoleAgreed ? "동의" : "미동의"],
-                    ]}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-black/72">
+                {hasOriginalImage
+                  ? "제안자가 올린 원본 이미지를 보관하고 있어요."
+                  : "현재 대표 이미지를 변경할 수 있어요."}
+              </p>
+              <p className="mt-1 text-xs font-medium leading-5 text-black/42">
+                새 이미지를 업로드해도 기존 파일은 삭제되지 않으며, 원본으로 언제든 되돌릴 수 있어요.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl bg-black px-3 text-xs font-bold text-white transition hover:bg-black/85 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45">
+                  {saving ? (
+                    <Loader2 size={14} className="animate-spin" aria-hidden />
+                  ) : (
+                    <ImagePlus size={14} aria-hidden />
+                  )}
+                  {saving ? "업로드 중" : "이미지 변경"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={saving}
+                    className="sr-only"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void onImageUpload(file);
+                      event.target.value = "";
+                    }}
                   />
-                  <InfoCard
-                    title="전환 정보"
-                    rows={[
-                      ["상태", meetingProposalStatusLabels[selectedProposal.status]],
-                      ["템플릿 ID", display(selectedProposal.convertedTemplateId)],
-                      ["회차 ID", display(selectedProposal.convertedInstanceId)],
-                      ["전환일", formatDateTime(selectedProposal.convertedAt)],
-                    ]}
-                  />
-                </aside>
-
-                <section className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <AdminField
-                      label="제목"
-                      value={draft.title}
-                      onChange={(value) => setDraft({ ...draft, title: value })}
-                    />
-                    <label className="block">
-                      <span className="text-xs font-bold text-black/45">상태</span>
-                      <select
-                        value={draft.status}
-                        onChange={(event) =>
-                          setDraft({
-                            ...draft,
-                            status: event.target.value as MeetingProposalStatus,
-                          })
-                        }
-                        className="mt-2 h-11 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold outline-none"
-                      >
-                        {meetingProposalStatuses.map((status) => (
-                          <option key={status} value={status}>
-                            {meetingProposalStatusLabels[status]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-
-                  <AdminField
-                    label="사진 URL"
-                    value={draft.imageUrl}
-                    onChange={(value) => setDraft({ ...draft, imageUrl: value })}
-                  />
-
-                  <div className="grid grid-cols-4 gap-4">
-                    <AdminField
-                      label="지역"
-                      value={draft.region}
-                      onChange={(value) => setDraft({ ...draft, region: value })}
-                    />
-                    <AdminField
-                      label="날짜"
-                      type="date"
-                      value={draft.eventDate}
-                      onChange={(value) => setDraft({ ...draft, eventDate: value })}
-                    />
-                    <AdminField
-                      label="시간"
-                      type="time"
-                      value={draft.eventTime}
-                      onChange={(value) => setDraft({ ...draft, eventTime: value })}
-                    />
-                    <AdminField
-                      label="구체적 장소"
-                      value={draft.specificPlace}
-                      onChange={(value) =>
-                        setDraft({ ...draft, specificPlace: value })
-                      }
-                    />
-                  </div>
-
-                  <AdminTextarea
-                    label="활동 설명"
-                    value={draft.activityDescription}
-                    onChange={(value) =>
-                      setDraft({ ...draft, activityDescription: value })
-                    }
-                  />
-                  <AdminField
-                    label="해시태그"
-                    value={draft.hashtagsText}
-                    onChange={(value) => setDraft({ ...draft, hashtagsText: value })}
-                  />
-                  <AdminTextarea
-                    label="한 줄 설명"
-                    value={draft.shortDescription}
-                    onChange={(value) =>
-                      setDraft({ ...draft, shortDescription: value })
-                    }
-                  />
-                  <AdminTextarea
-                    label="이 자리에서는 이런 걸 해요"
-                    value={draft.activitiesText}
-                    onChange={(value) =>
-                      setDraft({ ...draft, activitiesText: value })
-                    }
-                  />
-
-                  <section className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
-                    <h3 className="text-sm font-bold">자리 분위기</h3>
-                    <div className="mt-4 space-y-5">
-                      {vibeAxes.map((axis) => {
-                        const value = Number(draft.vibe[axis] ?? 3);
-                        return (
-                          <VibeAxisBar
-                            key={axis}
-                            axis={axis}
-                            score={value}
-                            valueLabel={`${value} / 5`}
-                            input={{
-                              value,
-                              min: 1,
-                              max: 5,
-                              step: 1,
-                              onChange: (nextValue) =>
-                                setDraft({
-                                  ...draft,
-                                  vibe: {
-                                    ...draft.vibe,
-                                    [axis]: nextValue,
-                                  },
-                                }),
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  <AdminTextarea
-                    label="이렇게 진행돼요"
-                    value={draft.flowText}
-                    onChange={(value) => setDraft({ ...draft, flowText: value })}
-                  />
-                  <AdminTextarea
-                    label="관리자 메모"
-                    value={draft.adminNote}
-                    onChange={(value) => setDraft({ ...draft, adminNote: value })}
-                  />
-                </section>
+                </label>
+                <button
+                  type="button"
+                  disabled={saving || !hasOriginalImage || isOriginalImage}
+                  onClick={onRestoreOriginalImage}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/58 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw size={14} aria-hidden />
+                  원본으로 되돌리기
+                </button>
               </div>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+        <FormField
+          label="대표 이미지 URL"
+          className="col-span-2"
+          value={draft.imageUrl}
+          placeholder="오른쪽 미리보기에 반영돼요."
+          disabled={saving}
+          onChange={(imageUrl) => onDraftChange({ ...draft, imageUrl })}
+        />
+        <FormField
+          label="분위기 태그"
+          className="col-span-2"
+          value={draft.hashtagsText}
+          placeholder="#영화관람 #토이스토리5 #강남모임"
+          onChange={(hashtagsText) =>
+            onDraftChange({
+              ...draft,
+              hashtagsText: limitTagInput(hashtagsText),
+            })
+          }
+        />
+        <FormField
+          label="날짜"
+          type="date"
+          value={draft.eventDate}
+          onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
+        />
+        <TimeSplitField
+          label="시간"
+          value={draft.eventTime}
+          onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
+        />
+        <FormField
+          label="지역"
+          value={draft.region}
+          placeholder="성수, 을지로, 강남"
+          onChange={(region) => onDraftChange({ ...draft, region })}
+        />
+        <FormField
+          label="구체적 장소"
+          value={draft.specificPlace}
+          onChange={(specificPlace) =>
+            onDraftChange({ ...draft, specificPlace })
+          }
+        />
+        <TextAreaField
+          label="활동 설명"
+          className="col-span-2"
+          value={draft.activityDescription}
+          onChange={(activityDescription) =>
+            onDraftChange({ ...draft, activityDescription })
+          }
+          disabled={saving}
+        />
+      </div>
     </section>
+  );
+}
+
+function ProposalContentEditor({
+  draft,
+  onDraftChange,
+}: {
+  draft: ProposalDraft;
+  onDraftChange: (draft: ProposalDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">상세 화면 문구</h3>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <TextAreaField
+          label="한 줄 요약"
+          className="col-span-2"
+          value={draft.shortDescription}
+          onChange={(shortDescription) =>
+            onDraftChange({ ...draft, shortDescription })
+          }
+        />
+        <TextAreaField
+          label="이 자리에서는 이런 걸 해요"
+          className="col-span-2"
+          value={draft.activitiesText}
+          placeholder={"영화를 함께 보고 감상을 나눠요\n좋아하는 장면과 캐릭터 이야기를 해요"}
+          onChange={(activitiesText) =>
+            onDraftChange({ ...draft, activitiesText })
+          }
+        />
+        <FlowStepEditor
+          value={draft.flowText}
+          onChange={(flowText) => onDraftChange({ ...draft, flowText })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ProposalScoreEditor({
+  draft,
+  saving,
+  onDraftChange,
+}: {
+  draft: ProposalDraft;
+  saving: boolean;
+  onDraftChange: (draft: ProposalDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">자리 분위기 점수</h3>
+      <div className="mt-4 space-y-5 rounded-2xl border border-black/8 bg-black/[0.025] px-4 py-4">
+        {vibeAxes.map((axis) => {
+          const score = Number(draft.vibe[axis] ?? 3);
+          const value =
+            Number.isFinite(score) && score >= 1 && score <= 5 ? score : 3;
+
+          return (
+            <VibeAxisBar
+              key={axis}
+              axis={axis}
+              score={value}
+              valueLabel={`${value} / 5`}
+              input={{
+                value,
+                min: 1,
+                max: 5,
+                step: 1,
+                disabled: saving,
+                onChange: (nextValue) =>
+                  onDraftChange({
+                    ...draft,
+                    vibe: {
+                      ...draft.vibe,
+                      [axis]: nextValue,
+                    },
+                  }),
+              }}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ProposalMetaPanel({
+  proposal,
+  draft,
+  onDraftChange,
+}: {
+  proposal: AdminMeetingProposal;
+  draft: ProposalDraft;
+  onDraftChange: (draft: ProposalDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <h3 className="font-bold">제안 정보</h3>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <InfoCard
+          title="제안자"
+          rows={[
+            ["공개 이름", proposal.proposerProfile.displayName],
+            ["제출 당시 멤버십", display(proposal.proposerMembershipStatus)],
+            ["현재 멤버십", display(proposal.proposerCurrentMembershipStatus)],
+            ["역할 동의", proposal.proposerRoleAgreed ? "동의" : "미동의"],
+          ]}
+        />
+        <InfoCard
+          title="전환 정보"
+          rows={[
+            ["상태", meetingProposalStatusLabels[proposal.status]],
+            ["템플릿 ID", display(proposal.convertedTemplateId)],
+            ["회차 ID", display(proposal.convertedInstanceId)],
+            ["전환일", formatDateTime(proposal.convertedAt)],
+          ]}
+        />
+      </div>
+      <TextAreaField
+        label="관리자 메모"
+        className="mt-4"
+        value={draft.adminNote}
+        onChange={(adminNote) => onDraftChange({ ...draft, adminNote })}
+      />
+    </section>
+  );
+}
+
+function ProposalPreviewPanel({ ticket }: { ticket: GatheringTicket }) {
+  return (
+    <aside className="sticky top-5 self-start space-y-4">
+      <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+          ticket card
+        </p>
+        <div className="mx-auto mt-3 w-[min(78vw,320px,calc(61.73dvh-121px))]">
+          <IntersectionTicketCard
+            title={ticket.title}
+            imageUrl={ticket.imageUrl}
+            date={ticket.date}
+            time={ticket.time}
+            location={ticket.area}
+            tags={ticket.moodTags}
+            proposerLabel={ticket.proposerLabel}
+            badgeLabel="✦ 나의 제안"
+            badgeClassName="border-[#9ad5e3] bg-[#e8f8fc]/95 text-[#15586b] shadow-[0_10px_22px_rgba(21,88,107,0.2)]"
+            remainingSeatCount={ticket.remainingSeatCount}
+          />
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
+        <p className="px-4 pt-4 text-xs font-bold uppercase tracking-[0.14em] text-accent">
+          detail
+        </p>
+        <div className="mt-3 overflow-hidden border-t border-black/8">
+          <TicketDetailHero ticket={ticket} />
+          <TicketDetailContent
+            ticket={ticket}
+            className="px-5 pb-5"
+            startWithBorder
+          />
+        </div>
+      </section>
+    </aside>
   );
 }
 
@@ -591,7 +1038,7 @@ function InfoCard({
   rows: Array<[string, string]>;
 }) {
   return (
-    <section className="rounded-2xl border border-black/10 bg-white p-4">
+    <section className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
       <h3 className="text-sm font-bold">{title}</h3>
       <dl className="mt-3 space-y-2">
         {rows.map(([label, value]) => (
@@ -607,57 +1054,323 @@ function InfoCard({
   );
 }
 
-function AdminField({
+function FlowStepEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const steps = splitEditableLines(value);
+
+  const updateStep = (index: number, nextValue: string) => {
+    const nextSteps = [...steps];
+    nextSteps[index] = nextValue;
+    onChange(nextSteps.join("\n"));
+  };
+
+  const addStep = () => {
+    onChange([...steps, ""].join("\n"));
+  };
+
+  const removeStep = (index: number) => {
+    const nextSteps = steps.filter((_, stepIndex) => stepIndex !== index);
+    onChange((nextSteps.length ? nextSteps : [""]).join("\n"));
+  };
+
+  return (
+    <div className="col-span-2">
+      <span className="text-xs font-semibold text-black/50">
+        이렇게 진행돼요
+      </span>
+      <div className="mt-1.5 space-y-2">
+        {steps.map((step, index) => (
+          <div
+            key={index}
+            className="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-2"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-xs font-black text-white">
+              {index + 1}
+            </span>
+            <input
+              type="text"
+              value={step}
+              placeholder={
+                index === 0
+                  ? "가볍게 인사해요"
+                  : index === 1
+                    ? "함께 시간을 보내요"
+                    : "다음 순서를 입력해요"
+              }
+              onChange={(event) => updateStep(index, event.target.value)}
+              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={addStep}
+          className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
+        >
+          순서 추가
+        </button>
+        <button
+          type="button"
+          onClick={() => removeStep(steps.length - 1)}
+          disabled={steps.length === 1 && !steps[0]?.trim()}
+          className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/40 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
+        >
+          마지막 삭제
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TimeSplitField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const parts = parseTimeParts(value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        containerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const updatePart = (
+    patch: Partial<{ period: TimePeriod; hour: string; minute: string }>,
+  ) => {
+    onChange(composeTimeValue({ ...parts, ...patch }));
+  };
+
+  return (
+    <div ref={containerRef} className="relative block">
+      <span className="text-xs font-semibold text-black/50">{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="mt-1.5 flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-left text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+      >
+        <span>{displayTimeValue(value)}</span>
+        <Clock3 size={15} className="text-black/35" aria-hidden />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-[calc(100%+6px)] z-50 grid w-[196px] grid-cols-3 overflow-hidden rounded-sm border border-black/20 bg-white py-1 shadow-[0_16px_42px_rgba(0,0,0,0.16)]">
+          <TimePickerColumn
+            values={timePeriods}
+            selected={parts.period}
+            onSelect={(period) => updatePart({ period })}
+          />
+          <TimePickerColumn
+            values={timeHours}
+            selected={parts.hour}
+            onSelect={(hour) => updatePart({ hour })}
+          />
+          <TimePickerColumn
+            values={minuteSteps}
+            selected={parts.minute}
+            onSelect={(minute) => {
+              updatePart({ minute });
+              setOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimePickerColumn<TValue extends string>({
+  values,
+  selected,
+  onSelect,
+}: {
+  values: readonly TValue[];
+  selected: string;
+  onSelect: (value: TValue) => void;
+}) {
+  return (
+    <div className="max-h-[224px] overflow-y-auto px-1 scrollbar-none">
+      {values.map((value) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onSelect(value)}
+          className={cn(
+            "flex h-8 w-full items-center justify-center rounded-sm text-xs font-black transition",
+            selected === value
+              ? "bg-[#0b7cff] text-white"
+              : "text-black/55 hover:bg-black/[0.04] hover:text-black",
+          )}
+        >
+          {value}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-black/50">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] px-3 pr-9 text-sm font-bold text-black/70 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function FormField({
   label,
   value,
   onChange,
   type = "text",
+  placeholder,
+  className,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  type?: "text" | "date" | "time";
+  type?: "text" | "date";
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-bold text-black/45">{label}</span>
+    <label className={cn("block", className)}>
+      <span className="text-xs font-semibold text-black/50">{label}</span>
       <input
         type={type}
-        step={type === "time" ? 900 : undefined}
         value={value}
+        placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-11 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold outline-none transition focus:border-accent"
+        className="mt-1.5 h-11 w-full rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-sm font-bold text-black/72 outline-none transition placeholder:text-black/30 hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
       />
     </label>
   );
 }
 
-function AdminTextarea({
+function TextAreaField({
   label,
   value,
   onChange,
+  placeholder,
+  className,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="block">
-      <span className="text-xs font-bold text-black/45">{label}</span>
+    <label className={cn("block", className)}>
+      <span className="text-xs font-semibold text-black/50">{label}</span>
       <textarea
         value={value}
+        placeholder={placeholder}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         rows={4}
-        className="mt-2 w-full resize-y rounded-xl border border-black/10 bg-white px-3 py-3 text-sm font-semibold leading-6 outline-none transition focus:border-accent"
+        className="mt-1.5 w-full resize-y rounded-xl border border-black/10 bg-[#fbfbfa] px-3 py-3 text-sm font-bold leading-6 text-black/72 outline-none transition placeholder:text-black/30 hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15 disabled:opacity-60"
       />
     </label>
   );
 }
 
-function StateMessage({ message }: { message: string }) {
+function IconButton({
+  primary = false,
+  disabled,
+  onClick,
+  icon: Icon,
+  spin = false,
+  children,
+}: {
+  primary?: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  icon: LucideIcon;
+  spin?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex h-full min-h-[320px] items-center justify-center text-sm font-semibold text-black/45">
-      {message}
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
+        primary
+          ? "bg-black text-white hover:bg-black/85"
+          : "border border-black/10 bg-white text-black/58 hover:border-black/20 hover:text-black",
+      )}
+    >
+      <Icon size={15} className={spin ? "animate-spin" : ""} aria-hidden />
+      {children}
+    </button>
+  );
+}
+
+function PanelMessage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-full min-h-[240px] items-center justify-center rounded-2xl border border-dashed border-black/10 p-6 text-center text-sm font-semibold text-black/40">
+      {children}
     </div>
   );
 }
