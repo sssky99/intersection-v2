@@ -3,6 +3,16 @@ import {
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
 
+export type AdminProfileAnswer = {
+  user_id: string;
+  question_order: number;
+  answer_value: string | null;
+  answer_values: string[] | null;
+  answer_text: string | null;
+  other_text: string | null;
+  updated_at?: string | null;
+};
+
 export type AdminProfile = {
   user_id: string;
   name: string | null;
@@ -30,6 +40,7 @@ export type AdminProfile = {
   score_texture?: number | null;
   score_tone?: number | null;
   score_rhythm?: number | null;
+  answers?: AdminProfileAnswer[];
   active_membership?: boolean;
   expired_membership?: boolean;
 };
@@ -59,6 +70,7 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     nickname: profile.nickname ?? null,
     is_test_participant: profile.is_test_participant ?? false,
     matching_precision_bonus: profile.matching_precision_bonus ?? 0,
+    answers: profile.answers ?? [],
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
   };

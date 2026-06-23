@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import {
+  sanitizeTicketStageCopy,
+  ticketStageCopyKeys,
+} from "@/lib/ticketStageCopy";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
   TicketMemberIntro,
   TicketProgressStep,
+  TicketStageCopy,
   UserTicket,
   UserTicketStatus,
 } from "@/types/ticket";
@@ -22,6 +27,7 @@ type TemplateRow = {
   detail_flow: unknown;
   detail_good_for: unknown;
   detail_notice: string | null;
+  stage_copy: unknown;
   image_url: string | null;
   mood_tags: string[] | null;
   activity_type: string | null;
@@ -113,6 +119,7 @@ const templateSelect = [
   "detail_flow",
   "detail_good_for",
   "detail_notice",
+  "stage_copy",
   "image_url",
   "mood_tags",
   "activity_type",
@@ -186,6 +193,19 @@ function textList(value: unknown) {
         .map((item) => item.trim())
         .filter(Boolean)
     : [];
+}
+
+function mergedStageCopy(...values: unknown[]): TicketStageCopy {
+  const merged: TicketStageCopy = {};
+
+  for (const value of values) {
+    const copy = sanitizeTicketStageCopy(value);
+    for (const key of ticketStageCopyKeys) {
+      if (copy[key]) merged[key] = copy[key];
+    }
+  }
+
+  return merged;
 }
 
 function toStartAt(date: string | null | undefined, time: string | null | undefined) {
@@ -264,6 +284,7 @@ function toTicket(
       ? textList(template.detail_good_for)
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
+    stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     proposerLabel,
     proposerProfile: proposerDisplayName
       ? {
@@ -665,7 +686,7 @@ export async function GET() {
 
         const confirmed = row.status === "approved";
         const memberInfoVisible = confirmed && derived.progressIndex >= 1;
-        const placeInfoVisible = confirmed && derived.progressIndex >= 2;
+        const placeInfoVisible = confirmed;
         const assignedIds = memberInfoVisible
           ? assignmentsByInstance.get(instanceId ?? "") ?? []
           : [];

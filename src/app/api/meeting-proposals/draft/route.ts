@@ -4,6 +4,7 @@ import {
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
 import { generateMeetingProposalDraft } from "@/lib/meetingProposalAi";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import { createClient } from "@/lib/supabase/server";
 import type { MeetingProposalInput } from "@/types/meetingProposal";
 
@@ -13,14 +14,11 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function tags(value: unknown) {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim().replace(/^#/, ""))
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
+function tags(
+  value: unknown,
+  blockedTags: Array<string | null | undefined> = [],
+) {
+  return normalizeProposalHashtags(value, { blockedTags });
 }
 
 function validDate(value: string) {
@@ -40,8 +38,12 @@ function proposalInput(body: DraftRequest): MeetingProposalInput | null {
     eventTime: text(body.eventTime),
     region: text(body.region),
     specificPlace: text(body.specificPlace) || null,
-    userHashtags: tags(body.userHashtags),
+    userHashtags: [],
   };
+  input.userHashtags = tags(body.userHashtags, [
+    input.region,
+    input.specificPlace,
+  ]);
 
   if (
     !input.title ||

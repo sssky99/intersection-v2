@@ -12,6 +12,17 @@ function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
+const BIRTH_YEAR_MIN = 1992;
+const BIRTH_YEAR_MAX = 2007;
+const birthYearOptions = Array.from(
+  { length: BIRTH_YEAR_MAX - BIRTH_YEAR_MIN + 1 },
+  (_, index) => String(BIRTH_YEAR_MIN + index),
+);
+
+function isValidBirthYear(value: string) {
+  return birthYearOptions.includes(value);
+}
+
 export function ProfileEditor({
   userId,
   initialValues,
@@ -34,7 +45,7 @@ export function ProfileEditor({
       draft.name.trim().length > 1 &&
       normalizePhone(draft.phone).length >= 10 &&
       (draft.gender === "여성" || draft.gender === "남성") &&
-      /^\d{4}$/.test(draft.birthYear) &&
+      isValidBirthYear(draft.birthYear) &&
       mbtiOptions.includes(draft.mbti),
     [draft],
   );
@@ -124,15 +135,13 @@ export function ProfileEditor({
         </fieldset>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field
+          <BirthYearSelect
             label="출생연도"
             value={draft.birthYear}
-            inputMode="numeric"
-            maxLength={4}
             onChange={(birthYear) =>
               setDraft((current) => ({
                 ...current,
-                birthYear: birthYear.replace(/\D/g, "").slice(0, 4),
+                birthYear,
               }))
             }
           />
@@ -168,6 +177,38 @@ export function ProfileEditor({
         {saving ? "저장 중..." : "변경사항 저장"}
       </motion.button>
     </section>
+  );
+}
+
+function BirthYearSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const selectedValue = birthYearOptions.includes(value) ? value : "";
+
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-black/45">{label}</span>
+      <select
+        value={selectedValue}
+        onChange={(event) => onChange(event.target.value)}
+        className={`mt-1.5 h-12 w-full appearance-none rounded-2xl border border-black/10 bg-white px-4 text-sm outline-none focus:border-accent ${
+          selectedValue ? "text-black" : "text-black/30"
+        }`}
+      >
+        <option value="">출생연도 선택</option>
+        {birthYearOptions.map((year) => (
+          <option key={year} value={year}>
+            {year}년생
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

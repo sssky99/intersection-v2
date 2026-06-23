@@ -1,4 +1,5 @@
 import type { AdminProfile } from "@/features/admin/adminProfile";
+import type { TicketStageCopy } from "@/types/ticket";
 
 export type TicketVisibility =
   | "draft"
@@ -66,6 +67,7 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   detail_flow: string[];
   detail_good_for: string[];
   detail_notice: string | null;
+  stage_copy: TicketStageCopy | null;
   image_url: string | null;
   mood_tags: string[];
   activity_type: string | null;

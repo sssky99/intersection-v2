@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { profileQuestions } from "@/data/profileQuestions";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
@@ -25,11 +26,14 @@ import {
 import {
   normalizeAdminProfile,
   type AdminProfile,
+  type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
+import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import {
   membershipStatusLabels,
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
+import type { ProfileQuestion, QuestionOption } from "@/types/question";
 
 type AdminTab =
   | "applicants"
@@ -81,6 +85,52 @@ function cn(...values: Array<string | false | null | undefined>) {
 function display(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return "-";
   return String(value);
+}
+
+function questionOrder(question: ProfileQuestion) {
+  return question.order ?? question.id;
+}
+
+function questionForAnswer(answer: AdminProfileAnswer) {
+  return profileQuestions.find(
+    (question) => questionOrder(question) === answer.question_order,
+  );
+}
+
+function optionMeta(option: string | QuestionOption) {
+  return typeof option === "string"
+    ? { value: option, label: option, hasTextInput: false }
+    : option;
+}
+
+function selectedValues(answer: AdminProfileAnswer) {
+  if (answer.answer_values?.length) return answer.answer_values;
+  return answer.answer_value ? [answer.answer_value] : [];
+}
+
+function selectedOptionDisplay(
+  question: ProfileQuestion,
+  value: string,
+  otherText?: string | null,
+) {
+  const options = question.options ?? [];
+  const index = options.findIndex((option) => optionMeta(option).value === value);
+  const option = index >= 0 ? optionMeta(options[index]) : null;
+  const label = option?.label ?? value;
+  const suffix =
+    option?.hasTextInput && otherText?.trim() ? ` (${otherText.trim()})` : "";
+
+  return `${index >= 0 ? `${index + 1}번. ` : ""}${label}${suffix}`;
+}
+
+function answerText(answer: AdminProfileAnswer) {
+  return (
+    answer.answer_text?.trim() ||
+    answer.other_text?.trim() ||
+    answer.answer_value?.trim() ||
+    answer.answer_values?.join(", ") ||
+    ""
+  );
 }
 
 function formatCreatedAt(value: string | null) {
@@ -1356,6 +1406,8 @@ function ProfileDetailPanel({
           </button>
         </section>
 
+        <ProfileAnswersSection answers={profile.answers ?? []} />
+
         {(saveError || saveNotice) && (
           <p
             className={cn(
@@ -1475,6 +1527,116 @@ function InfoPill({ label, value }: { label: string; value: string }) {
       </p>
       <p className="mt-1 truncate font-semibold text-black/65">{value}</p>
     </div>
+  );
+}
+
+function ProfileAnswersSection({ answers }: { answers: AdminProfileAnswer[] }) {
+  const sortedAnswers = [...answers].sort(
+    (left, right) => left.question_order - right.question_order,
+  );
+
+  return (
+    <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-bold">신청자 답변</h3>
+        <span className="text-[11px] font-semibold text-black/35">
+          총 {sortedAnswers.length}개
+        </span>
+      </div>
+
+      {sortedAnswers.length === 0 ? (
+        <p className="mt-4 rounded-2xl border border-dashed border-black/10 bg-[#fbfbfa] px-4 py-6 text-center text-xs font-semibold leading-5 text-black/40">
+          아직 저장된 신청자 답변이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {sortedAnswers.map((answer) => (
+            <ProfileAnswerCard
+              key={`${answer.question_order}-${answer.updated_at ?? ""}`}
+              answer={answer}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProfileAnswerCard({ answer }: { answer: AdminProfileAnswer }) {
+  const ticketRating = parseTicketRatingAnswer(answer.answer_text);
+  if (ticketRating) {
+    return (
+      <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-accent">
+          티켓 취향
+        </p>
+        <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/76">
+          {ticketRating.title}
+        </p>
+        <p className="mt-1 text-xs font-black text-black/45">
+          {ticketRating.rating}점
+        </p>
+      </article>
+    );
+  }
+
+  const question = questionForAnswer(answer);
+  if (!question) {
+    return (
+      <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
+          질문 {answer.question_order}
+        </p>
+        <p className="mt-2 text-sm font-semibold leading-6 text-black/70">
+          {answerText(answer) || "-"}
+        </p>
+      </article>
+    );
+  }
+
+  if (question.type === "text") {
+    return (
+      <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
+          주관식
+        </p>
+        <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/78">
+          {question.question}
+        </p>
+        <p className="mt-3 whitespace-pre-line rounded-xl bg-white px-3 py-3 text-xs font-semibold leading-5 text-black/62">
+          {answerText(answer) || "-"}
+        </p>
+      </article>
+    );
+  }
+
+  const values = selectedValues(answer);
+
+  return (
+    <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
+        객관식
+      </p>
+      <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/78">
+        {question.question}
+      </p>
+      <div className="mt-3 space-y-2">
+        {values.length > 0 ? (
+          values.map((value) => (
+            <p
+              key={value}
+              className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/64"
+            >
+              {selectedOptionDisplay(question, value, answer.other_text)}
+            </p>
+          ))
+        ) : (
+          <p className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/40">
+            -
+          </p>
+        )}
+      </div>
+    </article>
   );
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   normalizeAdminProfile,
   type AdminProfile,
@@ -93,6 +94,7 @@ const templateSelect = [
   "detail_flow",
   "detail_good_for",
   "detail_notice",
+  "stage_copy",
   "image_url",
   "mood_tags",
   "activity_type",
@@ -298,6 +300,7 @@ function templatePayload(body: Record<string, unknown>) {
     detail_flow: textList(body.detailFlow),
     detail_good_for: textList(body.detailGoodFor),
     detail_notice: text(body.detailNotice),
+    stage_copy: sanitizeTicketStageCopy(body.stageCopy),
     image_url: text(body.imageUrl),
     mood_tags: tags(body.moodTags),
     activity_type: text(body.activityType),
@@ -743,6 +746,7 @@ export async function POST(request: NextRequest) {
           detail_flow: sourceTemplate.detail_flow,
           detail_good_for: sourceTemplate.detail_good_for,
           detail_notice: sourceTemplate.detail_notice,
+          stage_copy: sourceTemplate.stage_copy ?? {},
           image_url: sourceTemplate.image_url,
           mood_tags: sourceTemplate.mood_tags,
           activity_type: sourceTemplate.activity_type,

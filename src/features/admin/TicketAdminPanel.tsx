@@ -19,6 +19,7 @@ import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import { defaultTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   AdminMemberName,
   membershipLabel,
@@ -43,6 +44,7 @@ import type {
   GatheringTicket,
   TicketArrivalStatus,
   TicketMemberIntro,
+  TicketStageCopy,
   UserTicket,
 } from "@/types/ticket";
 import type { Gender } from "@/types/user";
@@ -62,6 +64,15 @@ type TicketDraft = {
   detailFlow: string;
   detailGoodFor: string;
   detailNotice: string;
+  stagePaymentPendingText: string;
+  stageWaitlistedText: string;
+  stageAppliedText: string;
+  stageApprovedText: string;
+  stagePreStartText: string;
+  stageInProgressText: string;
+  stageFeedbackOpenText: string;
+  feedbackTitle: string;
+  feedbackBody: string;
   imageUrl: string;
   moodTags: string;
   activityType: string;
@@ -303,6 +314,13 @@ function scoreDraft(value: number | null) {
   return value == null ? "" : String(value);
 }
 
+function stageCopyValue(
+  stageCopy: TicketStageCopy | null | undefined,
+  key: keyof TicketStageCopy,
+) {
+  return stageCopy?.[key] ?? defaultTicketStageCopy[key];
+}
+
 function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
   const instance = primaryInstance(template);
 
@@ -315,6 +333,18 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
     detailFlow: template.detail_flow.join("\n"),
     detailGoodFor: template.detail_good_for.join("\n"),
     detailNotice: customNoticeText(template.detail_notice ?? ""),
+    stagePaymentPendingText: stageCopyValue(
+      template.stage_copy,
+      "paymentPending",
+    ),
+    stageWaitlistedText: stageCopyValue(template.stage_copy, "waitlisted"),
+    stageAppliedText: stageCopyValue(template.stage_copy, "applied"),
+    stageApprovedText: stageCopyValue(template.stage_copy, "approved"),
+    stagePreStartText: stageCopyValue(template.stage_copy, "preStart"),
+    stageInProgressText: stageCopyValue(template.stage_copy, "inProgress"),
+    stageFeedbackOpenText: stageCopyValue(template.stage_copy, "feedbackOpen"),
+    feedbackTitle: stageCopyValue(template.stage_copy, "feedbackTitle"),
+    feedbackBody: stageCopyValue(template.stage_copy, "feedbackBody"),
     imageUrl: template.image_url ?? "",
     moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
     activityType: template.activity_type ?? "",
@@ -352,6 +382,20 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
   };
 }
 
+function stageCopyFromDraft(draft: TicketDraft): TicketStageCopy {
+  return {
+    paymentPending: draft.stagePaymentPendingText,
+    waitlisted: draft.stageWaitlistedText,
+    applied: draft.stageAppliedText,
+    approved: draft.stageApprovedText,
+    preStart: draft.stagePreStartText,
+    inProgress: draft.stageInProgressText,
+    feedbackOpen: draft.stageFeedbackOpenText,
+    feedbackTitle: draft.feedbackTitle,
+    feedbackBody: draft.feedbackBody,
+  };
+}
+
 function ticketRequestBody(draft: TicketDraft) {
   const eventTime = normalizeTimeValue(draft.eventTime);
 
@@ -364,6 +408,7 @@ function ticketRequestBody(draft: TicketDraft) {
     detailFlow: lines(draft.detailFlow, 6),
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice,
+    stageCopy: stageCopyFromDraft(draft),
     imageUrl: draft.imageUrl,
     moodTags: tags(draft.moodTags),
     activityType: draft.activityType,
@@ -443,6 +488,7 @@ function ticketPreview(
     detailFlow: lines(draft.detailFlow, 6),
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
+    stageCopy: stageCopyFromDraft(draft),
     proposerLabel: `${proposerName}님의 제안`,
     proposerProfile: {
       userId: isSampleTicket
@@ -1067,6 +1113,8 @@ export function TicketAdminPanel() {
                 <TicketPreviewPanel
                   ticket={previewTicket}
                   sampleOnly={isSampleTicket}
+                  draft={draft}
+                  onDraftChange={setDraft}
                 />
               )}
 
@@ -1844,9 +1892,13 @@ function ParticipantPanel({
 function TicketPreviewPanel({
   ticket,
   sampleOnly,
+  draft,
+  onDraftChange,
 }: {
   ticket: GatheringTicket;
   sampleOnly: boolean;
+  draft: TicketDraft;
+  onDraftChange: (draft: TicketDraft) => void;
 }) {
   return (
     <aside className="sticky top-5 self-start space-y-4">
@@ -1883,7 +1935,100 @@ function TicketPreviewPanel({
           </div>
         </section>
       )}
+
+      {!sampleOnly && (
+        <StageCopyEditor draft={draft} onDraftChange={onDraftChange} />
+      )}
     </aside>
+  );
+}
+
+function StageCopyEditor({
+  draft,
+  onDraftChange,
+}: {
+  draft: TicketDraft;
+  onDraftChange: (draft: TicketDraft) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+        progress copy
+      </p>
+      <h3 className="mt-1 text-sm font-bold">실제 진행상황 문구</h3>
+      <div className="mt-3 space-y-3">
+        <TextAreaField
+          label="결제 확인 안내"
+          rows={2}
+          value={draft.stagePaymentPendingText}
+          onChange={(stagePaymentPendingText) =>
+            onDraftChange({ ...draft, stagePaymentPendingText })
+          }
+        />
+        <TextAreaField
+          label="대기열 안내"
+          rows={2}
+          value={draft.stageWaitlistedText}
+          onChange={(stageWaitlistedText) =>
+            onDraftChange({ ...draft, stageWaitlistedText })
+          }
+        />
+        <TextAreaField
+          label="신청 완료 단계 안내"
+          rows={2}
+          value={draft.stageAppliedText}
+          onChange={(stageAppliedText) =>
+            onDraftChange({ ...draft, stageAppliedText })
+          }
+        />
+        <TextAreaField
+          label="참여 확정 안내"
+          rows={2}
+          value={draft.stageApprovedText}
+          onChange={(stageApprovedText) =>
+            onDraftChange({ ...draft, stageApprovedText })
+          }
+        />
+        <TextAreaField
+          label="시작 전 안내"
+          rows={2}
+          value={draft.stagePreStartText}
+          onChange={(stagePreStartText) =>
+            onDraftChange({ ...draft, stagePreStartText })
+          }
+        />
+        <TextAreaField
+          label="진행 중 안내"
+          rows={2}
+          value={draft.stageInProgressText}
+          onChange={(stageInProgressText) =>
+            onDraftChange({ ...draft, stageInProgressText })
+          }
+        />
+        <TextAreaField
+          label="피드백 오픈 안내"
+          rows={2}
+          value={draft.stageFeedbackOpenText}
+          onChange={(stageFeedbackOpenText) =>
+            onDraftChange({ ...draft, stageFeedbackOpenText })
+          }
+        />
+        <TextAreaField
+          label="피드백 카드 제목"
+          rows={1}
+          value={draft.feedbackTitle}
+          onChange={(feedbackTitle) =>
+            onDraftChange({ ...draft, feedbackTitle })
+          }
+        />
+        <TextAreaField
+          label="피드백 카드 본문"
+          rows={3}
+          value={draft.feedbackBody}
+          onChange={(feedbackBody) => onDraftChange({ ...draft, feedbackBody })}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -1961,12 +2106,14 @@ function TextAreaField({
   onChange,
   placeholder,
   className,
+  rows,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  rows?: number;
 }) {
   return (
     <label className={className}>
@@ -1974,8 +2121,12 @@ function TextAreaField({
       <textarea
         value={value}
         placeholder={placeholder}
+        rows={rows}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 min-h-24 w-full resize-y rounded-xl border border-black/10 px-3 py-2 text-sm leading-5 outline-none focus:border-accent"
+        className={cn(
+          "mt-1.5 w-full resize-y rounded-xl border border-black/10 px-3 py-2 text-sm leading-5 outline-none focus:border-accent",
+          rows ? "min-h-0" : "min-h-24",
+        )}
       />
     </label>
   );

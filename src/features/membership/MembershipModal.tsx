@@ -113,12 +113,13 @@ export function MembershipFloatingButton({
       aria-label="멤버십 선택"
       className="absolute right-[68px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
     >
-      <span
-        className="text-[20px] drop-shadow-[0_2px_4px_rgba(126,179,199,0.35)]"
+      <img
+        src="/images/icons/membership-diamond-v2.png"
+        alt=""
+        draggable={false}
+        className="h-5 w-5 object-contain"
         aria-hidden
-      >
-        💎
-      </span>
+      />
     </button>
   );
 }
@@ -433,11 +434,15 @@ function MembershipPlanCard({
           : "border-black/10 bg-white text-black/58 hover:border-black/20 hover:bg-black/[0.015]",
       )}
     >
-      {plan.recommended && (
-        <span className="absolute right-2 top-2 rounded-full bg-accent px-2 py-0.5 text-[9px] font-black text-white shadow-sm">
+      {current ? (
+        <span className="absolute right-2 top-2 rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white shadow-sm">
+          현재 이용 중
+        </span>
+      ) : plan.recommended ? (
+        <span className="absolute right-2 top-2 rounded-full bg-black px-2 py-0.5 text-[9px] font-black text-white shadow-sm">
           가장 많이 선택
         </span>
-      )}
+      ) : null}
       <span
         className={cn(
           "flex h-6 w-6 items-center justify-center rounded-full border transition",
@@ -464,11 +469,6 @@ function MembershipPlanCard({
           </span>
         </div>
       )}
-      {current && (
-        <span className="absolute bottom-2 right-2 rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
-          현재 이용 중
-        </span>
-      )}
     </button>
   );
 }
@@ -489,7 +489,7 @@ function MembershipSummaryPanel({ plan }: { plan: MembershipPlanOption }) {
           </span>
         )}
         {plan.recommended && !plan.discountRateLabel && (
-          <span className="shrink-0 rounded-full bg-accent/14 px-2.5 py-1 text-[10px] font-bold text-accent">
+          <span className="shrink-0 rounded-full bg-black px-2.5 py-1 text-[10px] font-bold text-white">
             가장 많이 선택
           </span>
         )}

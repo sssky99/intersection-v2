@@ -4,6 +4,7 @@ import {
   meetingProposalDisplayName,
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { displayMembershipStatus } from "@/features/membership/membershipTypes";
 import {
@@ -37,6 +38,7 @@ type ProposalRow = {
   proposer_role_agreed: boolean;
   status: MeetingProposalStatus;
   admin_note: string | null;
+  rejection_reason: string | null;
   converted_template_id: string | null;
   converted_instance_id: string | null;
   converted_at: string | null;
@@ -68,6 +70,7 @@ const proposalSelect = [
   "proposer_role_agreed",
   "status",
   "admin_note",
+  "rejection_reason",
   "converted_template_id",
   "converted_instance_id",
   "converted_at",
@@ -108,13 +111,7 @@ function requiredText(value: unknown) {
 }
 
 function tags(value: unknown) {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim().replace(/^#/, ""))
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
+  return normalizeProposalHashtags(value);
 }
 
 function textList(value: unknown) {
@@ -186,7 +183,7 @@ function toAdminProposal(
     eventTime: row.event_time?.slice(0, 5) ?? "",
     region: row.region,
     specificPlace: row.specific_place,
-    hashtags: row.hashtags ?? [],
+    hashtags: normalizeProposalHashtags(row.hashtags ?? []),
     shortDescription: row.short_description,
     activities: textList(row.activities).slice(0, 4),
     vibe: vibe(row.vibe),
@@ -194,6 +191,7 @@ function toAdminProposal(
     proposerRoleAgreed: row.proposer_role_agreed,
     status: row.status,
     adminNote: row.admin_note,
+    rejectionReason: row.rejection_reason,
     convertedTemplateId: row.converted_template_id,
     convertedInstanceId: row.converted_instance_id,
     convertedAt: row.converted_at,
@@ -256,6 +254,9 @@ function updatePayload(body: Record<string, unknown>) {
   if ("vibe" in body) payload.vibe = vibe(body.vibe);
   if ("flow" in body) payload.flow = textList(body.flow);
   if ("adminNote" in body) payload.admin_note = text(body.adminNote);
+  if ("rejectionReason" in body) {
+    payload.rejection_reason = text(body.rejectionReason);
+  }
   if ("status" in body) {
     if (!meetingProposalStatuses.includes(nextStatus as MeetingProposalStatus)) {
       return null;
@@ -286,6 +287,7 @@ function convertedTicketSnapshot(
 ) {
   const proposerLabel = `${displayName}님의 제안`;
   const eventTime = proposal.event_time?.slice(0, 5) ?? "";
+  const proposalTags = normalizeProposalHashtags(proposal.hashtags ?? []);
 
   return {
     id: instanceId,
@@ -295,7 +297,7 @@ function convertedTicketSnapshot(
     date: proposal.event_date,
     time: eventTime,
     area: proposal.region,
-    moodTags: proposal.hashtags ?? [],
+    moodTags: proposalTags,
     activityType: "member_proposal",
     imageUrl: proposal.image_url ?? undefined,
     remainingSeatCount: 0,
@@ -343,6 +345,7 @@ async function convertProposal(proposalId: string) {
     : proposal.proposer_public_display_name;
 
   const proposalVibe = vibe(proposal.vibe);
+  const proposalTags = normalizeProposalHashtags(proposal.hashtags ?? []);
   const { data: template, error: templateError } = await supabase
     .from("ticket_templates")
     .insert({
@@ -354,7 +357,7 @@ async function convertProposal(proposalId: string) {
       detail_good_for: [],
       detail_notice: null,
       image_url: proposal.image_url,
-      mood_tags: proposal.hashtags ?? [],
+      mood_tags: proposalTags,
       activity_type: "member_proposal",
       recommendation_copy: proposal.short_description,
       default_region: proposal.region,

@@ -182,7 +182,7 @@ export function DetailsClient({
         <main className="w-full px-5 pb-9 pt-5">
           <HeroSection />
 
-          <article className="mt-8 space-y-14">
+          <article className="mt-8 space-y-10">
             <section>
               <TicketExampleHeading />
               <RotatingTicketExamples templates={ticketQuestionTemplates} />
@@ -201,7 +201,7 @@ export function DetailsClient({
               <StepCaptureCarousel items={flowItems} />
             </DocumentSection>
 
-            <DocumentSection label="왜 안전하고 덜 어색할까요?" prominentLabel>
+            <DocumentSection label="안전한 자리를 약속드려요" prominentLabel>
               <ImageSlot tone="warm" image="/images/details/safety-friends-booth.png" />
               <Checklist items={safetyItems} icon="red-check" boxed />
             </DocumentSection>
@@ -250,9 +250,9 @@ function HeroSection() {
       <TypingSummary
         text={"당신에게 딱 맞는 사람들과\n자리를 추천해드립니다."}
         className={cn(
-          "mb-0 mt-7 rounded-none !border-black/8 !bg-black/[0.035] !bg-none !shadow-none",
+          "mb-0 mt-7 rounded-none !border-black/8 !bg-black/[0.035] !bg-none !px-4 !py-3 !shadow-none",
         )}
-        paragraphClassName="min-h-[70px] !border-l-0 !pl-0 !text-[18px] !font-medium !leading-7 !text-black/64"
+        paragraphClassName="!min-h-[56px] !border-l-0 !pl-0 !text-[18px] !font-medium !leading-7 !text-black/64"
       />
     </motion.header>
   );
@@ -514,7 +514,7 @@ function ProfileCarousel() {
           exit={shouldReduceMotion ? undefined : { opacity: 0, y: -10 }}
           transition={{ duration: 0.28, ease: "easeOut" }}
           className={cn(
-            "h-[520px] overflow-hidden rounded-lg px-5 py-5 shadow-[0_16px_48px_rgba(0,0,0,0.045)]",
+            "h-[488px] overflow-hidden rounded-lg px-5 py-5 shadow-[0_16px_48px_rgba(0,0,0,0.045)]",
             detailsTextPanelClass,
           )}
         >
@@ -608,7 +608,7 @@ function RotatingTicketExamples({
         reducedMotion={shouldReduceMotion}
       />
 
-      <div className="mt-3 min-h-[142px]">
+      <div className="mt-3 min-h-[54px]">
         <AnimatePresence mode="wait">
           {ticketDrawn ? (
             <motion.div
@@ -637,7 +637,7 @@ function RotatingTicketExamples({
               </div>
             </motion.div>
           ) : (
-            <span key={`ticket-drawing-${card.title}`} className="block h-[142px]" />
+            <span key={`ticket-drawing-${card.title}`} className="block h-[54px]" />
           )}
         </AnimatePresence>
       </div>
@@ -719,7 +719,11 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
 
   const startMouseDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const viewport = viewportRef.current;
-    if (!viewport || (event.pointerType === "mouse" && event.button !== 0)) {
+    if (
+      !viewport ||
+      event.pointerType !== "mouse" ||
+      event.button !== 0
+    ) {
       return;
     }
 
@@ -816,7 +820,7 @@ function StepCaptureCarousel({ items }: { items: FlowItem[] }) {
           "flex snap-x snap-mandatory gap-3 overflow-x-auto px-[13%] pb-1 scrollbar-none overscroll-x-contain scroll-smooth select-none",
           isDragging ? "cursor-grabbing" : "cursor-grab",
         )}
-        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "auto" }}
       >
         {items.map((item, index) => (
           <article

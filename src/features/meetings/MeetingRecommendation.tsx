@@ -48,12 +48,12 @@ function cachedTicketDates() {
     : null;
 }
 
-async function fetchTicketDates() {
-  const cached = cachedTicketDates();
+async function fetchTicketDates(force = false) {
+  const cached = force ? null : cachedTicketDates();
   if (cached) return cached;
   if (ticketDatesRequest) return ticketDatesRequest;
 
-  ticketDatesRequest = fetch("/api/meetings/tickets")
+  ticketDatesRequest = fetch("/api/meetings/tickets", { cache: "no-store" })
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
         | { dates?: AvailableDate[]; error?: string }
@@ -81,6 +81,7 @@ async function fetchTicketDates() {
 export function MeetingRecommendation({
   userId,
   embedded = false,
+  active = true,
   membershipStatus,
   onWaitlisted,
   onMembershipRequired,
@@ -94,6 +95,7 @@ export function MeetingRecommendation({
 }: {
   userId: string;
   embedded?: boolean;
+  active?: boolean;
   membershipStatus: MembershipStatus | null;
   onWaitlisted?: (ticket: GatheringTicket) => void;
   onMembershipRequired?: () => void;
@@ -159,28 +161,38 @@ export function MeetingRecommendation({
   ]);
 
   useEffect(() => {
-    let alive = true;
+    if (!active) return;
 
-    fetchTicketDates()
-      .then((dates) => {
-        if (alive) {
+    let alive = true;
+    const refresh = () => {
+      void fetchTicketDates(true)
+        .then((dates) => {
+          if (!alive) return;
           setTicketDates(dates);
+          setSelectedDate((current) => {
+            if (!current) return current;
+            return dates.find((date) => date.date === current.date) ?? null;
+          });
           setNotice(null);
-        }
-      })
-      .catch(() => {
-        if (alive) {
-          setError("초대장 날짜를 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
-        }
-      })
-      .finally(() => {
-        if (alive) setLoadingDates(false);
-      });
+        })
+        .catch(() => {
+          if (alive) {
+            setError("초대장 날짜를 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+          }
+        })
+        .finally(() => {
+          if (alive) setLoadingDates(false);
+        });
+    };
+
+    refresh();
+    window.addEventListener("focus", refresh);
 
     return () => {
       alive = false;
+      window.removeEventListener("focus", refresh);
     };
-  }, []);
+  }, [active]);
 
   const selectDate = (date: AvailableDate) => {
     setNotice(null);

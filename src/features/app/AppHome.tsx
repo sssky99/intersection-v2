@@ -58,6 +58,10 @@ import {
   isMembershipPlan,
 } from "@/features/membership/membershipTypes";
 import { createClient } from "@/lib/supabase/client";
+import {
+  ticketFeedbackBodyText,
+  ticketStageText,
+} from "@/lib/ticketStageCopy";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import type {
@@ -95,6 +99,19 @@ type BasicInfoDraft = {
   birthYear: string;
   mbti: string;
 };
+
+type RejectedProposalNotification = {
+  id: string;
+  title: string;
+  rejectionReason: string;
+  updatedAt: string;
+  submittedAt: string;
+};
+
+const basicInfoBirthYearOptions = Array.from(
+  { length: 2007 - 1992 + 1 },
+  (_, index) => String(1992 + index),
+);
 
 const feedbackPersonAxes = [
   "temperature",
@@ -267,6 +284,10 @@ function isValidNickname(value: string) {
   return /^[가-힣]{2}$/.test(value.trim());
 }
 
+function isValidBasicInfoBirthYear(value: string) {
+  return basicInfoBirthYearOptions.includes(value);
+}
+
 function setTabUrl(tab: AppTab) {
   if (typeof window === "undefined") return;
 
@@ -334,6 +355,17 @@ async function fetchBlindDateOffers() {
   return response.ok ? data?.offers ?? [] : null;
 }
 
+async function fetchProposalNotifications() {
+  const response = await fetch("/api/meeting-proposals").catch(() => null);
+  if (!response) return null;
+
+  const data = (await response.json().catch(() => null)) as
+    | { rejectedProposals?: RejectedProposalNotification[] }
+    | null;
+
+  return response.ok ? data?.rejectedProposals ?? [] : null;
+}
+
 function currentMembershipFromProfile(profile: ProfileRow): CurrentMembership {
   if (
     displayMembershipStatus({
@@ -369,6 +401,8 @@ export function AppHome({
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [participationCount, setParticipationCount] = useState(0);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
+  const [rejectedProposalNotifications, setRejectedProposalNotifications] =
+    useState<RejectedProposalNotification[]>([]);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
@@ -440,6 +474,19 @@ export function AppHome({
     [dismissedProposalNotificationIds, userId, waitlistedTickets],
   );
   const acceptedProposalCount = acceptedProposalNotifications.length;
+  const visibleRejectedProposalNotifications = useMemo(
+    () =>
+      rejectedProposalNotifications.filter(
+        (notification) =>
+          notification.rejectionReason.trim() &&
+          !dismissedProposalNotificationIds.includes(
+            `rejected:${notification.id}`,
+          ),
+      ),
+    [dismissedProposalNotificationIds, rejectedProposalNotifications],
+  );
+  const proposalNotificationCount =
+    acceptedProposalCount + visibleRejectedProposalNotifications.length;
 
   useEffect(() => {
     setCurrentProfile(profile);
@@ -479,8 +526,8 @@ export function AppHome({
   }, [dismissedProposalNotificationIds, userId]);
 
   useEffect(() => {
-    if (acceptedProposalCount === 0) setProposalAcceptedNoticeOpen(false);
-  }, [acceptedProposalCount]);
+    if (proposalNotificationCount === 0) setProposalAcceptedNoticeOpen(false);
+  }, [proposalNotificationCount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -495,6 +542,11 @@ export function AppHome({
       if (cancelled || !offers) return;
 
       setBlindDateOffers(offers);
+    });
+    void fetchProposalNotifications().then((notifications) => {
+      if (cancelled || !notifications) return;
+
+      setRejectedProposalNotifications(notifications);
     });
 
     const supabase = createClient();
@@ -531,6 +583,10 @@ export function AppHome({
         setWaitlistedTickets(response.tickets);
         setParticipationCount(response.participationCount);
       });
+      void fetchProposalNotifications().then((notifications) => {
+        if (!notifications) return;
+        setRejectedProposalNotifications(notifications);
+      });
     };
 
     const intervalId = window.setInterval(refreshTickets, 30_000);
@@ -564,14 +620,13 @@ export function AppHome({
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
-    setProposalAcceptedNoticeOpen(acceptedProposalCount > 0);
+    setProposalAcceptedNoticeOpen(proposalNotificationCount > 0);
   };
 
   const dismissProposalAcceptedNotification = (notificationId: string) => {
     setDismissedProposalNotificationIds((current) =>
       current.includes(notificationId) ? current : [...current, notificationId],
     );
-    if (acceptedProposalCount === 1) setProposalAcceptedNoticeOpen(false);
   };
 
   const openProfileCompletionReplay = () => {
@@ -689,20 +744,24 @@ export function AppHome({
       <button
         type="button"
         onClick={openProposalAcceptedNotification}
-        title="제안 수락 알림"
+        title="제안 알림"
         aria-label={
-          acceptedProposalCount > 0
-            ? `내가 제안한 모임 수락 알림 ${acceptedProposalCount}개`
-            : "새 제안 수락 알림 없음"
+          proposalNotificationCount > 0
+            ? `내가 제안한 모임 알림 ${proposalNotificationCount}개`
+            : "새 제안 알림 없음"
         }
         className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
       >
-        <span className="text-lg leading-none" aria-hidden>
-          🔔
-        </span>
-        {acceptedProposalCount > 0 && (
+        <img
+          src="/images/icons/notification-bell.png"
+          alt=""
+          draggable={false}
+          className="h-5 w-5 object-contain"
+          aria-hidden
+        />
+        {proposalNotificationCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
-            {acceptedProposalCount}
+            {proposalNotificationCount}
           </span>
         )}
       </button>
@@ -727,7 +786,7 @@ export function AppHome({
       </button>
 
       <AnimatePresence>
-        {proposalAcceptedNoticeOpen && acceptedProposalCount > 0 && (
+        {proposalAcceptedNoticeOpen && proposalNotificationCount > 0 && (
           <motion.div
             key="proposal-accepted-notice"
             initial={{ opacity: 0, y: -8, scale: 0.96 }}
@@ -741,7 +800,7 @@ export function AppHome({
             <button
               type="button"
               onClick={() => setProposalAcceptedNoticeOpen(false)}
-              aria-label="제안 수락 알림 닫기"
+              aria-label="제안 알림 닫기"
               className="absolute right-2 top-2 rounded-full p-1 text-black/35 transition hover:bg-black/[0.05] hover:text-black"
             >
               <X size={14} aria-hidden />
@@ -766,6 +825,35 @@ export function AppHome({
                         )
                       }
                       className="text-[10px] font-bold text-black/42 underline underline-offset-2 transition hover:text-black"
+                    >
+                      지우기
+                    </button>
+                  </div>
+                </section>
+              ))}
+              {visibleRejectedProposalNotifications.map((notification) => (
+                <section
+                  key={notification.id}
+                  className="rounded-xl bg-red-50 px-3 py-2.5"
+                >
+                  <p className="text-sm font-bold leading-5 text-red-900">
+                    제안 검토 결과가 도착했어요.
+                  </p>
+                  <p className="mt-1 line-clamp-1 text-xs font-bold text-red-900/45">
+                    {notification.title}
+                  </p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-red-800/80">
+                    {notification.rejectionReason}
+                  </p>
+                  <div className="mt-1.5 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        dismissProposalAcceptedNotification(
+                          `rejected:${notification.id}`,
+                        )
+                      }
+                      className="text-[10px] font-bold text-red-900/42 underline underline-offset-2 transition hover:text-red-900"
                     >
                       지우기
                     </button>
@@ -823,6 +911,7 @@ export function AppHome({
           <MeetingRecommendation
             userId={userId}
             embedded
+            active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
             onWaitlisted={addWaitlistedTicket}
             onMembershipRequired={() => {
@@ -1464,7 +1553,12 @@ const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
   { key: "feedback", label: "피드백 작성" },
 ];
 
-const introDetailSections: TicketDetailSectionKey[] = ["summary", "activities"];
+const introDetailSections: TicketDetailSectionKey[] = [
+  "summary",
+  "vibe",
+  "proposer",
+  "activities",
+];
 const ticketGuidanceClass =
   "mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800";
 
@@ -1681,11 +1775,12 @@ function TicketProgressSteps({
 }
 
 function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
+  const { stageCopy } = userTicket.ticket;
+
   if (userTicket.status === "payment_pending") {
     return (
       <p className={ticketGuidanceClass}>
-        결제 확인이 완료되면 대기열 등록 상태로 전환돼요. 운영자가 확인한 뒤
-        참여 확정 여부를 안내합니다.
+        {ticketStageText(stageCopy, "paymentPending")}
       </p>
     );
   }
@@ -1693,8 +1788,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.status === "waitlisted") {
     return (
       <p className={ticketGuidanceClass}>
-        신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
-        확인할 수 있어요.
+        {ticketStageText(stageCopy, "waitlisted")}
       </p>
     );
   }
@@ -1702,8 +1796,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.progressStep === "applied") {
     return (
       <p className={ticketGuidanceClass}>
-        신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터
-        확인할 수 있어요.
+        {ticketStageText(stageCopy, "applied")}
       </p>
     );
   }
@@ -1711,8 +1804,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.progressStep === "pre_start") {
     return (
       <p className={ticketGuidanceClass}>
-        모임 시작 3시간 전 안내가 열렸어요. 도착 상태와 오늘의 장소를
-        확인할 수 있어요.
+        {ticketStageText(stageCopy, "preStart")}
       </p>
     );
   }
@@ -1720,8 +1812,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.status === "in_progress") {
     return (
       <p className={ticketGuidanceClass}>
-        모임이 진행 중이에요. 도착 상태와 장소를 확인하고, 모임 후 피드백
-        안내를 확인할 수 있어요.
+        {ticketStageText(stageCopy, "inProgress")}
       </p>
     );
   }
@@ -1729,15 +1820,14 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
   if (userTicket.status === "feedback_open") {
     return (
       <p className={ticketGuidanceClass}>
-        피드백 작성이 열렸어요. 남겨주신 피드백은 다음 자리의 큐레이션을
-        더 잘 맞추는 데 참고돼요.
+        {ticketStageText(stageCopy, "feedbackOpen")}
       </p>
     );
   }
 
   return (
     <p className={ticketGuidanceClass}>
-      참여가 확정되었어요. 이제 모임 안내와 함께 멤버 정보를 확인할 수 있어요.
+      {ticketStageText(stageCopy, "approved")}
     </p>
   );
 }
@@ -1755,7 +1845,6 @@ function TicketStageContent({
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
     userTicket.arrivalStatus,
   );
-  const placeUnlocked = Boolean(arrivalStatus);
 
   useEffect(() => {
     setArrivalStatus(userTicket.arrivalStatus);
@@ -1774,21 +1863,11 @@ function TicketStageContent({
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
         />
-        {placeUnlocked ? (
-          <PlaceSection userTicket={userTicket} />
-        ) : (
-          <PlaceLockedSection />
-        )}
+        <PlaceSection userTicket={userTicket} />
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
           className="mt-0"
-        />
-        <TicketDetailContent
-          ticket={ticket}
-          sections={["flow"]}
-          className="mt-0"
-          startWithBorder
         />
         <FeedbackGuide userTicket={userTicket} />
       </>
@@ -1804,23 +1883,13 @@ function TicketStageContent({
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
         />
-        {placeUnlocked ? (
-          <PlaceSection userTicket={userTicket} />
-        ) : (
-          <PlaceLockedSection />
-        )}
+        <PlaceSection userTicket={userTicket} />
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
           className="mt-0"
         />
         <MemberIntroCarousel members={userTicket.members} />
-        <TicketDetailContent
-          ticket={ticket}
-          sections={["flow"]}
-          className="mt-0"
-          startWithBorder
-        />
       </>
     );
   }
@@ -1828,14 +1897,9 @@ function TicketStageContent({
   if (progressStep === "approved") {
     return (
       <>
+        <PlaceSection userTicket={userTicket} />
         <TicketDetailContent ticket={ticket} sections={introDetailSections} />
         <MemberIntroCarousel members={userTicket.members} />
-        <TicketDetailContent
-          ticket={ticket}
-          sections={["flow"]}
-          className="mt-0"
-          startWithBorder
-        />
       </>
     );
   }
@@ -1876,16 +1940,6 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
   );
 }
 
-function PlaceLockedSection() {
-  return (
-    <section className="border-t border-black/8 py-5">
-      <h2 className="text-[15px] font-black text-black">오늘의 장소</h2>
-      <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-        (도착 상태를 눌러야 오늘의 장소가 표시돼요.)
-      </p>
-    </section>
-  );
-}
 
 function MemberIntroCarousel({
   members,
@@ -1945,7 +1999,7 @@ function MemberIntroCarousel({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={ticketFadeTransition}
-          className="mt-4 flex h-[460px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white px-4 py-4"
+          className="mt-4 flex h-[428px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white px-4 py-4"
         >
           <div className="mb-4 shrink-0">
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-accent">
@@ -2248,6 +2302,11 @@ function TicketFeedbackForm({
     [userTicket.members],
   );
   const feedbackOwner = feedbackOwnerPossessive(selfMember);
+  const feedbackTitle = ticketStageText(userTicket.ticket.stageCopy, "feedbackTitle");
+  const feedbackBody = ticketFeedbackBodyText(
+    userTicket.ticket.stageCopy,
+    feedbackOwner,
+  );
   const otherMembers = useMemo(
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
@@ -2514,9 +2573,11 @@ function TicketFeedbackForm({
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
             feedback
           </p>
-          <h2 className="mt-1 text-[22px] font-black text-black">피드백 작성 ✒️</h2>
+          <h2 className="mt-1 text-[22px] font-black text-black">
+            {feedbackTitle}
+          </h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
-            남겨주신 피드백은 철저히 익명이 보장되며, 다음 {feedbackOwner} 큐레이션 정확성을 높이는데 사용됩니다.
+            {feedbackBody}
           </p>
         </div>
       </section>
@@ -4045,7 +4106,7 @@ function BasicInfoPanel({
       draft.name.trim().length > 1 &&
       normalizePhone(draft.phone).length >= 10 &&
       (draft.gender === "여성" || draft.gender === "남성") &&
-      /^\d{4}$/.test(draft.birthYear) &&
+      isValidBasicInfoBirthYear(draft.birthYear) &&
       mbtiOptions.includes(draft.mbti.toUpperCase()),
     [draft],
   );
@@ -4216,15 +4277,13 @@ function BasicInfoPanel({
           </fieldset>
 
           <div className="grid grid-cols-2 gap-3">
-            <BasicInfoField
+            <BasicInfoBirthYearSelect
               label="출생연도"
               value={draft.birthYear}
-              inputMode="numeric"
-              maxLength={4}
               onChange={(birthYear) =>
                 setDraft((current) => ({
                   ...current,
-                  birthYear: birthYear.replace(/\D/g, "").slice(0, 4),
+                  birthYear,
                 }))
               }
             />
@@ -4288,6 +4347,41 @@ function BasicInfoPanel({
         </>
       )}
     </motion.section>
+  );
+}
+
+function BasicInfoBirthYearSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const selectedValue = basicInfoBirthYearOptions.includes(value) ? value : "";
+
+  return (
+    <label className="block">
+      <span className="flex items-baseline gap-2 text-xs font-semibold text-black/45">
+        <span>{label}</span>
+      </span>
+      <select
+        value={selectedValue}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(
+          "mt-1.5 h-12 w-full appearance-none rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none focus:border-accent",
+          selectedValue ? "text-black/70" : "text-black/30",
+        )}
+      >
+        <option value="">출생연도 선택</option>
+        {basicInfoBirthYearOptions.map((year) => (
+          <option key={year} value={year}>
+            {year}년생
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

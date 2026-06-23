@@ -37,6 +37,10 @@ const basicInfoSteps: Array<{ key: BasicInfoStepKey; label: string }> = [
 
 const BIRTH_YEAR_MIN = 1992;
 const BIRTH_YEAR_MAX = 2007;
+const birthYearOptions = Array.from(
+  { length: BIRTH_YEAR_MAX - BIRTH_YEAR_MIN + 1 },
+  (_, index) => String(BIRTH_YEAR_MIN + index),
+);
 
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
@@ -303,22 +307,19 @@ export function BasicInfoForm({
 
     if (stepKey === "birthYear") {
       return (
-        <Field
+        <BirthYearSelect
           label="출생연도"
           value={draft.birthYear}
-          placeholder="1995"
-          inputMode="numeric"
-          maxLength={4}
           helperText={
             birthYearOutOfRange
               ? "1992년생부터 2007년생까지만 가능해요."
-              : "1992~2007년생만 입력할 수 있어요."
+              : "1992년생부터 2007년생까지 선택할 수 있어요."
           }
           helperTone={birthYearOutOfRange ? "error" : "default"}
           onChange={(birthYear) =>
             setDraft((current) => ({
               ...current,
-              birthYear: birthYear.replace(/\D/g, "").slice(0, 4),
+              birthYear,
             }))
           }
         />
@@ -460,6 +461,52 @@ export function BasicInfoForm({
         <div className="mt-auto h-14" aria-hidden />
       )}
     </section>
+  );
+}
+
+function BirthYearSelect({
+  label,
+  value,
+  helperText,
+  helperTone = "default",
+  onChange,
+}: {
+  label: string;
+  value: string;
+  helperText?: string;
+  helperTone?: "default" | "error";
+  onChange: (value: string) => void;
+}) {
+  const selectedValue = birthYearOptions.includes(value) ? value : "";
+
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-black/45">{label}</span>
+      <select
+        aria-label={label}
+        value={selectedValue}
+        onChange={(event) => onChange(event.target.value)}
+        className={`mt-1.5 h-12 w-full appearance-none rounded-2xl border bg-white px-4 text-sm font-semibold outline-none focus:border-accent ${
+          helperTone === "error" ? "border-red-300" : "border-black/10"
+        } ${selectedValue ? "text-black" : "text-black/30"}`}
+      >
+        <option value="">출생연도 선택</option>
+        {birthYearOptions.map((year) => (
+          <option key={year} value={year}>
+            {year}년생
+          </option>
+        ))}
+      </select>
+      {helperText && (
+        <span
+          className={`mt-1.5 block text-[11px] font-semibold leading-4 ${
+            helperTone === "error" ? "text-red-500" : "text-black/35"
+          }`}
+        >
+          {helperText}
+        </span>
+      )}
+    </label>
   );
 }
 

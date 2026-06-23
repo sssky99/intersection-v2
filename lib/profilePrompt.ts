@@ -291,7 +291,7 @@ export function parseGeneratedProfileContent(
   }
 }
 
-export const profileInstructions = `
+const legacyKoreanProfileInstructions = `
 참가자 본인과, 다른 참가자들이 읽을 공개 프로필을 한국어로 작성한다.
 
 입력에는 publicDisplayName, workAnswer, conversationAnswers, recentInterestAnswers가 포함된다.
@@ -366,6 +366,52 @@ publicIntro는 공백 포함 330~480자.
 정확히 3문단.
 각 문단은 빈 줄로 구분한다.
 1문단은 반드시 2문장 이상으로 작성한다.
+`.trim();
+
+export const profileInstructions = `
+Write a Korean public profile introduction for a member who will meet unfamiliar people through this service.
+
+The input contains publicDisplayName, workAnswer, conversationAnswers, and recentInterestAnswers.
+
+Use workAnswer and recentInterestAnswers as the main factual sources for publicIntro. Reflect concrete wording, interests, work style, and recent topics from those answers. Use conversationAnswers only to support the tone of conversation and the kind of atmosphere the person helps create. Never use ticket preferences to write the public introduction.
+
+Return JSON only. Do not use Markdown, explanations, or code fences.
+
+{
+  "publicEmoji": "one emoji representing the public profile, or null",
+  "publicIntro": "a Korean public introduction in exactly three paragraphs, separated by blank lines"
+}
+
+Rules for publicEmoji:
+* When workAnswer clearly identifies a job, field, or recurring work, prefer an emoji directly related to that evidence.
+* Otherwise, choose an emoji tied to a specific interest in recentInterestAnswers.
+* Return null when there is not enough evidence for a suitable emoji. Never use a random or generic person emoji.
+
+Rules for publicIntro:
+
+Paragraph 1 must begin with "{publicDisplayName}님은". Introduce what the person does and how they approach their everyday work using workAnswer. Write at least two sentences. Be concrete when the answer supports it, but do not infer a job, field, employer, work location, department, exact title, years of experience, responsibilities, or conditions that are not explicitly provided.
+
+Paragraph 2 must use conversationAnswers only. Describe how the person tends to talk, listen, and join a comfortable group atmosphere. Start naturally from the answer about the situation after a gathering, then incorporate relevant tone, concern, or rhythm answers when available. End by describing how they are likely to participate in an initial in-person gathering. Do not use recommendation or ticket-preference answers here. Do not diagnose or label the user.
+
+Paragraph 3 must focus on recentInterestAnswers. Describe specific interests, nouns, hobbies, subjects they have been thinking about, or topics that would be natural to share with someone new. Do not invent details, experiences, tastes, values, personality traits, or emotions that are not supported by the answers.
+
+Personalization and style:
+* Reflect at least two specific nouns or expressions from workAnswer and recentInterestAnswers when they are available.
+* Make the answer feel unique to this member. Avoid reusable generic phrases such as “calm,” “curious,” or “likes deep conversations” unless the input concretely supports them.
+* The introduction should make both of these clear: what the person has been doing or thinking about recently, and what could naturally be discussed with them.
+* Use a warm, considerate, friend-introducing tone. Write in Korean and end sentences naturally in the ~요 style.
+* Do not use overly promotional, evaluative, diagnostic, or compatibility-analysis language.
+* Avoid repeatedly starting sentences with the same phrase. Do not overuse “~하는 편이에요” or generic personality summaries.
+
+Privacy and safety:
+* Use only publicDisplayName, never the user’s full name.
+* Do not include phone numbers, employer names, work locations, departments, exact titles, exact experience durations, identifiable schedules, or any other sensitive personal information.
+* Do not strongly emphasize dating intent or make assumptions about romantic availability.
+
+Output requirements:
+* publicIntro must be 330–480 Korean characters including spaces.
+* Use exactly three paragraphs separated by blank lines.
+* Paragraph 1 must contain at least two sentences.
 `.trim();
 
 export function isValidGeneratedIntro(

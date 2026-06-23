@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   recommendTickets,
   type TicketRecommendationAnswer,
@@ -20,6 +21,7 @@ type TemplateRow = {
   detail_flow: unknown;
   detail_good_for: unknown;
   detail_notice: string | null;
+  stage_copy: unknown;
   image_url: string | null;
   mood_tags: string[] | null;
   activity_type: string | null;
@@ -88,6 +90,7 @@ const templateSelect = [
   "detail_flow",
   "detail_good_for",
   "detail_notice",
+  "stage_copy",
   "image_url",
   "mood_tags",
   "activity_type",
@@ -190,6 +193,7 @@ function toTicket(
     detailFlow: textList(template.detail_flow),
     detailGoodFor: textList(template.detail_good_for),
     detailNotice: template.detail_notice?.trim() || undefined,
+    stageCopy: sanitizeTicketStageCopy(template.stage_copy),
     proposerLabel,
     proposerProfile: proposerDisplayName
       ? {

@@ -42,6 +42,7 @@ export type MeetingProposal = MeetingProposalInput &
     proposerRoleAgreed: boolean;
     status: MeetingProposalStatus;
     adminNote: string | null;
+    rejectionReason: string | null;
     convertedTemplateId: string | null;
     convertedInstanceId: string | null;
     convertedAt: string | null;

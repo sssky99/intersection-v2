@@ -1,5 +1,17 @@
 import type { Gender } from "@/types/user";
 
+export type TicketStageCopy = {
+  paymentPending?: string | null;
+  waitlisted?: string | null;
+  applied?: string | null;
+  approved?: string | null;
+  preStart?: string | null;
+  inProgress?: string | null;
+  feedbackOpen?: string | null;
+  feedbackTitle?: string | null;
+  feedbackBody?: string | null;
+};
+
 export type GatheringTicket = {
   id: string;
   templateId: string;
@@ -22,6 +34,7 @@ export type GatheringTicket = {
   detailFlow?: string[];
   detailGoodFor?: string[];
   detailNotice?: string;
+  stageCopy?: TicketStageCopy | null;
   proposerLabel?: string;
   proposerProfile?: {
     userId?: string | null;

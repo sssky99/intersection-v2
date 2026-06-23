@@ -3,6 +3,7 @@ import type {
   MeetingProposalDraft,
   MeetingProposalInput,
 } from "@/types/meetingProposal";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 
 export const meetingProposalDraftModel = "gpt-5.5";
 
@@ -27,7 +28,11 @@ const proposalDraftTextFormat = {
         type: "array",
         minItems: 2,
         maxItems: 3,
-        items: { type: "string" },
+        items: {
+          type: "string",
+          description:
+            "One short hashtag keyword without #, spaces, punctuation, or explanation text.",
+        },
       },
       activities: {
         type: "array",
@@ -86,11 +91,11 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function cleanList(value: unknown, fallback: string[]) {
+function cleanStringList(value: unknown, fallback: string[]) {
   const items = Array.isArray(value)
     ? value
         .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim().replace(/^#/, ""))
+        .map((item) => item.trim())
         .filter(Boolean)
     : [];
 
@@ -172,8 +177,11 @@ function normalizeDraft(value: unknown, input: MeetingProposalInput): MeetingPro
     title: cleanText(draft.title) || input.title,
     shortDescription:
       cleanText(draft.shortDescription) || fallback.shortDescription,
-    hashtags: cleanList(draft.hashtags, fallback.hashtags).slice(0, 3),
-    activities: cleanList(draft.activities, fallback.activities).slice(0, 4),
+    hashtags: normalizeProposalHashtags(draft.hashtags, {
+      blockedTags: [input.region, input.specificPlace],
+      fallback: fallback.hashtags,
+    }),
+    activities: cleanStringList(draft.activities, fallback.activities).slice(0, 4),
     vibe: {
       temperature: clampLegacyScore(
         vibe.temperature,
@@ -185,7 +193,7 @@ function normalizeDraft(value: unknown, input: MeetingProposalInput): MeetingPro
       alcohol: clampLegacyScore(vibe.alcohol, fallback.vibe.alcohol ?? 2),
       romance: clampLegacyScore(vibe.romance, fallback.vibe.romance ?? 2),
     },
-    flow: cleanList(draft.flow, fallback.flow).slice(0, 5),
+    flow: cleanStringList(draft.flow, fallback.flow).slice(0, 5),
   };
 }
 
@@ -197,7 +205,9 @@ async function requestGptDraft(client: OpenAI, input: MeetingProposalInput) {
       "You write Korean drafts for an operator-reviewed gathering proposal feature.",
       "Do not imply that the user is directly publishing an invitation.",
       "Use warm, concise Korean copy that fits a small curated offline gathering.",
-      "For hashtags, use mood, interest, or activity keywords only. Do not use region or place names, or generic gathering words such as 모임, 만남, 자리, or 교집합.",
+      "For hashtags, return 2-3 short Korean keyword strings only: no # prefix, no spaces, no punctuation, no sentences, no questions, no English meta instructions, and no JSON guidance.",
+      "Use mood, interest, or activity keywords only. Do not use region or place names, or generic gathering words such as 모임, 만남, 자리, or 교집합.",
+      "Bad hashtag example: \"농장체험 이랑? no spaces? Need JSON valid\". Good examples: \"농장체험\", \"자연\", \"취향대화\".",
       "Return only JSON matching the provided schema.",
       "Vibe scores must use the existing legacy 1-5 scale: 1 means the left label, 5 means the right label.",
       "Vibe axes: temperature calm to lively, texture everyday to deep, tone empathy to analysis, rhythm planned to spontaneous, alcohol no alcohol to alcohol, romance comfortable to possibility of romance.",
@@ -222,13 +232,12 @@ export function buildFallbackProposalDraft(
 ): MeetingProposalDraft {
   const title = input.title.trim();
   const region = input.region.trim() || "원하는 지역";
-  const userHashtags = (input.userHashtags ?? [])
-    .map((tag) => tag.trim().replace(/^#/, ""))
-    .filter(Boolean)
-    .slice(0, 3);
+  const userHashtags = normalizeProposalHashtags(input.userHashtags, {
+    blockedTags: [region, input.specificPlace],
+  });
   const inferredTags = userHashtags.length
     ? userHashtags
-    : [region, "취향대화", "교집합"];
+    : ["취향대화", "새로운경험", "편한대화"];
 
   return {
     title,

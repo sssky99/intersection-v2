@@ -4,6 +4,7 @@ import {
   meetingProposalDisplayName,
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { MeetingProposalDraft, MeetingProposalInput } from "@/types/meetingProposal";
@@ -12,18 +13,23 @@ type SubmitRequest = Partial<MeetingProposalInput & MeetingProposalDraft> & {
   proposerRoleAgreed?: unknown;
 };
 
+type RejectedProposalNotificationRow = {
+  id: string;
+  title: string;
+  rejection_reason: string | null;
+  updated_at: string;
+  submitted_at: string;
+};
+
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function tags(value: unknown) {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim().replace(/^#/, ""))
-        .filter(Boolean)
-        .slice(0, 3)
-    : [];
+function tags(
+  value: unknown,
+  blockedTags: Array<string | null | undefined> = [],
+) {
+  return normalizeProposalHashtags(value, { blockedTags });
 }
 
 function textList(value: unknown) {
@@ -62,7 +68,7 @@ function normalizedSubmit(body: SubmitRequest) {
     eventTime: text(body.eventTime),
     region: text(body.region),
     specificPlace: text(body.specificPlace) || null,
-    hashtags: tags(body.hashtags),
+    hashtags: tags(body.hashtags, [text(body.region), text(body.specificPlace)]),
     shortDescription: text(body.shortDescription),
     activities: textList(body.activities).slice(0, 4),
     vibe: {
@@ -93,6 +99,46 @@ function normalizedSubmit(body: SubmitRequest) {
   }
 
   return payload;
+}
+
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { data, error } = await supabase
+    .from("meeting_proposals")
+    .select("id,title,rejection_reason,updated_at,submitted_at")
+    .eq("proposer_id", user.id)
+    .eq("status", "rejected")
+    .not("rejection_reason", "is", null)
+    .order("updated_at", { ascending: false })
+    .returns<RejectedProposalNotificationRow[]>();
+
+  if (error) {
+    console.error("[meeting proposal notifications]", error);
+    return NextResponse.json(
+      { error: "제안 알림을 불러오지 못했어요." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({
+    rejectedProposals: (data ?? [])
+      .map((proposal) => ({
+        id: proposal.id,
+        title: proposal.title,
+        rejectionReason: proposal.rejection_reason?.trim() ?? "",
+        updatedAt: proposal.updated_at,
+        submittedAt: proposal.submitted_at,
+      }))
+      .filter((proposal) => proposal.rejectionReason.length > 0),
+  });
 }
 
 export async function POST(request: Request) {

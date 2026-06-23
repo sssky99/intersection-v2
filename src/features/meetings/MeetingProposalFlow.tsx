@@ -21,6 +21,7 @@ import {
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import type {
   MeetingProposalDraft,
   MeetingProposalInput,
@@ -86,11 +87,7 @@ function cn(...values: Array<string | false | null | undefined>) {
 }
 
 function splitTags(value: string) {
-  return value
-    .split("#")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 3);
+  return normalizeProposalHashtags(value);
 }
 
 function tagInputValue(tags: string[]) {

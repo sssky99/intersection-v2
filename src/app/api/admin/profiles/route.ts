@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeAdminProfile,
   type AdminProfile,
+  type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
 import { isMembershipStatus } from "@/features/membership/membershipTypes";
 
@@ -128,6 +129,35 @@ const profileSelects = [
   baseProfileSelectWithoutTest,
 ];
 
+async function attachProfileAnswers(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const { data, error } = await supabase
+    .from("user_answers")
+    .select(
+      "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
+    )
+    .in("user_id", userIds)
+    .order("question_order", { ascending: true });
+  if (error) throw error;
+
+  const answersByUserId = new Map<string, AdminProfileAnswer[]>();
+  for (const answer of (data ?? []) as unknown as AdminProfileAnswer[]) {
+    const current = answersByUserId.get(answer.user_id) ?? [];
+    current.push(answer);
+    answersByUserId.set(answer.user_id, current);
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    answers: answersByUserId.get(profile.user_id) ?? [],
+  }));
+}
+
 function normalizeProfiles(profiles: AdminProfile[]) {
   return profiles.map(normalizeAdminProfile);
 }
@@ -218,9 +248,10 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const profiles = await fetchProfiles(supabase);
+    const profilesWithAnswers = await attachProfileAnswers(supabase, profiles);
 
     return NextResponse.json({
-      profiles: normalizeProfiles(profiles),
+      profiles: normalizeProfiles(profilesWithAnswers),
     });
   } catch (error) {
     console.error("Admin profiles load failed:", error);
@@ -340,7 +371,13 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({
-      profile: normalizeAdminProfile(await fetchProfile(supabase, userId)),
+      profile: normalizeAdminProfile(
+        (
+          await attachProfileAnswers(supabase, [
+            await fetchProfile(supabase, userId),
+          ])
+        )[0],
+      ),
     });
   } catch (error) {
     console.error("Admin profile membership save failed:", error);

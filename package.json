@@ -4,10 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "npm run clean:next && next dev",
+    "clean:next": "node scripts/clean-next-cache.mjs",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
+    "@microsoft/clarity": "^1.0.2",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.1",
     "framer-motion": "^11.18.2",

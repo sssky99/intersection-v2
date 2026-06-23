@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
@@ -9,7 +10,6 @@ export type TicketDetailSectionKey =
   | "summary"
   | "activities"
   | "vibe"
-  | "flow"
   | "proposer"
   | "notice";
 
@@ -19,19 +19,10 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 const defaultSections: TicketDetailSectionKey[] = [
   "summary",
-  "activities",
   "vibe",
-  "flow",
   "proposer",
+  "activities",
   "notice",
-];
-
-const flowSteps = [
-  "가볍게 인사하고 자리에 앉아요.",
-  "음식이나 음료와 함께 편한 이야기로 시작해요.",
-  "중간중간 교집합 질문 카드로 대화를 이어가요.",
-  "분위기에 따라 조금 더 솔직한 이야기로 넘어가요.",
-  "모임 후에는 다음 큐레이션을 위한 짧은 피드백을 남겨요.",
 ];
 
 const commonNotices = [
@@ -55,8 +46,6 @@ export function TicketDetailContent({
   startWithBorder?: boolean;
 }) {
   const activities = cleanList(ticket.detailActivities);
-  const detailFlow = cleanList(ticket.detailFlow);
-  const recommendationReasons = cleanList(ticket.recommendationReasons);
   const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
     (notice) => !commonNotices.includes(notice),
   );
@@ -64,40 +53,31 @@ export function TicketDetailContent({
   const visibleSections = new Set(sections);
   const detailSummary = ticket.detailSummary?.trim();
   const hasSummary = Boolean(visibleSections.has("summary") && detailSummary);
+  const proposerIntroParagraphs = ticket.proposerProfile?.publicIntro
+    ?.split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean) ?? [];
+  const [proposerExpanded, setProposerExpanded] = useState(false);
   const firstSectionAfterSummary =
-    hasSummary && visibleSections.has("activities") && activities.length > 0
-      ? "activities"
-      : hasSummary && visibleSections.has("vibe")
+    hasSummary && visibleSections.has("vibe")
         ? "vibe"
-        : hasSummary && visibleSections.has("flow")
-          ? "flow"
-          : hasSummary && visibleSections.has("notice")
-            ? "notice"
-            : null;
+        : hasSummary &&
+            visibleSections.has("proposer") &&
+            ticket.proposerProfile
+          ? "proposer"
+          : hasSummary && visibleSections.has("activities") && activities.length > 0
+            ? "activities"
+            : hasSummary && visibleSections.has("notice")
+              ? "notice"
+              : null;
+
+  useEffect(() => {
+    setProposerExpanded(false);
+  }, [ticket.id, ticket.proposerProfile?.userId]);
 
   return (
     <div className={cn("mt-5", className)}>
-      {recommendationReasons.length > 0 && (
-        <section className="mb-5 border-b border-black/8 pb-5">
-          <h2 className="text-[15px] font-black text-black">
-            {ticket.recommendationName?.trim() || "회원"}님에게 이 초대장이 추천된 이유
-          </h2>
-          <div className="mt-3">
-            <BulletList items={recommendationReasons} />
-          </div>
-        </section>
-      )}
       {hasSummary && <TypingSummary text={detailSummary!} />}
-
-      {visibleSections.has("activities") && activities.length > 0 && (
-        <TicketDetailSection
-          title="이 자리에서는 이런 걸 해요"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "activities"}
-        >
-          <BulletList items={activities} />
-        </TicketDetailSection>
-      )}
 
       {visibleSections.has("vibe") && (
         <VibeGraph
@@ -130,57 +110,73 @@ export function TicketDetailContent({
         />
       )}
 
-      {visibleSections.has("flow") && (
-        <TicketDetailSection
-          title="이렇게 진행돼요"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "flow"}
-        >
-          <ol className="space-y-2.5">
-            {(detailFlow.length > 0 ? detailFlow : flowSteps).map((step, index) => (
-              <li
-                key={step}
-                className="grid grid-cols-[28px_minmax(0,1fr)] gap-3"
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-[11px] font-black text-white">
-                  {index + 1}
-                </span>
-                <span className="pt-1 text-sm font-semibold leading-6 text-black/62">
-                  {step}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </TicketDetailSection>
-      )}
-
       {visibleSections.has("proposer") && ticket.proposerProfile && (
         <TicketDetailSection
           title="이 자리를 제안한 멤버"
           startWithBorder={startWithBorder}
+          hideTopBorder={firstSectionAfterSummary === "proposer"}
         >
           <div className="rounded-3xl border border-black/8 bg-black/[0.025] px-4 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
                 {ticket.proposerProfile.publicEmoji?.trim() || "💎"}
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-black text-black">
-                  {ticket.proposerProfile.displayName}
-                </p>
-                {ticket.proposerLabel && (
-                  <p className="mt-1 text-[11px] font-bold text-accent">
-                    {ticket.proposerLabel}
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-black">
+                    {ticket.proposerProfile.displayName}
                   </p>
+                  {ticket.proposerLabel && (
+                    <p className="mt-1 text-[11px] font-bold text-accent">
+                      {ticket.proposerLabel}
+                    </p>
+                  )}
+                </div>
+                {proposerIntroParagraphs.length > 1 && (
+                  <button
+                    type="button"
+                    aria-expanded={proposerExpanded}
+                    onClick={() => setProposerExpanded((expanded) => !expanded)}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1.5 text-[11px] font-black text-black/62 transition hover:border-black/20 hover:text-black"
+                  >
+                    {proposerExpanded ? "접기" : "자세히 보기"}
+                    <ChevronDown
+                      size={13}
+                      aria-hidden
+                      className={proposerExpanded ? "rotate-180 transition-transform" : "transition-transform"}
+                    />
+                  </button>
                 )}
               </div>
             </div>
-            {ticket.proposerProfile.publicIntro && (
+            {proposerIntroParagraphs.length > 0 && (
               <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
-                {ticket.proposerProfile.publicIntro}
+                {proposerIntroParagraphs[0]}
               </p>
             )}
+            {proposerIntroParagraphs.length > 1 && (
+              <div
+                className={cn(
+                  "grid overflow-hidden transition-[grid-template-rows,margin] duration-200 ease-out",
+                  proposerExpanded ? "mt-4 grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <p className="min-h-0 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
+                  {proposerIntroParagraphs.slice(1).join("\n\n")}
+                </p>
+              </div>
+            )}
           </div>
+        </TicketDetailSection>
+      )}
+
+      {visibleSections.has("activities") && activities.length > 0 && (
+        <TicketDetailSection
+          title="이 자리에서는 이런 걸 해요"
+          startWithBorder={startWithBorder}
+          hideTopBorder={firstSectionAfterSummary === "activities"}
+        >
+          <BulletList items={activities} />
         </TicketDetailSection>
       )}
 

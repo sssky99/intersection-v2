@@ -19,6 +19,7 @@ import { vibeAxes, type VibeScores } from "@/components/vibe/vibeGraphConfig";
 import type { AdminMeetingProposal } from "@/features/admin/proposalAdminTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
+import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import type { GatheringTicket } from "@/types/ticket";
 import {
   meetingProposalStatusLabels,
@@ -46,6 +47,7 @@ type ProposalDraft = {
   vibe: VibeScores;
   status: MeetingProposalStatus;
   adminNote: string;
+  rejectionReason: string;
 };
 
 const minuteSteps = ["00", "15", "30", "45"] as const;
@@ -91,11 +93,7 @@ function updatedDate(value: string) {
 }
 
 function splitTags(value: string) {
-  return value
-    .split("#")
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 3);
+  return normalizeProposalHashtags(value);
 }
 
 function limitTagInput(value: string) {
@@ -192,6 +190,7 @@ function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
     vibe: proposal.vibe,
     status: proposal.status,
     adminNote: proposal.adminNote ?? "",
+    rejectionReason: proposal.rejectionReason ?? "",
   };
 }
 
@@ -351,6 +350,7 @@ export function ProposalAdminPanel() {
         flow: splitLines(draft.flowText, 6),
         status: draft.status,
         adminNote: draft.adminNote,
+        rejectionReason: draft.rejectionReason,
       }),
     }).catch(() => null);
     const data = response
@@ -969,6 +969,61 @@ function ProposalMetaPanel({
         value={draft.adminNote}
         onChange={(adminNote) => onDraftChange({ ...draft, adminNote })}
       />
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <TextAreaField
+          label="반려 사유 (선택)"
+          value={draft.rejectionReason}
+          placeholder="사용자에게 전달할 반려 사유를 입력해요."
+          onChange={(rejectionReason) =>
+            onDraftChange({ ...draft, rejectionReason })
+          }
+        />
+        <ProposalRejectionNotificationPreview proposal={proposal} draft={draft} />
+      </div>
+    </section>
+  );
+}
+
+function ProposalRejectionNotificationPreview({
+  proposal,
+  draft,
+}: {
+  proposal: AdminMeetingProposal;
+  draft: ProposalDraft;
+}) {
+  const reason = draft.rejectionReason.trim();
+  const visibleReason =
+    reason || "반려 사유를 입력하면 사용자 알림에 이 영역이 표시됩니다.";
+  const willNotify = draft.status === "rejected" && Boolean(reason);
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
+          알림 미리보기
+        </p>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-1 text-[10px] font-black",
+            willNotify
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-black/[0.06] text-black/38",
+          )}
+        >
+          {willNotify ? "표시 예정" : "알림 없음"}
+        </span>
+      </div>
+      <div className="mt-3 rounded-xl bg-white px-3 py-3 shadow-sm">
+        <p className="text-sm font-black leading-5 text-black/80">
+          제안 검토 결과가 도착했어요.
+        </p>
+        <p className="mt-1 line-clamp-1 text-xs font-bold text-black/42">
+          {draft.title || proposal.title}
+        </p>
+        <p className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold leading-5 text-red-700">
+          {visibleReason}
+        </p>
+      </div>
     </section>
   );
 }
