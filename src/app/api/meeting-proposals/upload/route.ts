@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import {
-  hasActiveProposalMembership,
   safeMeetingProposalFilename,
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { ensureMeetingProposalEligibility } from "../eligibility";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -19,19 +19,23 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("user_id,name,nickname,public_intro,public_emoji,membership_status,membership_end_date")
+    .select("user_id,name,nickname,public_intro,public_emoji,membership_status,membership_end_date,is_test_participant")
     .eq("user_id", user.id)
     .maybeSingle<MeetingProposalProfileRow>();
 
-  if (profileError || !profile || !hasActiveProposalMembership(profile)) {
+  if (profileError || !profile) {
     return NextResponse.json(
-      {
-        error: "교집합 제안은 멤버십 사용자만 이용할 수 있어요.",
-        code: "membership_required",
-      },
-      { status: 402 },
+      { error: "프로필 정보를 확인하지 못했어요." },
+      { status: 400 },
     );
   }
+
+  const eligibilityResponse = await ensureMeetingProposalEligibility(
+    supabase,
+    user.id,
+    profile,
+  );
+  if (eligibilityResponse) return eligibilityResponse;
 
   try {
     const formData = await request.formData();
@@ -64,7 +68,11 @@ export async function POST(request: Request) {
     if (error) throw error;
 
     const { data } = admin.storage.from("ticket-images").getPublicUrl(path);
-    return NextResponse.json({ imageUrl: data.publicUrl });
+    return NextResponse.json({
+      imageUrl: data.publicUrl,
+      imageSource: "user_upload",
+      imageSelectionMethod: "manual",
+    });
   } catch (error) {
     console.error("[meeting proposal upload]", error);
     return NextResponse.json(

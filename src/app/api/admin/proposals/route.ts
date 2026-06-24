@@ -4,7 +4,13 @@ import {
   meetingProposalDisplayName,
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
+import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
+import {
+  meetingPlaceAddress,
+  normalizeMeetingPlace,
+  ticketPlaceFromMeetingPlace,
+} from "@/lib/placePayload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { displayMembershipStatus } from "@/features/membership/membershipTypes";
 import {
@@ -12,6 +18,10 @@ import {
   type MeetingProposalStatus,
 } from "@/types/meetingProposal";
 import type { AdminMeetingProposal } from "@/features/admin/proposalAdminTypes";
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+} from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +33,13 @@ type ProposalRow = {
   proposer_public_intro: string | null;
   proposer_public_emoji: string | null;
   image_url: string | null;
+  pexels_photo_id: string | null;
+  pexels_page_url: string | null;
+  photographer: string | null;
+  photographer_url: string | null;
+  image_source: "pexels" | "user_upload" | null;
+  image_selection_method: "auto" | "manual" | null;
+  image_review_model: string | null;
   original_image_url: string | null;
   title: string;
   activity_description: string;
@@ -30,6 +47,7 @@ type ProposalRow = {
   event_time: string;
   region: string;
   specific_place: string | null;
+  place_payload: unknown;
   hashtags: string[] | null;
   short_description: string;
   activities: unknown;
@@ -47,6 +65,18 @@ type ProposalRow = {
   updated_at: string;
 };
 
+type ProposalChangeRequestRow = {
+  id: string;
+  proposal_id: string;
+  request_type: "edit" | "cancel";
+  request_body: string;
+  status: "pending_review" | "reviewed" | "approved" | "rejected";
+  admin_note: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const proposalSelect = [
   "id",
   "proposer_id",
@@ -55,6 +85,13 @@ const proposalSelect = [
   "proposer_public_intro",
   "proposer_public_emoji",
   "image_url",
+  "pexels_photo_id",
+  "pexels_page_url",
+  "photographer",
+  "photographer_url",
+  "image_source",
+  "image_selection_method",
+  "image_review_model",
   "original_image_url",
   "title",
   "activity_description",
@@ -62,6 +99,7 @@ const proposalSelect = [
   "event_time",
   "region",
   "specific_place",
+  "place_payload",
   "hashtags",
   "short_description",
   "activities",
@@ -83,6 +121,8 @@ const profileSelect = [
   "user_id",
   "name",
   "nickname",
+  "gender",
+  "birth_year",
   "public_intro",
   "public_emoji",
   "membership_status",
@@ -160,6 +200,7 @@ function profileMembershipStatus(profile: MeetingProposalProfileRow | undefined)
 function toAdminProposal(
   row: ProposalRow,
   profile?: MeetingProposalProfileRow,
+  changeRequests: ProposalChangeRequestRow[] = [],
 ): AdminMeetingProposal {
   const displayName =
     profile ? meetingProposalDisplayName(profile) : row.proposer_public_display_name;
@@ -174,6 +215,8 @@ function toAdminProposal(
       displayName,
       publicIntro: row.proposer_public_intro ?? profile?.public_intro ?? null,
       publicEmoji: row.proposer_public_emoji ?? profile?.public_emoji ?? null,
+      gender: normalizeProfileGender(profile?.gender),
+      birthYear: profile?.birth_year ?? null,
     },
     imageUrl: row.image_url,
     originalImageUrl: row.original_image_url,
@@ -183,6 +226,7 @@ function toAdminProposal(
     eventTime: row.event_time?.slice(0, 5) ?? "",
     region: row.region,
     specificPlace: row.specific_place,
+    place: normalizeMeetingPlace(row.place_payload),
     hashtags: normalizeProposalHashtags(row.hashtags ?? []),
     shortDescription: row.short_description,
     activities: textList(row.activities).slice(0, 4),
@@ -198,6 +242,16 @@ function toAdminProposal(
     submittedAt: row.submitted_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    changeRequests: changeRequests.map((request) => ({
+      id: request.id,
+      type: request.request_type,
+      body: request.request_body,
+      status: request.status,
+      adminNote: request.admin_note,
+      reviewedAt: request.reviewed_at,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+    })),
   };
 }
 
@@ -212,7 +266,9 @@ async function loadProposalData() {
 
   const rows = (proposalRows ?? []) as unknown as ProposalRow[];
   const proposerIds = Array.from(new Set(rows.map((row) => row.proposer_id)));
+  const proposalIds = rows.map((row) => row.id);
   const profileMap = new Map<string, MeetingProposalProfileRow>();
+  const requestsByProposal = new Map<string, ProposalChangeRequestRow[]>();
 
   if (proposerIds.length > 0) {
     const { data: profiles, error: profileError } = await supabase
@@ -226,8 +282,34 @@ async function loadProposalData() {
     }
   }
 
+  if (proposalIds.length > 0) {
+    const { data: changeRequests, error: changeRequestError } = await supabase
+      .from("meeting_proposal_change_requests")
+      .select(
+        "id,proposal_id,request_type,request_body,status,admin_note,reviewed_at,created_at,updated_at",
+      )
+      .in("proposal_id", proposalIds)
+      .order("created_at", { ascending: false });
+
+    if (!changeRequestError) {
+      for (const request of (changeRequests ?? []) as ProposalChangeRequestRow[]) {
+        const current = requestsByProposal.get(request.proposal_id) ?? [];
+        current.push(request);
+        requestsByProposal.set(request.proposal_id, current);
+      }
+    } else {
+      console.warn("[admin proposals change requests]", changeRequestError);
+    }
+  }
+
   return {
-    proposals: rows.map((row) => toAdminProposal(row, profileMap.get(row.proposer_id))),
+    proposals: rows.map((row) =>
+      toAdminProposal(
+        row,
+        profileMap.get(row.proposer_id),
+        requestsByProposal.get(row.id) ?? [],
+      ),
+    ),
   };
 }
 
@@ -275,8 +357,94 @@ function ensureConvertible(proposal: ProposalRow) {
       proposal.region &&
       proposal.short_description &&
       proposal.proposer_role_agreed &&
-      proposal.status !== "converted_to_ticket",
+      proposal.status !== "converted_to_ticket" &&
+      !proposal.converted_template_id &&
+      !proposal.converted_instance_id,
   );
+}
+
+async function syncPublishedProposal(proposal: ProposalRow) {
+  if (!proposal.converted_template_id || !proposal.converted_instance_id) {
+    return;
+  }
+
+  const supabase = createAdminClient();
+  const place = normalizeMeetingPlace(proposal.place_payload);
+  const placeAddress = meetingPlaceAddress(place);
+  const visibility = proposal.status === "rejected" ? "archived" : "public";
+  const updatedAt = new Date().toISOString();
+  const proposalVibe = vibe(proposal.vibe);
+  const proposalTags = normalizeProposalHashtags(proposal.hashtags ?? []);
+
+  const { error: templateError } = await supabase
+    .from("ticket_templates")
+    .update({
+      title: proposal.title,
+      short_description: proposal.short_description,
+      detail_summary: proposal.short_description,
+      detail_activities: textList(proposal.activities).slice(0, 4),
+      detail_flow: [],
+      image_url: proposal.image_url,
+      pexels_photo_id: proposal.pexels_photo_id,
+      pexels_page_url: proposal.pexels_page_url,
+      photographer: proposal.photographer,
+      photographer_url: proposal.photographer_url,
+      image_source: proposal.image_source,
+      image_selection_method: proposal.image_selection_method,
+      image_review_model: proposal.image_review_model,
+      mood_tags: proposalTags,
+      recommendation_copy: proposal.short_description,
+      default_region: proposal.region,
+      default_time: proposal.event_time,
+      event_date: proposal.event_date,
+      event_time: proposal.event_time,
+      region: proposal.region,
+      place_name: place?.name ?? proposal.specific_place,
+      address: placeAddress,
+      place_payload: place,
+      place_visibility: place || proposal.specific_place ? "public" : "hidden",
+      operation_note: proposal.admin_note,
+      visibility,
+      score_temperature: proposalVibe.temperature,
+      score_texture: proposalVibe.texture,
+      score_tone: proposalVibe.tone,
+      score_rhythm: proposalVibe.rhythm,
+      score_alcohol: proposalVibe.alcohol,
+      score_romance: proposalVibe.romance,
+      updated_at: updatedAt,
+    })
+    .eq("id", proposal.converted_template_id);
+  if (templateError) throw templateError;
+
+  const { error: instanceError } = await supabase
+    .from("ticket_instances")
+    .update({
+      title: proposal.title,
+      event_date: proposal.event_date,
+      event_time: proposal.event_time,
+      region: proposal.region,
+      place_name: place?.name ?? proposal.specific_place,
+      address: placeAddress,
+      place_payload: place,
+      operation_note: proposal.admin_note,
+      place_visibility: place || proposal.specific_place ? "public" : "hidden",
+      visibility,
+      updated_at: updatedAt,
+    })
+    .eq("id", proposal.converted_instance_id);
+  if (instanceError) throw instanceError;
+
+  if (proposal.status === "rejected") {
+    const { error: waitlistError } = await supabase
+      .from("meeting_waitlist")
+      .update({
+        status: "cancelled",
+        updated_at: updatedAt,
+      })
+      .eq("ticket_instance_id", proposal.converted_instance_id)
+      .in("status", ["waitlisted", "approved", "on_hold", "payment_pending"]);
+    if (waitlistError) throw waitlistError;
+  }
 }
 
 function convertedTicketSnapshot(
@@ -284,14 +452,17 @@ function convertedTicketSnapshot(
   templateId: string,
   instanceId: string,
   displayName: string,
+  profile: MeetingProposalProfileRow | null,
 ) {
   const proposerLabel = `${displayName}님의 제안`;
   const eventTime = proposal.event_time?.slice(0, 5) ?? "";
   const proposalTags = normalizeProposalHashtags(proposal.hashtags ?? []);
+  const place = normalizeMeetingPlace(proposal.place_payload);
 
   return {
     id: instanceId,
     templateId,
+    proposalId: proposal.id,
     title: proposal.title,
     subtitle: proposal.short_description,
     date: proposal.event_date,
@@ -301,17 +472,22 @@ function convertedTicketSnapshot(
     activityType: "member_proposal",
     imageUrl: proposal.image_url ?? undefined,
     remainingSeatCount: 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: proposal.short_description,
     reason: proposal.short_description,
     detailSummary: proposal.short_description,
     detailActivities: textList(proposal.activities).slice(0, 4),
-    detailFlow: textList(proposal.flow),
+    detailFlow: [],
+    place: ticketPlaceFromMeetingPlace(place),
     proposerLabel,
     proposerProfile: {
       userId: proposal.proposer_id,
       displayName,
       publicIntro: proposal.proposer_public_intro,
       publicEmoji: proposal.proposer_public_emoji,
+      gender: normalizeProfileGender(profile?.gender),
+      birthYear: profile?.birth_year ?? null,
     },
     vibeScores: vibe(proposal.vibe),
   };
@@ -346,6 +522,8 @@ async function convertProposal(proposalId: string) {
 
   const proposalVibe = vibe(proposal.vibe);
   const proposalTags = normalizeProposalHashtags(proposal.hashtags ?? []);
+  const proposalPlace = normalizeMeetingPlace(proposal.place_payload);
+  const proposalPlaceAddress = meetingPlaceAddress(proposalPlace);
   const { data: template, error: templateError } = await supabase
     .from("ticket_templates")
     .insert({
@@ -353,10 +531,17 @@ async function convertProposal(proposalId: string) {
       short_description: proposal.short_description,
       detail_summary: proposal.short_description,
       detail_activities: textList(proposal.activities).slice(0, 4),
-      detail_flow: textList(proposal.flow),
+      detail_flow: [],
       detail_good_for: [],
       detail_notice: null,
       image_url: proposal.image_url,
+      pexels_photo_id: proposal.pexels_photo_id,
+      pexels_page_url: proposal.pexels_page_url,
+      photographer: proposal.photographer,
+      photographer_url: proposal.photographer_url,
+      image_source: proposal.image_source,
+      image_selection_method: proposal.image_selection_method,
+      image_review_model: proposal.image_review_model,
       mood_tags: proposalTags,
       activity_type: "member_proposal",
       recommendation_copy: proposal.short_description,
@@ -365,9 +550,10 @@ async function convertProposal(proposalId: string) {
       event_date: proposal.event_date,
       event_time: proposal.event_time,
       region: proposal.region,
-      place_name: proposal.specific_place,
-      address: null,
-      place_visibility: proposal.specific_place ? "confirmed_only" : "hidden",
+      place_name: proposalPlace?.name ?? proposal.specific_place,
+      address: proposalPlaceAddress,
+      place_payload: proposalPlace,
+      place_visibility: proposalPlace || proposal.specific_place ? "public" : "hidden",
       operation_code: null,
       operation_note: proposal.admin_note,
       remaining_seat_label_count: 0,
@@ -398,11 +584,12 @@ async function convertProposal(proposalId: string) {
       event_date: proposal.event_date,
       event_time: proposal.event_time,
       region: proposal.region,
-      place_name: proposal.specific_place,
-      address: null,
+      place_name: proposalPlace?.name ?? proposal.specific_place,
+      address: proposalPlaceAddress,
+      place_payload: proposalPlace,
       operation_code: null,
       operation_note: proposal.admin_note,
-      place_visibility: proposal.specific_place ? "confirmed_only" : "hidden",
+      place_visibility: proposalPlace || proposal.specific_place ? "public" : "hidden",
       visibility: "public",
       remaining_seat_label_count: 0,
     })
@@ -416,6 +603,7 @@ async function convertProposal(proposalId: string) {
     template.id,
     instance.id,
     proposerDisplayName,
+    proposerProfile,
   );
   const { data: existingWaitlist, error: existingWaitlistError } = await supabase
     .from("meeting_waitlist")
@@ -504,6 +692,15 @@ export async function PATCH(request: NextRequest) {
       .update(payload)
       .eq("id", id);
     if (error) throw error;
+
+    const { data: proposal, error: proposalError } = await supabase
+      .from("meeting_proposals")
+      .select(proposalSelect)
+      .eq("id", id)
+      .single();
+    if (proposalError) throw proposalError;
+
+    await syncPublishedProposal(proposal as unknown as ProposalRow);
 
     return NextResponse.json(await loadProposalData());
   } catch (error) {

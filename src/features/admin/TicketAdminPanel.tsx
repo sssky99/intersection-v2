@@ -12,6 +12,7 @@ import {
   Search,
   Trash2,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,12 +41,15 @@ import {
   type PlaceVisibility,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
-import type {
-  GatheringTicket,
-  TicketArrivalStatus,
-  TicketMemberIntro,
-  TicketStageCopy,
-  UserTicket,
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+  type GatheringTicket,
+  type TicketArrivalStatus,
+  type TicketMemberIntro,
+  type TicketProgressStep,
+  type TicketStageCopy,
+  type UserTicket,
 } from "@/types/ticket";
 import type { Gender } from "@/types/user";
 
@@ -286,13 +290,6 @@ function displayTimeValue(value: string) {
   return `${parts.period} ${parts.hour}:${parts.minute}`;
 }
 
-function splitEditableLines(value: string) {
-  const items = value.split(/\r?\n/);
-  return items.length === 0 || (items.length === 1 && items[0] === "")
-    ? [""]
-    : items;
-}
-
 function primaryInstance(template: AdminTicketTemplate | null) {
   if (!template?.instances.length) return null;
 
@@ -405,7 +402,7 @@ function ticketRequestBody(draft: TicketDraft) {
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
     detailActivities: lines(draft.detailActivities, 4),
-    detailFlow: lines(draft.detailFlow, 6),
+    detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice,
     stageCopy: stageCopyFromDraft(draft),
@@ -446,9 +443,17 @@ function updatedDate(value: string) {
   }).format(date);
 }
 
-function operatorSummary(profile: AdminProfile | null | undefined) {
+function proposerSummary(profile: AdminProfile | null | undefined) {
   if (!profile) return "제안자 미지정";
-  return `${meetingProposalDisplayName(profile)} 운영자`;
+  const roleLabel =
+    profile.is_test_participant === true ? "운영자" : "제안자";
+  return `${meetingProposalDisplayName(profile)} ${roleLabel}`;
+}
+
+function proposerOptionLabel(profile: AdminProfile) {
+  const roleLabel =
+    profile.is_test_participant === true ? "운영자" : "제안자";
+  return `${meetingProposalDisplayName(profile)} · ${membershipLabel(profile)} · ${roleLabel}`;
 }
 
 function ticketPreview(
@@ -470,6 +475,7 @@ function ticketPreview(
   return {
     id: instance?.id ?? template?.id ?? "preview",
     templateId: template?.id ?? "preview",
+    proposalId: template?.proposal_id ?? null,
     title: draft.title.trim() || "새 초대장",
     subtitle: shortDescription || "교집합 초대장",
     date: isSampleTicket ? "" : draft.eventDate,
@@ -481,11 +487,13 @@ function ticketPreview(
     activityType: draft.activityType.trim() || "admin_ticket",
     imageUrl: draft.imageUrl.trim() || undefined,
     remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
     reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
     detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
     detailActivities: lines(draft.detailActivities, 4),
-    detailFlow: lines(draft.detailFlow, 6),
+    detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
     stageCopy: stageCopyFromDraft(draft),
@@ -501,6 +509,8 @@ function ticketPreview(
       publicEmoji: isSampleTicket
         ? null
         : proposer?.public_emoji ?? template?.proposer_public_emoji ?? null,
+      gender: isSampleTicket ? null : profileGender(proposer),
+      birthYear: isSampleTicket ? null : proposer?.birth_year ?? null,
     },
     vibeScores: {
       temperature: Number.parseInt(draft.scoreTemperature, 10) || null,
@@ -685,8 +695,34 @@ export function TicketAdminPanel() {
     () => profiles.filter((profile) => profile.is_test_participant === true),
     [profiles],
   );
+  const proposerOptions = useMemo(() => {
+    const options = [...operatorProfiles];
+    const addProfile = (profile: AdminProfile | null | undefined) => {
+      if (!profile) return;
+      if (options.some((option) => option.user_id === profile.user_id)) return;
+      options.push(profile);
+    };
+
+    addProfile(
+      profiles.find((profile) => profile.user_id === selectedTicket?.proposal_proposer_id),
+    );
+    addProfile(
+      profiles.find((profile) => profile.user_id === selectedTicket?.proposer_user_id),
+    );
+    addProfile(
+      profiles.find((profile) => profile.user_id === draft?.proposerUserId),
+    );
+
+    return options;
+  }, [
+    draft?.proposerUserId,
+    operatorProfiles,
+    profiles,
+    selectedTicket?.proposal_proposer_id,
+    selectedTicket?.proposer_user_id,
+  ]);
   const proposer =
-    operatorProfiles.find((profile) => profile.user_id === draft?.proposerUserId) ??
+    profiles.find((profile) => profile.user_id === draft?.proposerUserId) ??
     profiles.find((profile) => profile.user_id === selectedTicket?.proposer_user_id) ??
     null;
 
@@ -1039,7 +1075,7 @@ export function TicketAdminPanel() {
                   ticket={selectedTicket}
                   draft={draft}
                   proposer={proposer}
-                  operators={operatorProfiles}
+                  proposerOptions={proposerOptions}
                   saving={saving}
                   onDraftChange={setDraft}
                   onDuplicate={() => void duplicateTicket()}
@@ -1113,14 +1149,16 @@ export function TicketAdminPanel() {
                 <TicketPreviewPanel
                   ticket={previewTicket}
                   sampleOnly={isSampleTicket}
-                  draft={draft}
-                  onDraftChange={setDraft}
                 />
               )}
 
               {progressPreviewOpen && progressPreviewTicket && (
                 <AdminProgressPreviewModal
                   userTicket={progressPreviewTicket}
+                  draft={draft}
+                  saving={saving}
+                  onDraftChange={setDraft}
+                  onSave={() => void saveTicket()}
                   onClose={() => setProgressPreviewOpen(false)}
                 />
               )}
@@ -1211,7 +1249,7 @@ function TicketEditorHeader({
   ticket,
   draft,
   proposer,
-  operators,
+  proposerOptions,
   saving,
   onDraftChange,
   onDuplicate,
@@ -1221,7 +1259,7 @@ function TicketEditorHeader({
   ticket: AdminTicketTemplate;
   draft: TicketDraft;
   proposer: AdminProfile | null;
-  operators: AdminProfile[];
+  proposerOptions: AdminProfile[];
   saving: boolean;
   onDraftChange: (draft: TicketDraft) => void;
   onDuplicate: () => void;
@@ -1239,7 +1277,7 @@ function TicketEditorHeader({
           </p>
           <h3 className="mt-1 text-xl font-bold">{draft.title || "새 초대장"}</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            {isSampleTicket ? "OO님의 제안" : operatorSummary(proposer)} ·{" "}
+            {isSampleTicket ? "OO님의 제안" : proposerSummary(proposer)} ·{" "}
             {ticketVisibilityLabels[draft.visibility]} ·{" "}
             수정 {updatedDate(ticket.updated_at)}
           </p>
@@ -1279,10 +1317,10 @@ function TicketEditorHeader({
             label="제안자"
             value={draft.proposerUserId}
             options={[
-              { value: "", label: "운영자 선택" },
-              ...operators.map((profile) => ({
+              { value: "", label: "제안자 선택" },
+              ...proposerOptions.map((profile) => ({
                 value: profile.user_id,
-                label: `${meetingProposalDisplayName(profile)} · ${membershipLabel(profile)}`,
+                label: proposerOptionLabel(profile),
               })),
             ]}
             onChange={(proposerUserId) =>
@@ -1424,6 +1462,7 @@ function BasicEditor({
                 value={draft.placeName}
                 onChange={(placeName) => onDraftChange({ ...draft, placeName })}
               />
+              {/* TODO: admin ticket editing should use the shared Naver place picker and place_payload. */}
               <FormField
                 label="상세 주소"
                 className="col-span-2"
@@ -1493,10 +1532,6 @@ function ContentEditor({
           onChange={(detailActivities) =>
             onDraftChange({ ...draft, detailActivities })
           }
-        />
-        <FlowStepEditor
-          value={draft.detailFlow}
-          onChange={(detailFlow) => onDraftChange({ ...draft, detailFlow })}
         />
         <NoticeEditor
           value={draft.detailNotice}
@@ -1612,81 +1647,6 @@ function NoticeEditor({
   );
 }
 
-function FlowStepEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const steps = splitEditableLines(value);
-
-  const updateStep = (index: number, nextValue: string) => {
-    const nextSteps = [...steps];
-    nextSteps[index] = nextValue;
-    onChange(nextSteps.join("\n"));
-  };
-
-  const addStep = () => {
-    onChange([...steps, ""].join("\n"));
-  };
-
-  const removeStep = (index: number) => {
-    const nextSteps = steps.filter((_, stepIndex) => stepIndex !== index);
-    onChange((nextSteps.length ? nextSteps : [""]).join("\n"));
-  };
-
-  return (
-    <div className="col-span-2">
-      <span className="text-xs font-semibold text-black/50">
-        이렇게 진행돼요
-      </span>
-      <div className="mt-1.5 space-y-2">
-        {steps.map((step, index) => (
-          <div
-            key={index}
-            className="grid grid-cols-[34px_minmax(0,1fr)_36px] items-center gap-2"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-xs font-black text-white">
-              {index + 1}
-            </span>
-            <input
-              type="text"
-              value={step}
-              placeholder={
-                index === 0
-                  ? "가볍게 인사해요"
-                  : index === 1
-                    ? "함께 시간을 보내요"
-                    : "다음 순서를 입력해요"
-              }
-              onChange={(event) => updateStep(index, event.target.value)}
-              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
-            />
-            <button
-              type="button"
-              onClick={() => removeStep(index)}
-              disabled={steps.length === 1 && !step.trim()}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/35 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-              aria-label={`${index + 1}번 순서 삭제`}
-            >
-              <Trash2 size={14} aria-hidden />
-            </button>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={addStep}
-        className="mt-2 inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
-      >
-        <Plus size={14} aria-hidden />
-        순서 추가
-      </button>
-    </div>
-  );
-}
-
 function ProgressPreviewLauncher({ onClick }: { onClick: () => void }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
@@ -1704,26 +1664,182 @@ function ProgressPreviewLauncher({ onClick }: { onClick: () => void }) {
 
 function AdminProgressPreviewModal({
   userTicket,
+  draft,
+  saving,
+  onDraftChange,
+  onSave,
   onClose,
 }: {
   userTicket: UserTicket;
+  draft: TicketDraft;
+  saving: boolean;
+  onDraftChange: (draft: TicketDraft) => void;
+  onSave: () => void;
   onClose: () => void;
 }) {
+  const [selectedProgressStep, setSelectedProgressStep] =
+    useState<TicketProgressStep>(userTicket.progressStep);
+  const activeCopyConfig = progressStepCopyEditorConfig[selectedProgressStep];
+
+  useEffect(() => {
+    setSelectedProgressStep(userTicket.progressStep);
+  }, [userTicket.id, userTicket.progressStep]);
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6"
       role="dialog"
       aria-modal="true"
-      aria-label="실제 진행상황 미리보기"
+      aria-label="실제 진행상황 문구 수정"
     >
-      <div className="relative max-h-[92dvh] w-full max-w-[430px] overflow-y-auto rounded-[32px] bg-white shadow-[0_30px_100px_rgba(0,0,0,0.28)]">
-        <StoredTicketDetailView
-          userTicket={userTicket}
-          onClose={onClose}
-          previewMode
-        />
+      <div className="grid max-h-[92dvh] w-full max-w-[1040px] overflow-y-auto rounded-[32px] bg-white shadow-[0_30px_100px_rgba(0,0,0,0.28)] lg:grid-cols-[430px_minmax(0,1fr)] lg:overflow-hidden">
+        <div className="relative min-h-[560px] bg-white lg:max-h-[92dvh] lg:overflow-y-auto">
+          <StoredTicketDetailView
+            userTicket={userTicket}
+            onClose={onClose}
+            previewMode
+            selectedProgressStep={selectedProgressStep}
+            onProgressStepChange={setSelectedProgressStep}
+          />
+        </div>
+
+        <aside className="min-h-0 border-t border-black/10 bg-[#fbfbfa] p-5 lg:max-h-[92dvh] lg:overflow-y-auto lg:border-l lg:border-t-0">
+          <div className="sticky top-0 z-10 -mx-5 -mt-5 border-b border-black/10 bg-[#fbfbfa]/95 px-5 py-4 backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-accent">
+                  progress copy
+                </p>
+                <h3 className="mt-1 text-lg font-black">
+                  {activeCopyConfig.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/45 transition hover:text-black"
+                aria-label="진행상황 문구 수정 닫기"
+              >
+                <X size={16} aria-hidden />
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onSave}
+              className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-black text-white transition hover:bg-black/85 disabled:opacity-40"
+            >
+              <Check size={15} aria-hidden />
+              {saving ? "저장 중" : "저장"}
+            </button>
+          </div>
+
+          <div className="mt-5">
+            <ProgressStepCopyEditor
+              selectedProgressStep={selectedProgressStep}
+              draft={draft}
+              onDraftChange={onDraftChange}
+            />
+          </div>
+        </aside>
       </div>
     </div>
+  );
+}
+
+type ProgressStepCopyDraftKey =
+  | "stageAppliedText"
+  | "stageApprovedText"
+  | "stagePreStartText"
+  | "stageInProgressText"
+  | "stageFeedbackOpenText"
+  | "feedbackTitle"
+  | "feedbackBody";
+
+const progressStepCopyEditorConfig: Record<
+  TicketProgressStep,
+  {
+    title: string;
+    eyebrow: string;
+    description: string;
+    fields: Array<{
+      key: ProgressStepCopyDraftKey;
+      label: string;
+      rows: number;
+    }>;
+  }
+> = {
+  applied: {
+    title: "신청 완료 문구 수정",
+    eyebrow: "applied",
+    description: "왼쪽 신청 완료 탭의 초록 안내 박스에 표시되는 문구입니다.",
+    fields: [{ key: "stageAppliedText", label: "신청 완료 안내", rows: 3 }],
+  },
+  approved: {
+    title: "참여 확정 문구 수정",
+    eyebrow: "approved",
+    description: "왼쪽 참여 확정 탭의 초록 안내 박스에 표시되는 문구입니다.",
+    fields: [{ key: "stageApprovedText", label: "참여 확정 안내", rows: 3 }],
+  },
+  pre_start: {
+    title: "시작 전 안내 문구 수정",
+    eyebrow: "pre start",
+    description: "왼쪽 시작 전 안내 탭의 초록 안내 박스에 표시되는 문구입니다.",
+    fields: [{ key: "stagePreStartText", label: "시작 전 안내", rows: 3 }],
+  },
+  in_progress: {
+    title: "진행 중 문구 수정",
+    eyebrow: "in progress",
+    description: "왼쪽 진행 중 탭의 초록 안내 박스에 표시되는 문구입니다.",
+    fields: [{ key: "stageInProgressText", label: "진행 중 안내", rows: 3 }],
+  },
+  feedback: {
+    title: "피드백 작성 문구 수정",
+    eyebrow: "feedback",
+    description:
+      "왼쪽 피드백 작성 탭의 초록 안내와 피드백 카드에 표시되는 문구입니다.",
+    fields: [
+      { key: "stageFeedbackOpenText", label: "피드백 오픈 안내", rows: 3 },
+      { key: "feedbackTitle", label: "피드백 카드 제목", rows: 1 },
+      { key: "feedbackBody", label: "피드백 카드 본문", rows: 4 },
+    ],
+  },
+};
+
+function ProgressStepCopyEditor({
+  selectedProgressStep,
+  draft,
+  onDraftChange,
+}: {
+  selectedProgressStep: TicketProgressStep;
+  draft: TicketDraft;
+  onDraftChange: (draft: TicketDraft) => void;
+}) {
+  const config = progressStepCopyEditorConfig[selectedProgressStep];
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+        {config.eyebrow}
+      </p>
+      <h3 className="mt-1 text-sm font-bold">{config.title}</h3>
+      <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
+        {config.description}
+      </p>
+      <div className="mt-4 space-y-3">
+        {config.fields.map((field) => (
+          <TextAreaField
+            key={field.key}
+            label={field.label}
+            rows={field.rows}
+            value={draft[field.key]}
+            onChange={(value) =>
+              onDraftChange({ ...draft, [field.key]: value })
+            }
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1892,13 +2008,9 @@ function ParticipantPanel({
 function TicketPreviewPanel({
   ticket,
   sampleOnly,
-  draft,
-  onDraftChange,
 }: {
   ticket: GatheringTicket;
   sampleOnly: boolean;
-  draft: TicketDraft;
-  onDraftChange: (draft: TicketDraft) => void;
 }) {
   return (
     <aside className="sticky top-5 self-start space-y-4">
@@ -1934,10 +2046,6 @@ function TicketPreviewPanel({
             />
           </div>
         </section>
-      )}
-
-      {!sampleOnly && (
-        <StageCopyEditor draft={draft} onDraftChange={onDraftChange} />
       )}
     </aside>
   );

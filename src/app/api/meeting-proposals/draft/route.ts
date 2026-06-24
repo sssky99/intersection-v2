@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import {
-  hasActiveProposalMembership,
-  type MeetingProposalProfileRow,
-} from "@/lib/meetingProposalAccess";
+import { type MeetingProposalProfileRow } from "@/lib/meetingProposalAccess";
 import { generateMeetingProposalDraft } from "@/lib/meetingProposalAi";
+import { selectMeetingProposalCoverImage } from "@/lib/meetingProposalCoverImage";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
+import { normalizeMeetingPlace } from "@/lib/placePayload";
+import { meetingRegionFromPlace } from "@/lib/seoulRegion";
 import { createClient } from "@/lib/supabase/server";
 import type { MeetingProposalInput } from "@/types/meetingProposal";
+import { ensureMeetingProposalEligibility } from "../eligibility";
 
 type DraftRequest = Partial<MeetingProposalInput>;
 
@@ -30,14 +31,17 @@ function validTime(value: string) {
 }
 
 function proposalInput(body: DraftRequest): MeetingProposalInput | null {
+  const place = normalizeMeetingPlace(body.place);
+  const region = meetingRegionFromPlace(place) ?? text(body.region);
   const input: MeetingProposalInput = {
     imageUrl: text(body.imageUrl),
     title: text(body.title),
     activityDescription: text(body.activityDescription),
     eventDate: text(body.eventDate),
     eventTime: text(body.eventTime),
-    region: text(body.region),
-    specificPlace: text(body.specificPlace) || null,
+    region,
+    specificPlace: place?.name ?? (text(body.specificPlace) || null),
+    place,
     userHashtags: [],
   };
   input.userHashtags = tags(body.userHashtags, [
@@ -46,11 +50,11 @@ function proposalInput(body: DraftRequest): MeetingProposalInput | null {
   ]);
 
   if (
-    !input.title ||
     !input.activityDescription ||
     !validDate(input.eventDate) ||
     !validTime(input.eventTime) ||
-    !input.region
+    !input.region ||
+    !input.place
   ) {
     return null;
   }
@@ -71,7 +75,7 @@ export async function POST(request: Request) {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select(
-      "user_id,name,nickname,public_intro,public_emoji,membership_status,membership_end_date",
+      "user_id,name,nickname,public_intro,public_emoji,membership_status,membership_end_date,is_test_participant",
     )
     .eq("user_id", user.id)
     .maybeSingle<MeetingProposalProfileRow>();
@@ -83,29 +87,40 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!hasActiveProposalMembership(profile)) {
-    return NextResponse.json(
-      {
-        error: "교집합 제안은 멤버십 사용자만 이용할 수 있어요.",
-        code: "membership_required",
-      },
-      { status: 402 },
-    );
-  }
+  const eligibilityResponse = await ensureMeetingProposalEligibility(
+    supabase,
+    user.id,
+    profile,
+  );
+  if (eligibilityResponse) return eligibilityResponse;
 
   const body = (await request.json().catch(() => null)) as DraftRequest | null;
   const input = proposalInput(body ?? {});
 
   if (!input) {
     return NextResponse.json(
-      { error: "제목, 활동, 날짜, 시간, 지역을 모두 입력해주세요." },
+      { error: "활동, 날짜, 시간, 장소를 모두 입력해주세요." },
       { status: 400 },
     );
   }
 
   try {
     const result = await generateMeetingProposalDraft(input);
-    return NextResponse.json(result);
+    const imageResult = await selectMeetingProposalCoverImage({
+      input,
+      title: result.draft.title,
+    });
+    const notices = [result.notice, imageResult.notice].filter(
+      (notice): notice is string => Boolean(notice),
+    );
+
+    return NextResponse.json({
+      ...result,
+      coverImage: imageResult.coverImage,
+      imageUrl: imageResult.coverImage?.imageUrl ?? null,
+      notice: notices.length > 0 ? notices.join(" ") : null,
+      region: input.region,
+    });
   } catch (error) {
     console.error("[meeting proposal draft]", error);
     return NextResponse.json(

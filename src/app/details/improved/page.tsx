@@ -3,9 +3,9 @@ import {
   getAuthenticatedProfile,
   nextOnboardingPath,
 } from "@/lib/onboarding";
-import { ImprovedDetailsClient } from "./improved/ImprovedDetailsClient";
+import { ImprovedDetailsClient } from "./ImprovedDetailsClient";
 
-export default async function DetailsPage() {
+export default async function ImprovedDetailsPage() {
   const { user, profile } = await getAuthenticatedProfile();
   const ticketQuestionTemplates = await loadTicketQuestionTemplates();
   const alreadySeen = Boolean(profile?.details_seen_at);

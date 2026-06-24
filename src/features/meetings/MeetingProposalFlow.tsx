@@ -7,29 +7,45 @@ import {
   Clock3,
   Image as ImageIcon,
   Loader2,
+  MapPin,
   PenLine,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
-import { VibeAxisBar, VibeGraph } from "@/components/vibe/VibeGraph";
+import { NaverMapPreview } from "@/components/NaverMapPreview";
+import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import {
   vibeAxes,
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
+import { TicketProposerPanel } from "@/features/meetings/TicketDetailContent";
+import { MeetingAtmospherePanel } from "@/features/meetings/MeetingAtmospherePanel";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
+import {
+  normalizeMeetingPlace,
+  ticketPlaceFromMeetingPlace,
+} from "@/lib/placePayload";
+import { meetingRegionFromPlace } from "@/lib/seoulRegion";
 import type {
+  MeetingProposalCoverImage,
   MeetingProposalDraft,
   MeetingProposalInput,
   MeetingProposalPublicProfile,
 } from "@/types/meetingProposal";
-import type { GatheringTicket } from "@/types/ticket";
+import type { NaverPlace } from "@/types/place";
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+  type GatheringTicket,
+} from "@/types/ticket";
 
-type Stage = "form" | "preview" | "submitted";
+type Stage = "form" | "preview";
 type EditTarget =
   | "title"
   | "image"
@@ -38,8 +54,7 @@ type EditTarget =
   | "hashtags"
   | "summary"
   | "activities"
-  | "vibe"
-  | "flow";
+  | "vibe";
 
 type ProposalFormState = MeetingProposalInput & {
   proposerRoleAgreed: boolean;
@@ -52,9 +67,11 @@ const emptyForm: ProposalFormState = {
   title: "",
   activityDescription: "",
   eventDate: "",
-  eventTime: "",
+  eventTime: "18:00",
   region: "",
   specificPlace: null,
+  place: null,
+  coverImage: null,
   userHashtags: [],
   proposerRoleAgreed: false,
 };
@@ -74,6 +91,62 @@ const initialDraft: MeetingProposalDraft = {
   },
   flow: [],
 };
+
+function formFromCopiedTicket(ticket: GatheringTicket): ProposalFormState {
+  const place = normalizeMeetingPlace(ticket.place);
+  const activities = ticket.detailActivities?.filter(Boolean) ?? [];
+
+  return {
+    imageUrl: ticket.imageUrl ?? "",
+    title: ticket.title,
+    activityDescription:
+      activities.join("\n") ||
+      ticket.detailSummary?.trim() ||
+      ticket.subtitle.trim(),
+    eventDate: ticket.date,
+    eventTime: cleanTime(ticket.time) || "18:00",
+    region: ticket.area,
+    specificPlace: place?.name ?? ticket.place?.name ?? null,
+    place,
+    coverImage: ticket.imageUrl
+      ? {
+          imageUrl: ticket.imageUrl,
+          imageSource: "user_upload",
+          imageSelectionMethod: "manual",
+        }
+      : null,
+    userHashtags: ticket.moodTags,
+    proposerRoleAgreed: false,
+  };
+}
+
+function draftFromCopiedTicket(ticket: GatheringTicket): MeetingProposalDraft {
+  const shortDescription =
+    ticket.detailSummary?.trim() ||
+    ticket.subtitle.trim() ||
+    ticket.peopleHint.trim();
+  const activities = ticket.detailActivities?.filter(Boolean) ?? [];
+
+  return {
+    title: ticket.title,
+    shortDescription,
+    hashtags:
+      ticket.moodTags.length > 0 ? ticket.moodTags : ["취향대화"],
+    activities:
+      activities.length > 0
+        ? activities
+        : [shortDescription || "이 교집합의 경험을 함께 나눠요."],
+    vibe: {
+      temperature: ticket.vibeScores?.temperature ?? 3,
+      texture: ticket.vibeScores?.texture ?? 3,
+      tone: ticket.vibeScores?.tone ?? 3,
+      rhythm: ticket.vibeScores?.rhythm ?? 3,
+      alcohol: ticket.vibeScores?.alcohol ?? 2,
+      romance: ticket.vibeScores?.romance ?? 2,
+    },
+    flow: [],
+  };
+}
 
 const timePeriods = ["오전", "오후"] as const;
 const timeHours = Array.from({ length: 12 }, (_, index) =>
@@ -126,7 +199,7 @@ function ticketFromProposal({
     draft.hashtags.length > 0 ? draft.hashtags : form.userHashtags ?? [];
   const summary =
     draft.shortDescription.trim() ||
-    "운영팀 검수 후 실제 초대장 문구로 다듬어질 수 있어요.";
+    "제출 즉시 공개되며, 검토 과정에서 문구가 다듬어질 수 있어요.";
 
   return {
     id: "proposal-preview",
@@ -140,17 +213,21 @@ function ticketFromProposal({
     activityType: "member_proposal",
     imageUrl: imageUrl || undefined,
     remainingSeatCount: 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: summary,
     reason: summary,
     detailSummary: summary,
     detailActivities: draft.activities,
-    detailFlow: draft.flow,
+    place: ticketPlaceFromMeetingPlace(form.place),
     proposerLabel: proposerLabel(profile),
     proposerProfile: {
       userId: profile.userId,
       displayName: profile.displayName,
       publicIntro: profile.publicIntro,
       publicEmoji: profile.publicEmoji,
+      gender: profile.gender,
+      birthYear: profile.birthYear,
     },
     vibeScores: draft.vibe,
   };
@@ -158,16 +235,25 @@ function ticketFromProposal({
 
 export function MeetingProposalFlow({
   profile,
+  copiedTicket,
   onBack,
   onDone,
 }: {
   profile: ProposalMemberProfile;
+  copiedTicket?: GatheringTicket | null;
   onBack: () => void;
-  onDone: () => void;
+  onDone: () => void | Promise<void>;
 }) {
-  const [stage, setStage] = useState<Stage>("form");
-  const [form, setForm] = useState<ProposalFormState>(emptyForm);
-  const [draft, setDraft] = useState<MeetingProposalDraft>(initialDraft);
+  const flowRef = useRef<HTMLElement | null>(null);
+  const [stage, setStage] = useState<Stage>(
+    copiedTicket ? "preview" : "form",
+  );
+  const [form, setForm] = useState<ProposalFormState>(() =>
+    copiedTicket ? formFromCopiedTicket(copiedTicket) : { ...emptyForm },
+  );
+  const [draft, setDraft] = useState<MeetingProposalDraft>(() =>
+    copiedTicket ? draftFromCopiedTicket(copiedTicket) : initialDraft,
+  );
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -182,7 +268,7 @@ export function MeetingProposalFlow({
     };
   }, [localImageUrl]);
 
-  const imageUrl = localImageUrl ?? form.imageUrl ?? "";
+  const imageUrl = localImageUrl ?? form.coverImage?.imageUrl ?? form.imageUrl ?? "";
   const previewTicket = useMemo(
     () => ticketFromProposal({ form, draft, profile, imageUrl }),
     [draft, form, imageUrl, profile],
@@ -190,13 +276,35 @@ export function MeetingProposalFlow({
 
   const canGenerate =
     Boolean(
-      form.title.trim() &&
-        form.activityDescription.trim() &&
+      form.activityDescription.trim() &&
         form.eventDate &&
         form.eventTime &&
-        form.region.trim() &&
-        form.proposerRoleAgreed,
+        form.place,
     ) && !uploading;
+
+  useEffect(() => {
+    if (!copiedTicket) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      let parent = flowRef.current?.parentElement ?? null;
+
+      while (parent) {
+        const overflowY = window.getComputedStyle(parent).overflowY;
+        if (
+          (overflowY === "auto" || overflowY === "scroll") &&
+          parent.scrollHeight > parent.clientHeight
+        ) {
+          parent.scrollTo({ top: 0, behavior: "auto" });
+          break;
+        }
+        parent = parent.parentElement;
+      }
+
+      window.scrollTo({ top: 0, behavior: "auto" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [copiedTicket]);
 
   const updateForm = <TKey extends keyof ProposalFormState>(
     key: TKey,
@@ -233,6 +341,11 @@ export function MeetingProposalFlow({
     }
 
     updateForm("imageUrl", data.imageUrl);
+    updateForm("coverImage", {
+      imageUrl: data.imageUrl,
+      imageSource: "user_upload",
+      imageSelectionMethod: "manual",
+    });
     setLocalImageUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -256,6 +369,8 @@ export function MeetingProposalFlow({
       ? ((await response.json().catch(() => null)) as
           | {
               draft?: MeetingProposalDraft;
+              coverImage?: MeetingProposalCoverImage | null;
+              region?: string;
               error?: string;
               notice?: string | null;
             }
@@ -270,8 +385,13 @@ export function MeetingProposalFlow({
 
     setDraft({
       ...data.draft,
-      title: data.draft.title || form.title,
+      flow: [],
     });
+    if (data.coverImage && form.coverImage?.imageSource !== "user_upload") {
+      updateForm("coverImage", data.coverImage);
+      updateForm("imageUrl", data.coverImage.imageUrl);
+    }
+    if (data.region) updateForm("region", data.region);
     setNotice(data.notice ?? null);
     setStage("preview");
     setGenerating(false);
@@ -290,6 +410,7 @@ export function MeetingProposalFlow({
         ...form,
         ...draft,
         title: draft.title || form.title,
+        flow: [],
         proposerRoleAgreed: form.proposerRoleAgreed,
       }),
     }).catch(() => null);
@@ -303,25 +424,24 @@ export function MeetingProposalFlow({
       return;
     }
 
-    setStage("submitted");
+    await onDone();
     setSubmitting(false);
   };
 
-  if (stage === "submitted") {
-    return <ProposalSubmitted profile={profile} onDone={onDone} />;
-  }
-
   return (
     <motion.section
+      ref={flowRef}
       key={stage}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="pb-8"
+      className="min-w-0 max-w-full overflow-x-hidden pb-8"
     >
       <button
         type="button"
-        onClick={stage === "form" ? onBack : () => setStage("form")}
+        onClick={
+          stage === "form" || copiedTicket ? onBack : () => setStage("form")
+        }
         className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:text-black"
         aria-label="뒤로 가기"
       >
@@ -331,24 +451,25 @@ export function MeetingProposalFlow({
       {stage === "form" ? (
         <ProposalForm
           form={form}
-          previewTicket={previewTicket}
-          uploading={uploading}
           generating={generating}
           canGenerate={canGenerate}
           error={error}
           onChange={updateForm}
-          onUpload={uploadImage}
           onGenerate={() => void generateDraft()}
         />
       ) : (
         <ProposalPreview
           profile={profile}
+          proposerRoleAgreed={form.proposerRoleAgreed}
           draft={draft}
           ticket={previewTicket}
           notice={notice}
           error={error}
           submitting={submitting}
           onEdit={setEditing}
+          onProposerRoleAgreedChange={(agreed) =>
+            updateForm("proposerRoleAgreed", agreed)
+          }
           onSubmit={() => void submitProposal()}
         />
       )}
@@ -373,18 +494,13 @@ export function MeetingProposalFlow({
 
 function ProposalForm({
   form,
-  previewTicket,
-  uploading,
   generating,
   canGenerate,
   error,
   onChange,
-  onUpload,
   onGenerate,
 }: {
   form: ProposalFormState;
-  previewTicket: GatheringTicket;
-  uploading: boolean;
   generating: boolean;
   canGenerate: boolean;
   error: string | null;
@@ -392,9 +508,15 @@ function ProposalForm({
     key: TKey,
     value: ProposalFormState[TKey],
   ) => void;
-  onUpload: (file: File) => Promise<void>;
   onGenerate: () => void;
 }) {
+  const [activityCompleted, setActivityCompleted] = useState(
+    () => Boolean(form.activityDescription.trim()),
+  );
+  const showDateTime = activityCompleted;
+  const showPlace = showDateTime && Boolean(form.eventDate && form.eventTime);
+  const showFinalStep = showPlace && Boolean(form.place);
+
   return (
     <>
       <header className="mt-5 pr-8">
@@ -409,139 +531,112 @@ function ProposalForm({
         </p>
       </header>
 
-      <div className="mt-7 grid gap-6">
-        <div className="space-y-5">
-          <ProposalTextField
-            label="제목을 작성해주세요."
-            value={form.title}
-            onChange={(value) => onChange("title", value)}
-            placeholder="전시보고, 카페에서 감상 나누기"
-            required
-          />
-
+      <div className="mt-7 grid min-w-0 max-w-full gap-6">
+        <div className="min-w-0 max-w-full space-y-5">
           <ProposalTextarea
             label="이 자리에서는 무엇을 하나요?"
             value={form.activityDescription}
             onChange={(value) => onChange("activityDescription", value)}
             placeholder="예: 전시를 보고 근처 카페에서 이야기해요."
+            required
+            footer={
+              <button
+                type="button"
+                disabled={!form.activityDescription.trim()}
+                onClick={() => setActivityCompleted(true)}
+                className="mt-3 h-11 w-full rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/[0.15] disabled:text-black/30"
+              >
+                {activityCompleted ? "완료됨" : "완료"}
+              </button>
+            }
           />
 
-          <section className="rounded-[24px] border border-black/10 bg-white px-5 py-4">
-            <span className="text-sm font-black text-black">언제 열고 싶나요?</span>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="sr-only">날짜</span>
-                <input
-                  type="date"
-                  value={form.eventDate}
-                  onChange={(event) => onChange("eventDate", event.target.value)}
-                  className="h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition focus:border-accent"
-                />
-              </label>
-              <ProposalTimeField
-                compact
-                label="시간 선택"
-                value={form.eventTime}
-                onChange={(value) => onChange("eventTime", value)}
-              />
-            </div>
-          </section>
-
-          <ProposalTextField
-            label="어디에서 열고 싶나요?"
-            value={form.region}
-            onChange={(value) => {
-              onChange("region", value);
-              onChange("specificPlace", null);
-            }}
-            placeholder="성수, 을지로, 강남, 홍대, 상관없어요"
-          />
-
-          <section className="rounded-[24px] border border-black/10 bg-white px-5 py-5">
-            <h2 className="text-sm font-black text-black">
-              이 자리를 표현할 사진이 있다면 올려주세요.
-              <span className="ml-2 text-[10px] font-bold text-black/30">
-                선택
-              </span>
-            </h2>
-            <label className="mt-4 flex min-h-[118px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-black/18 bg-black/[0.025] px-4 py-5 text-center transition hover:border-accent/70 hover:bg-accent/[0.06]">
-              <ImageIcon size={24} className="text-black/35" aria-hidden />
-              <span className="mt-2 text-xs font-bold text-black/55">
-                {uploading ? "업로드 중..." : "사진 선택하기"}
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                disabled={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void onUpload(file);
-                  event.target.value = "";
-                }}
-                className="sr-only"
-              />
-            </label>
-          </section>
-
-          <label className="block rounded-[24px] border border-black/10 bg-white px-5 py-5">
-            <span className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                checked={form.proposerRoleAgreed}
-                onChange={(event) =>
-                  onChange("proposerRoleAgreed", event.target.checked)
-                }
-                className="mt-1 h-5 w-5 rounded border-black/20 accent-black"
-              />
-              <span>
-                <span className="block text-sm font-black leading-6 text-black">
-                  이 교집합이 실제로 열리면, 제안자로서 자리를 가볍게
-                  열어주는 역할을 할게요.
+          <AnimatePresence initial={false}>
+            {showDateTime && (
+              <motion.section
+                key="proposal-datetime"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="rounded-[24px] border border-black/10 bg-white px-5 py-4"
+              >
+                <span className="flex flex-wrap items-center gap-2 text-sm font-black text-black">
+                  언제 열고 싶나요?
+                  <RequiredBadge />
                 </span>
-                <span className="mt-2 block text-xs font-semibold leading-5 text-black/45">
-                  어렵게 진행하는 역할은 아니에요. 처음에 제안한 이유를
-                  한마디로 소개하고, 대화가 자연스럽게 시작될 수 있도록
-                  도와주는 정도예요.
-                </span>
-              </span>
-            </span>
-          </label>
-
-          {error && (
-            <p className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="button"
-            disabled={!canGenerate || generating}
-            onClick={onGenerate}
-            className="flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/[0.18] disabled:text-black/35"
-          >
-            {generating ? (
-              <Loader2 size={17} className="animate-spin" aria-hidden />
-            ) : (
-              <Sparkles size={17} aria-hidden />
+                <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block min-w-0">
+                    <span className="sr-only">날짜</span>
+                    <input
+                      type="date"
+                      value={form.eventDate}
+                      onChange={(event) =>
+                        onChange("eventDate", event.target.value)
+                      }
+                      className="h-12 min-w-0 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition focus:border-accent"
+                    />
+                  </label>
+                  <ProposalTimeField
+                    compact
+                    label="시간 선택"
+                    value={form.eventTime}
+                    onChange={(value) => onChange("eventTime", value)}
+                  />
+                </div>
+              </motion.section>
             )}
-            {generating ? "AI 초안 만드는 중..." : "작성 완료하고 AI 초안 보기"}
-          </button>
-        </div>
 
-        <aside>
-          <p className="mb-3 text-xs font-black text-black/48">
-            티켓 외부 화면 실시간 미리보기
-          </p>
-          <IntersectionTicketCard
-            title={previewTicket.title}
-            imageUrl={previewTicket.imageUrl}
-            date={previewTicket.date}
-            time={previewTicket.time}
-            location={previewTicket.area}
-            tags={previewTicket.moodTags}
-            proposerLabel={previewTicket.proposerLabel}
-          />
-        </aside>
+            {showPlace && (
+              <motion.div
+                key="proposal-place"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+              >
+                <PlaceSearchPicker
+                  value={form.place}
+                  onChange={(place) => {
+                    onChange("place", place);
+                    onChange("specificPlace", place?.name ?? null);
+                    onChange("region", meetingRegionFromPlace(place) ?? "");
+                  }}
+                />
+              </motion.div>
+            )}
+
+            {showFinalStep && (
+              <motion.div
+                key="proposal-final-inputs"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="space-y-5"
+              >
+                {error && (
+                  <p className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                    {error}
+                  </p>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!canGenerate || generating}
+                  onClick={onGenerate}
+                  className="flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/[0.18] disabled:text-black/35"
+                >
+                  {generating ? (
+                    <Loader2 size={17} className="animate-spin" aria-hidden />
+                  ) : (
+                    <Sparkles size={17} aria-hidden />
+                  )}
+                  {generating
+                    ? "AI 초안과 대표 이미지 고르는 중..."
+                    : "작성 완료하고 AI 초안 보기"}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </>
   );
@@ -549,21 +644,25 @@ function ProposalForm({
 
 function ProposalPreview({
   profile,
+  proposerRoleAgreed,
   draft,
   ticket,
   notice,
   error,
   submitting,
   onEdit,
+  onProposerRoleAgreedChange,
   onSubmit,
 }: {
   profile: ProposalMemberProfile;
+  proposerRoleAgreed: boolean;
   draft: MeetingProposalDraft;
   ticket: GatheringTicket;
   notice: string | null;
   error: string | null;
   submitting: boolean;
   onEdit: (target: EditTarget) => void;
+  onProposerRoleAgreedChange: (agreed: boolean) => void;
   onSubmit: () => void;
 }) {
   return (
@@ -601,10 +700,10 @@ function ProposalPreview({
             proposerLabel={ticket.proposerLabel}
           />
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold sm:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold">
           <EditChip label="사진" onClick={() => onEdit("image")} />
           <EditChip label="제목" onClick={() => onEdit("title")} />
-          <EditChip label="지역" onClick={() => onEdit("location")} />
+          <EditChip label="장소" onClick={() => onEdit("location")} />
           <EditChip label="날짜/시간" onClick={() => onEdit("datetime")} />
           <EditChip label="해시태그" onClick={() => onEdit("hashtags")} />
         </div>
@@ -635,57 +734,26 @@ function ProposalPreview({
             <BulletList items={draft.activities} />
           </EditableDetailSection>
 
-          <EditableDetailSection title="자리 분위기" onEdit={() => onEdit("vibe")}>
-            <VibeGraph
-              title="자리 분위기"
-              scores={draft.vibe}
-              visibleAxes={vibeAxes}
-              showAxisHeader={false}
-              className="rounded-none border-0 bg-transparent px-0 py-0 shadow-none"
-            />
-          </EditableDetailSection>
+          {ticket.place && (
+            <EditableDetailSection title="장소" onEdit={() => onEdit("location")}>
+              <ProposalPlacePreview place={ticket.place} />
+            </EditableDetailSection>
+          )}
 
-          <EditableDetailSection
-            title="이렇게 진행돼요"
-            onEdit={() => onEdit("flow")}
-          >
-            <ol className="space-y-2.5">
-              {draft.flow.map((step, index) => (
-                <li key={`${step}-${index}`} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black text-[11px] font-black text-white">
-                    {index + 1}
-                  </span>
-                  <span className="pt-1 text-sm font-semibold leading-6 text-black/62">
-                    {step}
-                  </span>
-                </li>
-              ))}
-            </ol>
+          <EditableDetailSection title="자리 분위기">
+            <MeetingAtmospherePanel profile={ticket.proposerProfile} />
           </EditableDetailSection>
 
           <section className="border-t border-black/8 py-5">
             <h2 className="text-[15px] font-black text-black">
               이 자리를 제안한 멤버
             </h2>
-            <div className="mt-4 rounded-3xl border border-black/8 bg-black/[0.025] px-4 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
-                  {profile.publicEmoji?.trim() || "💎"}
-                </div>
-                <div>
-                  <p className="text-sm font-black text-black">
-                    {profile.displayName}
-                  </p>
-                  <p className="mt-1 text-[11px] font-bold text-accent">
-                    {proposerLabel(profile)}
-                  </p>
-                </div>
-              </div>
-              {profile.publicIntro && (
-                <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
-                  {profile.publicIntro}
-                </p>
-              )}
+            <div className="mt-4">
+              <TicketProposerPanel
+                profile={ticket.proposerProfile!}
+                proposerLabel={ticket.proposerLabel}
+                resetKey={ticket.id}
+              />
             </div>
           </section>
         </div>
@@ -696,10 +764,30 @@ function ProposalPreview({
           제출 후에는 직접 수정할 수 없어요.
         </p>
         <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
-          운영팀 검수 후 실제 초대장으로 열릴 수 있어요. 제안이 선정되면 이
-          자리는 {profile.displayName}님의 제안으로 공개되고,{" "}
-          {profile.displayName}님은 자동 참여 확정돼요.
+          제출과 동시에 다른 멤버에게 공개되고 내 티켓에 신청 완료 상태로 등록돼요. 이 자리는{" "}
+          {profile.displayName}님의 제안으로 준비되고,{" "}
+          {profile.displayName}님은 첫 번째 멤버가 돼요.
         </p>
+        <label className="mt-5 flex cursor-pointer items-start gap-3 border-t border-black/8 pt-5">
+          <input
+            type="checkbox"
+            checked={proposerRoleAgreed}
+            onChange={(event) =>
+              onProposerRoleAgreedChange(event.target.checked)
+            }
+            className="mt-1 h-5 w-5 shrink-0 rounded border-black/20 accent-black"
+          />
+          <span>
+            <span className="block text-sm font-black leading-6 text-black">
+              이 교집합이 실제로 열리면, 제안자로서 자리를 가볍게 열어주는
+              역할을 할게요.
+            </span>
+            <span className="mt-2 block text-xs font-semibold leading-5 text-black/45">
+              어렵게 진행하는 역할은 아니에요. 처음에 제안한 이유를 한마디로
+              소개하고, 대화가 자연스럽게 시작될 수 있도록 도와주는 정도예요.
+            </span>
+          </span>
+        </label>
       </div>
 
       {error && (
@@ -708,9 +796,15 @@ function ProposalPreview({
         </p>
       )}
 
+      {!ticket.imageUrl && (
+        <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-700">
+          자동 대표 이미지를 찾지 못했어요. 검은 기본 화면으로 공개되며, 사진 편집에서 직접 올려 바꿀 수 있어요.
+        </p>
+      )}
+
       <button
         type="button"
-        disabled={submitting}
+        disabled={submitting || !proposerRoleAgreed}
         onClick={onSubmit}
         className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-bold text-white disabled:bg-black/[0.18] disabled:text-black/35"
       >
@@ -719,7 +813,7 @@ function ProposalPreview({
         ) : (
           <Check size={17} aria-hidden />
         )}
-        {submitting ? "제출 중..." : "운영팀에 최종 제출하기"}
+        {submitting ? "공개 중..." : "공개하고 검토 요청하기"}
       </button>
     </>
   );
@@ -759,7 +853,6 @@ function EditSheet({
     summary: "한 줄 설명 수정",
     activities: "이 자리에서는 이런 걸 해요 수정",
     vibe: "자리 분위기 수정",
-    flow: "이렇게 진행돼요 수정",
   };
 
   const updateDraft = (patch: Partial<MeetingProposalDraft>) => {
@@ -825,18 +918,18 @@ function EditSheet({
           )}
 
           {target === "location" && (
-            <ProposalTextField
-              label="지역"
-              value={form.region}
-              onChange={(value) => {
-                onFormChange("region", value);
-                onFormChange("specificPlace", null);
+            <PlaceSearchPicker
+              value={form.place}
+              onChange={(place) => {
+                onFormChange("place", place);
+                onFormChange("specificPlace", place?.name ?? null);
+                onFormChange("region", meetingRegionFromPlace(place) ?? "");
               }}
             />
           )}
 
           {target === "datetime" && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <ProposalTextField
                 label="날짜"
                 type="date"
@@ -875,13 +968,6 @@ function EditSheet({
             <ArrayEditor
               values={draft.activities}
               onChange={(values) => updateDraft({ activities: values.slice(0, 4) })}
-            />
-          )}
-
-          {target === "flow" && (
-            <ArrayEditor
-              values={draft.flow}
-              onChange={(values) => updateDraft({ flow: values.slice(0, 5) })}
             />
           )}
 
@@ -976,40 +1062,210 @@ function ArrayEditor({
   );
 }
 
-function ProposalSubmitted({
-  profile,
-  onDone,
+function PlaceSearchPicker({
+  value,
+  onChange,
 }: {
-  profile: ProposalMemberProfile;
-  onDone: () => void;
+  value?: NaverPlace | null;
+  onChange: (place: NaverPlace | null) => void;
 }) {
+  const [query, setQuery] = useState(value?.name ?? "");
+  const [results, setResults] = useState<NaverPlace[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setQuery(value?.name ?? "");
+  }, [value?.name]);
+
+  const searchPlaces = async () => {
+    const keyword = query.trim();
+    if (keyword.length < 2 || searching) return;
+
+    setSearching(true);
+    setError(null);
+
+    const response = await fetch(
+      `/api/places/search?query=${encodeURIComponent(keyword)}`,
+    ).catch(() => null);
+    const data = response
+      ? ((await response.json().catch(() => null)) as
+          | { places?: NaverPlace[]; error?: string }
+          | null)
+      : null;
+
+    if (!response?.ok) {
+      setError(data?.error ?? "장소를 검색하지 못했어요.");
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+
+    setResults(data?.places ?? []);
+    setSearching(false);
+  };
+
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="pt-12 text-center"
-    >
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/12 text-accent">
-        <Check size={24} aria-hidden />
+    <section className="min-w-0 max-w-full overflow-hidden rounded-[24px] border border-black/10 bg-white px-5 py-4">
+      <span className="flex items-center gap-2 text-sm font-black text-black">
+        어디에서 열고 싶나요?
+        <RequiredBadge />
+      </span>
+      <div className="mt-3 flex min-w-0 max-w-full gap-2">
+        <input
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void searchPlaces();
+            }
+          }}
+          placeholder="장소명을 검색해주세요"
+          className="h-12 w-0 min-w-0 flex-1 rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition placeholder:text-black/25 focus:border-accent"
+        />
+        <button
+          type="button"
+          disabled={searching || query.trim().length < 2}
+          onClick={() => void searchPlaces()}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-black text-white transition disabled:bg-black/15 disabled:text-black/35"
+          aria-label="장소 검색"
+        >
+          {searching ? (
+            <Loader2 size={17} className="animate-spin" aria-hidden />
+          ) : (
+            <Search size={17} aria-hidden />
+          )}
+        </button>
       </div>
-      <h1 className="mt-6 text-[28px] font-bold leading-9 text-black">
-        제안이 접수됐어요.
-      </h1>
-      <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-black/55">
-        운영팀이 해당 제안을 검수한 뒤{"\n"}
-        실제 초대장으로 만들어드려요.{"\n\n"}
-        제안이 선정되면 이 자리는 {profile.displayName}님의 제안으로 공개되고,
-        {"\n"}
-        {profile.displayName}님은 해당 자리의 첫번째 멤버가 돼요.
-      </p>
-      <button
-        type="button"
-        onClick={onDone}
-        className="mt-8 h-[52px] w-full rounded-full bg-black text-sm font-bold text-white"
-      >
-        추천탭으로 돌아가기
-      </button>
-    </motion.section>
+
+      {error && (
+        <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
+          {error}
+        </p>
+      )}
+
+      {results.length > 0 && (
+        <div className="mt-3 max-h-[292px] min-w-0 max-w-full space-y-2 overflow-x-hidden overflow-y-auto overscroll-contain pr-1">
+          {results.map((place) => {
+            const selected =
+              value?.source === "naver" &&
+              value.mapx === place.mapx &&
+              value.mapy === place.mapy;
+
+            return (
+              <button
+                key={`${place.mapx}-${place.mapy}-${place.name}`}
+                type="button"
+                onClick={() => onChange(place)}
+                className={cn(
+                  "block h-[92px] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition",
+                  selected
+                    ? "border-accent bg-accent/[0.08]"
+                    : "border-black/10 bg-black/[0.015] hover:border-accent/45",
+                )}
+              >
+                <span className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden">
+                  <MapPin
+                    size={15}
+                    className={cn(
+                      "mt-0.5 shrink-0",
+                      selected ? "text-accent" : "text-black/35",
+                    )}
+                    aria-hidden
+                  />
+                  <span className="w-0 min-w-0 flex-1 overflow-hidden">
+                    <span className="block truncate text-sm font-black text-black">
+                      {place.name}
+                    </span>
+                    {place.category && (
+                      <span className="mt-0.5 block truncate text-[11px] font-bold text-accent">
+                        {place.category}
+                      </span>
+                    )}
+                    <span className="mt-1 block truncate text-xs font-semibold leading-5 text-black/48">
+                      {place.roadAddress ?? place.jibunAddress ?? "주소 정보 없음"}
+                    </span>
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {value && (
+        <div className="mt-4 min-w-0 max-w-full overflow-hidden rounded-2xl border border-accent/20 bg-accent/[0.06] px-4 py-4">
+          <div className="flex min-w-0 max-w-full items-start justify-between gap-3">
+            <div className="w-0 min-w-0 flex-1">
+              <p className="truncate text-sm font-black text-black">{value.name}</p>
+              {value.category && (
+                <p className="mt-1 truncate text-[11px] font-bold text-accent">
+                  {value.category}
+                </p>
+              )}
+              <p className="mt-1 break-words text-xs font-semibold leading-5 text-black/55">
+                {value.roadAddress ?? value.jibunAddress ?? "주소 정보 없음"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              className="shrink-0 rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] font-black text-black/45 transition hover:text-black"
+            >
+              해제
+            </button>
+          </div>
+          <NaverMapPreview
+            place={value}
+            className="mt-3"
+            heightClassName="h-[172px]"
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProposalPlacePreview({
+  place,
+}: {
+  place: NonNullable<GatheringTicket["place"]>;
+}) {
+  const hasMap =
+    place.source === "naver" &&
+    typeof place.mapx === "number" &&
+    typeof place.mapy === "number" &&
+    Boolean(place.name);
+
+  return (
+    <div className="rounded-2xl border border-black/8 bg-white px-4 py-4">
+      <p className="text-sm font-black text-black">{place.name}</p>
+      {place.category && (
+        <p className="mt-1 text-[11px] font-bold text-accent">
+          {place.category}
+        </p>
+      )}
+      {place.address && (
+        <p className="mt-2 text-sm font-semibold leading-6 text-black/60">
+          {place.address}
+        </p>
+      )}
+      {hasMap && (
+        <NaverMapPreview
+          place={{
+            name: place.name ?? "장소",
+            mapx: place.mapx!,
+            mapy: place.mapy!,
+          }}
+          className="mt-3"
+          heightClassName="h-[172px]"
+        />
+      )}
+    </div>
   );
 }
 
@@ -1065,9 +1321,13 @@ function ProposalTextField({
   );
 }
 
+function RequiredBadge() {
+  return <span className="text-[10px] font-bold text-red-500">필수</span>;
+}
+
 function parseTimeParts(value: string) {
   const match = value.match(/^(\d{2}):(\d{2})$/);
-  const hour24 = match ? Number(match[1]) : 15;
+  const hour24 = match ? Number(match[1]) : 18;
   const minute = match ? match[2] : "00";
   const period: TimePeriod = hour24 >= 12 ? "오후" : "오전";
   const hour12 = hour24 % 12 || 12;
@@ -1245,12 +1505,16 @@ function ProposalTextarea({
   onChange,
   placeholder,
   optional = false,
+  required = false,
+  footer,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   optional?: boolean;
+  required?: boolean;
+  footer?: React.ReactNode;
 }) {
   return (
     <label className="block rounded-[24px] border border-black/10 bg-white px-5 py-4">
@@ -1259,6 +1523,7 @@ function ProposalTextarea({
         {optional && (
           <span className="text-[10px] font-bold text-black/30">선택</span>
         )}
+        {required && <RequiredBadge />}
       </span>
       <textarea
         value={value}
@@ -1267,6 +1532,7 @@ function ProposalTextarea({
         placeholder={placeholder}
         className="mt-3 w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-6 outline-none transition placeholder:text-black/25 focus:border-accent"
       />
+      {footer}
     </label>
   );
 }
@@ -1300,11 +1566,15 @@ function EditableDetailSection({
 }: {
   title: string;
   children: React.ReactNode;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   return (
     <section className="border-t border-black/8 py-5 first:border-t-0">
-      <EditableHeader title={title} onEdit={onEdit} />
+      {onEdit ? (
+        <EditableHeader title={title} onEdit={onEdit} />
+      ) : (
+        <h2 className="text-[15px] font-black text-black">{title}</h2>
+      )}
       <div className="mt-4">{children}</div>
     </section>
   );

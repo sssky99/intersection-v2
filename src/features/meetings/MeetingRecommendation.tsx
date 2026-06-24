@@ -7,13 +7,15 @@ import {
   Clock3,
   MapPin,
   Plus,
-  Sparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
-import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import {
+  TicketCopyProposalSection,
+  TicketDetailContent,
+} from "@/features/meetings/TicketDetailContent";
 import {
   TicketDetailHero,
   ticketFadeTransition,
@@ -22,6 +24,7 @@ import {
   MeetingProposalFlow,
   type ProposalMemberProfile,
 } from "@/features/meetings/MeetingProposalFlow";
+import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
@@ -30,8 +33,7 @@ type Screen =
   | "drawing"
   | "waitlisted"
   | "blindDate"
-  | "proposal"
-  | "proposalMembershipRequired";
+  | "proposal";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -83,7 +85,10 @@ export function MeetingRecommendation({
   embedded = false,
   active = true,
   membershipStatus,
+  proposalParticipationCount,
+  proposalRequirementBypassed = false,
   onWaitlisted,
+  onProposalSubmitted,
   onMembershipRequired,
   onOpenList,
   proposalProfile,
@@ -97,7 +102,10 @@ export function MeetingRecommendation({
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
+  proposalParticipationCount: number | null;
+  proposalRequirementBypassed?: boolean;
   onWaitlisted?: (ticket: GatheringTicket) => void;
+  onProposalSubmitted?: () => void | Promise<void>;
   onMembershipRequired?: () => void;
   onOpenList?: () => void;
   proposalProfile: ProposalMemberProfile;
@@ -123,6 +131,8 @@ export function MeetingRecommendation({
   const [error, setError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
+  const [copiedProposalTicket, setCopiedProposalTicket] =
+    useState<GatheringTicket | null>(null);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
@@ -141,6 +151,8 @@ export function MeetingRecommendation({
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
     activeBlindDateOffers[0] ??
     null;
+  const canOpenProposal =
+    proposalRequirementBypassed || (proposalParticipationCount ?? 0) >= 1;
 
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
@@ -273,12 +285,23 @@ export function MeetingRecommendation({
     setSelectedDate(null);
     setTicketIndex(0);
     setWaitlistedTicket(null);
+    setCopiedProposalTicket(null);
 
-    if (membershipStatus !== "active") {
-      setScreen("proposalMembershipRequired");
+    if (!canOpenProposal) {
+      window.alert(meetingProposalRequirementMessage);
       return;
     }
 
+    setScreen("proposal");
+  };
+
+  const copyTicketAsProposal = (sourceTicket: GatheringTicket) => {
+    if (!canOpenProposal) {
+      window.alert(meetingProposalRequirementMessage);
+      return;
+    }
+
+    setCopiedProposalTicket(sourceTicket);
     setScreen("proposal");
   };
 
@@ -373,6 +396,7 @@ export function MeetingRecommendation({
             error={error}
             onNo={rejectTicket}
             onYes={() => void joinWaitlist()}
+            onCopyProposal={() => copyTicketAsProposal(ticket)}
             onChangeDate={() => {
               setSelectedDate(null);
               setTicketIndex(0);
@@ -482,18 +506,18 @@ export function MeetingRecommendation({
           />
         )}
 
-        {screen === "proposalMembershipRequired" && (
-          <ProposalMembershipRequired
-            onBack={() => setScreen("calendar")}
-            onMembershipClick={onMembershipRequired}
-          />
-        )}
-
         {screen === "proposal" && (
           <MeetingProposalFlow
             profile={proposalProfile}
-            onBack={() => setScreen("calendar")}
-            onDone={() => setScreen("calendar")}
+            copiedTicket={copiedProposalTicket}
+            onBack={() =>
+              setScreen(copiedProposalTicket ? "drawing" : "calendar")
+            }
+            onDone={async () => {
+              await onProposalSubmitted?.();
+              setCopiedProposalTicket(null);
+              setScreen("calendar");
+            }}
           />
         )}
       </AnimatePresence>
@@ -506,6 +530,7 @@ function TicketDrawingCard({
   saving,
   error,
   onYes,
+  onCopyProposal,
   onNo,
   onChangeDate,
 }: {
@@ -513,6 +538,7 @@ function TicketDrawingCard({
   saving: boolean;
   error: string | null;
   onYes: () => void;
+  onCopyProposal: () => void;
   onNo: () => void;
   onChangeDate: () => void;
 }) {
@@ -554,6 +580,7 @@ function TicketDrawingCard({
             onClose={() => setDetailOpen(false)}
             onNo={onNo}
             onYes={onYes}
+            onCopyProposal={onCopyProposal}
             onChangeDate={onChangeDate}
           />
         ) : (
@@ -674,58 +701,13 @@ function TicketDrawingCard({
   );
 }
 
-function ProposalMembershipRequired({
-  onBack,
-  onMembershipClick,
-}: {
-  onBack: () => void;
-  onMembershipClick?: () => void;
-}) {
-  return (
-    <motion.section
-      key="proposal-membership-required"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      className="pt-[calc(28px+env(safe-area-inset-top))]"
-    >
-      <button
-        type="button"
-        onClick={onBack}
-        className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:text-black"
-        aria-label="추천탭으로 돌아가기"
-      >
-        <X size={18} aria-hidden />
-      </button>
-
-      <div className="mt-8 rounded-[28px] border border-black/10 bg-white px-5 py-7 text-center shadow-[0_18px_45px_rgba(0,0,0,0.045)]">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent/12 text-accent">
-          <Sparkles size={24} aria-hidden />
-        </div>
-        <h1 className="mt-6 text-[24px] font-bold leading-8 text-black">
-          교집합 제안은 멤버십 사용자만 이용할 수 있어요.
-        </h1>
-        <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
-          멤버십을 시작하면 원하는 자리도 직접 제안할 수 있어요.
-        </p>
-        <button
-          type="button"
-          onClick={onMembershipClick}
-          className="mt-6 h-[52px] w-full rounded-full bg-black text-sm font-bold text-white"
-        >
-          멤버십 보러가기
-        </button>
-      </div>
-    </motion.section>
-  );
-}
-
 function TicketInsideView({
   ticket,
   saving,
   error,
   onClose,
   onYes,
+  onCopyProposal,
   onNo,
   onChangeDate,
 }: {
@@ -734,6 +716,7 @@ function TicketInsideView({
   error: string | null;
   onClose: () => void;
   onYes: () => void;
+  onCopyProposal: () => void;
   onNo: () => void;
   onChangeDate: () => void;
 }) {
@@ -786,7 +769,10 @@ function TicketInsideView({
               {error}
             </p>
           )}
-          <TicketDetailContent ticket={ticket} />
+          <TicketDetailContent
+            ticket={ticket}
+            footer={<TicketCopyProposalSection onCopy={onCopyProposal} />}
+          />
         </motion.div>
       </motion.article>
 

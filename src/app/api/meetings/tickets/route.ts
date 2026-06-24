@@ -1,14 +1,25 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { canViewMeetingByProposerBirthYear } from "@/lib/meetingAgeVisibility";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
+import {
+  normalizeMeetingPlace,
+  ticketPlaceFromLegacyFields,
+} from "@/lib/placePayload";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   recommendTickets,
   type TicketRecommendationAnswer,
   type TicketRecommendationProfile,
 } from "@/lib/ticketRecommendation";
-import type { AvailableDate, GatheringTicket } from "@/types/ticket";
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+  type AvailableDate,
+  type GatheringTicket,
+} from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +39,9 @@ type TemplateRow = {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
+  place_name: string | null;
+  address: string | null;
+  place_payload: unknown;
   visibility: string;
   score_temperature: number | null;
   score_texture: number | null;
@@ -69,6 +83,7 @@ type ProfileAccessRow = {
   is_test_participant: boolean | null;
   name: string | null;
   nickname: string | null;
+  birth_year: string | number | null;
   score_temperature: number | null;
   score_texture: number | null;
   score_tone: number | null;
@@ -79,6 +94,8 @@ type ProposerProfileRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
+  gender: string | null;
+  birth_year: string | number | null;
 };
 
 const templateSelect = [
@@ -97,6 +114,9 @@ const templateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
+  "place_name",
+  "address",
+  "place_payload",
   "visibility",
   "score_temperature",
   "score_texture",
@@ -111,6 +131,11 @@ const templateSelect = [
   "proposer_public_emoji",
 ].join(",");
 
+const templateSelectWithoutPlacePayload = templateSelect.replace(
+  ",place_payload",
+  "",
+);
+
 const instanceSelect = [
   "id",
   "template_id",
@@ -121,6 +146,36 @@ const instanceSelect = [
   "remaining_seat_label_count",
   "visibility",
 ].join(",");
+
+function isMissingPlacePayloadColumn(error: unknown) {
+  const databaseError = error as { code?: string; message?: string } | null;
+  return (
+    databaseError?.code === "42703" &&
+    (databaseError.message ?? "").includes("place_payload")
+  );
+}
+
+async function fetchTemplateRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  templateIds: string[],
+) {
+  const { data, error } = await supabase
+    .from("ticket_templates")
+    .select(templateSelect)
+    .in("id", templateIds);
+
+  if (isMissingPlacePayloadColumn(error)) {
+    const fallback = await supabase
+      .from("ticket_templates")
+      .select(templateSelectWithoutPlacePayload)
+      .in("id", templateIds);
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []) as unknown as TemplateRow[];
+  }
+
+  if (error) throw error;
+  return (data ?? []) as unknown as TemplateRow[];
+}
 
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -172,10 +227,12 @@ function toTicket(
   const proposerLabel = proposerDisplayName
     ? `${proposerDisplayName}님의 제안`
     : undefined;
+  const place = normalizeMeetingPlace(template.place_payload);
 
   return {
     id: instance.id,
     templateId: instance.template_id,
+    proposalId: template.proposal_id,
     title: instance.title || template.title,
     subtitle,
     date: instance.event_date,
@@ -185,6 +242,8 @@ function toTicket(
     activityType: template.activity_type,
     imageUrl: template.image_url ?? undefined,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? subtitle,
     reason: template.recommendation_copy ?? subtitle,
     recommendationName: name,
@@ -193,6 +252,11 @@ function toTicket(
     detailFlow: textList(template.detail_flow),
     detailGoodFor: textList(template.detail_good_for),
     detailNotice: template.detail_notice?.trim() || undefined,
+    place: ticketPlaceFromLegacyFields({
+      placeName: template.place_name,
+      address: template.address,
+      place,
+    }),
     stageCopy: sanitizeTicketStageCopy(template.stage_copy),
     proposerLabel,
     proposerProfile: proposerDisplayName
@@ -201,6 +265,8 @@ function toTicket(
           displayName: proposerDisplayName,
           publicIntro: template.proposer_public_intro,
           publicEmoji: template.proposer_public_emoji,
+          gender: normalizeProfileGender(proposerProfile?.gender),
+          birthYear: proposerProfile?.birth_year ?? null,
         }
       : undefined,
     vibeScores: {
@@ -229,7 +295,7 @@ async function fetchProposerProfileMap(
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("user_id,name,nickname")
+    .select("user_id,name,nickname,gender,birth_year")
     .in("user_id", proposerIds);
   if (error) throw error;
 
@@ -262,6 +328,22 @@ function groupByDate(
         tickets: recommendTickets(dateTickets, profile, answers),
       }),
     );
+}
+
+function isTicketVisibleByProposerAge({
+  ticket,
+  viewerBirthYear,
+  bypass,
+}: {
+  ticket: GatheringTicket;
+  viewerBirthYear: string | number | null;
+  bypass: boolean;
+}) {
+  return canViewMeetingByProposerBirthYear({
+    viewerBirthYear,
+    proposerBirthYear: ticket.proposerProfile?.birthYear,
+    bypass,
+  });
 }
 
 function datesResponse(dates: AvailableDate[]) {
@@ -300,18 +382,22 @@ export async function GET(request: Request) {
     let recommendationProfile: TicketRecommendationProfile | null = null;
     let recommendationAnswers: TicketRecommendationAnswer[] = [];
     let userRecommendationName: string | undefined;
+    let viewerBirthYear: string | number | null = null;
+    let canBypassAgeVisibility = false;
 
     if (user) {
       const { data: profileAccess, error: profileAccessError } = await supabase
         .from("profiles")
         .select(
-          "is_test_participant,name,nickname,score_temperature,score_texture,score_tone,score_rhythm",
+          "is_test_participant,name,nickname,birth_year,score_temperature,score_texture,score_tone,score_rhythm",
         )
         .eq("user_id", user.id)
         .maybeSingle<ProfileAccessRow>();
       if (profileAccessError) throw profileAccessError;
 
       if (profileAccess) {
+        viewerBirthYear = profileAccess.birth_year;
+        canBypassAgeVisibility = profileAccess.is_test_participant === true;
         userRecommendationName = recommendationName(profileAccess);
         recommendationProfile = {
           score_temperature: profileAccess.score_temperature,
@@ -329,7 +415,7 @@ export async function GET(request: Request) {
       if (answersError) throw answersError;
       recommendationAnswers = answerRows ?? [];
 
-      const canSeeTestTickets = profileAccess?.is_test_participant === true;
+      const canSeeTestTickets = canBypassAgeVisibility;
 
       if (!canSeeTestTickets) {
         const instanceRows = publicInstanceRows;
@@ -373,14 +459,7 @@ export async function GET(request: Request) {
           return datesResponse([]);
         }
 
-        const { data: templates, error: templatesError } = await supabase
-          .from("ticket_templates")
-          .select(templateSelect)
-          .in("id", templateIds);
-
-        if (templatesError) throw templatesError;
-
-        const templateRows = (templates ?? []) as unknown as TemplateRow[];
+        const templateRows = await fetchTemplateRows(supabase, templateIds);
         const proposerProfileMap = await fetchProposerProfileMap(
           supabase,
           templateRows,
@@ -412,7 +491,14 @@ export async function GET(request: Request) {
                 )
               : null;
           })
-          .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
+          .filter((ticket): ticket is GatheringTicket => Boolean(ticket))
+          .filter((ticket) =>
+            isTicketVisibleByProposerAge({
+              ticket,
+              viewerBirthYear,
+              bypass: canBypassAgeVisibility,
+            }),
+          );
 
         return datesResponse(
           groupByDate(tickets, recommendationProfile, recommendationAnswers),
@@ -503,14 +589,7 @@ export async function GET(request: Request) {
       return datesResponse([]);
     }
 
-    const { data: templates, error: templatesError } = await supabase
-      .from("ticket_templates")
-      .select(templateSelect)
-      .in("id", templateIds);
-
-    if (templatesError) throw templatesError;
-
-    const templateRows = (templates ?? []) as unknown as TemplateRow[];
+    const templateRows = await fetchTemplateRows(supabase, templateIds);
     const proposerProfileMap = await fetchProposerProfileMap(
       supabase,
       templateRows,
@@ -542,7 +621,14 @@ export async function GET(request: Request) {
             )
           : null;
       })
-      .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
+      .filter((ticket): ticket is GatheringTicket => Boolean(ticket))
+      .filter((ticket) =>
+        isTicketVisibleByProposerAge({
+          ticket,
+          viewerBirthYear,
+          bypass: canBypassAgeVisibility,
+        }),
+      );
 
     return datesResponse(
       groupByDate(tickets, recommendationProfile, recommendationAnswers),

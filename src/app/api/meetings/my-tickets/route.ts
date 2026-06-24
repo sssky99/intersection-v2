@@ -1,19 +1,29 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import {
+  isMeetingProposalParticipationStatus,
+  meetingProposalDisplayName,
+} from "@/lib/meetingProposalAccess";
+import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
+import {
+  normalizeMeetingPlace,
+  ticketPlaceFromLegacyFields,
+} from "@/lib/placePayload";
 import {
   sanitizeTicketStageCopy,
   ticketStageCopyKeys,
 } from "@/lib/ticketStageCopy";
-import type {
-  GatheringTicket,
-  TicketArrivalStatus,
-  TicketMemberIntro,
-  TicketProgressStep,
-  TicketStageCopy,
-  UserTicket,
-  UserTicketStatus,
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+  type GatheringTicket,
+  type TicketArrivalStatus,
+  type TicketMemberIntro,
+  type TicketProgressStep,
+  type TicketStageCopy,
+  type UserTicket,
+  type UserTicketStatus,
 } from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +44,9 @@ type TemplateRow = {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
+  place_name: string | null;
+  address: string | null;
+  place_payload: unknown;
   score_temperature: number | null;
   score_texture: number | null;
   score_tone: number | null;
@@ -57,6 +70,7 @@ type InstanceRow = {
   place_name: string | null;
   address: string | null;
   place_visibility: string | null;
+  place_payload: unknown;
   remaining_seat_label_count: number | null;
   visibility: string | null;
 };
@@ -98,16 +112,45 @@ type ProfileIntroRow = {
   name: string | null;
   nickname: string | null;
   gender: string | null;
+  birth_year: string | number | null;
   public_intro: string | null;
   public_emoji?: string | null;
 };
 
 type ProfileAccessRow = {
   is_test_participant: boolean | null;
+  name: string | null;
+  nickname: string | null;
+  gender: string | null;
+  birth_year: string | number | null;
+  public_intro: string | null;
+  public_emoji: string | null;
 };
 
 type TicketSourceRow = WaitlistRow & {
   assignment_only?: boolean;
+};
+
+type PendingProposalRow = {
+  id: string;
+  proposer_id: string;
+  proposer_public_display_name: string;
+  proposer_public_intro: string | null;
+  proposer_public_emoji: string | null;
+  image_url: string | null;
+  title: string;
+  activity_description: string;
+  event_date: string;
+  event_time: string;
+  region: string;
+  specific_place: string | null;
+  place_payload: unknown;
+  hashtags: string[] | null;
+  short_description: string;
+  activities: unknown;
+  vibe: unknown;
+  status: "pending_review" | "approved";
+  submitted_at: string;
 };
 
 const templateSelect = [
@@ -126,6 +169,9 @@ const templateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
+  "place_name",
+  "address",
+  "place_payload",
   "score_temperature",
   "score_texture",
   "score_tone",
@@ -139,6 +185,11 @@ const templateSelect = [
   "proposer_public_emoji",
 ].join(",");
 
+const templateSelectWithoutPlacePayload = templateSelect.replace(
+  ",place_payload",
+  "",
+);
+
 const instanceSelect = [
   "id",
   "template_id",
@@ -149,9 +200,67 @@ const instanceSelect = [
   "place_name",
   "address",
   "place_visibility",
+  "place_payload",
   "remaining_seat_label_count",
   "visibility",
 ].join(",");
+
+const instanceSelectWithoutPlacePayload = instanceSelect.replace(
+  ",place_payload",
+  "",
+);
+
+function isMissingPlacePayloadColumn(error: unknown) {
+  const databaseError = error as { code?: string; message?: string } | null;
+  return (
+    databaseError?.code === "42703" &&
+    (databaseError.message ?? "").includes("place_payload")
+  );
+}
+
+async function fetchInstanceRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  instanceIds: string[],
+) {
+  const { data, error } = await supabase
+    .from("ticket_instances")
+    .select(instanceSelect)
+    .in("id", instanceIds);
+
+  if (isMissingPlacePayloadColumn(error)) {
+    const fallback = await supabase
+      .from("ticket_instances")
+      .select(instanceSelectWithoutPlacePayload)
+      .in("id", instanceIds);
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []) as unknown as InstanceRow[];
+  }
+
+  if (error) throw error;
+  return (data ?? []) as unknown as InstanceRow[];
+}
+
+async function fetchTemplateRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  templateIds: string[],
+) {
+  const { data, error } = await supabase
+    .from("ticket_templates")
+    .select(templateSelect)
+    .in("id", templateIds);
+
+  if (isMissingPlacePayloadColumn(error)) {
+    const fallback = await supabase
+      .from("ticket_templates")
+      .select(templateSelectWithoutPlacePayload)
+      .in("id", templateIds);
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []) as unknown as TemplateRow[];
+  }
+
+  if (error) throw error;
+  return (data ?? []) as unknown as TemplateRow[];
+}
 
 const hiddenStatuses = new Set([
   "cancelled",
@@ -159,6 +268,13 @@ const hiddenStatuses = new Set([
   "completed",
   "feedback_done",
 ]);
+
+const autoCancellationStatuses = [
+  "waitlisted",
+  "approved",
+  "on_hold",
+  "payment_pending",
+];
 
 const statusPriority: Record<UserTicketStatus, number> = {
   approved: 0,
@@ -206,6 +322,95 @@ function mergedStageCopy(...values: unknown[]): TicketStageCopy {
   }
 
   return merged;
+}
+
+function proposalScore(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(5, Math.max(1, Math.round(value)))
+    : fallback;
+}
+
+function pendingProposalTicket(
+  proposal: PendingProposalRow,
+  profile: ProfileAccessRow | null,
+): UserTicket {
+  const place = normalizeMeetingPlace(proposal.place_payload);
+  const proposalVibe =
+    typeof proposal.vibe === "object" && proposal.vibe
+      ? (proposal.vibe as Record<string, unknown>)
+      : {};
+  const eventTime = proposal.event_time.slice(0, 5);
+  const startAt = toStartAt(proposal.event_date, eventTime);
+  const ticketPlace = ticketPlaceFromLegacyFields({
+    placeName: proposal.specific_place,
+    address: place?.roadAddress ?? place?.jibunAddress,
+    place,
+  });
+  const displayName =
+    proposal.proposer_public_display_name.trim() || "제안 멤버";
+  const ticket: GatheringTicket = {
+    id: `proposal:${proposal.id}`,
+    templateId: `proposal:${proposal.id}`,
+    proposalId: proposal.id,
+    title: proposal.title,
+    subtitle: proposal.short_description,
+    date: proposal.event_date,
+    time: eventTime,
+    area: proposal.region,
+    moodTags: proposal.hashtags ?? [],
+    activityType: "member_proposal",
+    imageUrl: proposal.image_url ?? undefined,
+    remainingSeatCount: 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
+    peopleHint: proposal.short_description,
+    reason: proposal.short_description,
+    detailSummary: proposal.short_description,
+    detailActivities: textList(proposal.activities),
+    place: ticketPlace,
+    stageCopy: {
+      applied:
+        "제안한 초대장이 티켓에 등록됐어요. 함께할 멤버를 위한 준비가 끝나면 다음 단계로 안내할게요.",
+    },
+    proposerLabel: `${displayName}님의 제안`,
+    proposerProfile: {
+      userId: proposal.proposer_id,
+      displayName,
+      publicIntro:
+        proposal.proposer_public_intro ?? profile?.public_intro ?? null,
+      publicEmoji:
+        proposal.proposer_public_emoji ?? profile?.public_emoji ?? null,
+      gender: normalizeProfileGender(profile?.gender),
+      birthYear: profile?.birth_year ?? null,
+    },
+    vibeScores: {
+      temperature: proposalScore(proposalVibe.temperature, 3),
+      texture: proposalScore(proposalVibe.texture, 3),
+      tone: proposalScore(proposalVibe.tone, 3),
+      rhythm: proposalScore(proposalVibe.rhythm, 3),
+      alcohol: proposalScore(proposalVibe.alcohol, 2),
+      romance: proposalScore(proposalVibe.romance, 2),
+    },
+  };
+
+  return {
+    id: `proposal:${proposal.id}`,
+    waitlistId: `proposal:${proposal.id}`,
+    ticket,
+    rawStatus: `proposal_${proposal.status}`,
+    status: "waitlisted",
+    statusLabel: "신청 완료",
+    progressStep: "applied",
+    progressIndex: 0,
+    meetingStartAt: isoOrNull(startAt),
+    arrivalOpensAt: null,
+    feedbackOpensAt: null,
+    canSetArrival: false,
+    arrivalStatus: null,
+    arrivalStatusUpdatedAt: null,
+    place: ticketPlace,
+    members: [],
+  };
 }
 
 function toStartAt(date: string | null | undefined, time: string | null | undefined) {
@@ -257,10 +462,14 @@ function toTicket(
   const proposerLabel = proposerDisplayName
     ? `${proposerDisplayName}님의 제안`
     : snapshot?.proposerLabel;
+  const place =
+    normalizeMeetingPlace(instance.place_payload) ??
+    normalizeMeetingPlace(template.place_payload);
 
   return {
     id: instance.id,
     templateId: instance.template_id,
+    proposalId: template.proposal_id ?? snapshot?.proposalId ?? null,
     title: instance.title || template.title || snapshot?.title || "티켓",
     subtitle,
     date,
@@ -271,6 +480,10 @@ function toTicket(
     imageUrl: template.image_url ?? snapshot?.imageUrl,
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,
+    minimumParticipantCount:
+      snapshot?.minimumParticipantCount ?? MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount:
+      snapshot?.maxParticipantCount ?? MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? snapshot?.peopleHint ?? subtitle,
     reason: template.recommendation_copy ?? snapshot?.reason ?? subtitle,
     detailSummary: template.detail_summary?.trim() || snapshot?.detailSummary,
@@ -284,6 +497,12 @@ function toTicket(
       ? textList(template.detail_good_for)
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
+    place:
+      ticketPlaceFromLegacyFields({
+        placeName: instance.place_name ?? template.place_name,
+        address: instance.address ?? template.address,
+        place,
+      }) ?? snapshot?.place,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     proposerLabel,
     proposerProfile: proposerDisplayName
@@ -297,6 +516,12 @@ function toTicket(
           publicEmoji:
             template.proposer_public_emoji ??
             snapshot?.proposerProfile?.publicEmoji,
+          gender: normalizeProfileGender(
+            proposerProfile?.gender ?? snapshot?.proposerProfile?.gender,
+          ),
+          birthYear:
+            proposerProfile?.birth_year ??
+            snapshot?.proposerProfile?.birthYear,
         }
       : snapshot?.proposerProfile,
     vibeScores: {
@@ -450,9 +675,13 @@ function displayNickname(profile: ProfileIntroRow | undefined) {
   return profile?.nickname?.trim() || fallbackNickname(profile?.name);
 }
 
-function ticketsResponse(tickets: UserTicket[], participationCount: number) {
+function ticketsResponse(
+  tickets: UserTicket[],
+  participationCount: number,
+  proposalParticipationCount: number,
+) {
   return NextResponse.json(
-    { tickets, participationCount },
+    { tickets, participationCount, proposalParticipationCount },
     {
       headers: {
         "Cache-Control": "private, max-age=15, stale-while-revalidate=45",
@@ -475,11 +704,31 @@ export async function GET() {
     const supabase = createAdminClient();
     const { data: profileAccess, error: profileAccessError } = await supabase
       .from("profiles")
-      .select("is_test_participant")
+      .select(
+        "is_test_participant,name,nickname,gender,birth_year,public_intro,public_emoji",
+      )
       .eq("user_id", user.id)
       .maybeSingle<ProfileAccessRow>();
     if (profileAccessError) throw profileAccessError;
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
+
+    const { data: pendingProposalData, error: pendingProposalError } =
+      await supabase
+        .from("meeting_proposals")
+        .select(
+          "id,proposer_id,proposer_public_display_name,proposer_public_intro,proposer_public_emoji,image_url,title,activity_description,event_date,event_time,region,specific_place,place_payload,hashtags,short_description,activities,vibe,status,submitted_at",
+        )
+        .eq("proposer_id", user.id)
+        .in("status", ["pending_review", "approved"])
+        .is("converted_instance_id", null)
+        .order("submitted_at", { ascending: false });
+    if (pendingProposalError) throw pendingProposalError;
+
+    const pendingProposalTickets = (
+      (pendingProposalData ?? []) as unknown as PendingProposalRow[]
+    ).map((proposal) =>
+      pendingProposalTicket(proposal, profileAccess ?? null),
+    );
 
     const { data: waitlistData, error: waitlistError } = await supabase
       .from("meeting_waitlist")
@@ -492,6 +741,9 @@ export async function GET() {
     const participationCount = waitlistRows.filter((row) =>
       ["completed", "feedback_done"].includes(row.status),
     ).length;
+    const proposalParticipationCount = waitlistRows.filter((row) =>
+      isMeetingProposalParticipationStatus(row.status),
+    ).length;
     const { data: userAssignmentData, error: userAssignmentError } =
       await supabase
         .from("ticket_assignments")
@@ -503,7 +755,11 @@ export async function GET() {
     const userAssignments = userAssignmentData ?? [];
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
-      return ticketsResponse([], participationCount);
+      return ticketsResponse(
+        pendingProposalTickets.sort(sortUserTickets),
+        participationCount,
+        proposalParticipationCount,
+      );
     }
 
     const instanceIds = unique(
@@ -518,12 +774,7 @@ export async function GET() {
 
     let instances: InstanceRow[] = [];
     if (instanceIds.length > 0) {
-      const { data, error } = await supabase
-        .from("ticket_instances")
-        .select(instanceSelect)
-        .in("id", instanceIds);
-      if (error) throw error;
-      instances = (data ?? []) as unknown as InstanceRow[];
+      instances = await fetchInstanceRows(supabase, instanceIds);
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
@@ -565,7 +816,11 @@ export async function GET() {
     });
 
     if (ticketSourceRows.length === 0) {
-      return ticketsResponse([], participationCount);
+      return ticketsResponse(
+        pendingProposalTickets.sort(sortUserTickets),
+        participationCount,
+        proposalParticipationCount,
+      );
     }
     const templateIds = unique([
       ...ticketSourceRows.map((row) => row.ticket_template_id),
@@ -575,42 +830,28 @@ export async function GET() {
 
     let templates: TemplateRow[] = [];
     if (templateIds.length > 0) {
-      const { data, error } = await supabase
-        .from("ticket_templates")
-        .select(templateSelect)
-        .in("id", templateIds);
-      if (error) throw error;
-      templates = (data ?? []) as unknown as TemplateRow[];
+      templates = await fetchTemplateRows(supabase, templateIds);
     }
 
     const templateMap = new Map(templates.map((template) => [template.id, template]));
-    const approvedInstanceIds = unique(
-      ticketSourceRows
-        .filter((row) => row.status === "approved")
-        .map(
-          (row) =>
-            row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id,
-        ),
-    );
-
     let assignments: AssignmentRow[] = [];
-    if (approvedInstanceIds.length > 0) {
+    if (instanceIds.length > 0) {
       const { data, error } = await supabase
         .from("ticket_assignments")
         .select("ticket_instance_id,profile_id")
-        .in("ticket_instance_id", approvedInstanceIds);
+        .in("ticket_instance_id", instanceIds);
       if (error) throw error;
       assignments = (data ?? []) as unknown as AssignmentRow[];
     }
 
     let memberArrivalRows: MemberArrivalRow[] = [];
-    if (approvedInstanceIds.length > 0) {
+    if (instanceIds.length > 0) {
       const { data: byInstanceId, error: byInstanceIdError } = await supabase
         .from("meeting_waitlist")
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_instance_id", approvedInstanceIds)
+        .in("ticket_instance_id", instanceIds)
         .eq("status", "approved")
         .returns<MemberArrivalRow[]>();
       if (byInstanceIdError) throw byInstanceIdError;
@@ -620,7 +861,7 @@ export async function GET() {
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_id", approvedInstanceIds)
+        .in("ticket_id", instanceIds)
         .eq("status", "approved")
         .returns<MemberArrivalRow[]>();
       if (byTicketIdError) throw byTicketIdError;
@@ -631,6 +872,7 @@ export async function GET() {
     const profileIds = unique([
       user.id,
       ...assignments.map((assignment) => assignment.profile_id),
+      ...memberArrivalRows.map((arrivalRow) => arrivalRow.user_id),
       ...templates.map((template) => template.proposer_user_id),
     ]);
 
@@ -638,7 +880,7 @@ export async function GET() {
     if (profileIds.length > 0) {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,gender,public_intro,public_emoji")
+        .select("user_id,name,nickname,gender,birth_year,public_intro,public_emoji")
         .in("user_id", profileIds);
       if (error) throw error;
       profileRows = (data ?? []) as unknown as ProfileIntroRow[];
@@ -663,10 +905,65 @@ export async function GET() {
     }, new Map<string, MemberArrivalRow>());
 
     const now = new Date();
+    const participantIdsByInstance = new Map<string, Set<string>>();
+    const addParticipant = (instanceId: string | null | undefined, userId: string) => {
+      if (!instanceId) return;
+      const current = participantIdsByInstance.get(instanceId) ?? new Set<string>();
+      current.add(userId);
+      participantIdsByInstance.set(instanceId, current);
+    };
+
+    for (const assignment of assignments) {
+      addParticipant(assignment.ticket_instance_id, assignment.profile_id);
+    }
+    for (const arrivalRow of memberArrivalRows) {
+      addParticipant(
+        arrivalRow.ticket_instance_id ?? arrivalRow.ticket_id,
+        arrivalRow.user_id,
+      );
+    }
+
+    const autoCancelledInstanceIds = new Set(
+      instances
+        .filter((instance) => {
+          const startAt = toStartAt(instance.event_date, instance.event_time);
+          if (!startAt || now < startAt) return false;
+          const participantCount =
+            participantIdsByInstance.get(instance.id)?.size ?? 0;
+          return participantCount < MEETING_MIN_PARTICIPANT_COUNT;
+        })
+        .map((instance) => instance.id),
+    );
+
+    if (autoCancelledInstanceIds.size > 0) {
+      const cancelledAt = now.toISOString();
+      const autoCancelledIds = Array.from(autoCancelledInstanceIds);
+      const cancelPayload = {
+        status: "cancelled",
+        admin_note: "최소 인원 미달로 자동 취소됨",
+        updated_at: cancelledAt,
+      };
+
+      const { error: cancelByInstanceError } = await supabase
+        .from("meeting_waitlist")
+        .update(cancelPayload)
+        .in("ticket_instance_id", autoCancelledIds)
+        .in("status", autoCancellationStatuses);
+      if (cancelByInstanceError) throw cancelByInstanceError;
+
+      const { error: cancelByTicketError } = await supabase
+        .from("meeting_waitlist")
+        .update(cancelPayload)
+        .in("ticket_id", autoCancelledIds)
+        .in("status", autoCancellationStatuses);
+      if (cancelByTicketError) throw cancelByTicketError;
+    }
+
     const tickets = ticketSourceRows
       .map((row): UserTicket | null => {
         const instanceId =
           row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id;
+        if (instanceId && autoCancelledInstanceIds.has(instanceId)) return null;
         const instance = instanceId ? instanceMap.get(instanceId) ?? null : null;
         const templateId =
           row.ticket_template_id ??
@@ -713,10 +1010,7 @@ export async function GET() {
             id,
             name: memberProfile?.name ?? null,
             nickname: displayNickname(memberProfile),
-            gender:
-              memberProfile?.gender === "남성" || memberProfile?.gender === "여성"
-                ? memberProfile.gender
-                : null,
+            gender: normalizeProfileGender(memberProfile?.gender),
             emoji: displayProfileEmoji(memberProfile, id),
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus,
@@ -746,17 +1040,31 @@ export async function GET() {
           arrivalStatusUpdatedAt: row.arrival_status_updated_at ?? null,
           place: placeVisible
             ? {
-                name: instance?.place_name ?? null,
-                address: instance?.address ?? null,
+                name: ticket.place?.name ?? instance?.place_name ?? null,
+                address: ticket.place?.address ?? instance?.address ?? null,
+                category: ticket.place?.category ?? null,
+                roadAddress: ticket.place?.roadAddress ?? null,
+                jibunAddress: ticket.place?.jibunAddress ?? null,
+                mapx: ticket.place?.mapx ?? null,
+                mapy: ticket.place?.mapy ?? null,
+                link: ticket.place?.link ?? null,
+                source: ticket.place?.source ?? null,
               }
             : null,
           members,
         };
       })
-      .filter((ticket): ticket is UserTicket => Boolean(ticket))
-      .sort(sortUserTickets);
+      .filter((ticket): ticket is UserTicket => Boolean(ticket));
 
-    return ticketsResponse(tickets, participationCount);
+    const visibleTickets = [...tickets, ...pendingProposalTickets].sort(
+      sortUserTickets,
+    );
+
+    return ticketsResponse(
+      visibleTickets,
+      participationCount,
+      proposalParticipationCount,
+    );
   } catch (error) {
     console.error("[meetings my-tickets]", error);
     return NextResponse.json(

@@ -12,6 +12,7 @@ import {
   Gift,
   Info,
   LogOut,
+  Loader2,
   MapPin,
   X,
   PenLine,
@@ -20,7 +21,7 @@ import {
   Ticket as TicketIcon,
   UserRound,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import {
   formatTicketDateLabel,
@@ -36,8 +37,13 @@ import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
+import {
+  MeetingProposalFlow,
+  type ProposalMemberProfile,
+} from "@/features/meetings/MeetingProposalFlow";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
+  TicketCopyProposalSection,
   TicketDetailContent,
   type TicketDetailSectionKey,
 } from "@/features/meetings/TicketDetailContent";
@@ -58,6 +64,7 @@ import {
   isMembershipPlan,
 } from "@/features/membership/membershipTypes";
 import { createClient } from "@/lib/supabase/client";
+import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import {
   ticketFeedbackBodyText,
   ticketStageText,
@@ -328,6 +335,10 @@ async function fetchUserTickets({ force = false } = {}) {
           typeof data?.participationCount === "number"
             ? data.participationCount
             : 0,
+        proposalParticipationCount:
+          typeof data?.proposalParticipationCount === "number"
+            ? data.proposalParticipationCount
+            : 0,
       };
       userTicketsCache = {
         response: responseData,
@@ -400,6 +411,9 @@ export function AppHome({
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [participationCount, setParticipationCount] = useState(0);
+  const [proposalParticipationCount, setProposalParticipationCount] = useState<
+    number | null
+  >(null);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
   const [rejectedProposalNotifications, setRejectedProposalNotifications] =
     useState<RejectedProposalNotification[]>([]);
@@ -537,6 +551,7 @@ export function AppHome({
 
       setWaitlistedTickets(response.tickets);
       setParticipationCount(response.participationCount);
+      setProposalParticipationCount(response.proposalParticipationCount);
     });
     void fetchBlindDateOffers().then((offers) => {
       if (cancelled || !offers) return;
@@ -582,6 +597,7 @@ export function AppHome({
         if (!response) return;
         setWaitlistedTickets(response.tickets);
         setParticipationCount(response.participationCount);
+        setProposalParticipationCount(response.proposalParticipationCount);
       });
       void fetchProposalNotifications().then((notifications) => {
         if (!notifications) return;
@@ -689,7 +705,21 @@ export function AppHome({
       if (!response) return;
       setWaitlistedTickets(response.tickets);
       setParticipationCount(response.participationCount);
+      setProposalParticipationCount(response.proposalParticipationCount);
     });
+  };
+
+  const refreshProposalTicket = async () => {
+    const response = await fetchUserTickets({ force: true });
+    if (!response) return;
+    setWaitlistedTickets(response.tickets);
+    setParticipationCount(response.participationCount);
+    setProposalParticipationCount(response.proposalParticipationCount);
+  };
+
+  const openSubmittedProposalTicket = async () => {
+    await refreshProposalTicket();
+    switchTab("browse");
   };
 
   const logout = async () => {
@@ -728,7 +758,7 @@ export function AppHome({
               ? `메시지 ${pendingBlindDateOfferCount}개`
               : "블라인드 데이트 상태 확인"
           }
-          className="absolute right-[164px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+          className="absolute right-[172px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
         >
           <span className="text-lg leading-none" aria-hidden>
             ✉️
@@ -750,7 +780,7 @@ export function AppHome({
             ? `내가 제안한 모임 알림 ${proposalNotificationCount}개`
             : "새 제안 알림 없음"
         }
-        className="absolute right-[116px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+        className="absolute right-[120px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
       >
         <img
           src="/images/icons/notification-bell.png"
@@ -812,9 +842,9 @@ export function AppHome({
                   className="rounded-xl bg-black/[0.055] px-3 py-2.5"
                 >
                   <p className="text-sm font-bold leading-5 text-black/78">
-                    내가 제안한 모임이 수락되었어요.
+                    내가 제안한 모임이 바로 공개되었어요.
                     <br />
-                    티켓 탭에서 확인할 수 있어요.
+                    검토 중인 내용은 티켓 탭에서 확인할 수 있어요.
                   </p>
                   <div className="mt-1.5 flex justify-end">
                     <button
@@ -901,6 +931,19 @@ export function AppHome({
           <TicketListTab
             tickets={waitlistedTickets}
             userId={userId}
+            proposalProfile={{
+              userId,
+              displayName: profileNickname(currentProfile),
+              publicIntro: currentProfile.public_intro,
+              publicEmoji: profileEmoji(currentProfile),
+              gender: currentProfile.gender,
+              birthYear: currentProfile.birth_year,
+            }}
+            canOpenProposal={
+              currentProfile.is_test_participant === true ||
+              (proposalParticipationCount ?? 0) >= 1
+            }
+            onProposalSubmitted={refreshProposalTicket}
             onGoRecommend={() => switchTab("recommend")}
           />
         </div>
@@ -913,7 +956,10 @@ export function AppHome({
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
+            proposalParticipationCount={proposalParticipationCount}
+            proposalRequirementBypassed={currentProfile.is_test_participant === true}
             onWaitlisted={addWaitlistedTicket}
+            onProposalSubmitted={openSubmittedProposalTicket}
             onMembershipRequired={() => {
               setProfilePanelOpen(false);
               setMembershipModalOpen(true);
@@ -924,6 +970,8 @@ export function AppHome({
               displayName: profileNickname(currentProfile),
               publicIntro: currentProfile.public_intro,
               publicEmoji: profileEmoji(currentProfile),
+              gender: currentProfile.gender,
+              birthYear: currentProfile.birth_year,
             }}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
@@ -1052,14 +1100,22 @@ export function AppHome({
 function TicketListTab({
   tickets,
   userId,
+  proposalProfile,
+  canOpenProposal,
+  onProposalSubmitted,
   onGoRecommend,
 }: {
   tickets: UserTicket[];
   userId: string;
+  proposalProfile: ProposalMemberProfile;
+  canOpenProposal: boolean;
+  onProposalSubmitted: () => void | Promise<void>;
   onGoRecommend: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
+  const [copiedProposalTicket, setCopiedProposalTicket] =
+    useState<GatheringTicket | null>(null);
   const dragState = useRef({
     active: false,
     interacting: false,
@@ -1302,14 +1358,46 @@ function TicketListTab({
     setSelectedTicket(ticket);
   };
 
+  const copyTicketAsProposal = (ticket: GatheringTicket) => {
+    if (!canOpenProposal) {
+      window.alert(meetingProposalRequirementMessage);
+      return;
+    }
+
+    setCopiedProposalTicket(ticket);
+  };
+
   return (
     <TabMotion>
       <AnimatePresence mode="wait" initial={false}>
-        {selectedTicket ? (
+        {copiedProposalTicket ? (
+          <motion.section
+            key={`copied-proposal-${copiedProposalTicket.id}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="min-h-full px-5 pb-6 pt-7"
+          >
+            <MeetingProposalFlow
+              profile={proposalProfile}
+              copiedTicket={copiedProposalTicket}
+              onBack={() => setCopiedProposalTicket(null)}
+              onDone={async () => {
+                await onProposalSubmitted();
+                setCopiedProposalTicket(null);
+                setSelectedTicket(null);
+              }}
+            />
+          </motion.section>
+        ) : selectedTicket ? (
           <StoredTicketDetailView
             key={`stored-ticket-detail-${selectedTicket.id}`}
             userTicket={selectedTicket}
+            currentUserId={userId}
             onClose={() => setSelectedTicket(null)}
+            onCopyProposal={() =>
+              copyTicketAsProposal(selectedTicket.ticket)
+            }
           />
         ) : (
           <motion.section
@@ -1451,21 +1539,49 @@ function StoredTicketCard({
 
 export function StoredTicketDetailView({
   userTicket,
+  currentUserId,
   onClose,
+  onCopyProposal,
   previewMode = false,
+  selectedProgressStep: controlledProgressStep,
+  onProgressStepChange,
 }: {
   userTicket: UserTicket;
+  currentUserId?: string;
   onClose: () => void;
+  onCopyProposal?: () => void;
   previewMode?: boolean;
+  selectedProgressStep?: TicketProgressStep;
+  onProgressStepChange?: (step: TicketProgressStep) => void;
 }) {
   const ticket = userTicket.ticket;
+  const canRequestProposalChange = Boolean(
+    !previewMode &&
+      currentUserId &&
+      ticket.proposalId &&
+      ticket.activityType === "member_proposal" &&
+      ticket.proposerProfile?.userId === currentUserId,
+  );
+  const proposalRequestSlot = canRequestProposalChange ? (
+    <ProposalChangeRequestSection ticket={ticket} />
+  ) : null;
   const [statusOpen, setStatusOpen] = useState(true);
-  const [selectedProgressStep, setSelectedProgressStep] =
+  const [internalProgressStep, setInternalProgressStep] =
     useState<TicketProgressStep>(userTicket.progressStep);
+  const selectedProgressStep = controlledProgressStep ?? internalProgressStep;
 
   useEffect(() => {
-    setSelectedProgressStep(userTicket.progressStep);
-  }, [userTicket.id, userTicket.progressStep]);
+    if (controlledProgressStep) return;
+    setInternalProgressStep(userTicket.progressStep);
+  }, [controlledProgressStep, userTicket.id, userTicket.progressStep]);
+
+  const handleProgressStepChange = useCallback(
+    (step: TicketProgressStep) => {
+      if (!controlledProgressStep) setInternalProgressStep(step);
+      onProgressStepChange?.(step);
+    },
+    [controlledProgressStep, onProgressStepChange],
+  );
 
   return (
     <motion.section
@@ -1507,12 +1623,14 @@ export function StoredTicketDetailView({
             userTicket={userTicket}
             open={statusOpen}
             selectedProgressStep={selectedProgressStep}
-            onSelectProgressStep={setSelectedProgressStep}
+            onSelectProgressStep={handleProgressStepChange}
           />
           <TicketStageContent
             userTicket={userTicket}
             progressStep={selectedProgressStep}
             previewMode={previewMode}
+            proposalRequestSlot={proposalRequestSlot}
+            onCopyProposal={onCopyProposal}
           />
         </motion.div>
       </motion.article>
@@ -1677,7 +1795,10 @@ function TicketStatusOverview({
               selectedProgressStep={selectedProgressStep}
               onSelectProgressStep={onSelectProgressStep}
             />
-            <TicketStatusGuidance userTicket={userTicket} />
+            <TicketStatusGuidance
+              userTicket={userTicket}
+              selectedProgressStep={selectedProgressStep}
+            />
           </div>
         </motion.section>
       )}
@@ -1774,10 +1895,19 @@ function TicketProgressSteps({
   );
 }
 
-function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
+function TicketStatusGuidance({
+  userTicket,
+  selectedProgressStep,
+}: {
+  userTicket: UserTicket;
+  selectedProgressStep: TicketProgressStep;
+}) {
   const { stageCopy } = userTicket.ticket;
 
-  if (userTicket.status === "payment_pending") {
+  if (
+    selectedProgressStep === "applied" &&
+    userTicket.status === "payment_pending"
+  ) {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "paymentPending")}
@@ -1785,7 +1915,10 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
     );
   }
 
-  if (userTicket.status === "waitlisted") {
+  if (
+    selectedProgressStep === "applied" &&
+    userTicket.status === "waitlisted"
+  ) {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "waitlisted")}
@@ -1793,7 +1926,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
     );
   }
 
-  if (userTicket.progressStep === "applied") {
+  if (selectedProgressStep === "applied") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "applied")}
@@ -1801,7 +1934,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
     );
   }
 
-  if (userTicket.progressStep === "pre_start") {
+  if (selectedProgressStep === "pre_start") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "preStart")}
@@ -1809,7 +1942,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
     );
   }
 
-  if (userTicket.status === "in_progress") {
+  if (selectedProgressStep === "in_progress") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "inProgress")}
@@ -1817,7 +1950,7 @@ function TicketStatusGuidance({ userTicket }: { userTicket: UserTicket }) {
     );
   }
 
-  if (userTicket.status === "feedback_open") {
+  if (selectedProgressStep === "feedback") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "feedbackOpen")}
@@ -1836,10 +1969,14 @@ function TicketStageContent({
   userTicket,
   progressStep,
   previewMode = false,
+  proposalRequestSlot,
+  onCopyProposal,
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressStep;
   previewMode?: boolean;
+  proposalRequestSlot?: ReactNode;
+  onCopyProposal?: () => void;
 }) {
   const ticket = userTicket.ticket;
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
@@ -1904,7 +2041,216 @@ function TicketStageContent({
     );
   }
 
-  return <TicketDetailContent ticket={ticket} />;
+  return (
+    <TicketDetailContent
+      ticket={ticket}
+      afterNotice={proposalRequestSlot}
+      footer={
+        onCopyProposal ? (
+          <TicketCopyProposalSection onCopy={onCopyProposal} />
+        ) : null
+      }
+    />
+  );
+}
+
+type ProposalChangeRequestType = "edit" | "cancel";
+
+function ProposalChangeRequestSection({ ticket }: { ticket: GatheringTicket }) {
+  const [open, setOpen] = useState(false);
+  const [requestType, setRequestType] =
+    useState<ProposalChangeRequestType>("edit");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isCancel = requestType === "cancel";
+  const helperText = isCancel
+    ? "취소 사유를 작성해주세요. 해당 사항은 검수 후 반영됩니다."
+    : "수정하려는 부분을 적어주세요. 해당 사항은 검수 후 반영됩니다.";
+
+  const closeModal = () => {
+    if (submitting) return;
+    setOpen(false);
+  };
+
+  const submitRequest = async () => {
+    if (!ticket.proposalId || submitting || !message.trim()) return;
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/meeting-proposals/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposalId: ticket.proposalId,
+          requestType,
+          message,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? "request-failed");
+      }
+
+      setSubmitted(true);
+      setMessage("");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "요청을 저장하지 못했어요.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setSubmitted(false);
+          setError(null);
+          setOpen(true);
+        }}
+        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 text-sm font-black text-black/68 transition hover:border-accent/50 hover:text-black"
+      >
+        <PenLine size={15} aria-hidden />
+        수정 / 취소 요청하기
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            key="proposal-change-request-modal"
+            className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 px-4 py-5 sm:items-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="수정 또는 취소 요청"
+          >
+            <motion.section
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={ticketFadeTransition}
+              className="w-full max-w-[420px] rounded-[28px] bg-white p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
+                    proposal request
+                  </p>
+                  <h2 className="mt-1 text-lg font-black text-black">
+                    수정 / 취소 요청하기
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 text-black/45 transition hover:text-black"
+                  aria-label="요청 모달 닫기"
+                >
+                  <X size={16} aria-hidden />
+                </button>
+              </div>
+
+              {submitted ? (
+                <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-5 text-center">
+                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-700">
+                    <Check size={17} aria-hidden />
+                  </div>
+                  <p className="mt-3 text-sm font-black text-emerald-950">
+                    요청이 접수됐어요.
+                  </p>
+                  <p className="mt-1 text-xs font-bold leading-5 text-emerald-800/70">
+                    관리자가 확인한 뒤 수정하거나 취소를 반영할게요.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="mt-4 h-10 w-full rounded-full bg-emerald-700 text-xs font-black text-white"
+                  >
+                    확인
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  <label className="block">
+                    <span className="text-xs font-black text-black/55">
+                      요청 사항
+                    </span>
+                    <select
+                      value={requestType}
+                      onChange={(event) => {
+                        setRequestType(
+                          event.target.value as ProposalChangeRequestType,
+                        );
+                        setError(null);
+                      }}
+                      className="mt-1.5 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none focus:border-accent"
+                    >
+                      <option value="edit">수정</option>
+                      <option value="cancel">취소</option>
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-bold leading-5 text-black/45">
+                      {helperText}
+                    </span>
+                    <textarea
+                      value={message}
+                      maxLength={1200}
+                      onChange={(event) => {
+                        setMessage(event.target.value);
+                        setError(null);
+                      }}
+                      rows={6}
+                      placeholder={
+                        isCancel
+                          ? "예: 일정이 어려워져서 취소하고 싶어요."
+                          : "예: 장소를 성수에서 건대로 바꾸고 싶어요."
+                      }
+                      className="mt-2 w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-6 text-black outline-none placeholder:text-black/25 focus:border-accent"
+                    />
+                  </label>
+
+                  {error && (
+                    <p className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
+                      {error}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={submitting || !message.trim()}
+                    onClick={() => void submitRequest()}
+                    className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-black text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
+                  >
+                    {submitting && (
+                      <Loader2 size={16} className="animate-spin" aria-hidden />
+                    )}
+                    요청 보내기
+                  </button>
+                </div>
+              )}
+            </motion.section>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 }
 
 function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
@@ -2279,12 +2625,6 @@ function memberRealName(member: UserTicket["members"][number]) {
   return member.name?.trim() || member.nickname?.trim() || "멤버";
 }
 
-function oppositeGender(gender: Gender | null | undefined): Gender | null {
-  if (gender === "남성") return "여성";
-  if (gender === "여성") return "남성";
-  return null;
-}
-
 function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
   const displayName = member?.nickname?.trim() || member?.name?.trim() || "회원";
   return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
@@ -2312,10 +2652,8 @@ function TicketFeedbackForm({
     [userTicket.members],
   );
   const dateCandidateMembers = useMemo(() => {
-    const targetGender = oppositeGender(selfMember?.gender);
-    if (!targetGender) return [];
-    return otherMembers.filter((member) => member.gender === targetGender);
-  }, [otherMembers, selfMember?.gender]);
+    return otherMembers;
+  }, [otherMembers]);
   const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
     overall: null,
     expectationMatch: null,
@@ -2609,7 +2947,7 @@ function TicketFeedbackForm({
           단둘이 만나고 싶어요.
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          블라인드 데이트 제안을 만들 때 참고해요.
+          함께한 멤버 중 다시 만나보고 싶은 사람을 참고해요.
         </p>
         {dateCandidateMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -2647,7 +2985,7 @@ function TicketFeedbackForm({
           </div>
         ) : (
           <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-            선택 가능한 이성 멤버가 없어 이 단계는 건너뛰어요.
+            선택 가능한 멤버가 없어 이 단계는 건너뛰어요.
           </p>
         )}
       </section>

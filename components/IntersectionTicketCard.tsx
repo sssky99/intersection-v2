@@ -103,7 +103,7 @@ export function IntersectionTicketCard({
           )}
         />
       ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(126,179,199,0.36),transparent_34%),linear-gradient(145deg,#26372f,#101715_58%,#050606)]" />
+        <div className="absolute inset-0 bg-black" />
       )}
 
       {overlayVisible && (

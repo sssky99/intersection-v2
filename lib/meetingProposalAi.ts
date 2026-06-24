@@ -18,7 +18,8 @@ const proposalDraftTextFormat = {
     properties: {
       title: {
         type: "string",
-        description: "A concise Korean title. Usually preserve the user's title.",
+        description:
+          "A concise Korean invitation title that makes the reader want to participate, inferred from activityDescription.",
       },
       shortDescription: {
         type: "string",
@@ -60,12 +61,6 @@ const proposalDraftTextFormat = {
           "romance",
         ],
       },
-      flow: {
-        type: "array",
-        minItems: 3,
-        maxItems: 5,
-        items: { type: "string" },
-      },
     },
     required: [
       "title",
@@ -73,7 +68,6 @@ const proposalDraftTextFormat = {
       "hashtags",
       "activities",
       "vibe",
-      "flow",
     ],
   },
 } as const;
@@ -161,9 +155,6 @@ function assertDraftHasRequiredFields(value: unknown) {
   if (!hasRequiredVibe(draft.vibe)) {
     throw new Error("Meeting proposal draft is missing vibe.");
   }
-  if (!hasRequiredList(draft.flow, 3)) {
-    throw new Error("Meeting proposal draft is missing flow.");
-  }
 }
 
 function normalizeDraft(value: unknown, input: MeetingProposalInput): MeetingProposalDraft {
@@ -174,7 +165,7 @@ function normalizeDraft(value: unknown, input: MeetingProposalInput): MeetingPro
   const fallback = buildFallbackProposalDraft(input);
 
   return {
-    title: cleanText(draft.title) || input.title,
+    title: cleanText(draft.title) || fallback.title,
     shortDescription:
       cleanText(draft.shortDescription) || fallback.shortDescription,
     hashtags: normalizeProposalHashtags(draft.hashtags, {
@@ -193,7 +184,7 @@ function normalizeDraft(value: unknown, input: MeetingProposalInput): MeetingPro
       alcohol: clampLegacyScore(vibe.alcohol, fallback.vibe.alcohol ?? 2),
       romance: clampLegacyScore(vibe.romance, fallback.vibe.romance ?? 2),
     },
-    flow: cleanStringList(draft.flow, fallback.flow).slice(0, 5),
+    flow: [],
   };
 }
 
@@ -205,6 +196,13 @@ async function requestGptDraft(client: OpenAI, input: MeetingProposalInput) {
       "You write Korean drafts for an operator-reviewed gathering proposal feature.",
       "Do not imply that the user is directly publishing an invitation.",
       "Use warm, concise Korean copy that fits a small curated offline gathering.",
+      "Create a fresh Korean title from activityDescription. The user does not provide a title.",
+      "The title is the main invitation hook. It must make the reader feel curious, picture the experience, and want to participate.",
+      "Use an inviting, lively phrase grounded in the actual activity rather than a dry category label or a plain summary.",
+      "Prefer a concrete moment, enjoyable payoff, relatable desire, or light invitation. A short conversational phrase or question is welcome when natural.",
+      "Keep the title natural and specific, preferably within 22 Korean characters. Do not include the region or venue name.",
+      "Avoid vague titles such as 취향 모임, 즐거운 만남, 함께하는 시간, or 영화 모임. Avoid exaggerated clickbait or promises unsupported by the user's activity.",
+      "For an activity like 영화를 보고 카페에서 감상을 나눠요, good title directions include 영화 끝나고, 우리 얘기해요 or 오늘 본 장면을 함께 나눠요.",
       "For hashtags, return 2-3 short Korean keyword strings only: no # prefix, no spaces, no punctuation, no sentences, no questions, no English meta instructions, and no JSON guidance.",
       "Use mood, interest, or activity keywords only. Do not use region or place names, or generic gathering words such as 모임, 만남, 자리, or 교집합.",
       "Bad hashtag example: \"농장체험 이랑? no spaces? Need JSON valid\". Good examples: \"농장체험\", \"자연\", \"취향대화\".",
@@ -230,8 +228,14 @@ async function requestGptDraft(client: OpenAI, input: MeetingProposalInput) {
 export function buildFallbackProposalDraft(
   input: MeetingProposalInput,
 ): MeetingProposalDraft {
-  const title = input.title.trim();
   const region = input.region.trim() || "원하는 지역";
+  const activity = input.activityDescription.trim();
+  const title =
+    activity
+      .replace(/^예\s*:\s*/, "")
+      .split(/[.!?\n]/)[0]
+      ?.trim()
+      .slice(0, 28) || "함께 나누고 싶은 취향";
   const userHashtags = normalizeProposalHashtags(input.userHashtags, {
     blockedTags: [region, input.specificPlace],
   });
@@ -241,7 +245,7 @@ export function buildFallbackProposalDraft(
 
   return {
     title,
-    shortDescription: `${region}에서 ${input.activityDescription.trim() || "가볍게 취향을 나누는"} 자리예요.`,
+    shortDescription: `${region}에서 ${activity || "가볍게 취향을 나누는"} 자리예요.`,
     hashtags: inferredTags,
     activities: [
       "가볍게 인사하고 이 자리를 제안한 이유를 나눠요.",
@@ -249,12 +253,7 @@ export function buildFallbackProposalDraft(
       "분위기에 맞춰 자연스럽게 대화를 이어가요.",
     ],
     vibe: fallbackVibe,
-    flow: [
-      "처음에는 간단히 인사하고 자리에 앉아요.",
-      "제안자가 이 자리를 떠올린 이유를 한마디로 소개해요.",
-      "준비된 활동이나 대화 주제로 천천히 이어가요.",
-      "마무리 전 좋았던 순간을 가볍게 나눠요.",
-    ],
+    flow: [],
   };
 }
 

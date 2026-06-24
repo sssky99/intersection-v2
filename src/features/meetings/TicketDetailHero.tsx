@@ -60,7 +60,7 @@ export function TicketDetailHero({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(126,179,199,0.36),transparent_34%),linear-gradient(145deg,#26372f,#101715_58%,#050606)]" />
+        <div className="absolute inset-0 bg-black" />
       )}
       <div className="absolute inset-0 bg-black/50" />
       <div className="absolute inset-0 bg-gradient-to-b from-black/12 via-black/16 to-black/72" />

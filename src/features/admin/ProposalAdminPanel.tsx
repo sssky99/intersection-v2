@@ -9,7 +9,6 @@ import {
   RotateCcw,
   Save,
   Search,
-  WandSparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +19,12 @@ import type { AdminMeetingProposal } from "@/features/admin/proposalAdminTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
-import type { GatheringTicket } from "@/types/ticket";
+import { ticketPlaceFromMeetingPlace } from "@/lib/placePayload";
+import {
+  MEETING_MAX_PARTICIPANT_COUNT,
+  MEETING_MIN_PARTICIPANT_COUNT,
+  type GatheringTicket,
+} from "@/types/ticket";
 import {
   meetingProposalStatusLabels,
   meetingProposalStatuses,
@@ -43,7 +47,6 @@ type ProposalDraft = {
   hashtagsText: string;
   shortDescription: string;
   activitiesText: string;
-  flowText: string;
   vibe: VibeScores;
   status: MeetingProposalStatus;
   adminNote: string;
@@ -56,6 +59,18 @@ const timeHours = Array.from({ length: 12 }, (_, hour) =>
   String(hour + 1).padStart(2, "0"),
 );
 type TimePeriod = (typeof timePeriods)[number];
+
+const requestTypeLabels = {
+  edit: "수정",
+  cancel: "취소",
+} as const;
+
+const requestStatusLabels = {
+  pending_review: "검수 대기",
+  reviewed: "검수 완료",
+  approved: "반영 완료",
+  rejected: "반려",
+} as const;
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -106,13 +121,6 @@ function splitLines(value: string, limit = 5) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, limit);
-}
-
-function splitEditableLines(value: string) {
-  const items = value.split(/\r?\n/);
-  return items.length === 0 || (items.length === 1 && items[0] === "")
-    ? [""]
-    : items;
 }
 
 function normalizeTimeValue(value: string | null | undefined) {
@@ -186,7 +194,6 @@ function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
     hashtagsText: proposal.hashtags.map((tag) => `#${tag}`).join(" "),
     shortDescription: proposal.shortDescription,
     activitiesText: proposal.activities.join("\n"),
-    flowText: proposal.flow.join("\n"),
     vibe: proposal.vibe,
     status: proposal.status,
     adminNote: proposal.adminNote ?? "",
@@ -206,6 +213,7 @@ function proposalPreview(
   return {
     id: proposal.convertedInstanceId ?? proposal.id,
     templateId: proposal.convertedTemplateId ?? proposal.id,
+    proposalId: proposal.id,
     title: draft.title.trim() || "제안할 교집합",
     subtitle: summary || "멤버가 제안한 교집합",
     date: draft.eventDate,
@@ -215,19 +223,24 @@ function proposalPreview(
     activityType: "member_proposal",
     imageUrl: draft.imageUrl.trim() || undefined,
     remainingSeatCount: 0,
+    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: summary || "멤버 제안",
     reason: summary || "멤버 제안",
     detailSummary: summary || undefined,
     detailActivities: activities.length
       ? activities
       : splitLines(draft.activityDescription, 4),
-    detailFlow: splitLines(draft.flowText, 6),
+    detailFlow: [],
+    place: ticketPlaceFromMeetingPlace(proposal.place),
     proposerLabel: `${proposal.proposerProfile.displayName}님의 제안`,
     proposerProfile: {
       userId: proposal.proposerId,
       displayName: proposal.proposerProfile.displayName,
       publicIntro: proposal.proposerProfile.publicIntro,
       publicEmoji: proposal.proposerProfile.publicEmoji,
+      gender: proposal.proposerProfile.gender,
+      birthYear: proposal.proposerProfile.birthYear,
     },
     vibeScores: {
       temperature: draft.vibe.temperature ?? null,
@@ -247,7 +260,6 @@ export function ProposalAdminPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
-  const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -347,7 +359,7 @@ export function ProposalAdminPanel() {
         shortDescription: draft.shortDescription,
         activities: splitLines(draft.activitiesText, 4),
         vibe: draft.vibe,
-        flow: splitLines(draft.flowText, 6),
+        flow: [],
         status: draft.status,
         adminNote: draft.adminNote,
         rejectionReason: draft.rejectionReason,
@@ -399,7 +411,7 @@ export function ProposalAdminPanel() {
       setDraft((current) =>
         current ? { ...current, imageUrl: data.imageUrl ?? current.imageUrl } : current,
       );
-      setNotice("새 대표 이미지를 적용했어요. 저장하면 초대장에 반영됩니다.");
+      setNotice("새 대표 이미지를 적용했어요. 저장하면 공개 티켓에 반영됩니다.");
     }
     setImageUploading(false);
   };
@@ -408,49 +420,8 @@ export function ProposalAdminPanel() {
     if (!selectedProposal?.originalImageUrl || !draft) return;
 
     setDraft({ ...draft, imageUrl: selectedProposal.originalImageUrl });
-    setNotice("제안자가 올린 원본 이미지로 되돌렸어요. 저장하면 초대장에 반영됩니다.");
+    setNotice("제안자가 올린 원본 이미지로 되돌렸어요. 저장하면 공개 티켓에 반영됩니다.");
   };
-
-  const convertToTicket = async () => {
-    if (!selectedProposal || !draft || converting) return;
-
-    const saved = await saveDraft({ silent: true });
-    if (!saved) return;
-
-    setConverting(true);
-    setError(null);
-    setNotice(null);
-
-    const response = await fetch("/api/admin/proposals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "convert_to_ticket",
-        proposalId: selectedProposal.id,
-      }),
-    }).catch(() => null);
-    const data = response
-      ? ((await response.json().catch(() => null)) as ProposalResponse | null)
-      : null;
-
-    if (!response?.ok || !data?.proposals) {
-      setError(data?.error ?? "초대장으로 전환하지 못했습니다.");
-      setConverting(false);
-      return;
-    }
-
-    replaceFromResponse(data.proposals);
-    setNotice("제안을 초대장으로 전환하고 제안자를 참여 확정했어요.");
-    setConverting(false);
-  };
-
-  const convertDisabled =
-    !selectedProposal ||
-    !draft ||
-    saving ||
-    imageUploading ||
-    converting ||
-    selectedProposal.status === "converted_to_ticket";
 
   return (
     <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
@@ -459,25 +430,16 @@ export function ProposalAdminPanel() {
           <div>
             <h2 className="text-lg font-bold">제안 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
-              멤버가 제안한 자리를 검수하고 동일한 미리보기로 초대장 전환을 준비합니다.
+              제출 즉시 공개된 제안을 검토하고, 필요한 수정·승인·비공개 처리를 진행합니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
             <IconButton
-              disabled={loading || saving || converting}
+              disabled={loading || saving}
               onClick={() => void loadProposals()}
               icon={RefreshCw}
             >
               새로고침
-            </IconButton>
-            <IconButton
-              primary
-              disabled={convertDisabled}
-              onClick={() => void convertToTicket()}
-              icon={converting ? Loader2 : WandSparkles}
-              spin={converting}
-            >
-              초대장으로 만들기
             </IconButton>
           </div>
         </div>
@@ -547,7 +509,7 @@ export function ProposalAdminPanel() {
                 <ProposalBasicEditor
                   proposal={selectedProposal}
                   draft={draft}
-                  saving={saving || imageUploading || converting}
+                  saving={saving || imageUploading}
                   onDraftChange={setDraft}
                   onImageUpload={uploadImage}
                   onRestoreOriginalImage={restoreOriginalImage}
@@ -560,7 +522,7 @@ export function ProposalAdminPanel() {
 
                 <ProposalScoreEditor
                   draft={draft}
-                  saving={saving || converting}
+                  saving={saving}
                   onDraftChange={setDraft}
                 />
 
@@ -628,6 +590,13 @@ function ProposalListCard({
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <StatusBadge status={proposal.status} />
+          {proposal.changeRequests.some(
+            (request) => request.status === "pending_review",
+          ) && (
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-700">
+              요청 있음
+            </span>
+          )}
         </div>
         <p className="mt-2 text-[10px] text-black/30">
           제출 {updatedDate(proposal.submittedAt)}
@@ -875,10 +844,6 @@ function ProposalContentEditor({
             onDraftChange({ ...draft, activitiesText })
           }
         />
-        <FlowStepEditor
-          value={draft.flowText}
-          onChange={(flowText) => onDraftChange({ ...draft, flowText })}
-        />
       </div>
     </section>
   );
@@ -954,12 +919,12 @@ function ProposalMetaPanel({
           ]}
         />
         <InfoCard
-          title="전환 정보"
+          title="공개 정보"
           rows={[
             ["상태", meetingProposalStatusLabels[proposal.status]],
             ["템플릿 ID", display(proposal.convertedTemplateId)],
             ["회차 ID", display(proposal.convertedInstanceId)],
-            ["전환일", formatDateTime(proposal.convertedAt)],
+            ["공개일", formatDateTime(proposal.convertedAt)],
           ]}
         />
       </div>
@@ -980,6 +945,70 @@ function ProposalMetaPanel({
         />
         <ProposalRejectionNotificationPreview proposal={proposal} draft={draft} />
       </div>
+      <ProposalChangeRequestPanel proposal={proposal} />
+    </section>
+  );
+}
+
+function ProposalChangeRequestPanel({
+  proposal,
+}: {
+  proposal: AdminMeetingProposal;
+}) {
+  return (
+    <section className="mt-4 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-bold">제안자 수정 / 취소 요청</h3>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-black/42">
+          {proposal.changeRequests.length}건
+        </span>
+      </div>
+
+      {proposal.changeRequests.length === 0 ? (
+        <p className="mt-3 rounded-xl bg-white px-3 py-3 text-xs font-bold leading-5 text-black/42">
+          아직 접수된 수정 또는 취소 요청이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {proposal.changeRequests.map((request) => (
+            <article
+              key={request.id}
+              className="rounded-xl border border-black/8 bg-white px-3 py-3"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-black text-white">
+                  {requestTypeLabels[request.type]}
+                </span>
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[10px] font-black",
+                    request.status === "pending_review"
+                      ? "bg-amber-50 text-amber-700"
+                      : request.status === "approved"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : request.status === "rejected"
+                          ? "bg-red-50 text-red-600"
+                          : "bg-black/[0.06] text-black/45",
+                  )}
+                >
+                  {requestStatusLabels[request.status]}
+                </span>
+                <span className="text-[10px] font-bold text-black/30">
+                  {formatDateTime(request.createdAt)}
+                </span>
+              </div>
+              <p className="mt-3 whitespace-pre-line text-xs font-semibold leading-5 text-black/65">
+                {request.body}
+              </p>
+              {request.adminNote && (
+                <p className="mt-3 rounded-xl bg-black/[0.03] px-3 py-2 text-[11px] font-bold leading-5 text-black/45">
+                  관리자 메모: {request.adminNote}
+                </p>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1106,81 +1135,6 @@ function InfoCard({
         ))}
       </dl>
     </section>
-  );
-}
-
-function FlowStepEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const steps = splitEditableLines(value);
-
-  const updateStep = (index: number, nextValue: string) => {
-    const nextSteps = [...steps];
-    nextSteps[index] = nextValue;
-    onChange(nextSteps.join("\n"));
-  };
-
-  const addStep = () => {
-    onChange([...steps, ""].join("\n"));
-  };
-
-  const removeStep = (index: number) => {
-    const nextSteps = steps.filter((_, stepIndex) => stepIndex !== index);
-    onChange((nextSteps.length ? nextSteps : [""]).join("\n"));
-  };
-
-  return (
-    <div className="col-span-2">
-      <span className="text-xs font-semibold text-black/50">
-        이렇게 진행돼요
-      </span>
-      <div className="mt-1.5 space-y-2">
-        {steps.map((step, index) => (
-          <div
-            key={index}
-            className="grid grid-cols-[34px_minmax(0,1fr)] items-center gap-2"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-xs font-black text-white">
-              {index + 1}
-            </span>
-            <input
-              type="text"
-              value={step}
-              placeholder={
-                index === 0
-                  ? "가볍게 인사해요"
-                  : index === 1
-                    ? "함께 시간을 보내요"
-                    : "다음 순서를 입력해요"
-              }
-              onChange={(event) => updateStep(index, event.target.value)}
-              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={addStep}
-          className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
-        >
-          순서 추가
-        </button>
-        <button
-          type="button"
-          onClick={() => removeStep(steps.length - 1)}
-          disabled={steps.length === 1 && !steps[0]?.trim()}
-          className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/40 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-        >
-          마지막 삭제
-        </button>
-      </div>
-    </div>
   );
 }
 

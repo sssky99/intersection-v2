@@ -1,4 +1,6 @@
 import type { VibeScores } from "@/components/vibe/vibeGraphConfig";
+import type { MeetingPlace } from "@/types/place";
+import type { Gender } from "@/types/user";
 
 export type MeetingProposalStatus =
   | "pending_review"
@@ -6,14 +8,30 @@ export type MeetingProposalStatus =
   | "converted_to_ticket"
   | "rejected";
 
+export type MeetingProposalImageSource = "pexels" | "user_upload";
+export type MeetingProposalImageSelectionMethod = "auto" | "manual";
+
+export type MeetingProposalCoverImage = {
+  imageUrl: string | null;
+  imageSource: MeetingProposalImageSource;
+  imageSelectionMethod: MeetingProposalImageSelectionMethod;
+  pexelsPhotoId?: string | null;
+  pexelsPageUrl?: string | null;
+  photographer?: string | null;
+  photographerUrl?: string | null;
+  imageReviewModel?: string | null;
+};
+
 export type MeetingProposalInput = {
   imageUrl?: string | null;
+  coverImage?: MeetingProposalCoverImage | null;
   title: string;
   activityDescription: string;
   eventDate: string;
   eventTime: string;
   region: string;
   specificPlace?: string | null;
+  place?: MeetingPlace | null;
   userHashtags?: string[];
 };
 
@@ -31,6 +49,8 @@ export type MeetingProposalPublicProfile = {
   displayName: string;
   publicIntro?: string | null;
   publicEmoji?: string | null;
+  gender?: Gender | null;
+  birthYear?: string | number | null;
 };
 
 export type MeetingProposal = MeetingProposalInput &
@@ -62,8 +82,8 @@ export const meetingProposalStatusLabels: Record<
   MeetingProposalStatus,
   string
 > = {
-  pending_review: "검토 중",
-  approved: "초대장으로 준비 중",
-  converted_to_ticket: "초대장으로 열렸어요",
-  rejected: "이번에는 반영이 어려워요",
+  pending_review: "공개 검토 중",
+  approved: "검토 승인됨",
+  converted_to_ticket: "공개 중",
+  rejected: "검토 반려됨",
 };

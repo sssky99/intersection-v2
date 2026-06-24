@@ -1,4 +1,8 @@
 import type { Gender } from "@/types/user";
+import type { MeetingPlace } from "@/types/place";
+
+export const MEETING_MIN_PARTICIPANT_COUNT = 3;
+export const MEETING_MAX_PARTICIPANT_COUNT = 6;
 
 export type TicketStageCopy = {
   paymentPending?: string | null;
@@ -15,6 +19,7 @@ export type TicketStageCopy = {
 export type GatheringTicket = {
   id: string;
   templateId: string;
+  proposalId?: string | null;
   title: string;
   subtitle: string;
   date: string;
@@ -24,6 +29,8 @@ export type GatheringTicket = {
   activityType?: string | null;
   imageUrl?: string;
   remainingSeatCount?: number;
+  minimumParticipantCount?: number;
+  maxParticipantCount?: number;
   peopleHint: string;
   reason: string;
   recommendationName?: string;
@@ -34,6 +41,7 @@ export type GatheringTicket = {
   detailFlow?: string[];
   detailGoodFor?: string[];
   detailNotice?: string;
+  place?: TicketPlace | null;
   stageCopy?: TicketStageCopy | null;
   proposerLabel?: string;
   proposerProfile?: {
@@ -41,6 +49,8 @@ export type GatheringTicket = {
     displayName: string;
     publicIntro?: string | null;
     publicEmoji?: string | null;
+    gender?: Gender | null;
+    birthYear?: string | number | null;
   };
   vibeScores?: {
     temperature?: number | null;
@@ -100,6 +110,13 @@ export type TicketMemberIntro = {
 export type TicketPlace = {
   name: string | null;
   address: string | null;
+  category?: string | null;
+  roadAddress?: string | null;
+  jibunAddress?: string | null;
+  mapx?: number | null;
+  mapy?: number | null;
+  link?: string | null;
+  source?: MeetingPlace["source"] | null;
 };
 
 export type UserTicket = {
@@ -124,6 +141,7 @@ export type UserTicket = {
 export type UserTicketsResponse = {
   tickets: UserTicket[];
   participationCount: number;
+  proposalParticipationCount: number;
 };
 
 export type WaitlistRegistration = {
