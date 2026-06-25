@@ -1,5 +1,5 @@
-export const GA_MEASUREMENT_ID = "G-BNWXYGSPQX";
-export const CLARITY_PROJECT_ID = "xbekb3dtt6";
+export const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+export const CLARITY_PROJECT_ID = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID;
 
 type AnalyticsParamValue = string | number | boolean;
 type AnalyticsParams = Record<
