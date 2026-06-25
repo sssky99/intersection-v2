@@ -190,10 +190,12 @@ export function ImprovedDetailsClient({
 
           <StorySection title={"검증된 괜찮은 사람들을\n만나보세요."} last>
             <MemberProfileCarousel />
+            <ImprovedDetailsCTAButton
+              nextPath={nextPath}
+              replayMode={replayMode}
+            />
           </StorySection>
         </main>
-
-        <ImprovedDetailsInlineCTA nextPath={nextPath} replayMode={replayMode} />
       </div>
     </section>
   );
@@ -489,7 +491,7 @@ function MemberProfileCarousel() {
   );
 }
 
-function ImprovedDetailsInlineCTA({
+function ImprovedDetailsCTAButton({
   nextPath,
   replayMode,
 }: {
@@ -499,45 +501,30 @@ function ImprovedDetailsInlineCTA({
   const reducedMotion = useReducedMotion();
 
   return (
-    <motion.section
+    <motion.div
       initial={reducedMotion ? false : { opacity: 0, y: 18 }}
       whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ amount: 0.4, once: true }}
       transition={{ duration: 0.45, ease: "easeOut" }}
-      className="px-5 pb-[calc(32px+env(safe-area-inset-bottom))] pt-10"
+      className="mt-5 pb-[calc(32px+env(safe-area-inset-bottom))]"
+      data-testid="details-inline-cta"
     >
-      <div
-        data-testid="details-inline-cta"
-        className={cn(
-          "rounded-[24px] px-4 py-5 shadow-[0_20px_52px_rgba(17,23,21,0.14)]",
-          replayMode ? "bg-white text-[#111715]" : "bg-[#111715] text-white",
-        )}
-      >
-        <p
-          className={cn(
-            "text-[13px] font-semibold leading-5",
-            replayMode ? "text-black/58" : "text-white/64",
-          )}
+      {replayMode ? (
+        <a
+          href={nextPath}
+          className="flex h-14 w-full items-center justify-center rounded-full bg-[#111715] px-5 text-sm font-bold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99]"
         >
-          충분히 살펴봤다면, 이제 나에게 맞는 사람과 자리를 추천받아보세요.
-        </p>
-        {replayMode ? (
-          <a
-            href={nextPath}
-            className="mt-4 flex h-14 w-full items-center justify-center rounded-full bg-[#111715] px-5 text-sm font-bold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99]"
-          >
-            나에게 맞는 자리 보러가기
-          </a>
-        ) : (
-          <KakaoLoginButton
-            nextPath={nextPath}
-            loadingLabel="카카오로 이동 중..."
-            className="mt-4 h-14 rounded-full px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.18)] active:scale-[0.99] disabled:opacity-60"
-          >
-            {(loading) => <>{loading ? "카카오로 이동 중..." : "카카오로 시작하기"}</>}
-          </KakaoLoginButton>
-        )}
-      </div>
-    </motion.section>
+          나에게 맞는 자리 보러가기
+        </a>
+      ) : (
+        <KakaoLoginButton
+          nextPath={nextPath}
+          loadingLabel="카카오로 이동 중..."
+          className="h-14 rounded-full px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.18)] active:scale-[0.99] disabled:opacity-60"
+        >
+          {(loading) => <>{loading ? "카카오로 이동 중..." : "카카오로 시작하기"}</>}
+        </KakaoLoginButton>
+      )}
+    </motion.div>
   );
 }
