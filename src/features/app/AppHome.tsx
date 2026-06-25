@@ -1020,6 +1020,7 @@ export function AppHome({
 
       <MembershipModal
         open={membershipModalOpen}
+        userId={userId}
         currentMembership={currentMembership}
         pendingTicket={membershipTicket}
         onClose={() => {
@@ -1069,6 +1070,12 @@ export function AppHome({
               setProfilePanelOpen(false);
               setMembershipTicket(ticket);
               setMembershipModalOpen(true);
+            }}
+            onPaymentReturn={() => {
+              setMembershipModalOpen(false);
+              setMembershipTicket(null);
+              setActiveTab("recommend");
+              setTabUrl("recommend");
             }}
             onOpenList={() => switchTab("browse")}
             onOpenProposal={() => switchTab("proposal")}

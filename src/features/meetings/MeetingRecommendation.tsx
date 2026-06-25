@@ -30,6 +30,7 @@ import {
   type ProposalMemberProfile,
 } from "@/features/meetings/MeetingProposalFlow";
 import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
+import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
@@ -149,6 +150,7 @@ export function MeetingRecommendation({
   onWaitlisted,
   onProposalSubmitted,
   onMembershipRequired,
+  onPaymentReturn,
   onOpenList,
   onOpenProposal,
   proposalProfile,
@@ -167,6 +169,7 @@ export function MeetingRecommendation({
   onWaitlisted?: (ticket: GatheringTicket) => void;
   onProposalSubmitted?: () => void | Promise<void>;
   onMembershipRequired?: (ticket: GatheringTicket) => void;
+  onPaymentReturn?: () => void;
   onOpenList?: () => void;
   onOpenProposal?: () => void;
   proposalProfile: ProposalMemberProfile;
@@ -219,6 +222,40 @@ export function MeetingRecommendation({
   const proposalRestrictionMessage = canSubmitProposal
     ? null
     : meetingProposalRequirementMessage;
+
+  useEffect(() => {
+    const restorePaymentPendingScreen = () => {
+      const pendingTicket = takePendingTicketPayment(userId);
+      if (!pendingTicket) return;
+
+      setSelectedDate(null);
+      setTicketIndex(0);
+      setWaitlistedTicket(pendingTicket);
+      setWaitlistStatus("payment_pending");
+      setNotice(null);
+      setError(null);
+      clearTicketCaches();
+      onWaitlisted?.(pendingTicket);
+      onPaymentReturn?.();
+      setScreen("waitlisted");
+    };
+    const restoreWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        restorePaymentPendingScreen();
+      }
+    };
+
+    restorePaymentPendingScreen();
+    window.addEventListener("pageshow", restorePaymentPendingScreen);
+    window.addEventListener("focus", restorePaymentPendingScreen);
+    document.addEventListener("visibilitychange", restoreWhenVisible);
+
+    return () => {
+      window.removeEventListener("pageshow", restorePaymentPendingScreen);
+      window.removeEventListener("focus", restorePaymentPendingScreen);
+      document.removeEventListener("visibilitychange", restoreWhenVisible);
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
@@ -530,13 +567,19 @@ export function MeetingRecommendation({
                 {formatTicketTimeLabel(waitlistedTicket.time)} · {waitlistedTicket.area}
               </p>
               <div className="mt-5 border-t border-black/8 pt-4">
-                {[
-                  waitlistStatus === "payment_pending"
-                    ? "결제 확인 필요"
-                    : "대기열 등록 완료",
-                  "운영자 확인",
-                  "참여 승인 및 안내",
-                ].map((step, index) => (
+                {(waitlistStatus === "payment_pending"
+                  ? [
+                      "결제 확인 필요",
+                      "운영자 확인",
+                      "모임 대기 등록",
+                      "참여 승인 및 안내",
+                    ]
+                  : [
+                      "대기열 등록 완료",
+                      "운영자 확인",
+                      "참여 승인 및 안내",
+                    ]
+                ).map((step, index) => (
                   <div key={step} className="flex items-center gap-3 py-2">
                     <span
                       className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${

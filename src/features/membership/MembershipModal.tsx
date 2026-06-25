@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { MembershipPlan } from "@/features/membership/membershipTypes";
 import { trackEvent } from "@/lib/analytics";
+import { rememberPendingTicketPayment } from "@/lib/pendingTicketPayment";
 import type { GatheringTicket } from "@/types/ticket";
 
 export type CurrentMembership = {
@@ -128,11 +129,13 @@ export function MembershipFloatingButton({
 
 export function MembershipModal({
   open,
+  userId,
   currentMembership,
   pendingTicket = null,
   onClose,
 }: {
   open: boolean;
+  userId: string;
   currentMembership: CurrentMembership;
   pendingTicket?: GatheringTicket | null;
   onClose: () => void;
@@ -210,6 +213,10 @@ export function MembershipModal({
         plan: selectedPlan.id,
         months: selectedPlan.months,
       });
+      if (pendingTicket) {
+        rememberPendingTicketPayment(userId, pendingTicket);
+      }
+      onClose();
       window.location.assign(selectedPlan.storeUrl);
     } catch {
       setPurchaseError("멤버십 신청 상태를 저장하지 못했습니다.");
