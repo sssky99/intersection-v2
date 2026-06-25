@@ -2,7 +2,10 @@
 
 import { motion } from "framer-motion";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { formatTicketDateLabel } from "@/components/IntersectionTicketCard";
+import {
+  formatTicketDateLabel,
+  formatTicketTimeLabel,
+} from "@/components/IntersectionTicketCard";
 import type { GatheringTicket } from "@/types/ticket";
 
 export const ticketFadeTransition = {
@@ -40,7 +43,8 @@ export function TicketDetailHero({
   className?: string;
 }) {
   const dateLabel = formatTicketDateLabel(ticket.date);
-  const metaLabel = [dateLabel, ticket.time, ticket.area]
+  const timeLabel = formatTicketTimeLabel(ticket.time);
+  const metaLabel = [dateLabel, timeLabel, ticket.area]
     .filter(Boolean)
     .join(" · ");
   const tags = normalizeTags(ticket.moodTags);

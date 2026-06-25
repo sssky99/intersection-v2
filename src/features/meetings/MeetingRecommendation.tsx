@@ -10,6 +10,10 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  formatTicketDateLabel,
+  formatTicketTimeLabel,
+} from "@/components/IntersectionTicketCard";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import {
@@ -20,6 +24,7 @@ import {
   TicketDetailHero,
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
+import { RecommendationCalendarSelector } from "@/features/meetings/RecommendationCalendarSelector";
 import {
   MeetingProposalFlow,
   type ProposalMemberProfile,
@@ -91,6 +96,7 @@ export function MeetingRecommendation({
   onProposalSubmitted,
   onMembershipRequired,
   onOpenList,
+  onOpenProposal,
   proposalProfile,
   blindDateOffers = [],
   onBlindDateOffersChange,
@@ -108,6 +114,7 @@ export function MeetingRecommendation({
   onProposalSubmitted?: () => void | Promise<void>;
   onMembershipRequired?: () => void;
   onOpenList?: () => void;
+  onOpenProposal?: () => void;
   proposalProfile: ProposalMemberProfile;
   blindDateOffers?: BlindDateUserOffer[];
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
@@ -151,8 +158,12 @@ export function MeetingRecommendation({
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
     activeBlindDateOffers[0] ??
     null;
-  const canOpenProposal =
-    proposalRequirementBypassed || (proposalParticipationCount ?? 0) >= 1;
+  const canSubmitProposal =
+    proposalRequirementBypassed ||
+    (membershipStatus === "active" && (proposalParticipationCount ?? 0) >= 1);
+  const proposalRestrictionMessage = canSubmitProposal
+    ? null
+    : meetingProposalRequirementMessage;
 
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
@@ -287,8 +298,9 @@ export function MeetingRecommendation({
     setWaitlistedTicket(null);
     setCopiedProposalTicket(null);
 
-    if (!canOpenProposal) {
-      window.alert(meetingProposalRequirementMessage);
+    if (onOpenProposal) {
+      setScreen("calendar");
+      onOpenProposal();
       return;
     }
 
@@ -296,11 +308,6 @@ export function MeetingRecommendation({
   };
 
   const copyTicketAsProposal = (sourceTicket: GatheringTicket) => {
-    if (!canOpenProposal) {
-      window.alert(meetingProposalRequirementMessage);
-      return;
-    }
-
     setCopiedProposalTicket(sourceTicket);
     setScreen("proposal");
   };
@@ -334,7 +341,7 @@ export function MeetingRecommendation({
               </p>
             </header>
 
-            <CalendarSelector
+            <RecommendationCalendarSelector
               dates={ticketDates}
               loading={loadingDates}
               onSelect={selectDate}
@@ -445,8 +452,8 @@ export function MeetingRecommendation({
                 {waitlistedTicket.title}
               </h2>
               <p className="mt-2 text-xs text-black/45">
-                {waitlistedTicket.date} · {waitlistedTicket.time} ·{" "}
-                {waitlistedTicket.area}
+                {formatTicketDateLabel(waitlistedTicket.date)} ·{" "}
+                {formatTicketTimeLabel(waitlistedTicket.time)} · {waitlistedTicket.area}
               </p>
               <div className="mt-5 border-t border-black/8 pt-4">
                 {[
@@ -510,6 +517,8 @@ export function MeetingRecommendation({
           <MeetingProposalFlow
             profile={proposalProfile}
             copiedTicket={copiedProposalTicket}
+            canSubmit={canSubmitProposal}
+            restrictionMessage={proposalRestrictionMessage}
             onBack={() =>
               setScreen(copiedProposalTicket ? "drawing" : "calendar")
             }
@@ -1497,128 +1506,6 @@ function BlindDateResultMessage({
       </h1>
       <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-black/58">
         {body}
-      </p>
-    </section>
-  );
-}
-
-function CalendarSelector({
-  dates,
-  loading,
-  onSelect,
-}: {
-  dates: AvailableDate[];
-  loading: boolean;
-  onSelect: (date: AvailableDate) => void;
-}) {
-  const months = dates.length
-    ? Array.from(new Set(dates.map((date) => date.date.slice(0, 7)))).sort()
-    : [new Date().toISOString().slice(0, 7)];
-  const [month, setMonth] = useState(months[0]);
-  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
-
-  useEffect(() => {
-    if (!months.includes(month)) setMonth(months[0]);
-  }, [month, months]);
-
-  const [yearNumber, monthNumber] = month.split("-").map(Number);
-  const daysInMonth = new Date(yearNumber, monthNumber, 0).getDate();
-  const firstWeekday = new Date(Date.UTC(yearNumber, monthNumber - 1, 1)).getUTCDay();
-  const leadingBlanks = firstWeekday;
-  const dateMap = new Map(dates.map((date) => [date.date, date]));
-  const activeWeekdays = new Set(
-    dates
-      .filter((date) => date.date.startsWith(`${month}-`))
-      .map((date) => {
-        const [year, dateMonth, day] = date.date.split("-").map(Number);
-        return new Date(Date.UTC(year, dateMonth - 1, day)).getUTCDay();
-      }),
-  );
-
-  const dateForDay = (day: number) => {
-    const date = `${month}-${String(day).padStart(2, "0")}`;
-    return dateMap.get(date);
-  };
-
-  return (
-    <section className="mt-7 rounded-[24px] border border-black/10 bg-white p-5 shadow-[0_8px_30px_rgba(0,0,0,0.01)]">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-black">
-          {yearNumber}년 {monthNumber}월
-        </h2>
-        <div className="flex rounded-full bg-black/[0.04] p-1 text-[10px] font-bold">
-          {months.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setMonth(value)}
-              className={cn(
-                "rounded-full px-3 py-1 transition-all",
-                month === value ? "bg-white text-black shadow-sm" : "text-black/40",
-              )}
-            >
-              {Number(value.slice(5, 7))}월
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5 grid grid-cols-7 gap-2 text-center text-[10px] font-bold text-black/35">
-        {weekdays.map((weekday, index) => (
-          <span
-            key={weekday}
-            className={cn(
-              "rounded-full py-1 transition-colors",
-              activeWeekdays.has(index)
-                ? "bg-[#7eb3c7]/15 font-extrabold text-[#4f9bb8]"
-                : "font-bold text-black/35",
-            )}
-          >
-            {weekday}
-          </span>
-        ))}
-      </div>
-
-      <div className="mt-2 grid grid-cols-7 gap-2 text-center">
-        {Array.from({ length: leadingBlanks }).map((_, index) => (
-          <span key={`blank-${index}`} />
-        ))}
-        {Array.from({ length: daysInMonth }).map((_, index) => {
-          const day = index + 1;
-          const dateEntry = dateForDay(day);
-          const selectable = Boolean(dateEntry);
-
-          return (
-            <motion.button
-              key={day}
-              type="button"
-              whileTap={selectable ? { scale: 0.92 } : undefined}
-              onClick={() => {
-                if (dateEntry) onSelect(dateEntry);
-              }}
-              disabled={!selectable}
-              className={cn(
-                "relative flex aspect-square flex-col items-center justify-center rounded-full border text-xs font-semibold transition-all",
-                selectable
-                  ? "border-black/10 bg-white text-black hover:border-black/25"
-                  : "border-transparent text-black/15",
-              )}
-            >
-              {day}
-              {selectable && (
-                <span className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-[#7eb3c7] shadow-sm" />
-              )}
-            </motion.button>
-          );
-        })}
-      </div>
-
-      <p className="mt-6 text-center text-[10px] font-medium leading-relaxed text-black/35">
-        {loading
-          ? "초대장 날짜를 불러오고 있어요."
-          : dates.length
-            ? "* 파란 점이 있는 날짜를 택하면 교집합이 초대장을 준비해드려요."
-            : "현재 공개된 초대장 날짜가 없어요."}
       </p>
     </section>
   );

@@ -108,6 +108,8 @@ type ProposerProfileRow = {
   nickname: string | null;
   gender: string | null;
   birth_year: string | number | null;
+  public_intro: string | null;
+  public_emoji: string | null;
 };
 
 type AtmosphereProfileRow = {
@@ -431,10 +433,12 @@ function toTicket(
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     proposerProfile: proposerDisplayName
       ? {
-          userId: template.proposer_user_id,
+          userId: proposerProfile?.user_id ?? template.proposer_user_id,
           displayName: proposerDisplayName,
-          publicIntro: template.proposer_public_intro,
-          publicEmoji: template.proposer_public_emoji,
+          publicIntro:
+            proposerProfile?.public_intro ?? template.proposer_public_intro,
+          publicEmoji:
+            proposerProfile?.public_emoji ?? template.proposer_public_emoji,
           gender: normalizeProfileGender(proposerProfile?.gender),
           birthYear: proposerProfile?.birth_year ?? null,
         }
@@ -465,7 +469,7 @@ async function fetchProposerProfileMap(
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("user_id,name,nickname,gender,birth_year")
+    .select("user_id,name,nickname,gender,birth_year,public_intro,public_emoji")
     .in("user_id", proposerIds);
   if (error) throw error;
 

@@ -284,6 +284,10 @@ async function fetchTemplateRows(
 const hiddenStatuses = new Set([
   "cancelled",
   "not_selected",
+]);
+
+const confirmedStatuses = new Set([
+  "approved",
   "completed",
   "feedback_done",
 ]);
@@ -490,8 +494,12 @@ function pendingProposalTicket(
     address: place?.roadAddress ?? place?.jibunAddress,
     place,
   });
-  const displayName =
+  let displayName =
     proposal.proposer_public_display_name.trim() || "제안 멤버";
+  if (profile) {
+    displayName = meetingProposalDisplayName(profile);
+  }
+
   const ticket: GatheringTicket = {
     id: `proposal:${proposal.id}`,
     templateId: `proposal:${proposal.id}`,
@@ -521,9 +529,9 @@ function pendingProposalTicket(
       userId: proposal.proposer_id,
       displayName,
       publicIntro:
-        proposal.proposer_public_intro ?? profile?.public_intro ?? null,
+        profile?.public_intro ?? proposal.proposer_public_intro ?? null,
       publicEmoji:
-        proposal.proposer_public_emoji ?? profile?.public_emoji ?? null,
+        profile?.public_emoji ?? proposal.proposer_public_emoji ?? null,
       gender: normalizeProfileGender(profile?.gender),
       birthYear: profile?.birth_year ?? null,
     },
@@ -654,12 +662,16 @@ function toTicket(
     proposerProfile: proposerDisplayName
       ? {
           userId:
-            template.proposer_user_id ?? snapshot?.proposerProfile?.userId,
+            proposerProfile?.user_id ??
+            template.proposer_user_id ??
+            snapshot?.proposerProfile?.userId,
           displayName: proposerDisplayName,
           publicIntro:
+            proposerProfile?.public_intro ??
             template.proposer_public_intro ??
             snapshot?.proposerProfile?.publicIntro,
           publicEmoji:
+            proposerProfile?.public_emoji ??
             template.proposer_public_emoji ??
             snapshot?.proposerProfile?.publicEmoji,
           gender: normalizeProfileGender(
@@ -713,7 +725,7 @@ function deriveStatus(
     };
   }
 
-  if (rawStatus !== "approved") {
+  if (!confirmedStatuses.has(rawStatus)) {
     return {
       status: "waitlisted",
       statusLabel: statusLabels.waitlisted,
@@ -724,6 +736,16 @@ function deriveStatus(
   }
 
   if (!startAt) {
+    if (rawStatus !== "approved") {
+      return {
+        status: null,
+        statusLabel: "",
+        progressStep: "feedback",
+        progressIndex: 4,
+        canSetArrival: false,
+      };
+    }
+
     return {
       status: "approved",
       statusLabel: statusLabels.approved,
@@ -736,7 +758,18 @@ function deriveStatus(
   const approvalOpenAt = addHours(startAt, -24);
   const arrivalOpenAt = addHours(startAt, -3);
   const feedbackOpenAt = addHours(startAt, 3);
-  const canSetArrival = now >= arrivalOpenAt;
+  const chatClosesAt = addHours(startAt, 27);
+  const canSetArrival = rawStatus === "approved" && now >= arrivalOpenAt;
+
+  if (now >= chatClosesAt) {
+    return {
+      status: null,
+      statusLabel: "",
+      progressStep: "feedback",
+      progressIndex: 4,
+      canSetArrival: false,
+    };
+  }
 
   if (now < approvalOpenAt) {
     return {
@@ -751,7 +784,8 @@ function deriveStatus(
   if (now >= feedbackOpenAt) {
     return {
       status: "feedback_open",
-      statusLabel: statusLabels.feedback_open,
+      statusLabel:
+        rawStatus === "feedback_done" ? "피드백 작성 완료" : statusLabels.feedback_open,
       progressStep: "feedback",
       progressIndex: 4,
       canSetArrival,
@@ -998,7 +1032,7 @@ export async function GET() {
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
         .in("ticket_instance_id", instanceIds)
-        .eq("status", "approved")
+        .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byInstanceIdError) throw byInstanceIdError;
 
@@ -1008,7 +1042,7 @@ export async function GET() {
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
         .in("ticket_id", instanceIds)
-        .eq("status", "approved")
+        .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byTicketIdError) throw byTicketIdError;
 
@@ -1143,7 +1177,7 @@ export async function GET() {
         const derived = deriveStatus(row.status, startAt, now);
         if (!derived.status) return null;
 
-        const confirmed = row.status === "approved";
+        const confirmed = confirmedStatuses.has(row.status);
         const memberInfoVisible = confirmed && derived.progressIndex >= 1;
         const assignedIds = memberInfoVisible
           ? assignmentsByInstance.get(instanceId ?? "") ?? []

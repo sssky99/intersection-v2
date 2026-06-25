@@ -40,6 +40,22 @@ export function formatTicketDateLabel(value?: string | null) {
   ).padStart(2, "0")} (${weekdayLabel(date)})`;
 }
 
+export function formatTicketTimeLabel(value?: string | null) {
+  const raw = value?.trim();
+  if (!raw) return "";
+  if (/^(오전|오후)\s*/.test(raw)) return raw;
+
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return raw;
+
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return raw;
+
+  const period = hour < 12 ? "오전" : "오후";
+  const displayHour = hour % 12 || 12;
+  return `${period} ${displayHour}:${match[2]}`;
+}
+
 function normalizeTags(tags?: string[] | null) {
   return (tags ?? [])
     .flatMap((tag) =>
@@ -77,10 +93,11 @@ export function IntersectionTicketCard({
   overlayVisible = true,
 }: IntersectionTicketCardProps) {
   const dateLabel = formatTicketDateLabel(date);
+  const timeLabel = formatTicketTimeLabel(time);
   const tagItems = normalizeTags(tags);
   const hasImage = Boolean(imageUrl);
   const imageSurfaceVisible = hasImage ? imageVisible : true;
-  const dateTimeLabel = [dateLabel, time].filter(Boolean).join(" ");
+  const dateTimeLabel = [dateLabel, timeLabel].filter(Boolean).join(" ");
   const locationLabel = inlineLocation(location);
   const metaLabel = [dateTimeLabel, locationLabel].filter(Boolean).join(" · ");
 

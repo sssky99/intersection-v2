@@ -15,7 +15,7 @@ export type MeetingProposalProfileRow = {
 };
 
 export const meetingProposalRequirementMessage =
-  "최소 모임에 한 번 이상 참여한 멤버부터\n모임을 제안할 수 있어요.";
+  "활성 멤버십이 있고, 최소 모임에 한 번 이상 참여한 멤버부터\n모임을 제안할 수 있어요.";
 
 export const meetingProposalEligibleParticipationStatuses = [
   "feedback_done",

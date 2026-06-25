@@ -43,6 +43,9 @@ type WaitlistRow = AdminTicketWaitlistEntry;
 type ProposalLinkRow = {
   id: string;
   proposer_id: string | null;
+  original_image_url: string | null;
+  activity_description: string | null;
+  submitted_at: string | null;
 };
 
 const candidateWaitlistStatuses = [
@@ -727,17 +730,17 @@ async function loadTicketData() {
         .filter((proposalId): proposalId is string => Boolean(proposalId)),
     ),
   );
-  const proposalProposerMap = new Map<string, string | null>();
+  const proposalMap = new Map<string, ProposalLinkRow>();
 
   if (proposalIds.length) {
     const { data: proposalLinks, error: proposalLinkError } = await supabase
       .from("meeting_proposals")
-      .select("id,proposer_id")
+      .select("id,proposer_id,original_image_url,activity_description,submitted_at")
       .in("id", proposalIds);
     if (proposalLinkError) throw proposalLinkError;
 
     for (const proposal of (proposalLinks ?? []) as ProposalLinkRow[]) {
-      proposalProposerMap.set(proposal.id, proposal.proposer_id);
+      proposalMap.set(proposal.id, proposal);
     }
   }
 
@@ -791,6 +794,9 @@ async function loadTicketData() {
       const proposerProfile = template.proposer_user_id
         ? profileMap.get(template.proposer_user_id)
         : null;
+      const sourceProposal = template.proposal_id
+        ? proposalMap.get(template.proposal_id) ?? null
+        : null;
 
       return {
         ...template,
@@ -799,8 +805,12 @@ async function loadTicketData() {
           ? meetingProposalDisplayName(proposerProfile)
           : template.proposer_display_name,
         proposal_proposer_id: template.proposal_id
-          ? (proposalProposerMap.get(template.proposal_id) ?? null)
+          ? (sourceProposal?.proposer_id ?? null)
           : null,
+        proposal_original_image_url: sourceProposal?.original_image_url ?? null,
+        proposal_activity_description:
+          sourceProposal?.activity_description ?? null,
+        proposal_submitted_at: sourceProposal?.submitted_at ?? null,
         detail_activities: dbTextList(template.detail_activities),
         detail_flow: dbTextList(template.detail_flow),
         detail_good_for: dbTextList(template.detail_good_for),

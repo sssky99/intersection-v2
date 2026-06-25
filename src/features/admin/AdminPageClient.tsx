@@ -11,11 +11,11 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import { profileQuestions } from "@/data/profileQuestions";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
-import { ProposalAdminPanel } from "@/features/admin/ProposalAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
 import {
@@ -39,7 +39,7 @@ type AdminTab =
   | "applicants"
   | "membership"
   | "tickets"
-  | "proposals"
+  | "calendar"
   | "waitlist"
   | "rooms"
   | "feedback"
@@ -61,7 +61,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "티켓 관리" },
-  { id: "proposals", label: "제안 관리" },
+  { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
@@ -282,6 +282,7 @@ export function AdminPageClient({
     useState<MembershipFilter>("all");
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
+  const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
   const [visitedTabs, setVisitedTabs] = useState<
     Partial<Record<AdminTab, boolean>>
   >({ applicants: true });
@@ -332,6 +333,14 @@ export function AdminPageClient({
     setActiveTab(tabId);
     setVisitedTabs((current) =>
       current[tabId] ? current : { ...current, [tabId]: true },
+    );
+  };
+
+  const openTicketFromCalendar = (ticketId: string) => {
+    setTicketFocusId(ticketId);
+    setActiveTab("tickets");
+    setVisitedTabs((current) =>
+      current.tickets ? current : { ...current, tickets: true },
     );
   };
 
@@ -671,12 +680,15 @@ export function AdminPageClient({
           )}
           {visitedTabs.tickets && (
             <div className={cn(activeTab === "tickets" ? "block" : "hidden")}>
-              <TicketAdminPanel />
+              <TicketAdminPanel
+                focusTicketId={ticketFocusId}
+                onFocusTicketHandled={() => setTicketFocusId(null)}
+              />
             </div>
           )}
-          {visitedTabs.proposals && (
-            <div className={cn(activeTab === "proposals" ? "block" : "hidden")}>
-              <ProposalAdminPanel />
+          {visitedTabs.calendar && (
+            <div className={cn(activeTab === "calendar" ? "block" : "hidden")}>
+              <CalendarAdminPanel onOpenTicket={openTicketFromCalendar} />
             </div>
           )}
           {visitedTabs.waitlist && (

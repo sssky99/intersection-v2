@@ -464,6 +464,21 @@ function updatedDate(value: string) {
   }).format(date);
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
 function proposerSummary(profile: AdminProfile | null | undefined) {
   if (!profile) return "제안자 미지정";
   const roleLabel =
@@ -696,7 +711,13 @@ function progressPreviewUserTicket({
   };
 }
 
-export function TicketAdminPanel() {
+export function TicketAdminPanel({
+  focusTicketId,
+  onFocusTicketHandled,
+}: {
+  focusTicketId?: string | null;
+  onFocusTicketHandled?: () => void;
+}) {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [waitlist, setWaitlist] = useState<AdminTicketWaitlistEntry[]>([]);
@@ -742,6 +763,15 @@ export function TicketAdminPanel() {
   const selectedTicket =
     templates.find((template) => template.id === selectedTicketId) ?? null;
   const selectedInstance = primaryInstance(selectedTicket);
+
+  useEffect(() => {
+    if (!focusTicketId) return;
+    if (!templates.some((template) => template.id === focusTicketId)) return;
+
+    setSelectedTicketId(focusTicketId);
+    onFocusTicketHandled?.();
+  }, [focusTicketId, onFocusTicketHandled, templates]);
+
   const operatorProfiles = useMemo(
     () => profiles.filter((profile) => profile.is_test_participant === true),
     [profiles],
@@ -1039,6 +1069,23 @@ export function TicketAdminPanel() {
     }
   };
 
+  const restoreOriginalImage = async () => {
+    const originalImageUrl = selectedTicket?.proposal_original_image_url?.trim();
+    if (!selectedTicket || !draft || saving || !originalImageUrl) return;
+
+    const nextDraft = { ...draft, imageUrl: originalImageUrl };
+    setDraft(nextDraft);
+    await runAction(
+      "PATCH",
+      {
+        entity: "ticket",
+        id: selectedTicket.id,
+        ...ticketRequestBody(nextDraft),
+      },
+      "사용자가 제출한 원본 이미지로 되돌렸습니다.",
+    );
+  };
+
   return (
     <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
@@ -1138,9 +1185,17 @@ export function TicketAdminPanel() {
                   draft={draft}
                   saving={saving}
                   sampleOnly={isSampleTicket}
+                  proposalOriginalImageUrl={
+                    selectedTicket.proposal_original_image_url
+                  }
                   onDraftChange={setDraft}
                   onUploadImage={(file) => void uploadImage(file)}
+                  onRestoreOriginalImage={() => void restoreOriginalImage()}
                 />
+
+                {selectedTicket.proposal_id && (
+                  <ProposalSourcePanel ticket={selectedTicket} />
+                )}
 
                 {!isSampleTicket && (
                   <>
@@ -1438,15 +1493,23 @@ function BasicEditor({
   draft,
   saving,
   sampleOnly,
+  proposalOriginalImageUrl,
   onDraftChange,
   onUploadImage,
+  onRestoreOriginalImage,
 }: {
   draft: TicketDraft;
   saving: boolean;
   sampleOnly: boolean;
+  proposalOriginalImageUrl: string | null;
   onDraftChange: (draft: TicketDraft) => void;
   onUploadImage: (file: File) => void;
+  onRestoreOriginalImage: () => void;
 }) {
+  const canRestoreOriginalImage =
+    Boolean(proposalOriginalImageUrl) &&
+    draft.imageUrl.trim() !== (proposalOriginalImageUrl ?? "").trim();
+
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <h3 className="font-bold">기본 정보</h3>
@@ -1464,20 +1527,32 @@ function BasicEditor({
                 {draft.imageUrl ? "오른쪽 미리보기에 반영돼요." : "이미지 없음"}
               </p>
             </div>
-            <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
-              이미지 선택
-              <input
-                type="file"
-                accept="image/*"
-                disabled={saving}
-                className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) onUploadImage(file);
-                  event.target.value = "";
-                }}
-              />
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              {proposalOriginalImageUrl && (
+                <button
+                  type="button"
+                  disabled={saving || !canRestoreOriginalImage}
+                  onClick={onRestoreOriginalImage}
+                  className="flex h-9 items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  원본 되돌리기
+                </button>
+              )}
+              <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
+                이미지 선택
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={saving}
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) onUploadImage(file);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
           </div>
           <FormField
           label="분위기 태그"
@@ -1585,6 +1660,57 @@ function BasicEditor({
               />
             </>
           )}
+      </div>
+    </section>
+  );
+}
+
+function ProposalSourcePanel({ ticket }: { ticket: AdminTicketTemplate }) {
+  const originalImageUrl = ticket.proposal_original_image_url?.trim() || null;
+  const activityDescription =
+    ticket.proposal_activity_description?.trim() ||
+    "저장된 사용자 입력값이 없습니다.";
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
+            proposal source
+          </p>
+          <h3 className="mt-1 font-bold">제안 원본</h3>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            사용자가 AI 초안 생성 전에 입력한 원본 정보입니다.
+          </p>
+        </div>
+        <span className="rounded-full bg-black/[0.05] px-3 py-1 text-[11px] font-bold text-black/45">
+          제출 {formatDateTime(ticket.proposal_submitted_at)}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
+        <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-black/[0.04]">
+          {originalImageUrl ? (
+            <img
+              src={originalImageUrl}
+              alt="사용자가 제출한 원본 이미지"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-[11px] font-semibold text-black/35">
+              <ImageIcon size={22} aria-hidden />
+              원본 이미지 없음
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 rounded-xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
+            사용자 입력값
+          </p>
+          <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-6 text-black/70">
+            {activityDescription}
+          </p>
+        </div>
       </div>
     </section>
   );

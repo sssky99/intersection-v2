@@ -14,6 +14,8 @@ import {
   LogOut,
   Loader2,
   MapPin,
+  MessageCircle,
+  Plus,
   X,
   PenLine,
   RotateCcw,
@@ -25,6 +27,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import {
   formatTicketDateLabel,
+  formatTicketTimeLabel,
   IntersectionTicketCard,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
@@ -42,6 +45,7 @@ import {
   MeetingProposalFlow,
   type ProposalMemberProfile,
 } from "@/features/meetings/MeetingProposalFlow";
+import { MeetingChat } from "@/features/chat/MeetingChat";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
   TicketCopyProposalSection,
@@ -87,7 +91,7 @@ import type {
 import type { Gender } from "@/types/user";
 import type { LucideIcon } from "lucide-react";
 
-export type AppTab = "browse" | "recommend" | "profile";
+export type AppTab = "browse" | "recommend" | "proposal" | "chat" | "profile";
 
 type AnswerRow = {
   question_order: number;
@@ -154,8 +158,10 @@ type NegativeMemberFeedbackDraft = {
 };
 
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
-  { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "recommend", label: "추천", Icon: Sparkles },
+  { id: "browse", label: "티켓", Icon: TicketIcon },
+  { id: "proposal", label: "제안", Icon: Plus },
+  { id: "chat", label: "채팅", Icon: MessageCircle },
   { id: "profile", label: "프로필", Icon: UserRound },
 ];
 
@@ -421,7 +427,7 @@ export function AppHome({
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
-  const [proposalAcceptedNoticeOpen, setProposalAcceptedNoticeOpen] =
+  const [proposalNoticeOpen, setProposalNoticeOpen] =
     useState(false);
   const [dismissedProposalNotificationIds, setDismissedProposalNotificationIds] =
     useState<string[]>([]);
@@ -444,6 +450,7 @@ export function AppHome({
   >(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const currentMembership = useMemo(
     () => currentMembershipFromProfile(currentProfile),
     [currentProfile],
@@ -477,18 +484,6 @@ export function AppHome({
       ).length,
     [blindDateOffers],
   );
-  const acceptedProposalNotifications = useMemo(
-    () =>
-      waitlistedTickets.filter(
-        (userTicket) =>
-          userTicket.rawStatus === "approved" &&
-          userTicket.ticket.activityType === "member_proposal" &&
-          userTicket.ticket.proposerProfile?.userId === userId &&
-          !dismissedProposalNotificationIds.includes(userTicket.waitlistId),
-      ),
-    [dismissedProposalNotificationIds, userId, waitlistedTickets],
-  );
-  const acceptedProposalCount = acceptedProposalNotifications.length;
   const visibleRejectedProposalNotifications = useMemo(
     () =>
       rejectedProposalNotifications.filter(
@@ -500,8 +495,33 @@ export function AppHome({
       ),
     [dismissedProposalNotificationIds, rejectedProposalNotifications],
   );
-  const proposalNotificationCount =
-    acceptedProposalCount + visibleRejectedProposalNotifications.length;
+  const proposalNotificationCount = visibleRejectedProposalNotifications.length;
+  const proposalProfile = useMemo<ProposalMemberProfile>(
+    () => ({
+      userId,
+      displayName: profileNickname(currentProfile),
+      publicIntro: currentProfile.public_intro,
+      publicEmoji: profileEmoji(currentProfile),
+      gender: currentProfile.gender,
+      birthYear: currentProfile.birth_year,
+    }),
+    [
+      currentProfile.birth_year,
+      currentProfile.gender,
+      currentProfile.nickname,
+      currentProfile.name,
+      currentProfile.public_emoji,
+      currentProfile.public_intro,
+      userId,
+    ],
+  );
+  const canSubmitProposal =
+    currentProfile.is_test_participant === true ||
+    (recommendationMembershipStatus === "active" &&
+      (proposalParticipationCount ?? 0) >= 1);
+  const proposalRestrictionMessage = canSubmitProposal
+    ? null
+    : meetingProposalRequirementMessage;
 
   useEffect(() => {
     setCurrentProfile(profile);
@@ -541,7 +561,7 @@ export function AppHome({
   }, [dismissedProposalNotificationIds, userId]);
 
   useEffect(() => {
-    if (proposalNotificationCount === 0) setProposalAcceptedNoticeOpen(false);
+    if (proposalNotificationCount === 0) setProposalNoticeOpen(false);
   }, [proposalNotificationCount]);
 
   useEffect(() => {
@@ -627,20 +647,20 @@ export function AppHome({
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
-    setProposalAcceptedNoticeOpen(false);
+    setProposalNoticeOpen(false);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
   };
 
-  const openProposalAcceptedNotification = () => {
+  const openProposalNotification = () => {
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
-    setProposalAcceptedNoticeOpen(proposalNotificationCount > 0);
+    setProposalNoticeOpen(proposalNotificationCount > 0);
   };
 
-  const dismissProposalAcceptedNotification = (notificationId: string) => {
+  const dismissProposalNotification = (notificationId: string) => {
     setDismissedProposalNotificationIds((current) =>
       current.includes(notificationId) ? current : [...current, notificationId],
     );
@@ -774,12 +794,12 @@ export function AppHome({
 
       <button
         type="button"
-        onClick={openProposalAcceptedNotification}
-        title="제안 알림"
+        onClick={openProposalNotification}
+        title="제안 상태 알림"
         aria-label={
           proposalNotificationCount > 0
-            ? `내가 제안한 모임 알림 ${proposalNotificationCount}개`
-            : "새 제안 알림 없음"
+            ? `제안 상태 알림 ${proposalNotificationCount}개`
+            : "새 제안 상태 알림 없음"
         }
         className="absolute right-[120px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
       >
@@ -801,7 +821,7 @@ export function AppHome({
         type="button"
         onClick={() => {
           setMembershipModalOpen(false);
-          setProposalAcceptedNoticeOpen(false);
+          setProposalNoticeOpen(false);
           setProfilePanelOpen((open) => !open);
         }}
         aria-label="기본정보 카드 열기"
@@ -817,9 +837,9 @@ export function AppHome({
       </button>
 
       <AnimatePresence>
-        {proposalAcceptedNoticeOpen && proposalNotificationCount > 0 && (
+        {proposalNoticeOpen && proposalNotificationCount > 0 && (
           <motion.div
-            key="proposal-accepted-notice"
+            key="proposal-notice"
             initial={{ opacity: 0, y: -8, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
@@ -830,38 +850,13 @@ export function AppHome({
             <span className="absolute -top-1 right-[114px] h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white" />
             <button
               type="button"
-              onClick={() => setProposalAcceptedNoticeOpen(false)}
+              onClick={() => setProposalNoticeOpen(false)}
               aria-label="제안 알림 닫기"
               className="absolute right-2 top-2 rounded-full p-1 text-black/35 transition hover:bg-black/[0.05] hover:text-black"
             >
               <X size={14} aria-hidden />
             </button>
             <div className="max-h-[calc(100dvh-132px)] space-y-2 overflow-y-auto p-1 pr-5 scrollbar-none">
-              {acceptedProposalNotifications.map((notification) => (
-                <section
-                  key={notification.waitlistId}
-                  className="rounded-xl bg-black/[0.055] px-3 py-2.5"
-                >
-                  <p className="text-sm font-bold leading-5 text-black/78">
-                    내가 제안한 모임이 바로 공개되었어요.
-                    <br />
-                    공개된 내용은 티켓 탭에서 확인할 수 있어요.
-                  </p>
-                  <div className="mt-1.5 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        dismissProposalAcceptedNotification(
-                          notification.waitlistId,
-                        )
-                      }
-                      className="text-[10px] font-bold text-black/42 underline underline-offset-2 transition hover:text-black"
-                    >
-                      지우기
-                    </button>
-                  </div>
-                </section>
-              ))}
               {visibleRejectedProposalNotifications.map((notification) => (
                 <section
                   key={notification.id}
@@ -880,7 +875,7 @@ export function AppHome({
                     <button
                       type="button"
                       onClick={() =>
-                        dismissProposalAcceptedNotification(
+                        dismissProposalNotification(
                           `rejected:${notification.id}`,
                         )
                       }
@@ -924,7 +919,12 @@ export function AppHome({
         onClose={() => setMembershipModalOpen(false)}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-none">
+      <div
+        className={cn(
+          "min-h-0 flex-1 pb-[calc(90px+env(safe-area-inset-bottom))] scrollbar-none",
+          activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+        )}
+      >
         <div
           aria-hidden={activeTab !== "browse"}
           className={cn(activeTab === "browse" ? "block h-full" : "hidden")}
@@ -932,18 +932,8 @@ export function AppHome({
           <TicketListTab
             tickets={waitlistedTickets}
             userId={userId}
-            proposalProfile={{
-              userId,
-              displayName: profileNickname(currentProfile),
-              publicIntro: currentProfile.public_intro,
-              publicEmoji: profileEmoji(currentProfile),
-              gender: currentProfile.gender,
-              birthYear: currentProfile.birth_year,
-            }}
-            canOpenProposal={
-              currentProfile.is_test_participant === true ||
-              (proposalParticipationCount ?? 0) >= 1
-            }
+            proposalProfile={proposalProfile}
+            canOpenProposal={canSubmitProposal}
             onProposalSubmitted={refreshProposalTicket}
             onGoRecommend={() => switchTab("recommend")}
           />
@@ -966,14 +956,8 @@ export function AppHome({
               setMembershipModalOpen(true);
             }}
             onOpenList={() => switchTab("browse")}
-            proposalProfile={{
-              userId,
-              displayName: profileNickname(currentProfile),
-              publicIntro: currentProfile.public_intro,
-              publicEmoji: profileEmoji(currentProfile),
-              gender: currentProfile.gender,
-              birthYear: currentProfile.birth_year,
-            }}
+            onOpenProposal={() => switchTab("proposal")}
+            proposalProfile={proposalProfile}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}
@@ -981,6 +965,30 @@ export function AppHome({
             onBlindDateOpenRequestHandled={() =>
               setBlindDateOpenRequestPending(false)
             }
+          />
+        </div>
+        <div
+          aria-hidden={activeTab !== "proposal"}
+          className={cn(activeTab === "proposal" ? "block min-h-full" : "hidden")}
+        >
+          {activeTab === "proposal" && (
+            <ProposalTab
+              profile={proposalProfile}
+              canSubmit={canSubmitProposal}
+              restrictionMessage={proposalRestrictionMessage}
+              onBack={() => switchTab("recommend")}
+              onDone={openSubmittedProposalTicket}
+            />
+          )}
+        </div>
+        <div
+          aria-hidden={activeTab !== "chat"}
+          className={cn(activeTab === "chat" ? "block h-full" : "hidden")}
+        >
+          <MeetingChat
+            userId={userId}
+            active={activeTab === "chat"}
+            onUnreadCountChange={setChatUnreadCount}
           />
         </div>
         <div
@@ -1002,8 +1010,8 @@ export function AppHome({
         </div>
       </div>
 
-      <nav className="shrink-0 border-t border-black/10 bg-white px-4 pb-[calc(8px+env(safe-area-inset-bottom))] pt-1.5 shadow-lg">
-        <div className="relative grid grid-cols-3 gap-1">
+      <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+        <div className="pointer-events-auto relative grid grid-cols-5 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
           {tabItems.map(({ id, label, Icon }) => {
             const selected = activeTab === id;
 
@@ -1016,10 +1024,10 @@ export function AppHome({
                 aria-current={selected ? "page" : undefined}
                 onClick={() => switchTab(id)}
                 className={cn(
-                  "relative z-10 flex h-11 flex-col items-center justify-center gap-0.5 rounded-xl text-[10px] font-semibold transition-all duration-300",
+                  "relative z-10 flex h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[10px] font-black transition-all duration-300",
                   selected
-                    ? "text-white"
-                    : "text-black/35 hover:text-black/55",
+                    ? "text-black"
+                    : "text-white/[0.62] hover:text-white",
                 )}
               >
                 <motion.span
@@ -1027,14 +1035,20 @@ export function AppHome({
                   transition={{ type: "spring", stiffness: 300, damping: 18 }}
                   className="flex flex-col items-center gap-0.5"
                 >
-                  <Icon size={17} strokeWidth={selected ? 2.5 : 1.8} />
+                  <Icon size={19} strokeWidth={selected ? 2.6 : 2} />
                   <span>{label}</span>
                 </motion.span>
+
+                {id === "chat" && chatUnreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-black leading-none text-white">
+                    {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                  </span>
+                )}
 
                 {selected && (
                   <motion.div
                     layoutId="active-tab-bg"
-                    className="absolute inset-x-1 bottom-1 top-0.5 -z-10 rounded-xl bg-[#7eb3c7]"
+                    className="absolute inset-0 -z-10 rounded-full bg-white"
                     transition={{ type: "spring", stiffness: 350, damping: 24 }}
                   />
                 )}
@@ -1095,6 +1109,34 @@ export function AppHome({
         )}
       </AnimatePresence>
     </section>
+  );
+}
+
+function ProposalTab({
+  profile,
+  canSubmit,
+  restrictionMessage,
+  onBack,
+  onDone,
+}: {
+  profile: ProposalMemberProfile;
+  canSubmit: boolean;
+  restrictionMessage: string | null;
+  onBack: () => void;
+  onDone: () => void | Promise<void>;
+}) {
+  return (
+    <TabMotion>
+      <section className="min-h-full px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black">
+        <MeetingProposalFlow
+          profile={profile}
+          canSubmit={canSubmit}
+          restrictionMessage={restrictionMessage}
+          onBack={onBack}
+          onDone={onDone}
+        />
+      </section>
+    </TabMotion>
   );
 }
 
@@ -1793,7 +1835,7 @@ function TicketStatusOverview({
 
             <div className="mt-4 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-3 text-xs font-bold text-black/58">
               <TicketMetaLine Icon={CalendarDays}>
-                {formatTicketDateLabel(ticket.date)} {ticket.time}
+                {formatTicketDateLabel(ticket.date)} {formatTicketTimeLabel(ticket.time)}
               </TicketMetaLine>
               <TicketMetaLine Icon={MapPin}>{ticket.area}</TicketMetaLine>
             </div>
@@ -1822,9 +1864,9 @@ function TicketMetaLine({
   children: React.ReactNode;
 }) {
   return (
-    <p className="flex items-center gap-2">
-      <Icon size={14} className="text-black/35" aria-hidden />
-      <span>{children}</span>
+    <p className="flex items-center gap-2 text-sm font-black leading-5 text-black tabular-nums">
+      <Icon size={14} className="shrink-0 text-black/35" aria-hidden />
+      <span className="min-w-0">{children}</span>
     </p>
   );
 }
@@ -2291,7 +2333,8 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
               </p>
             )}
             <TicketMetaLine Icon={Clock3}>
-              {formatTicketDateLabel(userTicket.ticket.date)} {userTicket.ticket.time}
+              {formatTicketDateLabel(userTicket.ticket.date)}{" "}
+              {formatTicketTimeLabel(userTicket.ticket.time)}
             </TicketMetaLine>
             {hasMap && (
               <NaverMapPreview
@@ -2915,7 +2958,11 @@ function TicketFeedbackForm({
     }
   };
 
-  if (submitted) {
+  if (
+    submitted ||
+    userTicket.rawStatus === "feedback_done" ||
+    userTicket.rawStatus === "completed"
+  ) {
     return (
       <div className="py-5">
         <section className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-6 text-center">
@@ -2923,10 +2970,10 @@ function TicketFeedbackForm({
             <Check size={20} aria-hidden />
           </div>
           <h2 className="mt-4 text-xl font-black text-emerald-950">
-            피드백이 저장됐어요.
+            피드백 작성을 완료했어요.
           </h2>
           <p className="mt-2 text-sm font-semibold leading-6 text-emerald-800/70">
-            이 티켓은 곧 목록에서 숨겨지고, 다음 자리 추천에 참고될 거예요.
+            이 모임은 채팅이 닫힐 때까지 티켓 목록에 남아 있어요.
           </p>
         </section>
       </div>

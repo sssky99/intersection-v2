@@ -313,11 +313,20 @@ export async function POST(request: Request) {
       instance?.event_date ?? row.ticket_snapshot?.date,
       instance?.event_time ?? row.ticket_snapshot?.time,
     );
-    if (startAt && new Date() < addHours(startAt, 3)) {
-      return NextResponse.json(
-        { error: "Feedback opens three hours after the meeting starts." },
-        { status: 403 },
-      );
+    if (startAt) {
+      const now = new Date();
+      if (now < addHours(startAt, 3)) {
+        return NextResponse.json(
+          { error: "Feedback opens three hours after the meeting starts." },
+          { status: 403 },
+        );
+      }
+      if (now >= addHours(startAt, 27)) {
+        return NextResponse.json(
+          { error: "Feedback is closed for this meeting." },
+          { status: 403 },
+        );
+      }
     }
 
     let assignedMemberIds: string[] = [];

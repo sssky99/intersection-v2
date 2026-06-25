@@ -410,11 +410,15 @@ function ticketFromProposal({
 export function MeetingProposalFlow({
   profile,
   copiedTicket,
+  canSubmit = true,
+  restrictionMessage = null,
   onBack,
   onDone,
 }: {
   profile: ProposalMemberProfile;
   copiedTicket?: GatheringTicket | null;
+  canSubmit?: boolean;
+  restrictionMessage?: string | null;
   onBack: () => void;
   onDone: () => void | Promise<void>;
 }) {
@@ -497,7 +501,9 @@ export function MeetingProposalFlow({
         form.eventDate &&
         form.eventTime &&
         form.place,
-    ) && !uploading;
+    ) &&
+    !uploading &&
+    canSubmit;
 
   useEffect(() => {
     if (!copiedTicket) return;
@@ -631,6 +637,10 @@ export function MeetingProposalFlow({
 
   const submitProposal = async () => {
     if (submitting) return;
+    if (!canSubmit) {
+      setError(restrictionMessage ?? "아직 제안을 제출할 수 없어요.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -692,6 +702,7 @@ export function MeetingProposalFlow({
           notice={notice}
           generating={generating}
           canGenerate={canGenerate}
+          restrictionMessage={restrictionMessage}
           error={error}
           onChange={updateForm}
           onGenerate={() => void generateDraft()}
@@ -705,6 +716,8 @@ export function MeetingProposalFlow({
           notice={notice}
           error={error}
           submitting={submitting}
+          canSubmit={canSubmit}
+          restrictionMessage={restrictionMessage}
           onEdit={setEditing}
           onProposerRoleAgreedChange={(agreed) =>
             updateForm("proposerRoleAgreed", agreed)
@@ -760,6 +773,7 @@ function ProposalForm({
   notice,
   generating,
   canGenerate,
+  restrictionMessage,
   error,
   onChange,
   onGenerate,
@@ -768,6 +782,7 @@ function ProposalForm({
   notice: string | null;
   generating: boolean;
   canGenerate: boolean;
+  restrictionMessage: string | null;
   error: string | null;
   onChange: <TKey extends keyof ProposalFormState>(
     key: TKey,
@@ -827,6 +842,12 @@ function ProposalForm({
               </button>
             }
           />
+
+          {restrictionMessage && (
+            <p className="whitespace-pre-line rounded-2xl bg-black/[0.045] px-4 py-3 text-xs font-bold leading-5 text-black/[0.52]">
+              {restrictionMessage}
+            </p>
+          )}
 
           <AnimatePresence initial={false}>
             {showDateTime && (
@@ -928,6 +949,8 @@ function ProposalPreview({
   notice,
   error,
   submitting,
+  canSubmit,
+  restrictionMessage,
   onEdit,
   onProposerRoleAgreedChange,
   onSubmit,
@@ -939,6 +962,8 @@ function ProposalPreview({
   notice: string | null;
   error: string | null;
   submitting: boolean;
+  canSubmit: boolean;
+  restrictionMessage: string | null;
   onEdit: (target: EditTarget) => void;
   onProposerRoleAgreedChange: (agreed: boolean) => void;
   onSubmit: () => void;
@@ -1082,9 +1107,15 @@ function ProposalPreview({
         </p>
       )}
 
+      {restrictionMessage && (
+        <p className="mt-4 whitespace-pre-line rounded-2xl bg-black/[0.045] px-4 py-3 text-xs font-bold leading-5 text-black/[0.52]">
+          {restrictionMessage}
+        </p>
+      )}
+
       <button
         type="button"
-        disabled={submitting || !proposerRoleAgreed}
+        disabled={submitting || !proposerRoleAgreed || !canSubmit}
         onClick={onSubmit}
         className="mt-5 flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-bold text-white disabled:bg-black/[0.18] disabled:text-black/35"
       >
