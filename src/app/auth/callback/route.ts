@@ -4,7 +4,6 @@ import {
   safeInternalPath,
   safeLocalOAuthOrigin,
 } from '@/lib/authRedirect';
-import { nextOnboardingPath } from '@/lib/onboarding';
 import { createClient } from '@/lib/supabase/server';
 import type { ProfileRow } from '@/types/profile';
 
@@ -14,18 +13,6 @@ function cleanRedirect(requestUrl: URL, path = '/', origin = requestUrl.origin) 
   redirectUrl.hash = '';
 
   return NextResponse.redirect(redirectUrl);
-}
-
-function shouldStartQuestions(path: string) {
-  try {
-    const url = new URL(path, 'https://intersection.local');
-    return (
-      url.pathname === '/onboarding/questions' &&
-      url.searchParams.get('start') === '1'
-    );
-  } catch {
-    return false;
-  }
 }
 
 export async function GET(request: Request) {
@@ -74,6 +61,7 @@ export async function GET(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   let profile: ProfileRow | null = null;
+  let isNewProfile = false;
 
   if (user) {
     const kakaoIdentity = user.identities?.find(
@@ -103,6 +91,7 @@ export async function GET(request: Request) {
 
       profile = updatedProfile ?? existingProfile;
     } else {
+      isNewProfile = true;
       const { data: createdProfile, error: insertError } = await supabase
         .from('profiles')
         .insert({
@@ -125,9 +114,9 @@ export async function GET(request: Request) {
   }
 
   const finalPath = profile
-    ? nextOnboardingPath(profile, {
-        startQuestions: shouldStartQuestions(redirectPath),
-      })
+    ? isNewProfile
+      ? '/onboarding/questions?start=1'
+      : '/meetings?tab=recommend'
     : redirectPath;
 
   return NextResponse.redirect(new URL(finalPath, cleanOrigin));

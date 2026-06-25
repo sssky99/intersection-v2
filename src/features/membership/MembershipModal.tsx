@@ -40,7 +40,7 @@ const membershipPlanOptions: MembershipPlanOption[] = [
     monthlyPrice: "20,000원",
     periodText: "첫 모임을 시작한 날로부터 한 달",
     storeUrl:
-      "https://m.smartstore.naver.com/intersection_blinddate/products/13621427140",
+      "https://smartstore.naver.com/intersection_blinddate/products/13643025427",
   },
   {
     id: "three_months",

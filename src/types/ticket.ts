@@ -154,6 +154,9 @@ export type UserTicketsResponse = {
   tickets: UserTicket[];
   participationCount: number;
   proposalParticipationCount: number;
+  totalCount?: number;
+  hasMore?: boolean;
+  nextOffset?: number | null;
 };
 
 export type WaitlistRegistration = {

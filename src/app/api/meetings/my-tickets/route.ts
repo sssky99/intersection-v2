@@ -833,6 +833,129 @@ function sortUserTickets(left: UserTicket, right: UserTicket) {
   return left.ticket.title.localeCompare(right.ticket.title, "ko");
 }
 
+type UserTicketsPagination = {
+  offset: number;
+  limit: number | null;
+};
+
+type UserTicketsPageMeta = {
+  totalCount: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+};
+
+type PendingTicketCandidate = {
+  kind: "pending";
+  ticket: UserTicket;
+  sortStatus: UserTicketStatus;
+  sortStart: string;
+  sortTitle: string;
+};
+
+type SourceTicketCandidate = {
+  kind: "source";
+  row: TicketSourceRow;
+  instanceId: string | null;
+  sortStatus: UserTicketStatus;
+  sortStart: string;
+  sortTitle: string;
+};
+
+type UserTicketCandidate = PendingTicketCandidate | SourceTicketCandidate;
+
+const maxUserTicketsPageLimit = 50;
+
+function integerSearchParam(value: string | null) {
+  if (value === null) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function userTicketsPagination(request: Request): UserTicketsPagination {
+  const url = new URL(request.url);
+  const offset = Math.max(0, integerSearchParam(url.searchParams.get("offset")) ?? 0);
+  const rawLimit = integerSearchParam(url.searchParams.get("limit"));
+  const limit =
+    rawLimit === null
+      ? null
+      : Math.min(maxUserTicketsPageLimit, Math.max(1, rawLimit));
+
+  return { offset, limit };
+}
+
+function paginateItems<T>(
+  items: T[],
+  pagination: UserTicketsPagination,
+): { items: T[]; meta: UserTicketsPageMeta } {
+  const totalCount = items.length;
+  const start = Math.min(pagination.offset, totalCount);
+  const end =
+    pagination.limit === null
+      ? totalCount
+      : Math.min(start + pagination.limit, totalCount);
+  const nextOffset = end < totalCount ? end : null;
+
+  return {
+    items: items.slice(start, end),
+    meta: {
+      totalCount,
+      hasMore: nextOffset !== null,
+      nextOffset,
+    },
+  };
+}
+
+function sourceRowInstanceId(row: TicketSourceRow) {
+  return row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id ?? null;
+}
+
+function pendingTicketCandidate(ticket: UserTicket): PendingTicketCandidate {
+  return {
+    kind: "pending",
+    ticket,
+    sortStatus: ticket.status,
+    sortStart: ticket.meetingStartAt ?? `${ticket.ticket.date}T${ticket.ticket.time}`,
+    sortTitle: ticket.ticket.title,
+  };
+}
+
+function sourceTicketCandidate(
+  row: TicketSourceRow,
+  instanceMap: Map<string, InstanceRow>,
+  now: Date,
+): SourceTicketCandidate | null {
+  const instanceId = sourceRowInstanceId(row);
+  const instance = instanceId ? instanceMap.get(instanceId) ?? null : null;
+  const date = instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
+  const time = instance?.event_time ?? row.ticket_snapshot?.time;
+  const startAt = toStartAt(date, time);
+  const derived = deriveStatus(row.status, startAt, now);
+
+  if (!derived.status) return null;
+
+  return {
+    kind: "source",
+    row,
+    instanceId,
+    sortStatus: derived.status,
+    sortStart: isoOrNull(startAt) ?? `${date ?? ""}T${time ?? ""}`,
+    sortTitle: instance?.title ?? row.ticket_snapshot?.title ?? "",
+  };
+}
+
+function compareTicketCandidates(
+  left: UserTicketCandidate,
+  right: UserTicketCandidate,
+) {
+  const priority = statusPriority[left.sortStatus] - statusPriority[right.sortStatus];
+  if (priority !== 0) return priority;
+
+  const dateCompare = left.sortStart.localeCompare(right.sortStart);
+  if (dateCompare !== 0) return dateCompare;
+
+  return left.sortTitle.localeCompare(right.sortTitle, "ko");
+}
+
 function profileEmoji(userId: string) {
   const emojis = ["💎", "🌿", "☕", "🎧", "✨", "🫧", "🪩", "🧭"];
   const sum = Array.from(userId).reduce(
@@ -859,9 +982,21 @@ function ticketsResponse(
   tickets: UserTicket[],
   participationCount: number,
   proposalParticipationCount: number,
+  pageMeta?: UserTicketsPageMeta,
 ) {
+  const totalCount = pageMeta?.totalCount ?? tickets.length;
+  const hasMore = pageMeta?.hasMore ?? false;
+  const nextOffset = pageMeta?.nextOffset ?? null;
+
   return NextResponse.json(
-    { tickets, participationCount, proposalParticipationCount },
+    {
+      tickets,
+      participationCount,
+      proposalParticipationCount,
+      totalCount,
+      hasMore,
+      nextOffset,
+    },
     {
       headers: {
         "Cache-Control": "private, max-age=15, stale-while-revalidate=45",
@@ -870,7 +1005,8 @@ function ticketsResponse(
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const pagination = userTicketsPagination(request);
   const userSupabase = await createClient();
   const {
     data: { user },
@@ -935,10 +1071,18 @@ export async function GET() {
     const userAssignments = userAssignmentData ?? [];
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
+      const page = paginateItems(
+        pendingProposalTickets
+          .map(pendingTicketCandidate)
+          .sort(compareTicketCandidates),
+        pagination,
+      );
+
       return ticketsResponse(
-        pendingProposalTickets.sort(sortUserTickets),
+        page.items.map((candidate) => candidate.ticket),
         participationCount,
         proposalParticipationCount,
+        page.meta,
       );
     }
 
@@ -996,16 +1140,67 @@ export async function GET() {
     });
 
     if (ticketSourceRows.length === 0) {
+      const page = paginateItems(
+        pendingProposalTickets
+          .map(pendingTicketCandidate)
+          .sort(compareTicketCandidates),
+        pagination,
+      );
+
       return ticketsResponse(
-        pendingProposalTickets.sort(sortUserTickets),
+        page.items.map((candidate) => candidate.ticket),
         participationCount,
         proposalParticipationCount,
+        page.meta,
       );
     }
+
+    const now = new Date();
+    const candidatePage = paginateItems(
+      [
+        ...pendingProposalTickets.map(pendingTicketCandidate),
+        ...ticketSourceRows
+          .map((row) => sourceTicketCandidate(row, instanceMap, now))
+          .filter(
+            (candidate): candidate is SourceTicketCandidate =>
+              Boolean(candidate),
+          ),
+      ].sort(compareTicketCandidates),
+      pagination,
+    );
+    const pagedPendingProposalTickets = candidatePage.items
+      .filter(
+        (candidate): candidate is PendingTicketCandidate =>
+          candidate.kind === "pending",
+      )
+      .map((candidate) => candidate.ticket);
+    const pagedTicketSourceRows = candidatePage.items
+      .filter(
+        (candidate): candidate is SourceTicketCandidate =>
+          candidate.kind === "source",
+      )
+      .map((candidate) => candidate.row);
+    const pagedInstanceIds = unique(
+      pagedTicketSourceRows.map((row) => sourceRowInstanceId(row)),
+    );
+    const pagedInstanceIdSet = new Set(pagedInstanceIds);
+    const pagedInstances = instances.filter((instance) =>
+      pagedInstanceIdSet.has(instance.id),
+    );
+
+    if (candidatePage.items.length === 0) {
+      return ticketsResponse(
+        [],
+        participationCount,
+        proposalParticipationCount,
+        candidatePage.meta,
+      );
+    }
+
     const templateIds = unique([
-      ...ticketSourceRows.map((row) => row.ticket_template_id),
-      ...instances.map((instance) => instance.template_id),
-      ...ticketSourceRows.map((row) => row.ticket_snapshot?.templateId),
+      ...pagedTicketSourceRows.map((row) => row.ticket_template_id),
+      ...pagedInstances.map((instance) => instance.template_id),
+      ...pagedTicketSourceRows.map((row) => row.ticket_snapshot?.templateId),
     ]);
 
     let templates: TemplateRow[] = [];
@@ -1015,23 +1210,23 @@ export async function GET() {
 
     const templateMap = new Map(templates.map((template) => [template.id, template]));
     let assignments: AssignmentRow[] = [];
-    if (instanceIds.length > 0) {
+    if (pagedInstanceIds.length > 0) {
       const { data, error } = await supabase
         .from("ticket_assignments")
         .select("ticket_instance_id,profile_id")
-        .in("ticket_instance_id", instanceIds);
+        .in("ticket_instance_id", pagedInstanceIds);
       if (error) throw error;
       assignments = (data ?? []) as unknown as AssignmentRow[];
     }
 
     let memberArrivalRows: MemberArrivalRow[] = [];
-    if (instanceIds.length > 0) {
+    if (pagedInstanceIds.length > 0) {
       const { data: byInstanceId, error: byInstanceIdError } = await supabase
         .from("meeting_waitlist")
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_instance_id", instanceIds)
+        .in("ticket_instance_id", pagedInstanceIds)
         .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byInstanceIdError) throw byInstanceIdError;
@@ -1041,7 +1236,7 @@ export async function GET() {
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_id", instanceIds)
+        .in("ticket_id", pagedInstanceIds)
         .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byTicketIdError) throw byTicketIdError;
@@ -1051,7 +1246,7 @@ export async function GET() {
 
     const atmosphereWaitlistRows = await fetchAtmosphereWaitlistRows(
       supabase,
-      instances,
+      pagedInstances,
     );
     const profileIds = unique([
       user.id,
@@ -1076,7 +1271,7 @@ export async function GET() {
     );
     const atmosphereDefaultsMap = atmosphereDefaultsByInstance(
       atmosphereWaitlistRows,
-      instances,
+      pagedInstances,
       profileMap,
     );
     const assignmentsByInstance = assignments.reduce((map, assignment) => {
@@ -1094,7 +1289,6 @@ export async function GET() {
       return map;
     }, new Map<string, MemberArrivalRow>());
 
-    const now = new Date();
     const participantIdsByInstance = new Map<string, Set<string>>();
     const addParticipant = (instanceId: string | null | undefined, userId: string) => {
       if (!instanceId) return;
@@ -1114,7 +1308,7 @@ export async function GET() {
     }
 
     const autoCancelledInstanceIds = new Set(
-      instances
+      pagedInstances
         .filter((instance) => {
           const startAt = toStartAt(instance.event_date, instance.event_time);
           if (!startAt || now < startAt) return false;
@@ -1149,7 +1343,7 @@ export async function GET() {
       if (cancelByTicketError) throw cancelByTicketError;
     }
 
-    const tickets = ticketSourceRows
+    const tickets = pagedTicketSourceRows
       .map((row): UserTicket | null => {
         const instanceId =
           row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id;
@@ -1250,7 +1444,7 @@ export async function GET() {
       })
       .filter((ticket): ticket is UserTicket => Boolean(ticket));
 
-    const visibleTickets = [...tickets, ...pendingProposalTickets].sort(
+    const visibleTickets = [...tickets, ...pagedPendingProposalTickets].sort(
       sortUserTickets,
     );
 
@@ -1258,6 +1452,7 @@ export async function GET() {
       visibleTickets,
       participationCount,
       proposalParticipationCount,
+      candidatePage.meta,
     );
   } catch (error) {
     console.error("[meetings my-tickets]", error);

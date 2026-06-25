@@ -316,19 +316,52 @@ function setTabUrl(tab: AppTab) {
 }
 
 const userTicketsCacheTtlMs = 20_000;
-let userTicketsCache:
-  | { response: UserTicketsResponse; expiresAt: number }
-  | null = null;
-let userTicketsRequest: Promise<UserTicketsResponse | null> | null = null;
+const initialUserTicketsLimit = 3;
+const userTicketsCache = new Map<
+  string,
+  { response: UserTicketsResponse; expiresAt: number }
+>();
+const userTicketsRequests = new Map<string, Promise<UserTicketsResponse | null>>();
 
-async function fetchUserTickets({ force = false } = {}) {
-  if (!force && userTicketsCache && userTicketsCache.expiresAt > Date.now()) {
-    return userTicketsCache.response;
+type FetchUserTicketsOptions = {
+  force?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+function userTicketsRequestKey({ limit, offset = 0 }: FetchUserTicketsOptions) {
+  return `${offset}:${limit ?? "all"}`;
+}
+
+function userTicketsRequestPath({ limit, offset = 0 }: FetchUserTicketsOptions) {
+  const params = new URLSearchParams();
+  if (typeof limit === "number") params.set("limit", String(limit));
+  if (offset > 0) params.set("offset", String(offset));
+  const query = params.toString();
+  return query ? `/api/meetings/my-tickets?${query}` : "/api/meetings/my-tickets";
+}
+
+function mergeUserTickets(current: UserTicket[], incoming: UserTicket[]) {
+  const merged = new Map(current.map((ticket) => [ticket.id, ticket]));
+  for (const ticket of incoming) {
+    merged.set(ticket.id, ticket);
+  }
+  return Array.from(merged.values());
+}
+
+async function fetchUserTickets(options: FetchUserTicketsOptions = {}) {
+  const { force = false } = options;
+  const key = userTicketsRequestKey(options);
+  const cached = userTicketsCache.get(key);
+
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    return cached.response;
   }
 
-  if (!force && userTicketsRequest) return userTicketsRequest;
+  const existingRequest = userTicketsRequests.get(key);
+  if (!force && existingRequest) return existingRequest;
 
-  userTicketsRequest = fetch("/api/meetings/my-tickets")
+  const request = fetch(userTicketsRequestPath(options))
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
         | Partial<UserTicketsResponse>
@@ -346,20 +379,26 @@ async function fetchUserTickets({ force = false } = {}) {
           typeof data?.proposalParticipationCount === "number"
             ? data.proposalParticipationCount
             : 0,
+        totalCount:
+          typeof data?.totalCount === "number" ? data.totalCount : undefined,
+        hasMore: data?.hasMore === true,
+        nextOffset:
+          typeof data?.nextOffset === "number" ? data.nextOffset : null,
       };
-      userTicketsCache = {
+      userTicketsCache.set(key, {
         response: responseData,
         expiresAt: Date.now() + userTicketsCacheTtlMs,
-      };
+      });
 
       return responseData;
     })
     .catch(() => null)
     .finally(() => {
-      userTicketsRequest = null;
+      userTicketsRequests.delete(key);
     });
 
-  return userTicketsRequest;
+  userTicketsRequests.set(key, request);
+  return request;
 }
 
 async function fetchBlindDateOffers() {
@@ -417,6 +456,10 @@ export function AppHome({
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
+  const [waitlistedTicketCount, setWaitlistedTicketCount] = useState<
+    number | null
+  >(null);
+  const [loadingRemainingTickets, setLoadingRemainingTickets] = useState(false);
   const [participationCount, setParticipationCount] = useState(0);
   const [proposalParticipationCount, setProposalParticipationCount] = useState<
     number | null
@@ -524,6 +567,62 @@ export function AppHome({
     ? null
     : meetingProposalRequirementMessage;
 
+  const applyUserTicketsResponse = useCallback(
+    (response: UserTicketsResponse, mode: "replace" | "append") => {
+      setWaitlistedTickets((current) =>
+        mode === "append"
+          ? mergeUserTickets(current, response.tickets)
+          : response.tickets,
+      );
+      setWaitlistedTicketCount(response.totalCount ?? response.tickets.length);
+      setParticipationCount(response.participationCount);
+      setProposalParticipationCount(response.proposalParticipationCount);
+    },
+    [],
+  );
+
+  const loadRemainingUserTickets = useCallback(
+    (
+      response: UserTicketsResponse,
+      force = false,
+      isCancelled: () => boolean = () => false,
+    ) => {
+      if (!response.hasMore || typeof response.nextOffset !== "number") return;
+
+      setLoadingRemainingTickets(true);
+      void fetchUserTickets({ force, offset: response.nextOffset })
+        .then((remainingResponse) => {
+          if (isCancelled() || !remainingResponse) return;
+          applyUserTicketsResponse(remainingResponse, "append");
+        })
+        .finally(() => {
+          if (!isCancelled()) setLoadingRemainingTickets(false);
+        });
+    },
+    [applyUserTicketsResponse],
+  );
+
+  const loadUserTicketsProgressively = useCallback(
+    async ({
+      force = false,
+      isCancelled = () => false,
+    }: {
+      force?: boolean;
+      isCancelled?: () => boolean;
+    } = {}) => {
+      const response = await fetchUserTickets({
+        force,
+        limit: initialUserTicketsLimit,
+      });
+      if (isCancelled() || !response) return null;
+
+      applyUserTicketsResponse(response, "replace");
+      loadRemainingUserTickets(response, force, isCancelled);
+      return response;
+    },
+    [applyUserTicketsResponse, loadRemainingUserTickets],
+  );
+
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
@@ -568,12 +667,8 @@ export function AppHome({
   useEffect(() => {
     let cancelled = false;
 
-    void fetchUserTickets().then((response) => {
-      if (cancelled || !response) return;
-
-      setWaitlistedTickets(response.tickets);
-      setParticipationCount(response.participationCount);
-      setProposalParticipationCount(response.proposalParticipationCount);
+    void loadUserTicketsProgressively({
+      isCancelled: () => cancelled,
     });
     void fetchBlindDateOffers().then((offers) => {
       if (cancelled || !offers) return;
@@ -611,15 +706,12 @@ export function AppHome({
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [loadUserTicketsProgressively, userId]);
 
   useEffect(() => {
     const refreshTickets = () => {
-      void fetchUserTickets({ force: true }).then((response) => {
-        if (!response) return;
-        setWaitlistedTickets(response.tickets);
-        setParticipationCount(response.participationCount);
-        setProposalParticipationCount(response.proposalParticipationCount);
+      void loadUserTicketsProgressively({
+        force: true,
       });
       void fetchProposalNotifications().then((notifications) => {
         if (!notifications) return;
@@ -629,7 +721,7 @@ export function AppHome({
 
     const intervalId = window.setInterval(refreshTickets, 30_000);
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [loadUserTicketsProgressively]);
 
   const switchTab = (tab: AppTab) => {
     if (tab === "profile") {
@@ -723,20 +815,13 @@ export function AppHome({
   };
 
   const addWaitlistedTicket = (_ticket: GatheringTicket) => {
-    void fetchUserTickets({ force: true }).then((response) => {
-      if (!response) return;
-      setWaitlistedTickets(response.tickets);
-      setParticipationCount(response.participationCount);
-      setProposalParticipationCount(response.proposalParticipationCount);
+    void loadUserTicketsProgressively({
+      force: true,
     });
   };
 
   const refreshProposalTicket = async () => {
-    const response = await fetchUserTickets({ force: true });
-    if (!response) return;
-    setWaitlistedTickets(response.tickets);
-    setParticipationCount(response.participationCount);
-    setProposalParticipationCount(response.proposalParticipationCount);
+    await loadUserTicketsProgressively({ force: true });
   };
 
   const openSubmittedProposalTicket = async () => {
@@ -935,6 +1020,8 @@ export function AppHome({
         >
           <TicketListTab
             tickets={waitlistedTickets}
+            totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
+            loadingMore={loadingRemainingTickets}
             userId={userId}
             proposalProfile={proposalProfile}
             canOpenProposal={canSubmitProposal}
@@ -1151,6 +1238,8 @@ function ProposalTab({
 
 function TicketListTab({
   tickets,
+  totalTicketCount,
+  loadingMore,
   userId,
   proposalProfile,
   canOpenProposal,
@@ -1158,6 +1247,8 @@ function TicketListTab({
   onGoRecommend,
 }: {
   tickets: UserTicket[];
+  totalTicketCount: number;
+  loadingMore: boolean;
   userId: string;
   proposalProfile: ProposalMemberProfile;
   canOpenProposal: boolean;
@@ -1454,13 +1545,14 @@ function TicketListTab({
         ) : (
           <motion.section
             key="stored-ticket-list"
+            aria-busy={loadingMore}
             exit={{ opacity: 0, y: -8 }}
             transition={ticketFadeTransition}
             className="flex h-full min-h-0 flex-col overflow-hidden bg-white pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
           >
             <header className="shrink-0 px-5 pr-28">
               <p className="text-[13px] font-bold uppercase italic tracking-wide text-black">
-                tickets {tickets.length}
+                tickets {totalTicketCount}
               </p>
             </header>
 
