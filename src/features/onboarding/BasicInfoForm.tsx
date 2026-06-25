@@ -5,6 +5,7 @@ import { Camera, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import { trackEvent } from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import { createClient } from "@/lib/supabase/client";
 import type { Gender } from "@/types/user";
@@ -210,6 +211,9 @@ export function BasicInfoForm({
         return;
       }
 
+      trackEvent("basic_info_complete", {
+        mode: "regeneration",
+      });
       router.replace("/meetings?tab=recommend&profileComplete=1");
       router.refresh();
       return;
@@ -235,6 +239,9 @@ export function BasicInfoForm({
       return;
     }
 
+    trackEvent("basic_info_complete", {
+      mode: "onboarding",
+    });
     router.replace(returnPath);
     router.refresh();
   };

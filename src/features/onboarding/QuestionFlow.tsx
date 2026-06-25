@@ -10,6 +10,7 @@ import {
   parseTicketRatingAnswer,
   ticketRatingOptions,
 } from "@/features/onboarding/ticketRating";
+import { trackEvent, trackLoginSuccessFromUrl } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import type {
   ProfileQuestion,
@@ -517,6 +518,7 @@ export function QuestionFlow({
   const [ticketCoachmarkReady, setTicketCoachmarkReady] = useState(isPreview);
   const [ticketCoachmarkDismissed, setTicketCoachmarkDismissed] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const trackedMilestonesRef = useRef<Set<string>>(new Set());
   const shouldReduceMotion = Boolean(useReducedMotion());
   const question = questions[questionIndex];
   const answer = answers[question.id];
@@ -562,6 +564,56 @@ export function QuestionFlow({
         scale: shouldReduceMotion ? 1 : [1, 1.03, 1],
       }
     : undefined;
+
+  useEffect(() => {
+    if (isPreview || isRegeneration) return;
+    trackLoginSuccessFromUrl("new");
+  }, [isPreview, isRegeneration]);
+
+  const trackQuestionMilestone = (
+    key: string,
+    eventName: string,
+    targetQuestions: ProfileQuestion[],
+    nextAnswers: AnswerMap,
+  ) => {
+    if (
+      targetQuestions.length === 0 ||
+      trackedMilestonesRef.current.has(key) ||
+      !targetQuestions.every((item) => isComplete(item, nextAnswers[item.id]))
+    ) {
+      return;
+    }
+
+    trackedMilestonesRef.current.add(key);
+    trackEvent(eventName, {
+      question_count: targetQuestions.length,
+    });
+  };
+
+  const trackQuestionMilestones = (nextAnswers: AnswerMap) => {
+    if (isPreview || isRegeneration) return;
+
+    trackQuestionMilestone(
+      "ticket_test_complete",
+      "ticket_test_complete",
+      questions.filter((item) => item.type === "ticket_rating"),
+      nextAnswers,
+    );
+    trackQuestionMilestone(
+      "choice_questions_complete",
+      "choice_questions_complete",
+      questions.filter(
+        (item) => item.type !== "ticket_rating" && item.type !== "text",
+      ),
+      nextAnswers,
+    );
+    trackQuestionMilestone(
+      "text_questions_complete",
+      "text_questions_complete",
+      questions.filter((item) => item.type === "text"),
+      nextAnswers,
+    );
+  };
 
   const saveAnswer = async (
     targetQuestion: ProfileQuestion,
@@ -713,6 +765,7 @@ export function QuestionFlow({
 
     try {
       await saveAnswer(question, nextAnswer);
+      trackQuestionMilestones(nextAnswers);
       scheduleAutoAdvance(nextAnswers, nextDelay);
     } catch (saveError) {
       console.error("Failed to save onboarding answer:", saveError);
@@ -774,6 +827,7 @@ export function QuestionFlow({
     setError(null);
     try {
       await saveAnswer(question, answer);
+      trackQuestionMilestones(nextAnswers);
       await moveToNext(nextAnswers);
     } catch (saveError) {
       console.error("Failed to save onboarding answer:", saveError);
@@ -808,6 +862,7 @@ export function QuestionFlow({
 
     try {
       await saveAnswer(question, nextAnswer);
+      trackQuestionMilestones(nextAnswers);
       scheduleAutoAdvance(nextAnswers, 650);
     } catch (saveError) {
       console.error("Failed to save ticket rating:", saveError);

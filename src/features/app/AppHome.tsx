@@ -68,6 +68,7 @@ import {
   displayMembershipStatus,
   isMembershipPlan,
 } from "@/features/membership/membershipTypes";
+import { trackEvent, trackLoginSuccessFromUrl } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import {
@@ -495,6 +496,7 @@ export function AppHome({
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
+  const recommendTabTrackedRef = useRef(false);
   const currentMembership = useMemo(
     () => currentMembershipFromProfile(currentProfile),
     [currentProfile],
@@ -626,6 +628,17 @@ export function AppHome({
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    trackLoginSuccessFromUrl("existing");
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "recommend" || recommendTabTrackedRef.current) return;
+
+    recommendTabTrackedRef.current = true;
+    trackEvent("recommend_tab_view");
+  }, [activeTab]);
 
   useEffect(() => {
     if (initialProfileCompletionOpen) setProfileCompletionOpen(true);
@@ -808,6 +821,9 @@ export function AppHome({
   };
 
   const finishProfileCompletion = (nextProfile: Partial<ProfileRow>) => {
+    trackEvent("profile_intro_complete", {
+      source: "profile_completion_modal",
+    });
     setCurrentProfile((current) => ({ ...current, ...nextProfile }));
     setProfileCompletionOpen(false);
     setActiveTab("recommend");

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { createOAuthRedirectUrl, postLoginPath } from '@/lib/authRedirect';
+import { trackEvent } from '@/lib/analytics';
 
 export default function KakaoLoginButton({
   className,
@@ -22,6 +23,10 @@ export default function KakaoLoginButton({
     const supabase = createClient();
     const origin = window.location.origin;
     const redirectTo = createOAuthRedirectUrl(origin, nextPath);
+    trackEvent('kakao_start_click', {
+      next_path: nextPath,
+      provider: 'kakao',
+    });
     setLoading(true);
 
     const { error } = await supabase.auth.signInWithOAuth({

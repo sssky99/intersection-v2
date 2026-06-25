@@ -48,6 +48,11 @@ function cn(...values: Array<string | false | null | undefined>) {
 const ticketDatesCacheTtlMs = 30_000;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
+const ticketsByDateCache = new Map<
+  string,
+  { date: AvailableDate; expiresAt: number }
+>();
+const ticketsByDateRequests = new Map<string, Promise<AvailableDate>>();
 
 function cachedTicketDates() {
   return ticketDatesCache && ticketDatesCache.expiresAt > Date.now()
@@ -60,7 +65,9 @@ async function fetchTicketDates(force = false) {
   if (cached) return cached;
   if (ticketDatesRequest) return ticketDatesRequest;
 
-  ticketDatesRequest = fetch("/api/meetings/tickets", { cache: "no-store" })
+  ticketDatesRequest = fetch("/api/meetings/tickets?mode=dates", {
+    cache: "no-store",
+  })
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
         | { dates?: AvailableDate[]; error?: string }
@@ -83,6 +90,53 @@ async function fetchTicketDates(force = false) {
     });
 
   return ticketDatesRequest;
+}
+
+async function fetchTicketsForDate(date: string, force = false) {
+  const cached = ticketsByDateCache.get(date);
+  if (!force && cached && cached.expiresAt > Date.now()) return cached.date;
+
+  const existingRequest = ticketsByDateRequests.get(date);
+  if (!force && existingRequest) return existingRequest;
+
+  const request = fetch(
+    `/api/meetings/tickets?date=${encodeURIComponent(date)}`,
+    { cache: "no-store" },
+  )
+    .then(async (response) => {
+      const data = (await response.json().catch(() => null)) as
+        | { dates?: AvailableDate[]; error?: string }
+        | null;
+
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "tickets-load-failed");
+      }
+
+      const dateEntry = data.dates?.find((item) => item.date === date) ?? {
+        id: `date-${date}`,
+        date,
+        label: date,
+        tickets: [],
+        ticketCount: 0,
+      };
+      ticketsByDateCache.set(date, {
+        date: dateEntry,
+        expiresAt: Date.now() + ticketDatesCacheTtlMs,
+      });
+
+      return dateEntry;
+    })
+    .finally(() => {
+      ticketsByDateRequests.delete(date);
+    });
+
+  ticketsByDateRequests.set(date, request);
+  return request;
+}
+
+function clearTicketCaches() {
+  ticketDatesCache = null;
+  ticketsByDateCache.clear();
 }
 
 export function MeetingRecommendation({
@@ -133,6 +187,7 @@ export function MeetingRecommendation({
     () => cachedTicketDates() ?? [],
   );
   const [loadingDates, setLoadingDates] = useState(() => !cachedTicketDates());
+  const [loadingTicketDate, setLoadingTicketDate] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +249,12 @@ export function MeetingRecommendation({
           setTicketDates(dates);
           setSelectedDate((current) => {
             if (!current) return current;
-            return dates.find((date) => date.date === current.date) ?? null;
+            const dateMeta = dates.find((date) => date.date === current.date);
+            if (!dateMeta) return null;
+            return {
+              ...current,
+              ticketCount: dateMeta.ticketCount,
+            };
           });
           setNotice(null);
         })
@@ -217,17 +277,26 @@ export function MeetingRecommendation({
     };
   }, [active]);
 
-  const selectDate = (date: AvailableDate) => {
+  const selectDate = async (date: AvailableDate) => {
     setNotice(null);
     setError(null);
-    if (date.tickets.length === 0) {
-      setNotice("이 날짜에는 아직 추천 가능한 모임이 없어요.");
-      return;
-    }
+    setLoadingTicketDate(date.date);
 
-    setSelectedDate(date);
-    setTicketIndex(0);
-    setScreen("drawing");
+    try {
+      const dateWithTickets = await fetchTicketsForDate(date.date);
+      if (dateWithTickets.tickets.length === 0) {
+        setNotice("이 날짜에는 아직 추천 가능한 모임이 없어요.");
+        return;
+      }
+
+      setSelectedDate(dateWithTickets);
+      setTicketIndex(0);
+      setScreen("drawing");
+    } catch {
+      setError("초대장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setLoadingTicketDate(null);
+    }
   };
 
   const rejectTicket = () => {
@@ -284,7 +353,7 @@ export function MeetingRecommendation({
 
     setWaitlistedTicket(ticket);
     setWaitlistStatus(data?.status ?? "waitlisted");
-    ticketDatesCache = null;
+    clearTicketCaches();
     onWaitlisted?.(ticket);
     setScreen("waitlisted");
     setSaving(false);
@@ -343,8 +412,13 @@ export function MeetingRecommendation({
 
             <RecommendationCalendarSelector
               dates={ticketDates}
-              loading={loadingDates}
-              onSelect={selectDate}
+              loading={loadingDates || Boolean(loadingTicketDate)}
+              loadingText={
+                loadingTicketDate
+                  ? "선택한 날짜의 초대장을 불러오고 있어요."
+                  : undefined
+              }
+              onSelect={(date) => void selectDate(date)}
             />
 
             <button

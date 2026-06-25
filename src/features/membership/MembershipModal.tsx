@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MembershipPlan } from "@/features/membership/membershipTypes";
+import { trackEvent } from "@/lib/analytics";
 
 export type CurrentMembership = {
   planId: MembershipPlan;
@@ -199,6 +200,10 @@ export function MembershipModal({
         return;
       }
 
+      trackEvent("membership_purchase_click", {
+        plan: selectedPlan.id,
+        months: selectedPlan.months,
+      });
       window.location.assign(selectedPlan.storeUrl);
     } catch {
       setPurchaseError("멤버십 신청 상태를 저장하지 못했습니다.");

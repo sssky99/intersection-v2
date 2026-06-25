@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 export type RecommendationCalendarDate<TTicket = unknown> = {
   date: string;
   tickets: TTicket[];
+  ticketCount?: number;
 };
 
 type RecommendationCalendarSelectorProps<
@@ -146,17 +147,18 @@ export function RecommendationCalendarSelector<
           const key = dateKey(date);
           const dateEntry = dateMap.get(key);
           const selectable = Boolean(dateEntry);
-          const ticketCount = dateEntry?.tickets.length ?? 0;
+          const ticketCount =
+            dateEntry?.ticketCount ?? dateEntry?.tickets.length ?? 0;
 
           return (
             <motion.button
               key={key}
               type="button"
-              whileTap={selectable ? { scale: 0.92 } : undefined}
+              whileTap={selectable && !loading ? { scale: 0.92 } : undefined}
               onClick={() => {
-                if (dateEntry) onSelect(dateEntry);
+                if (dateEntry && !loading) onSelect(dateEntry);
               }}
-              disabled={!selectable}
+              disabled={!selectable || loading}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center rounded-full border text-xs font-semibold transition-all",
                 selectable

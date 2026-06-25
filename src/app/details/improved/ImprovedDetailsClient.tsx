@@ -8,9 +8,10 @@ import {
   useTransform,
 } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import KakaoLoginButton from "@/components/KakaoLoginButton";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
+import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import type { TicketQuestionTemplate } from "@/types/question";
 
@@ -135,6 +136,13 @@ export function ImprovedDetailsClient({
 }: ImprovedDetailsClientProps) {
   const { scrollYProgress } = useScroll();
   const progressScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
+  useEffect(() => {
+    trackEvent("landing_view", {
+      page: replayMode ? "details_replay" : "details",
+      replay_mode: replayMode,
+    });
+  }, [replayMode]);
 
   useEffect(() => {
     if (replayMode) return;
@@ -499,12 +507,23 @@ function ImprovedDetailsCTAButton({
   replayMode: boolean;
 }) {
   const reducedMotion = useReducedMotion();
+  const ctaViewedRef = useRef(false);
+
+  const trackCtaView = () => {
+    if (ctaViewedRef.current) return;
+    ctaViewedRef.current = true;
+    trackEvent("landing_cta_view", {
+      cta_location: "details_inline",
+      replay_mode: replayMode,
+    });
+  };
 
   return (
     <motion.div
       initial={reducedMotion ? false : { opacity: 0, y: 18 }}
       whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ amount: 0.4, once: true }}
+      onViewportEnter={trackCtaView}
       transition={{ duration: 0.45, ease: "easeOut" }}
       className="mt-5 pb-[calc(32px+env(safe-area-inset-bottom))]"
       data-testid="details-inline-cta"

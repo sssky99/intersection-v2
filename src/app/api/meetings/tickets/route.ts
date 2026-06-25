@@ -500,8 +500,45 @@ function groupByDate(
         date,
         label: dateLabel(date),
         tickets: recommendTickets(dateTickets, profile, answers),
+        ticketCount: dateTickets.length,
       }),
     );
+}
+
+function groupDateMetadata(tickets: GatheringTicket[]) {
+  const counts = new Map<string, number>();
+
+  for (const ticket of tickets) {
+    counts.set(ticket.date, (counts.get(ticket.date) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([date, ticketCount]): AvailableDate => ({
+        id: `date-${date}`,
+        date,
+        label: dateLabel(date),
+        tickets: [],
+        ticketCount,
+      }),
+    );
+}
+
+function groupTicketResponseDates({
+  tickets,
+  datesOnly,
+  profile,
+  answers,
+}: {
+  tickets: GatheringTicket[];
+  datesOnly: boolean;
+  profile: TicketRecommendationProfile | null;
+  answers: TicketRecommendationAnswer[];
+}) {
+  return datesOnly
+    ? groupDateMetadata(tickets)
+    : groupByDate(tickets, profile, answers);
 }
 
 function isTicketVisibleByProposerAge({
@@ -520,6 +557,10 @@ function isTicketVisibleByProposerAge({
   });
 }
 
+function searchDate(value: string | null) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
 function datesResponse(dates: AvailableDate[]) {
   return NextResponse.json(
     { dates },
@@ -535,17 +576,24 @@ export async function GET(request: Request) {
   try {
     const requestUrl = new URL(request.url);
     const includeApplied = requestUrl.searchParams.get("includeApplied") === "1";
+    const datesOnly = requestUrl.searchParams.get("mode") === "dates";
+    const selectedDate = searchDate(requestUrl.searchParams.get("date"));
     const supabase = createAdminClient();
     const userSupabase = await createClient();
     const {
       data: { user },
     } = await userSupabase.auth.getUser();
 
-    const { data: instances, error: instancesError } = await supabase
+    let publicInstancesQuery = supabase
       .from("ticket_instances")
       .select(instanceSelect)
       .eq("visibility", "public")
-      .not("event_date", "is", null)
+      .not("event_date", "is", null);
+    if (selectedDate) {
+      publicInstancesQuery = publicInstancesQuery.eq("event_date", selectedDate);
+    }
+
+    const { data: instances, error: instancesError } = await publicInstancesQuery
       .order("event_date", { ascending: true })
       .order("event_time", { ascending: true, nullsFirst: false });
 
@@ -581,13 +629,15 @@ export async function GET(request: Request) {
         };
       }
 
-      const { data: answerRows, error: answersError } = await supabase
-        .from("user_answers")
-        .select("question_order,answer_value,answer_values,answer_text")
-        .eq("user_id", user.id)
-        .returns<TicketRecommendationAnswer[]>();
-      if (answersError) throw answersError;
-      recommendationAnswers = answerRows ?? [];
+      if (!datesOnly) {
+        const { data: answerRows, error: answersError } = await supabase
+          .from("user_answers")
+          .select("question_order,answer_value,answer_values,answer_text")
+          .eq("user_id", user.id)
+          .returns<TicketRecommendationAnswer[]>();
+        if (answersError) throw answersError;
+        recommendationAnswers = answerRows ?? [];
+      }
 
       const canSeeTestTickets = canBypassAgeVisibility;
 
@@ -644,8 +694,9 @@ export async function GET(request: Request) {
             template,
           ]),
         );
-        const atmosphereDefaultsByInstance =
-          await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
+        const atmosphereDefaultsByInstance = datesOnly
+          ? new Map<string, MeetingAtmosphereDefaults>()
+          : await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
 
         const tickets = instanceRows
           .filter(
@@ -678,7 +729,12 @@ export async function GET(request: Request) {
           );
 
         return datesResponse(
-          groupByDate(tickets, recommendationProfile, recommendationAnswers),
+          groupTicketResponseDates({
+            tickets,
+            datesOnly,
+            profile: recommendationProfile,
+            answers: recommendationAnswers,
+          }),
         );
       }
 
@@ -699,13 +755,21 @@ export async function GET(request: Request) {
       );
 
       if (testInstanceIds.length > 0) {
+        let assignedInstancesQuery = supabase
+          .from("ticket_instances")
+          .select(instanceSelect)
+          .in("id", testInstanceIds)
+          .eq("visibility", "test_only")
+          .not("event_date", "is", null);
+        if (selectedDate) {
+          assignedInstancesQuery = assignedInstancesQuery.eq(
+            "event_date",
+            selectedDate,
+          );
+        }
+
         const { data: assignedInstances, error: assignedInstancesError } =
-          await supabase
-            .from("ticket_instances")
-            .select(instanceSelect)
-            .in("id", testInstanceIds)
-            .eq("visibility", "test_only")
-            .not("event_date", "is", null)
+          await assignedInstancesQuery
             .order("event_date", { ascending: true })
             .order("event_time", { ascending: true, nullsFirst: false });
 
@@ -777,8 +841,9 @@ export async function GET(request: Request) {
         template,
       ]),
     );
-    const atmosphereDefaultsByInstance =
-      await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
+    const atmosphereDefaultsByInstance = datesOnly
+      ? new Map<string, MeetingAtmosphereDefaults>()
+      : await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
 
     const tickets = instanceRows
       .filter(
@@ -811,7 +876,12 @@ export async function GET(request: Request) {
       );
 
     return datesResponse(
-      groupByDate(tickets, recommendationProfile, recommendationAnswers),
+      groupTicketResponseDates({
+        tickets,
+        datesOnly,
+        profile: recommendationProfile,
+        answers: recommendationAnswers,
+      }),
     );
   } catch (error) {
     console.error("[meetings tickets]", error);

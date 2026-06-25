@@ -79,6 +79,7 @@ export type AvailableDate = {
   date: string;
   label: string;
   tickets: GatheringTicket[];
+  ticketCount?: number;
 };
 
 export type UserTicketStatus =

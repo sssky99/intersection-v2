@@ -15,6 +15,17 @@ function cleanRedirect(requestUrl: URL, path = '/', origin = requestUrl.origin) 
   return NextResponse.redirect(redirectUrl);
 }
 
+function withLoginSuccessParams(
+  path: string,
+  loginType: 'new' | 'existing',
+  origin: string,
+) {
+  const url = new URL(path, origin);
+  url.searchParams.set('login', 'success');
+  url.searchParams.set('login_type', loginType);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const oauthError =
@@ -115,8 +126,16 @@ export async function GET(request: Request) {
 
   const finalPath = profile
     ? isNewProfile
-      ? '/onboarding/questions?start=1'
-      : '/meetings?tab=recommend'
+      ? withLoginSuccessParams(
+          '/onboarding/questions?start=1',
+          'new',
+          cleanOrigin,
+        )
+      : withLoginSuccessParams(
+          '/meetings?tab=recommend',
+          'existing',
+          cleanOrigin,
+        )
     : redirectPath;
 
   return NextResponse.redirect(new URL(finalPath, cleanOrigin));
