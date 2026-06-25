@@ -486,6 +486,8 @@ export function AppHome({
   );
   const [profileCompletionReplayKey, setProfileCompletionReplayKey] = useState(0);
   const [membershipModalOpen, setMembershipModalOpen] = useState(false);
+  const [membershipTicket, setMembershipTicket] =
+    useState<GatheringTicket | null>(null);
   const [profileRegenerationConfirmOpen, setProfileRegenerationConfirmOpen] =
     useState(false);
   const [profileRegenerating, setProfileRegenerating] = useState(false);
@@ -867,6 +869,7 @@ export function AppHome({
       <MembershipFloatingButton
         onClick={() => {
           setProfilePanelOpen(false);
+          setMembershipTicket(null);
           setMembershipModalOpen(true);
         }}
       />
@@ -1018,7 +1021,11 @@ export function AppHome({
       <MembershipModal
         open={membershipModalOpen}
         currentMembership={currentMembership}
-        onClose={() => setMembershipModalOpen(false)}
+        pendingTicket={membershipTicket}
+        onClose={() => {
+          setMembershipModalOpen(false);
+          setMembershipTicket(null);
+        }}
       />
 
       <div
@@ -1058,8 +1065,9 @@ export function AppHome({
             proposalRequirementBypassed={currentProfile.is_test_participant === true}
             onWaitlisted={addWaitlistedTicket}
             onProposalSubmitted={openSubmittedProposalTicket}
-            onMembershipRequired={() => {
+            onMembershipRequired={(ticket) => {
               setProfilePanelOpen(false);
+              setMembershipTicket(ticket);
               setMembershipModalOpen(true);
             }}
             onOpenList={() => switchTab("browse")}

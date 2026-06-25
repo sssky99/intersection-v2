@@ -61,7 +61,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: instance, error: instanceError } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: instance, error: instanceError } = await admin
     .from("ticket_instances")
     .select("id,visibility")
     .eq("id", ticket.id)
@@ -99,22 +100,62 @@ export async function POST(request: Request) {
   const waitlistStatus =
     membershipStatus === "active" ? "waitlisted" : "payment_pending";
 
-  const { error } = await supabase.from("meeting_waitlist").insert({
-    user_id: user.id,
+  const { data: existingWaitlist, error: existingWaitlistError } = await admin
+    .from("meeting_waitlist")
+    .select("id,status")
+    .eq("user_id", user.id)
+    .or(`ticket_instance_id.eq.${ticket.id},ticket_id.eq.${ticket.id}`)
+    .limit(1)
+    .maybeSingle<{ id: number | string; status: string }>();
+
+  if (existingWaitlistError) {
+    console.error("Meeting waitlist lookup error:", existingWaitlistError);
+    return NextResponse.json(
+      { error: "Failed to join meeting waitlist." },
+      { status: 500 },
+    );
+  }
+
+  const protectedStatuses = new Set([
+    "approved",
+    "feedback_done",
+    "completed",
+  ]);
+  const effectiveStatus =
+    existingWaitlist && protectedStatuses.has(existingWaitlist.status)
+      ? existingWaitlist.status
+      : waitlistStatus;
+  const waitlistPayload = {
     ticket_id: ticket.id,
     ticket_template_id: ticket.templateId,
     ticket_instance_id: ticket.id,
     meeting_date: ticket.date,
-    status: waitlistStatus,
     ticket_snapshot: ticket,
-  });
+    updated_at: new Date().toISOString(),
+  };
+  const waitlistResult =
+    existingWaitlist?.id != null
+      ? effectiveStatus === existingWaitlist.status
+        ? null
+        : await admin
+            .from("meeting_waitlist")
+            .update({
+              ...waitlistPayload,
+              status: effectiveStatus,
+            })
+            .eq("id", existingWaitlist.id)
+      : await admin.from("meeting_waitlist").insert({
+          ...waitlistPayload,
+          user_id: user.id,
+          status: waitlistStatus,
+        });
 
-  if (error && error.code !== "23505") {
+  if (waitlistResult?.error) {
     console.error("Meeting waitlist insert error:", {
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
+      code: waitlistResult.error.code,
+      message: waitlistResult.error.message,
+      details: waitlistResult.error.details,
+      hint: waitlistResult.error.hint,
     });
 
     return NextResponse.json(
@@ -125,7 +166,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ticket,
-    status: waitlistStatus,
-    duplicate: error?.code === "23505",
+    status: effectiveStatus,
+    duplicate: Boolean(existingWaitlist),
   });
 }

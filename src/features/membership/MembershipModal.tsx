@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { MembershipPlan } from "@/features/membership/membershipTypes";
 import { trackEvent } from "@/lib/analytics";
+import type { GatheringTicket } from "@/types/ticket";
 
 export type CurrentMembership = {
   planId: MembershipPlan;
@@ -128,10 +129,12 @@ export function MembershipFloatingButton({
 export function MembershipModal({
   open,
   currentMembership,
+  pendingTicket = null,
   onClose,
 }: {
   open: boolean;
   currentMembership: CurrentMembership;
+  pendingTicket?: GatheringTicket | null;
   onClose: () => void;
 }) {
   const [selectedPlanId, setSelectedPlanId] = useState<MembershipPlan>(
@@ -187,7 +190,10 @@ export function MembershipModal({
       const response = await fetch("/api/membership/purchase-click", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: selectedPlan.id }),
+        body: JSON.stringify({
+          plan: selectedPlan.id,
+          ticket: pendingTicket,
+        }),
       });
       const data = (await response.json().catch(() => null)) as {
         error?: string;

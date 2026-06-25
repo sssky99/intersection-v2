@@ -166,7 +166,7 @@ export function MeetingRecommendation({
   proposalRequirementBypassed?: boolean;
   onWaitlisted?: (ticket: GatheringTicket) => void;
   onProposalSubmitted?: () => void | Promise<void>;
-  onMembershipRequired?: () => void;
+  onMembershipRequired?: (ticket: GatheringTicket) => void;
   onOpenList?: () => void;
   onOpenProposal?: () => void;
   proposalProfile: ProposalMemberProfile;
@@ -321,7 +321,7 @@ export function MeetingRecommendation({
 
     if (membershipStatus !== "active" && membershipStatus !== "pending") {
       setError(null);
-      onMembershipRequired?.();
+      onMembershipRequired?.(ticket);
       return;
     }
 
@@ -340,7 +340,7 @@ export function MeetingRecommendation({
     } | null;
 
     if (response.status === 402 || data?.code === "membership_required") {
-      onMembershipRequired?.();
+      onMembershipRequired?.(ticket);
       setSaving(false);
       return;
     }
