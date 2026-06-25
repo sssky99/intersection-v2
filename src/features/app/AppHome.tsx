@@ -451,6 +451,7 @@ export function AppHome({
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+  const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const currentMembership = useMemo(
     () => currentMembershipFromProfile(currentProfile),
     [currentProfile],
@@ -921,7 +922,10 @@ export function AppHome({
 
       <div
         className={cn(
-          "min-h-0 flex-1 pb-[calc(90px+env(safe-area-inset-bottom))] scrollbar-none",
+          "min-h-0 flex-1 scrollbar-none",
+          chatRoomOpen
+            ? "pb-0"
+            : "pb-[calc(90px+env(safe-area-inset-bottom))]",
           activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
@@ -989,6 +993,7 @@ export function AppHome({
             userId={userId}
             active={activeTab === "chat"}
             onUnreadCountChange={setChatUnreadCount}
+            onRoomOpenChange={setChatRoomOpen}
           />
         </div>
         <div
@@ -1010,53 +1015,57 @@ export function AppHome({
         </div>
       </div>
 
-      <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto relative grid grid-cols-5 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
-          {tabItems.map(({ id, label, Icon }) => {
-            const selected = activeTab === id;
+      {!chatRoomOpen && (
+        <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+          <div className="pointer-events-auto relative grid grid-cols-5 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+            {tabItems.map(({ id, label, Icon }) => {
+              const selected = activeTab === id;
 
-            return (
-              <button
-                key={id}
-                type="button"
-                title={label}
-                aria-label={label}
-                aria-current={selected ? "page" : undefined}
-                onClick={() => switchTab(id)}
-                className={cn(
-                  "relative z-10 flex h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[10px] font-black transition-all duration-300",
-                  selected
-                    ? "text-black"
-                    : "text-white/[0.62] hover:text-white",
-                )}
-              >
-                <motion.span
-                  animate={selected ? { y: -1, scale: 1.05 } : { y: 0, scale: 1 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 18 }}
-                  className="flex flex-col items-center gap-0.5"
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => switchTab(id)}
+                  className={cn(
+                    "relative z-10 flex h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[10px] font-black transition-all duration-300",
+                    selected
+                      ? "text-black"
+                      : "text-white/[0.62] hover:text-white",
+                  )}
                 >
-                  <Icon size={19} strokeWidth={selected ? 2.6 : 2} />
-                  <span>{label}</span>
-                </motion.span>
+                  <motion.span
+                    animate={
+                      selected ? { y: -1, scale: 1.05 } : { y: 0, scale: 1 }
+                    }
+                    transition={{ type: "spring", stiffness: 300, damping: 18 }}
+                    className="flex flex-col items-center gap-0.5"
+                  >
+                    <Icon size={19} strokeWidth={selected ? 2.6 : 2} />
+                    <span>{label}</span>
+                  </motion.span>
 
-                {id === "chat" && chatUnreadCount > 0 && (
-                  <span className="absolute right-1.5 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-black leading-none text-white">
-                    {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
-                  </span>
-                )}
+                  {id === "chat" && chatUnreadCount > 0 && (
+                    <span className="absolute right-1.5 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-black leading-none text-white">
+                      {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                    </span>
+                  )}
 
-                {selected && (
-                  <motion.div
-                    layoutId="active-tab-bg"
-                    className="absolute inset-0 -z-10 rounded-full bg-white"
-                    transition={{ type: "spring", stiffness: 350, damping: 24 }}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+                  {selected && (
+                    <motion.div
+                      layoutId="active-tab-bg"
+                      className="absolute inset-0 -z-10 rounded-full bg-white"
+                      transition={{ type: "spring", stiffness: 350, damping: 24 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
 
       <AnimatePresence>
         {profileCompletionOpen && (

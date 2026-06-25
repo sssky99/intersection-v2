@@ -168,10 +168,12 @@ export function MeetingChat({
   userId,
   active,
   onUnreadCountChange,
+  onRoomOpenChange,
 }: {
   userId: string;
   active: boolean;
   onUnreadCountChange: (count: number) => void;
+  onRoomOpenChange: (open: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [rooms, setRooms] = useState<MeetingChatRoom[]>([]);
@@ -193,6 +195,11 @@ export function MeetingChat({
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null;
   const roomKey = rooms.map((room) => room.id).join(",");
+
+  useEffect(() => {
+    onRoomOpenChange(Boolean(selectedRoom));
+    return () => onRoomOpenChange(false);
+  }, [onRoomOpenChange, selectedRoom]);
 
   useEffect(() => {
     const updateNow = () => setNowMs(Date.now());
@@ -654,7 +661,7 @@ export function MeetingChat({
           <div ref={messageEndRef} />
         </div>
 
-        <div className="shrink-0 border-t border-black/[0.07] bg-white px-3 py-3">
+        <div className="shrink-0 border-t border-black/[0.07] bg-white px-3 pb-[calc(12px+env(safe-area-inset-bottom))] pt-3">
           {error && (
             <p className="mb-2 px-2 text-[11px] font-semibold text-red-500">
               {error}
@@ -670,7 +677,7 @@ export function MeetingChat({
                 onKeyDown={handleComposerKeyDown}
                 placeholder="메시지 입력"
                 aria-label="메시지 입력"
-                className="max-h-20 min-h-6 w-full resize-none bg-transparent text-[13px] font-medium leading-6 text-black outline-none placeholder:text-black/28"
+                className="max-h-20 min-h-6 w-full resize-none bg-transparent text-base font-medium leading-6 text-black outline-none placeholder:text-black/28"
               />
               <p className="text-right text-[9px] font-semibold text-black/25">
                 {draft.length}/100
