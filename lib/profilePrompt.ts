@@ -371,9 +371,11 @@ publicIntro는 공백 포함 330~480자.
 export const profileInstructions = `
 Write a Korean public profile introduction for a member who will meet unfamiliar people through this service.
 
+Although this profile may be read by other members, the primary reader is the user themself. The most important goal is that the user feels, “This represents me well,” “This feels accurate,” and “I feel quietly understood.” The profile should feel comforting and affirming, as if it gently notices the user’s inner rhythm through their answers, while staying grounded only in the provided information.
+
 The input contains publicDisplayName, workAnswer, conversationAnswers, and recentInterestAnswers.
 
-Use workAnswer and recentInterestAnswers as the main factual sources for publicIntro. Reflect concrete wording, interests, work style, and recent topics from those answers. Use conversationAnswers only to support the tone of conversation and the kind of atmosphere the person helps create. Never use ticket preferences to write the public introduction.
+Use workAnswer and recentInterestAnswers as the main factual sources for publicIntro. Reflect concrete wording, interests, work style, and recent topics from those answers. Use conversationAnswers only to summarize the user’s first-meeting conversation style and the kind of person they feel comfortable with. Never use ticket preferences to write the public introduction.
 
 Return JSON only. Do not use Markdown, explanations, or code fences.
 
@@ -389,18 +391,25 @@ Rules for publicEmoji:
 
 Rules for publicIntro:
 
-Paragraph 1 must begin with "{publicDisplayName}님은". Introduce what the person does and how they approach their everyday work using workAnswer. Write at least two sentences. Be concrete when the answer supports it, but do not infer a job, field, employer, work location, department, exact title, years of experience, responsibilities, or conditions that are not explicitly provided.
+Paragraph 1 must begin with "{publicDisplayName}님은". Introduce what the person does now using workAnswer. Present their work, study, role, or everyday effort in the most positive and dignified light possible, without exaggerating or inventing facts. If the answer is short or ordinary, gently frame it as something meaningful, steady, thoughtful, or personally held. Write at least two sentences. Be concrete when the answer supports it, but do not infer a job, field, employer, work location, department, exact title, years of experience, responsibilities, or conditions that are not explicitly provided.
 
-Paragraph 2 must use conversationAnswers only. Describe how the person tends to talk, listen, and join a comfortable group atmosphere. Start naturally from the answer about the situation after a gathering, then incorporate relevant tone, concern, or rhythm answers when available. End by describing how they are likely to participate in an initial in-person gathering. Do not use recommendation or ticket-preference answers here. Do not diagnose or label the user.
+Paragraph 2 must be short and use only these two conversationAnswers categories:
+1. "모임 역할 - 상대": the kind of person the user feels comfortable with in a first meeting.
+2. "모임 역할": the user's own likely role in a first meeting.
+Do not use temperature, texture, tone, rhythm, relationship-expectation, age-condition, recommendation, or ticket-preference answers in Paragraph 2.
+Paragraph 2 must always start with "처음 만나는 자리에서는". First mention the kind of person the user feels comfortable with. Then describe the user's own way of joining the conversation. Keep this paragraph to exactly two sentences. Use this structure naturally: "처음 만나는 자리에서는 [comfortable person answer]에게 편안함을 느껴요. 그래서 [publicDisplayName]님도 [meeting role answer] 방식으로 대화에 참여해요." Make it sound warm and natural, not mechanical. Do not diagnose, label, or reduce the user to a personality type.
 
-Paragraph 3 must focus on recentInterestAnswers. Describe specific interests, nouns, hobbies, subjects they have been thinking about, or topics that would be natural to share with someone new. Do not invent details, experiences, tastes, values, personality traits, or emotions that are not supported by the answers.
+Paragraph 3 must focus on recentInterestAnswers. Make the user’s recent interests sound alive, specific, and interesting. Describe specific interests, nouns, hobbies, subjects they have been thinking about, or topics that would be natural to share with someone new. Do not invent details, experiences, tastes, values, personality traits, or emotions that are not supported by the answers.
 
 Personalization and style:
+* The first priority is self-recognition: the user should feel that the profile represents them well.
+* The second priority is comfort: the writing should feel quietly reassuring, not promotional.
 * Reflect at least two specific nouns or expressions from workAnswer and recentInterestAnswers when they are available.
 * Make the answer feel unique to this member. Avoid reusable generic phrases such as “calm,” “curious,” or “likes deep conversations” unless the input concretely supports them.
 * The introduction should make both of these clear: what the person has been doing or thinking about recently, and what could naturally be discussed with them.
 * Use a warm, considerate, friend-introducing tone. Write in Korean and end sentences naturally in the ~요 style.
-* Do not use overly promotional, evaluative, diagnostic, or compatibility-analysis language.
+* The writing may gently affirm the user’s effort, rhythm, or way of relating, but only when supported by the answers.
+* Do not use overly promotional, evaluative, diagnostic, compatibility-analysis, or therapy-like language.
 * Avoid repeatedly starting sentences with the same phrase. Do not overuse “~하는 편이에요” or generic personality summaries.
 
 Privacy and safety:

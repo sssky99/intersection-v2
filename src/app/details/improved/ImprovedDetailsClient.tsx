@@ -9,20 +9,15 @@ import {
 } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import KakaoLoginButton from "@/components/KakaoLoginButton";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { createClient } from "@/lib/supabase/client";
 import type { TicketQuestionTemplate } from "@/types/question";
 
-type DetailsCtaState = "guest" | "onboarding" | "complete";
-
 type ImprovedDetailsClientProps = {
   ticketQuestionTemplates: TicketQuestionTemplate[];
-  userId?: string | null;
   nextPath?: string;
-  alreadySeen?: boolean;
-  ctaState?: DetailsCtaState;
+  replayMode?: boolean;
 };
 
 type SnapRevealProps = {
@@ -135,17 +130,34 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 export function ImprovedDetailsClient({
   ticketQuestionTemplates,
-  userId = null,
   nextPath = "/onboarding/questions?start=1",
-  alreadySeen = false,
-  ctaState = "guest",
+  replayMode = false,
 }: ImprovedDetailsClientProps) {
   const { scrollYProgress } = useScroll();
   const progressScale = useTransform(scrollYProgress, [0, 1], [0, 1]);
 
+  useEffect(() => {
+    if (replayMode) return;
+
+    let active = true;
+
+    createClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (active && data.session) {
+          window.location.replace("/meetings?tab=recommend");
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [replayMode]);
+
   return (
     <section className="flex min-h-dvh justify-center bg-[#111715] text-black md:px-4">
-      <div className="relative min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-[#f5f6f1] pb-[calc(76px+env(safe-area-inset-bottom))] md:my-6 md:min-h-[calc(100dvh-48px)] md:rounded-[32px] md:border md:border-white/10 md:shadow-[0_24px_90px_rgba(0,0,0,0.34)]">
+      <div className="relative min-h-dvh w-full max-w-[430px] overflow-x-hidden bg-[#f5f6f1] md:my-6 md:min-h-[calc(100dvh-48px)] md:rounded-[32px] md:border md:border-white/10 md:shadow-[0_24px_90px_rgba(0,0,0,0.34)]">
         <div className="pointer-events-none fixed left-1/2 top-0 z-50 h-[3px] w-full max-w-[430px] -translate-x-1/2 bg-white/20">
           <motion.div
             style={{ scaleX: progressScale }}
@@ -181,12 +193,7 @@ export function ImprovedDetailsClient({
           </StorySection>
         </main>
 
-        <ImprovedDetailsStickyCTA
-          userId={userId}
-          nextPath={nextPath}
-          alreadySeen={alreadySeen}
-          ctaState={ctaState}
-        />
+        <ImprovedDetailsInlineCTA nextPath={nextPath} replayMode={replayMode} />
       </div>
     </section>
   );
@@ -482,88 +489,55 @@ function MemberProfileCarousel() {
   );
 }
 
-function ImprovedDetailsStickyCTA({
-  userId,
+function ImprovedDetailsInlineCTA({
   nextPath,
-  alreadySeen,
-  ctaState,
+  replayMode,
 }: {
-  userId: string | null;
   nextPath: string;
-  alreadySeen: boolean;
-  ctaState: DetailsCtaState;
+  replayMode: boolean;
 }) {
-  const router = useRouter();
   const reducedMotion = useReducedMotion();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const ctaLabel =
-    ctaState === "guest"
-      ? "카카오로 시작하기"
-      : ctaState === "onboarding"
-        ? "질문 이어가기"
-        : "나에게 맞는 자리 보러가기";
-
-  const continueNext = async () => {
-    if (saving || !userId) return;
-
-    setSaving(true);
-    setError(null);
-
-    if (!alreadySeen) {
-      const { error: updateError } = await createClient()
-        .from("profiles")
-        .update({ details_seen_at: new Date().toISOString() })
-        .eq("user_id", userId);
-
-      if (updateError) {
-        setError(
-          "상세페이지 완료 상태를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
-        );
-        setSaving(false);
-        return;
-      }
-    }
-
-    router.replace(nextPath);
-    router.refresh();
-  };
 
   return (
-    <motion.div
+    <motion.section
       initial={reducedMotion ? false : { opacity: 0, y: 18 }}
-      animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ delay: 0.25, duration: 0.5, ease: "easeOut" }}
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center"
+      whileInView={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+      viewport={{ amount: 0.4, once: true }}
+      transition={{ duration: 0.45, ease: "easeOut" }}
+      className="px-5 pb-[calc(32px+env(safe-area-inset-bottom))] pt-10"
     >
       <div
-        data-testid="details-sticky-cta"
-        className="pointer-events-auto w-full max-w-[430px] bg-gradient-to-t from-[#f5f6f1] via-[#f5f6f1]/95 to-[#f5f6f1]/0 px-4 pb-[calc(12px+env(safe-area-inset-bottom))] pt-8"
+        data-testid="details-inline-cta"
+        className={cn(
+          "rounded-[24px] px-4 py-5 shadow-[0_20px_52px_rgba(17,23,21,0.14)]",
+          replayMode ? "bg-white text-[#111715]" : "bg-[#111715] text-white",
+        )}
       >
-        {ctaState === "guest" ? (
+        <p
+          className={cn(
+            "text-[13px] font-semibold leading-5",
+            replayMode ? "text-black/58" : "text-white/64",
+          )}
+        >
+          충분히 살펴봤다면, 이제 나에게 맞는 사람과 자리를 추천받아보세요.
+        </p>
+        {replayMode ? (
+          <a
+            href={nextPath}
+            className="mt-4 flex h-14 w-full items-center justify-center rounded-full bg-[#111715] px-5 text-sm font-bold text-white shadow-[0_18px_50px_rgba(0,0,0,0.16)] transition active:scale-[0.99]"
+          >
+            나에게 맞는 자리 보러가기
+          </a>
+        ) : (
           <KakaoLoginButton
             nextPath={nextPath}
             loadingLabel="카카오로 이동 중..."
-            className="h-14 rounded-full px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.12)] active:scale-[0.99] disabled:opacity-60"
+            className="mt-4 h-14 rounded-full px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.18)] active:scale-[0.99] disabled:opacity-60"
           >
-            {(loading) => <>{loading ? "카카오로 이동 중..." : ctaLabel}</>}
+            {(loading) => <>{loading ? "카카오로 이동 중..." : "카카오로 시작하기"}</>}
           </KakaoLoginButton>
-        ) : (
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => void continueNext()}
-            className="flex h-14 w-full items-center justify-center rounded-full bg-[#fee500] px-5 text-sm font-bold text-[#191919] shadow-[0_18px_50px_rgba(0,0,0,0.12)] transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-          >
-            {saving ? "이동 중..." : ctaLabel}
-          </button>
-        )}
-        {error && (
-          <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-center text-xs font-semibold leading-5 text-red-600">
-            {error}
-          </p>
         )}
       </div>
-    </motion.div>
+    </motion.section>
   );
 }
