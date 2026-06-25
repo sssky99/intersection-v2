@@ -7,10 +7,8 @@ import {
   Clock3,
   Image as ImageIcon,
   Loader2,
-  MapPin,
   PenLine,
   Plus,
-  Search,
   Sparkles,
   Trash2,
   X,
@@ -18,6 +16,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
+import { NaverPlacePicker } from "@/components/NaverPlacePicker";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import {
   vibeAxes,
@@ -38,7 +37,6 @@ import type {
   MeetingProposalInput,
   MeetingProposalPublicProfile,
 } from "@/types/meetingProposal";
-import type { NaverPlace } from "@/types/place";
 import {
   MEETING_MAX_PARTICIPANT_COUNT,
   MEETING_MIN_PARTICIPANT_COUNT,
@@ -58,6 +56,14 @@ type EditTarget =
 
 type ProposalFormState = MeetingProposalInput & {
   proposerRoleAgreed: boolean;
+};
+
+type ProposalAutosaveSnapshot = {
+  version: 1;
+  savedAt: string;
+  stage: Stage;
+  form: ProposalFormState;
+  draft: MeetingProposalDraft;
 };
 
 export type ProposalMemberProfile = MeetingProposalPublicProfile;
@@ -91,6 +97,174 @@ const initialDraft: MeetingProposalDraft = {
   },
   flow: [],
 };
+
+const proposalAutosaveVersion = 1;
+
+function freshEmptyForm(): ProposalFormState {
+  return {
+    ...emptyForm,
+    userHashtags: [],
+  };
+}
+
+function freshInitialDraft(): MeetingProposalDraft {
+  return {
+    ...initialDraft,
+    hashtags: [],
+    activities: [],
+    flow: [],
+    vibe: { ...initialDraft.vibe },
+  };
+}
+
+function proposalAutosaveKey(profile: ProposalMemberProfile) {
+  return `intersection:meeting-proposal:auto-save:v${proposalAutosaveVersion}:${profile.userId ?? profile.displayName}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function normalizeCoverImage(
+  value: unknown,
+): MeetingProposalCoverImage | null {
+  if (!isRecord(value) || typeof value.imageUrl !== "string") return null;
+  if (
+    value.imageSource !== "pexels" &&
+    value.imageSource !== "user_upload"
+  ) {
+    return null;
+  }
+  if (
+    value.imageSelectionMethod !== "auto" &&
+    value.imageSelectionMethod !== "manual"
+  ) {
+    return null;
+  }
+
+  return {
+    imageUrl: value.imageUrl,
+    imageSource: value.imageSource,
+    imageSelectionMethod: value.imageSelectionMethod,
+    pexelsPhotoId:
+      typeof value.pexelsPhotoId === "string" ? value.pexelsPhotoId : null,
+    pexelsPageUrl:
+      typeof value.pexelsPageUrl === "string" ? value.pexelsPageUrl : null,
+    photographer:
+      typeof value.photographer === "string" ? value.photographer : null,
+    photographerUrl:
+      typeof value.photographerUrl === "string"
+        ? value.photographerUrl
+        : null,
+    imageReviewModel:
+      typeof value.imageReviewModel === "string"
+        ? value.imageReviewModel
+        : null,
+  };
+}
+
+function normalizeSavedForm(value: unknown): ProposalFormState | null {
+  if (!isRecord(value)) return null;
+
+  return {
+    ...freshEmptyForm(),
+    imageUrl: typeof value.imageUrl === "string" ? value.imageUrl : "",
+    title: typeof value.title === "string" ? value.title : "",
+    activityDescription:
+      typeof value.activityDescription === "string"
+        ? value.activityDescription
+        : "",
+    eventDate: typeof value.eventDate === "string" ? value.eventDate : "",
+    eventTime: typeof value.eventTime === "string" ? value.eventTime : "18:00",
+    region: typeof value.region === "string" ? value.region : "",
+    specificPlace:
+      typeof value.specificPlace === "string" ? value.specificPlace : null,
+    place: normalizeMeetingPlace(value.place),
+    coverImage: normalizeCoverImage(value.coverImage),
+    userHashtags: stringArray(value.userHashtags),
+    proposerRoleAgreed: value.proposerRoleAgreed === true,
+  };
+}
+
+function normalizeSavedDraft(value: unknown): MeetingProposalDraft | null {
+  if (!isRecord(value)) return null;
+  const vibe = isRecord(value.vibe) ? value.vibe : {};
+
+  return {
+    ...freshInitialDraft(),
+    title: typeof value.title === "string" ? value.title : "",
+    shortDescription:
+      typeof value.shortDescription === "string"
+        ? value.shortDescription
+        : "",
+    hashtags: stringArray(value.hashtags),
+    activities: stringArray(value.activities),
+    vibe: {
+      temperature:
+        typeof vibe.temperature === "number" ? vibe.temperature : 3,
+      texture: typeof vibe.texture === "number" ? vibe.texture : 3,
+      tone: typeof vibe.tone === "number" ? vibe.tone : 3,
+      rhythm: typeof vibe.rhythm === "number" ? vibe.rhythm : 3,
+      alcohol: typeof vibe.alcohol === "number" ? vibe.alcohol : 2,
+      romance: typeof vibe.romance === "number" ? vibe.romance : 2,
+    },
+    flow: stringArray(value.flow),
+  };
+}
+
+function readProposalAutosave(key: string): ProposalAutosaveSnapshot | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed) || parsed.version !== proposalAutosaveVersion) {
+      return null;
+    }
+
+    const form = normalizeSavedForm(parsed.form);
+    const draft = normalizeSavedDraft(parsed.draft);
+    if (!form || !draft || !hasMeaningfulProposalDraft(form, draft)) {
+      return null;
+    }
+
+    return {
+      version: proposalAutosaveVersion,
+      savedAt:
+        typeof parsed.savedAt === "string"
+          ? parsed.savedAt
+          : new Date().toISOString(),
+      stage: parsed.stage === "preview" ? "preview" : "form",
+      form,
+      draft,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function hasMeaningfulProposalDraft(
+  form: ProposalFormState,
+  draft: MeetingProposalDraft,
+) {
+  return Boolean(
+    form.activityDescription.trim() ||
+      form.eventDate ||
+      form.place ||
+      form.imageUrl ||
+      form.coverImage?.imageUrl ||
+      draft.title.trim() ||
+      draft.shortDescription.trim() ||
+      draft.hashtags.length > 0 ||
+      draft.activities.length > 0,
+  );
+}
 
 function formFromCopiedTicket(ticket: GatheringTicket): ProposalFormState {
   const place = normalizeMeetingPlace(ticket.place);
@@ -199,7 +373,7 @@ function ticketFromProposal({
     draft.hashtags.length > 0 ? draft.hashtags : form.userHashtags ?? [];
   const summary =
     draft.shortDescription.trim() ||
-    "제출 즉시 공개되며, 검토 과정에서 문구가 다듬어질 수 있어요.";
+    "제출 즉시 공개되며, 티켓 탭에서 바로 확인할 수 있어요.";
 
   return {
     id: "proposal-preview",
@@ -245,14 +419,17 @@ export function MeetingProposalFlow({
   onDone: () => void | Promise<void>;
 }) {
   const flowRef = useRef<HTMLElement | null>(null);
+  const storageKey = useMemo(() => proposalAutosaveKey(profile), [profile]);
+  const [autosaveReady, setAutosaveReady] = useState(false);
+  const [autosaveRestored, setAutosaveRestored] = useState(false);
   const [stage, setStage] = useState<Stage>(
     copiedTicket ? "preview" : "form",
   );
   const [form, setForm] = useState<ProposalFormState>(() =>
-    copiedTicket ? formFromCopiedTicket(copiedTicket) : { ...emptyForm },
+    copiedTicket ? formFromCopiedTicket(copiedTicket) : freshEmptyForm(),
   );
   const [draft, setDraft] = useState<MeetingProposalDraft>(() =>
-    copiedTicket ? draftFromCopiedTicket(copiedTicket) : initialDraft,
+    copiedTicket ? draftFromCopiedTicket(copiedTicket) : freshInitialDraft(),
   );
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -267,6 +444,46 @@ export function MeetingProposalFlow({
       if (localImageUrl) URL.revokeObjectURL(localImageUrl);
     };
   }, [localImageUrl]);
+
+  useEffect(() => {
+    if (copiedTicket) {
+      setAutosaveReady(true);
+      return;
+    }
+
+    const saved = readProposalAutosave(storageKey);
+    if (saved) {
+      setStage(saved.stage);
+      setForm(saved.form);
+      setDraft(saved.draft);
+      setNotice("작성 중이던 제안을 불러왔어요.");
+      setAutosaveRestored(true);
+    }
+    setAutosaveReady(true);
+  }, [copiedTicket, storageKey]);
+
+  useEffect(() => {
+    if (!autosaveReady) return;
+
+    try {
+      if (!hasMeaningfulProposalDraft(form, draft)) {
+        window.localStorage.removeItem(storageKey);
+        return;
+      }
+
+      const snapshot: ProposalAutosaveSnapshot = {
+        version: proposalAutosaveVersion,
+        savedAt: new Date().toISOString(),
+        stage,
+        form,
+        draft,
+      };
+
+      window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
+    } catch {
+      // 임시저장은 보조 기능이라 실패해도 작성 흐름은 막지 않습니다.
+    }
+  }, [autosaveReady, draft, form, stage, storageKey]);
 
   const imageUrl = localImageUrl ?? form.coverImage?.imageUrl ?? form.imageUrl ?? "";
   const previewTicket = useMemo(
@@ -311,6 +528,21 @@ export function MeetingProposalFlow({
     value: ProposalFormState[TKey],
   ) => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const resetAutosavedDraft = () => {
+    window.localStorage.removeItem(storageKey);
+    setLocalImageUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    setForm(freshEmptyForm());
+    setDraft(freshInitialDraft());
+    setStage("form");
+    setEditing(null);
+    setError(null);
+    setNotice(null);
+    setAutosaveRestored(false);
   };
 
   const uploadImage = async (file: File) => {
@@ -424,6 +656,8 @@ export function MeetingProposalFlow({
       return;
     }
 
+    window.localStorage.removeItem(storageKey);
+    setAutosaveRestored(false);
     await onDone();
     setSubmitting(false);
   };
@@ -448,9 +682,14 @@ export function MeetingProposalFlow({
         <ArrowLeft size={18} aria-hidden />
       </button>
 
+      {autosaveRestored && (
+        <ProposalAutosaveNotice onReset={resetAutosavedDraft} />
+      )}
+
       {stage === "form" ? (
         <ProposalForm
           form={form}
+          notice={notice}
           generating={generating}
           canGenerate={canGenerate}
           error={error}
@@ -492,8 +731,33 @@ export function MeetingProposalFlow({
   );
 }
 
+function ProposalAutosaveNotice({ onReset }: { onReset: () => void }) {
+  return (
+    <section className="mt-5 rounded-2xl border border-accent/20 bg-accent/[0.08] px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-black leading-5 text-black">
+            작성 중이던 제안을 이어서 불러왔어요.
+          </p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-black/48">
+            작성 내용은 이 브라우저에 자동으로 임시저장돼요.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onReset}
+          className="h-9 shrink-0 rounded-full border border-black/10 bg-white px-3 text-xs font-black text-black/55 transition hover:border-black/20 hover:text-black"
+        >
+          처음부터 다시
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ProposalForm({
   form,
+  notice,
   generating,
   canGenerate,
   error,
@@ -501,6 +765,7 @@ function ProposalForm({
   onGenerate,
 }: {
   form: ProposalFormState;
+  notice: string | null;
   generating: boolean;
   canGenerate: boolean;
   error: string | null;
@@ -513,6 +778,12 @@ function ProposalForm({
   const [activityCompleted, setActivityCompleted] = useState(
     () => Boolean(form.activityDescription.trim()),
   );
+  useEffect(() => {
+    if (form.activityDescription.trim()) {
+      setActivityCompleted(true);
+    }
+  }, [form.activityDescription]);
+
   const showDateTime = activityCompleted;
   const showPlace = showDateTime && Boolean(form.eventDate && form.eventTime);
   const showFinalStep = showPlace && Boolean(form.place);
@@ -530,6 +801,12 @@ function ProposalForm({
           간단한 정보만 입력해도 AI가 초안을 만들어줘요.
         </p>
       </header>
+
+      {notice && (
+        <p className="mt-5 rounded-2xl bg-accent/[0.08] px-4 py-3 text-xs font-semibold leading-5 text-black/58">
+          {notice}
+        </p>
+      )}
 
       <div className="mt-7 grid min-w-0 max-w-full gap-6">
         <div className="min-w-0 max-w-full space-y-5">
@@ -593,8 +870,9 @@ function ProposalForm({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
               >
-                <PlaceSearchPicker
+                <NaverPlacePicker
                   value={form.place}
+                  required
                   onChange={(place) => {
                     onChange("place", place);
                     onChange("specificPlace", place?.name ?? null);
@@ -741,7 +1019,9 @@ function ProposalPreview({
           )}
 
           <EditableDetailSection title="자리 분위기">
-            <MeetingAtmospherePanel profile={ticket.proposerProfile} />
+            <MeetingAtmospherePanel
+              profile={ticket.atmosphere ?? ticket.proposerProfile}
+            />
           </EditableDetailSection>
 
           <section className="border-t border-black/8 py-5">
@@ -813,7 +1093,7 @@ function ProposalPreview({
         ) : (
           <Check size={17} aria-hidden />
         )}
-        {submitting ? "공개 중..." : "공개하고 검토 요청하기"}
+        {submitting ? "공개 중..." : "바로 공개하기"}
       </button>
     </>
   );
@@ -918,8 +1198,9 @@ function EditSheet({
           )}
 
           {target === "location" && (
-            <PlaceSearchPicker
+            <NaverPlacePicker
               value={form.place}
+              required
               onChange={(place) => {
                 onFormChange("place", place);
                 onFormChange("specificPlace", place?.name ?? null);
@@ -1059,174 +1340,6 @@ function ArrayEditor({
         className="w-full resize-none rounded-2xl border border-black/10 px-4 py-3 text-sm font-semibold leading-6 outline-none focus:border-accent"
       />
     </div>
-  );
-}
-
-function PlaceSearchPicker({
-  value,
-  onChange,
-}: {
-  value?: NaverPlace | null;
-  onChange: (place: NaverPlace | null) => void;
-}) {
-  const [query, setQuery] = useState(value?.name ?? "");
-  const [results, setResults] = useState<NaverPlace[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setQuery(value?.name ?? "");
-  }, [value?.name]);
-
-  const searchPlaces = async () => {
-    const keyword = query.trim();
-    if (keyword.length < 2 || searching) return;
-
-    setSearching(true);
-    setError(null);
-
-    const response = await fetch(
-      `/api/places/search?query=${encodeURIComponent(keyword)}`,
-    ).catch(() => null);
-    const data = response
-      ? ((await response.json().catch(() => null)) as
-          | { places?: NaverPlace[]; error?: string }
-          | null)
-      : null;
-
-    if (!response?.ok) {
-      setError(data?.error ?? "장소를 검색하지 못했어요.");
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-
-    setResults(data?.places ?? []);
-    setSearching(false);
-  };
-
-  return (
-    <section className="min-w-0 max-w-full overflow-hidden rounded-[24px] border border-black/10 bg-white px-5 py-4">
-      <span className="flex items-center gap-2 text-sm font-black text-black">
-        어디에서 열고 싶나요?
-        <RequiredBadge />
-      </span>
-      <div className="mt-3 flex min-w-0 max-w-full gap-2">
-        <input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setError(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void searchPlaces();
-            }
-          }}
-          placeholder="장소명을 검색해주세요"
-          className="h-12 w-0 min-w-0 flex-1 rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold outline-none transition placeholder:text-black/25 focus:border-accent"
-        />
-        <button
-          type="button"
-          disabled={searching || query.trim().length < 2}
-          onClick={() => void searchPlaces()}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-black text-white transition disabled:bg-black/15 disabled:text-black/35"
-          aria-label="장소 검색"
-        >
-          {searching ? (
-            <Loader2 size={17} className="animate-spin" aria-hidden />
-          ) : (
-            <Search size={17} aria-hidden />
-          )}
-        </button>
-      </div>
-
-      {error && (
-        <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
-          {error}
-        </p>
-      )}
-
-      {results.length > 0 && (
-        <div className="mt-3 max-h-[292px] min-w-0 max-w-full space-y-2 overflow-x-hidden overflow-y-auto overscroll-contain pr-1">
-          {results.map((place) => {
-            const selected =
-              value?.source === "naver" &&
-              value.mapx === place.mapx &&
-              value.mapy === place.mapy;
-
-            return (
-              <button
-                key={`${place.mapx}-${place.mapy}-${place.name}`}
-                type="button"
-                onClick={() => onChange(place)}
-                className={cn(
-                  "block h-[92px] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border px-4 py-3 text-left transition",
-                  selected
-                    ? "border-accent bg-accent/[0.08]"
-                    : "border-black/10 bg-black/[0.015] hover:border-accent/45",
-                )}
-              >
-                <span className="flex min-w-0 max-w-full items-start gap-2 overflow-hidden">
-                  <MapPin
-                    size={15}
-                    className={cn(
-                      "mt-0.5 shrink-0",
-                      selected ? "text-accent" : "text-black/35",
-                    )}
-                    aria-hidden
-                  />
-                  <span className="w-0 min-w-0 flex-1 overflow-hidden">
-                    <span className="block truncate text-sm font-black text-black">
-                      {place.name}
-                    </span>
-                    {place.category && (
-                      <span className="mt-0.5 block truncate text-[11px] font-bold text-accent">
-                        {place.category}
-                      </span>
-                    )}
-                    <span className="mt-1 block truncate text-xs font-semibold leading-5 text-black/48">
-                      {place.roadAddress ?? place.jibunAddress ?? "주소 정보 없음"}
-                    </span>
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {value && (
-        <div className="mt-4 min-w-0 max-w-full overflow-hidden rounded-2xl border border-accent/20 bg-accent/[0.06] px-4 py-4">
-          <div className="flex min-w-0 max-w-full items-start justify-between gap-3">
-            <div className="w-0 min-w-0 flex-1">
-              <p className="truncate text-sm font-black text-black">{value.name}</p>
-              {value.category && (
-                <p className="mt-1 truncate text-[11px] font-bold text-accent">
-                  {value.category}
-                </p>
-              )}
-              <p className="mt-1 break-words text-xs font-semibold leading-5 text-black/55">
-                {value.roadAddress ?? value.jibunAddress ?? "주소 정보 없음"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onChange(null)}
-              className="shrink-0 rounded-full border border-black/10 bg-white px-3 py-1.5 text-[11px] font-black text-black/45 transition hover:text-black"
-            >
-              해제
-            </button>
-          </div>
-          <NaverMapPreview
-            place={value}
-            className="mt-3"
-            heightClassName="h-[172px]"
-          />
-        </div>
-      )}
-    </section>
   );
 }
 

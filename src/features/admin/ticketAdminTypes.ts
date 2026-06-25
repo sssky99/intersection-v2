@@ -1,4 +1,9 @@
 import type { AdminProfile } from "@/features/admin/adminProfile";
+import type {
+  MeetingAtmosphereAgeBandId,
+  MeetingAtmosphereGenderMood,
+} from "@/lib/meetingAtmosphere";
+import type { MeetingPlace } from "@/types/place";
 import type { TicketStageCopy } from "@/types/ticket";
 
 export type TicketVisibility =
@@ -46,6 +51,7 @@ export type AdminTicketInstance = {
   region: string | null;
   place_name: string | null;
   address: string | null;
+  place_payload: MeetingPlace | null;
   operation_code: string | null;
   operation_note: string | null;
   place_visibility: PlaceVisibility;
@@ -79,7 +85,12 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   region: string | null;
   place_name: string | null;
   address: string | null;
+  place_payload: MeetingPlace | null;
   place_visibility: PlaceVisibility;
+  atmosphere_gender_mood: MeetingAtmosphereGenderMood | null;
+  atmosphere_age_band_id: MeetingAtmosphereAgeBandId | null;
+  atmosphere_default_gender_mood: MeetingAtmosphereGenderMood | null;
+  atmosphere_default_age_band_id: MeetingAtmosphereAgeBandId | null;
   operation_code: string | null;
   operation_note: string | null;
   remaining_seat_label_count: number;
@@ -120,7 +131,6 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
 
 export const placeVisibilities: PlaceVisibility[] = [
   "hidden",
-  "confirmed_only",
   "public",
 ];
 

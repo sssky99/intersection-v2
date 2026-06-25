@@ -9,17 +9,25 @@ import {
   RotateCcw,
   Save,
   Search,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import { NaverPlacePicker } from "@/components/NaverPlacePicker";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import { vibeAxes, type VibeScores } from "@/components/vibe/vibeGraphConfig";
+import { AtmosphereDisplayEditor } from "@/features/admin/AtmosphereDisplayEditor";
 import type { AdminMeetingProposal } from "@/features/admin/proposalAdminTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
+import {
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+} from "@/lib/meetingAtmosphere";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import { ticketPlaceFromMeetingPlace } from "@/lib/placePayload";
+import { meetingRegionFromPlace } from "@/lib/seoulRegion";
 import {
   MEETING_MAX_PARTICIPANT_COUNT,
   MEETING_MIN_PARTICIPANT_COUNT,
@@ -30,6 +38,7 @@ import {
   meetingProposalStatuses,
   type MeetingProposalStatus,
 } from "@/types/meetingProposal";
+import type { MeetingPlace } from "@/types/place";
 
 type ProposalResponse = {
   proposals?: AdminMeetingProposal[];
@@ -44,6 +53,9 @@ type ProposalDraft = {
   eventTime: string;
   region: string;
   specificPlace: string;
+  place: MeetingPlace | null;
+  atmosphereGenderMood: string;
+  atmosphereAgeBandId: string;
   hashtagsText: string;
   shortDescription: string;
   activitiesText: string;
@@ -191,6 +203,9 @@ function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
     eventTime: normalizeTimeValue(proposal.eventTime),
     region: proposal.region,
     specificPlace: proposal.specificPlace ?? "",
+    place: proposal.place,
+    atmosphereGenderMood: proposal.atmosphereGenderMood ?? "",
+    atmosphereAgeBandId: proposal.atmosphereAgeBandId ?? "",
     hashtagsText: proposal.hashtags.map((tag) => `#${tag}`).join(" "),
     shortDescription: proposal.shortDescription,
     activitiesText: proposal.activities.join("\n"),
@@ -198,6 +213,29 @@ function draftFromProposal(proposal: AdminMeetingProposal): ProposalDraft {
     status: proposal.status,
     adminNote: proposal.adminNote ?? "",
     rejectionReason: proposal.rejectionReason ?? "",
+  };
+}
+
+function proposalAtmospherePreview(
+  proposal: AdminMeetingProposal,
+  draft: ProposalDraft,
+): GatheringTicket["atmosphere"] {
+  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
+    draft.atmosphereAgeBandId,
+  );
+  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
+    draft.atmosphereGenderMood,
+  );
+
+  return {
+    ageBandId:
+      ageBandOverride ?? proposal.atmosphereDefaultAgeBandId ?? null,
+    genderMood:
+      genderMoodOverride ?? proposal.atmosphereDefaultGenderMood ?? null,
+    defaultAgeBandId: proposal.atmosphereDefaultAgeBandId,
+    defaultGenderMood: proposal.atmosphereDefaultGenderMood,
+    ageBandOverrideId: ageBandOverride,
+    genderMoodOverride,
   };
 }
 
@@ -232,8 +270,9 @@ function proposalPreview(
       ? activities
       : splitLines(draft.activityDescription, 4),
     detailFlow: [],
-    place: ticketPlaceFromMeetingPlace(proposal.place),
+    place: ticketPlaceFromMeetingPlace(draft.place),
     proposerLabel: `${proposal.proposerProfile.displayName}님의 제안`,
+    atmosphere: proposalAtmospherePreview(proposal, draft),
     proposerProfile: {
       userId: proposal.proposerId,
       displayName: proposal.proposerProfile.displayName,
@@ -355,6 +394,9 @@ export function ProposalAdminPanel() {
         eventTime: normalizeTimeValue(draft.eventTime),
         region: draft.region,
         specificPlace: draft.specificPlace,
+        place: draft.place,
+        atmosphereGenderMood: draft.atmosphereGenderMood || null,
+        atmosphereAgeBandId: draft.atmosphereAgeBandId || null,
         hashtags: splitTags(draft.hashtagsText),
         shortDescription: draft.shortDescription,
         activities: splitLines(draft.activitiesText, 4),
@@ -421,6 +463,36 @@ export function ProposalAdminPanel() {
 
     setDraft({ ...draft, imageUrl: selectedProposal.originalImageUrl });
     setNotice("제안자가 올린 원본 이미지로 되돌렸어요. 저장하면 공개 티켓에 반영됩니다.");
+  };
+
+  const deleteProposal = async () => {
+    if (!selectedProposal || saving || imageUploading) return;
+    const confirmed = window.confirm(
+      `"${selectedProposal.title}" 제안 티켓을 삭제할까요?\n공개된 티켓과 신청 기록도 함께 삭제됩니다.`,
+    );
+    if (!confirmed) return;
+
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    const response = await fetch(
+      `/api/admin/proposals?id=${encodeURIComponent(selectedProposal.id)}`,
+      { method: "DELETE" },
+    ).catch(() => null);
+    const data = response
+      ? ((await response.json().catch(() => null)) as ProposalResponse | null)
+      : null;
+
+    if (!response?.ok || !data?.proposals) {
+      setError(data?.error ?? "제안 티켓을 삭제하지 못했습니다.");
+      setSaving(false);
+      return;
+    }
+
+    replaceFromResponse(data.proposals);
+    setNotice("제안 티켓을 삭제했습니다.");
+    setSaving(false);
   };
 
   return (
@@ -504,6 +576,7 @@ export function ProposalAdminPanel() {
                   saving={saving}
                   onDraftChange={setDraft}
                   onSave={() => void saveDraft()}
+                  onDelete={() => void deleteProposal()}
                 />
 
                 <ProposalBasicEditor
@@ -524,6 +597,22 @@ export function ProposalAdminPanel() {
                   draft={draft}
                   saving={saving}
                   onDraftChange={setDraft}
+                />
+
+                <AtmosphereDisplayEditor
+                  genderMood={draft.atmosphereGenderMood}
+                  ageBandId={draft.atmosphereAgeBandId}
+                  defaultGenderMood={
+                    selectedProposal.atmosphereDefaultGenderMood
+                  }
+                  defaultAgeBandId={selectedProposal.atmosphereDefaultAgeBandId}
+                  disabled={saving}
+                  onGenderMoodChange={(atmosphereGenderMood) =>
+                    setDraft({ ...draft, atmosphereGenderMood })
+                  }
+                  onAgeBandChange={(atmosphereAgeBandId) =>
+                    setDraft({ ...draft, atmosphereAgeBandId })
+                  }
                 />
 
                 <ProposalMetaPanel
@@ -612,12 +701,14 @@ function ProposalEditorHeader({
   saving,
   onDraftChange,
   onSave,
+  onDelete,
 }: {
   proposal: AdminMeetingProposal;
   draft: ProposalDraft;
   saving: boolean;
   onDraftChange: (draft: ProposalDraft) => void;
   onSave: () => void;
+  onDelete: () => void;
 }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -636,6 +727,9 @@ function ProposalEditorHeader({
           </p>
         </div>
         <div className="flex gap-2">
+          <IconButton disabled={saving} onClick={onDelete} icon={Trash2}>
+            삭제
+          </IconButton>
           <IconButton
             primary
             disabled={saving}
@@ -794,6 +888,21 @@ function ProposalBasicEditor({
           value={draft.region}
           placeholder="성수, 을지로, 강남"
           onChange={(region) => onDraftChange({ ...draft, region })}
+        />
+        <NaverPlacePicker
+          className="col-span-2"
+          title="지도 장소"
+          value={draft.place}
+          onChange={(place) =>
+            onDraftChange({
+              ...draft,
+              place,
+              specificPlace: place?.name ?? draft.specificPlace,
+              region: place
+                ? meetingRegionFromPlace(place) ?? draft.region
+                : draft.region,
+            })
+          }
         />
         <FormField
           label="구체적 장소"

@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import {
+  meetingAtmosphereDefaultsFromProfiles,
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+  type MeetingAtmosphereDefaults,
+} from "@/lib/meetingAtmosphere";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import {
+  meetingPlaceAddress,
+  normalizeMeetingPlace,
+} from "@/lib/placePayload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
@@ -110,7 +120,10 @@ const templateSelect = [
   "region",
   "place_name",
   "address",
+  "place_payload",
   "place_visibility",
+  "atmosphere_gender_mood",
+  "atmosphere_age_band_id",
   "operation_code",
   "operation_note",
   "remaining_seat_label_count",
@@ -150,6 +163,7 @@ const instanceSelect = [
   "region",
   "place_name",
   "address",
+  "place_payload",
   "operation_code",
   "operation_note",
   "place_visibility",
@@ -255,6 +269,89 @@ function scoreValue(value: unknown) {
   return Math.max(1, Math.min(5, Math.trunc(number)));
 }
 
+function atmosphereGenderMood(value: unknown) {
+  return normalizeMeetingAtmosphereGenderMood(value);
+}
+
+function atmosphereAgeBandId(value: unknown) {
+  return normalizeMeetingAtmosphereAgeBandId(value);
+}
+
+function atmosphereInstanceId(
+  row: WaitlistRow,
+  instanceMap: Map<string, InstanceRow>,
+  templateDateMap: Map<string, string>,
+) {
+  if (row.ticket_instance_id && instanceMap.has(row.ticket_instance_id)) {
+    return row.ticket_instance_id;
+  }
+  if (row.ticket_id && instanceMap.has(row.ticket_id)) {
+    return row.ticket_id;
+  }
+  if (row.ticket_template_id && row.meeting_date) {
+    return templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ?? null;
+  }
+  return null;
+}
+
+function primaryInstanceForTemplate(
+  templateId: string,
+  instances: AdminTicketInstance[],
+) {
+  return instances
+    .filter((instance) => instance.template_id === templateId)
+    .sort((left, right) => {
+      const leftArchived = left.visibility === "archived" ? 1 : 0;
+      const rightArchived = right.visibility === "archived" ? 1 : 0;
+      return (
+        leftArchived - rightArchived ||
+        `${left.event_date ?? "9999"}${left.event_time ?? ""}${left.created_at}`.localeCompare(
+          `${right.event_date ?? "9999"}${right.event_time ?? ""}${right.created_at}`,
+        )
+      );
+    })[0] ?? null;
+}
+
+function buildAtmosphereDefaultsByInstance({
+  instances,
+  waitlist,
+  profileMap,
+}: {
+  instances: InstanceRow[];
+  waitlist: WaitlistRow[];
+  profileMap: Map<string, AdminProfile>;
+}) {
+  const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+  const templateDateMap = new Map(
+    instances
+      .filter((instance) => instance.event_date)
+      .map((instance) => [
+        `${instance.template_id}|${instance.event_date}`,
+        instance.id,
+      ]),
+  );
+  const userIdsByInstance = new Map<string, Set<string>>();
+
+  for (const row of waitlist) {
+    const instanceId = atmosphereInstanceId(row, instanceMap, templateDateMap);
+    if (!instanceId || !row.user_id) continue;
+    const current = userIdsByInstance.get(instanceId) ?? new Set<string>();
+    current.add(row.user_id);
+    userIdsByInstance.set(instanceId, current);
+  }
+
+  return new Map<string, MeetingAtmosphereDefaults>(
+    [...userIdsByInstance.entries()].map(([instanceId, userIds]) => [
+      instanceId,
+      meetingAtmosphereDefaultsFromProfiles(
+        [...userIds]
+          .map((userId) => profileMap.get(userId))
+          .filter((profile): profile is AdminProfile => Boolean(profile)),
+      ),
+    ]),
+  );
+}
+
 function testTimeTarget(mode: unknown) {
   const now = new Date();
   if (mode === "applied") {
@@ -295,6 +392,8 @@ function operationalVisibility(value: unknown) {
 
 function templatePayload(body: Record<string, unknown>) {
   const visibility = operationalVisibility(body.visibility);
+  const place = normalizeMeetingPlace(body.place);
+  const placeAddress = meetingPlaceAddress(place);
 
   return {
     title: text(body.title),
@@ -314,11 +413,14 @@ function templatePayload(body: Record<string, unknown>) {
     event_date: text(body.eventDate),
     event_time: timeText(body.eventTime),
     region: text(body.region),
-    place_name: text(body.placeName),
-    address: text(body.address),
+    place_name: place?.name ?? text(body.placeName),
+    address: placeAddress ?? text(body.address),
+    place_payload: place,
     place_visibility: isPlaceVisibility(body.placeVisibility)
       ? body.placeVisibility
-      : ("confirmed_only" as PlaceVisibility),
+      : ("public" as PlaceVisibility),
+    atmosphere_gender_mood: atmosphereGenderMood(body.atmosphereGenderMood),
+    atmosphere_age_band_id: atmosphereAgeBandId(body.atmosphereAgeBandId),
     operation_code: text(body.operationCode),
     operation_note: text(body.operationNote),
     remaining_seat_label_count: remainingSeatCount(
@@ -342,18 +444,22 @@ function templatePayload(body: Record<string, unknown>) {
 }
 
 function instancePayload(body: Record<string, unknown>) {
+  const place = normalizeMeetingPlace(body.place);
+  const placeAddress = meetingPlaceAddress(place);
+
   return {
     title: text(body.title),
     event_date: text(body.eventDate),
     event_time: timeText(body.eventTime),
     region: text(body.region),
-    place_name: text(body.placeName),
-    address: text(body.address),
+    place_name: place?.name ?? text(body.placeName),
+    address: placeAddress ?? text(body.address),
+    place_payload: place,
     operation_code: text(body.operationCode),
     operation_note: text(body.operationNote),
     place_visibility: isPlaceVisibility(body.placeVisibility)
       ? body.placeVisibility
-      : ("confirmed_only" as PlaceVisibility),
+      : ("public" as PlaceVisibility),
     visibility: operationalVisibility(body.visibility),
     remaining_seat_label_count: remainingSeatCount(
       body.remainingSeatLabelCount,
@@ -460,6 +566,7 @@ function instancePayloadFromTemplate(
     region: payload.region ?? payload.default_region,
     place_name: payload.place_name,
     address: payload.address,
+    place_payload: payload.place_payload,
     operation_code: payload.operation_code,
     operation_note: payload.operation_note,
     place_visibility: payload.place_visibility,
@@ -639,13 +746,19 @@ async function loadTicketData() {
   const assignments = (assignmentsResult.data ?? []) as unknown as AssignmentRow[];
   const waitlist = (waitlistResult.data ?? []) as unknown as WaitlistRow[];
   const waitlistCounts = new Map<string, number>();
+  const instanceRows = (instancesResult.data ?? []) as unknown as InstanceRow[];
+  const atmosphereDefaultsByInstance = buildAtmosphereDefaultsByInstance({
+    instances: instanceRows,
+    waitlist,
+    profileMap,
+  });
 
   for (const row of waitlist) {
     const key = row.ticket_instance_id ?? row.ticket_id;
     if (key) waitlistCounts.set(key, (waitlistCounts.get(key) ?? 0) + 1);
   }
 
-  const instances = ((instancesResult.data ?? []) as unknown as InstanceRow[]).map(
+  const instances = instanceRows.map(
     (instance): AdminTicketInstance => {
       const instanceAssignments = assignments
         .filter((assignment) => assignment.ticket_instance_id === instance.id)
@@ -656,6 +769,10 @@ async function loadTicketData() {
 
       return {
         ...instance,
+        place_payload: normalizeMeetingPlace(instance.place_payload),
+        place_visibility: isPlaceVisibility(instance.place_visibility)
+          ? instance.place_visibility
+          : "public",
         assignments: instanceAssignments,
         assignment_count: instanceAssignments.length,
         waitlist_count: waitlistCounts.get(instance.id) ?? 0,
@@ -667,12 +784,17 @@ async function loadTicketData() {
       const templateInstances = instances.filter(
         (instance) => instance.template_id === template.id,
       );
+      const primaryInstance = primaryInstanceForTemplate(template.id, instances);
+      const atmosphereDefaults = primaryInstance
+        ? atmosphereDefaultsByInstance.get(primaryInstance.id) ?? null
+        : null;
       const proposerProfile = template.proposer_user_id
         ? profileMap.get(template.proposer_user_id)
         : null;
 
       return {
         ...template,
+        place_payload: normalizeMeetingPlace(template.place_payload),
         proposer_display_name: proposerProfile
           ? meetingProposalDisplayName(proposerProfile)
           : template.proposer_display_name,
@@ -684,7 +806,16 @@ async function loadTicketData() {
         detail_good_for: dbTextList(template.detail_good_for),
         place_visibility: isPlaceVisibility(template.place_visibility)
           ? template.place_visibility
-          : "confirmed_only",
+          : "public",
+        atmosphere_gender_mood: atmosphereGenderMood(
+          template.atmosphere_gender_mood,
+        ),
+        atmosphere_age_band_id: atmosphereAgeBandId(
+          template.atmosphere_age_band_id,
+        ),
+        atmosphere_default_gender_mood:
+          atmosphereDefaults?.genderMood ?? null,
+        atmosphere_default_age_band_id: atmosphereDefaults?.ageBandId ?? null,
         remaining_seat_label_count: remainingSeatCount(
           template.remaining_seat_label_count,
         ),
@@ -826,7 +957,10 @@ export async function POST(request: NextRequest) {
           region: sourceTemplate.region,
           place_name: sourceTemplate.place_name,
           address: sourceTemplate.address,
+          place_payload: sourceTemplate.place_payload,
           place_visibility: sourceTemplate.place_visibility,
+          atmosphere_gender_mood: sourceTemplate.atmosphere_gender_mood,
+          atmosphere_age_band_id: sourceTemplate.atmosphere_age_band_id,
           operation_code: sourceTemplate.operation_code,
           operation_note: sourceTemplate.operation_note,
           remaining_seat_label_count:
@@ -868,6 +1002,7 @@ export async function POST(request: NextRequest) {
               region: instance.region,
               place_name: instance.place_name,
               address: instance.address,
+              place_payload: instance.place_payload,
               operation_code: instance.operation_code,
               operation_note: instance.operation_note,
               place_visibility: instance.place_visibility,
@@ -909,6 +1044,7 @@ export async function POST(request: NextRequest) {
         region: sourceInstance.region,
         place_name: sourceInstance.place_name,
         address: sourceInstance.address,
+        place_payload: sourceInstance.place_payload,
         operation_code: sourceInstance.operation_code,
         operation_note: sourceInstance.operation_note,
         place_visibility: sourceInstance.place_visibility,

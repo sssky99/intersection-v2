@@ -1,5 +1,9 @@
 import type { Gender } from "@/types/user";
 import type { MeetingPlace } from "@/types/place";
+import type {
+  MeetingAtmosphereAgeBandId,
+  MeetingAtmosphereGenderMood,
+} from "@/lib/meetingAtmosphere";
 
 export const MEETING_MIN_PARTICIPANT_COUNT = 3;
 export const MEETING_MAX_PARTICIPANT_COUNT = 6;
@@ -52,6 +56,14 @@ export type GatheringTicket = {
     gender?: Gender | null;
     birthYear?: string | number | null;
   };
+  atmosphere?: {
+    ageBandId?: MeetingAtmosphereAgeBandId | null;
+    genderMood?: MeetingAtmosphereGenderMood | null;
+    defaultAgeBandId?: MeetingAtmosphereAgeBandId | null;
+    defaultGenderMood?: MeetingAtmosphereGenderMood | null;
+    ageBandOverrideId?: MeetingAtmosphereAgeBandId | null;
+    genderMoodOverride?: MeetingAtmosphereGenderMood | null;
+  } | null;
   vibeScores?: {
     temperature?: number | null;
     texture?: number | null;

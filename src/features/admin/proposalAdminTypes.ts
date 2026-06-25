@@ -1,4 +1,8 @@
 import type { VibeScores } from "@/components/vibe/vibeGraphConfig";
+import type {
+  MeetingAtmosphereAgeBandId,
+  MeetingAtmosphereGenderMood,
+} from "@/lib/meetingAtmosphere";
 import type { MeetingPlace } from "@/types/place";
 import type {
   MeetingProposalStatus,
@@ -20,6 +24,10 @@ export type AdminMeetingProposal = {
   region: string;
   specificPlace: string | null;
   place: MeetingPlace | null;
+  atmosphereGenderMood: MeetingAtmosphereGenderMood | null;
+  atmosphereAgeBandId: MeetingAtmosphereAgeBandId | null;
+  atmosphereDefaultGenderMood: MeetingAtmosphereGenderMood | null;
+  atmosphereDefaultAgeBandId: MeetingAtmosphereAgeBandId | null;
   hashtags: string[];
   shortDescription: string;
   activities: string[];

@@ -27,6 +27,7 @@ import {
   formatTicketDateLabel,
   IntersectionTicketCard,
 } from "@/components/IntersectionTicketCard";
+import { NaverMapPreview } from "@/components/NaverMapPreview";
 import { VibeAxisBar, VibeGraph } from "@/components/vibe/VibeGraph";
 import {
   vibeAxisConfig,
@@ -844,7 +845,7 @@ export function AppHome({
                   <p className="text-sm font-bold leading-5 text-black/78">
                     내가 제안한 모임이 바로 공개되었어요.
                     <br />
-                    검토 중인 내용은 티켓 탭에서 확인할 수 있어요.
+                    공개된 내용은 티켓 탭에서 확인할 수 있어요.
                   </p>
                   <div className="mt-1.5 flex justify-end">
                     <button
@@ -867,7 +868,7 @@ export function AppHome({
                   className="rounded-xl bg-red-50 px-3 py-2.5"
                 >
                   <p className="text-sm font-bold leading-5 text-red-900">
-                    제안 검토 결과가 도착했어요.
+                    제안 상태 안내가 도착했어요.
                   </p>
                   <p className="mt-1 line-clamp-1 text-xs font-bold text-red-900/45">
                     {notification.title}
@@ -1677,6 +1678,13 @@ const introDetailSections: TicketDetailSectionKey[] = [
   "proposer",
   "activities",
 ];
+const appliedDetailSections: TicketDetailSectionKey[] = [
+  "summary",
+  "vibe",
+  "proposer",
+  "activities",
+  "notice",
+];
 const ticketGuidanceClass =
   "mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800";
 
@@ -2042,15 +2050,20 @@ function TicketStageContent({
   }
 
   return (
-    <TicketDetailContent
-      ticket={ticket}
-      afterNotice={proposalRequestSlot}
-      footer={
-        onCopyProposal ? (
-          <TicketCopyProposalSection onCopy={onCopyProposal} />
-        ) : null
-      }
-    />
+    <>
+      <PlaceSection userTicket={userTicket} />
+      <TicketDetailContent
+        ticket={ticket}
+        sections={appliedDetailSections}
+        className="mt-0"
+        afterNotice={proposalRequestSlot}
+        footer={
+          onCopyProposal ? (
+            <TicketCopyProposalSection onCopy={onCopyProposal} />
+          ) : null
+        }
+      />
+    </>
   );
 }
 
@@ -2067,8 +2080,8 @@ function ProposalChangeRequestSection({ ticket }: { ticket: GatheringTicket }) {
 
   const isCancel = requestType === "cancel";
   const helperText = isCancel
-    ? "취소 사유를 작성해주세요. 해당 사항은 검수 후 반영됩니다."
-    : "수정하려는 부분을 적어주세요. 해당 사항은 검수 후 반영됩니다.";
+    ? "취소 사유를 작성해주세요. 해당 사항은 운영진 확인 후 반영됩니다."
+    : "수정하려는 부분을 적어주세요. 해당 사항은 운영진 확인 후 반영됩니다.";
 
   const closeModal = () => {
     if (submitting) return;
@@ -2257,6 +2270,11 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
   const hasPlace = Boolean(
     userTicket.place?.name?.trim() || userTicket.place?.address?.trim(),
   );
+  const hasMap =
+    userTicket.place?.source === "naver" &&
+    typeof userTicket.place.mapx === "number" &&
+    typeof userTicket.place.mapy === "number" &&
+    Boolean(userTicket.place.name);
 
   return (
     <section className="border-t border-black/8 py-5">
@@ -2275,6 +2293,17 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
             <TicketMetaLine Icon={Clock3}>
               {formatTicketDateLabel(userTicket.ticket.date)} {userTicket.ticket.time}
             </TicketMetaLine>
+            {hasMap && (
+              <NaverMapPreview
+                place={{
+                  name: userTicket.place!.name ?? "장소",
+                  mapx: userTicket.place!.mapx!,
+                  mapy: userTicket.place!.mapy!,
+                }}
+                className="mt-3"
+                heightClassName="h-[172px]"
+              />
+            )}
           </div>
         ) : (
           <p className="text-sm font-semibold leading-6 text-black/50">

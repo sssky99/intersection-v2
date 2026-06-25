@@ -5,7 +5,13 @@ import {
   isMeetingProposalParticipationStatus,
   meetingProposalDisplayName,
 } from "@/lib/meetingProposalAccess";
-import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
+import {
+  meetingAtmosphereDefaultsFromProfiles,
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+  normalizeProfileGender,
+  type MeetingAtmosphereDefaults,
+} from "@/lib/meetingAtmosphere";
 import {
   normalizeMeetingPlace,
   ticketPlaceFromLegacyFields,
@@ -47,6 +53,8 @@ type TemplateRow = {
   place_name: string | null;
   address: string | null;
   place_payload: unknown;
+  atmosphere_gender_mood: string | null;
+  atmosphere_age_band_id: string | null;
   score_temperature: number | null;
   score_texture: number | null;
   score_tone: number | null;
@@ -105,6 +113,15 @@ type MemberArrivalRow = {
   status: string;
   arrival_status: TicketArrivalStatus | null;
   arrival_status_updated_at: string | null;
+};
+
+type AtmosphereWaitlistRow = {
+  user_id: string;
+  ticket_id: string | null;
+  ticket_template_id: string | null;
+  ticket_instance_id: string | null;
+  meeting_date: string | null;
+  status: string | null;
 };
 
 type ProfileIntroRow = {
@@ -172,6 +189,8 @@ const templateSelect = [
   "place_name",
   "address",
   "place_payload",
+  "atmosphere_gender_mood",
+  "atmosphere_age_band_id",
   "score_temperature",
   "score_texture",
   "score_tone",
@@ -276,6 +295,13 @@ const autoCancellationStatuses = [
   "payment_pending",
 ];
 
+const atmosphereWaitlistStatuses = [
+  "payment_pending",
+  "waitlisted",
+  "approved",
+  "on_hold",
+];
+
 const statusPriority: Record<UserTicketStatus, number> = {
   approved: 0,
   in_progress: 0,
@@ -309,6 +335,124 @@ function textList(value: unknown) {
         .map((item) => item.trim())
         .filter(Boolean)
     : [];
+}
+
+function atmosphereForTicket(
+  template: TemplateRow,
+  defaults: MeetingAtmosphereDefaults | null | undefined,
+): GatheringTicket["atmosphere"] {
+  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
+    template.atmosphere_age_band_id,
+  );
+  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
+    template.atmosphere_gender_mood,
+  );
+
+  return {
+    ageBandId: ageBandOverride ?? defaults?.ageBandId ?? null,
+    genderMood: genderMoodOverride ?? defaults?.genderMood ?? null,
+    defaultAgeBandId: defaults?.ageBandId ?? null,
+    defaultGenderMood: defaults?.genderMood ?? null,
+    ageBandOverrideId: ageBandOverride,
+    genderMoodOverride,
+  };
+}
+
+function atmosphereInstanceId(
+  row: AtmosphereWaitlistRow,
+  instanceMap: Map<string, InstanceRow>,
+  templateDateMap: Map<string, string>,
+) {
+  if (row.ticket_instance_id && instanceMap.has(row.ticket_instance_id)) {
+    return row.ticket_instance_id;
+  }
+  if (row.ticket_id && instanceMap.has(row.ticket_id)) {
+    return row.ticket_id;
+  }
+  if (row.ticket_template_id && row.meeting_date) {
+    return templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ?? null;
+  }
+  return null;
+}
+
+async function fetchAtmosphereWaitlistRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  instances: InstanceRow[],
+) {
+  const instanceIds = unique(instances.map((instance) => instance.id));
+  if (instanceIds.length === 0) return [];
+
+  const templateIds = unique(instances.map((instance) => instance.template_id));
+  const waitlistSelect =
+    "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status";
+  const rows: AtmosphereWaitlistRow[] = [];
+
+  const { data: byInstanceId, error: byInstanceIdError } = await supabase
+    .from("meeting_waitlist")
+    .select(waitlistSelect)
+    .in("ticket_instance_id", instanceIds)
+    .in("status", atmosphereWaitlistStatuses)
+    .returns<AtmosphereWaitlistRow[]>();
+  if (byInstanceIdError) throw byInstanceIdError;
+  rows.push(...(byInstanceId ?? []));
+
+  const { data: byTicketId, error: byTicketIdError } = await supabase
+    .from("meeting_waitlist")
+    .select(waitlistSelect)
+    .in("ticket_id", instanceIds)
+    .in("status", atmosphereWaitlistStatuses)
+    .returns<AtmosphereWaitlistRow[]>();
+  if (byTicketIdError) throw byTicketIdError;
+  rows.push(...(byTicketId ?? []));
+
+  if (templateIds.length > 0) {
+    const { data: byTemplateId, error: byTemplateIdError } = await supabase
+      .from("meeting_waitlist")
+      .select(waitlistSelect)
+      .in("ticket_template_id", templateIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<AtmosphereWaitlistRow[]>();
+    if (byTemplateIdError) throw byTemplateIdError;
+    rows.push(...(byTemplateId ?? []));
+  }
+
+  return rows;
+}
+
+function atmosphereDefaultsByInstance(
+  rows: AtmosphereWaitlistRow[],
+  instances: InstanceRow[],
+  profileMap: Map<string, ProfileIntroRow>,
+) {
+  const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+  const templateDateMap = new Map(
+    instances
+      .filter((instance) => instance.event_date)
+      .map((instance) => [
+        `${instance.template_id}|${instance.event_date}`,
+        instance.id,
+      ]),
+  );
+  const userIdsByInstance = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const instanceId = atmosphereInstanceId(row, instanceMap, templateDateMap);
+    if (!instanceId || !row.user_id) continue;
+    const current = userIdsByInstance.get(instanceId) ?? new Set<string>();
+    current.add(row.user_id);
+    userIdsByInstance.set(instanceId, current);
+  }
+
+  return new Map(
+    [...userIdsByInstance.entries()].map(([instanceId, userIds]) => [
+      instanceId,
+      meetingAtmosphereDefaultsFromProfiles(
+        [...userIds]
+          .map((userId) => profileMap.get(userId))
+          .filter((profile): profile is ProfileIntroRow => Boolean(profile)),
+      ),
+    ]),
+  );
 }
 
 function mergedStageCopy(...values: unknown[]): TicketStageCopy {
@@ -433,6 +577,7 @@ function toTicket(
   instance: InstanceRow | null,
   template: TemplateRow | null,
   proposerProfile?: ProfileIntroRow,
+  atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
@@ -505,6 +650,7 @@ function toTicket(
       }) ?? snapshot?.place,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     proposerLabel,
+    atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     proposerProfile: proposerDisplayName
       ? {
           userId:
@@ -869,10 +1015,15 @@ export async function GET() {
       memberArrivalRows = [...(byInstanceId ?? []), ...(byTicketId ?? [])];
     }
 
+    const atmosphereWaitlistRows = await fetchAtmosphereWaitlistRows(
+      supabase,
+      instances,
+    );
     const profileIds = unique([
       user.id,
       ...assignments.map((assignment) => assignment.profile_id),
       ...memberArrivalRows.map((arrivalRow) => arrivalRow.user_id),
+      ...atmosphereWaitlistRows.map((row) => row.user_id),
       ...templates.map((template) => template.proposer_user_id),
     ]);
 
@@ -888,6 +1039,11 @@ export async function GET() {
 
     const profileMap = new Map(
       profileRows.map((profile) => [profile.user_id, profile]),
+    );
+    const atmosphereDefaultsMap = atmosphereDefaultsByInstance(
+      atmosphereWaitlistRows,
+      instances,
+      profileMap,
     );
     const assignmentsByInstance = assignments.reduce((map, assignment) => {
       const current = map.get(assignment.ticket_instance_id) ?? [];
@@ -974,7 +1130,13 @@ export async function GET() {
         const proposerProfile = template?.proposer_user_id
           ? profileMap.get(template.proposer_user_id)
           : undefined;
-        const ticket = toTicket(row, instance, template, proposerProfile);
+        const ticket = toTicket(
+          row,
+          instance,
+          template,
+          proposerProfile,
+          instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
+        );
         if (!ticket) return null;
 
         const startAt = toStartAt(ticket.date, ticket.time);
@@ -983,7 +1145,6 @@ export async function GET() {
 
         const confirmed = row.status === "approved";
         const memberInfoVisible = confirmed && derived.progressIndex >= 1;
-        const placeInfoVisible = confirmed;
         const assignedIds = memberInfoVisible
           ? assignmentsByInstance.get(instanceId ?? "") ?? []
           : [];
@@ -1019,8 +1180,7 @@ export async function GET() {
           };
         });
 
-        const placeVisible =
-          placeInfoVisible && instance?.place_visibility !== "hidden";
+        const placeVisible = instance?.place_visibility !== "hidden";
 
         return {
           id: String(row.id),

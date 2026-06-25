@@ -4,7 +4,13 @@ import {
   meetingProposalDisplayName,
   type MeetingProposalProfileRow,
 } from "@/lib/meetingProposalAccess";
-import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
+import {
+  meetingAtmosphereDefaultsFromProfiles,
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+  normalizeProfileGender,
+  type MeetingAtmosphereDefaults,
+} from "@/lib/meetingAtmosphere";
 import { normalizeProposalHashtags } from "@/lib/meetingProposalTags";
 import {
   meetingPlaceAddress,
@@ -48,6 +54,8 @@ type ProposalRow = {
   region: string;
   specific_place: string | null;
   place_payload: unknown;
+  atmosphere_gender_mood: string | null;
+  atmosphere_age_band_id: string | null;
   hashtags: string[] | null;
   short_description: string;
   activities: unknown;
@@ -77,6 +85,15 @@ type ProposalChangeRequestRow = {
   updated_at: string;
 };
 
+type ProposalAtmosphereWaitlistRow = {
+  user_id: string;
+  ticket_id: string | null;
+  ticket_template_id: string | null;
+  ticket_instance_id: string | null;
+  meeting_date: string | null;
+  status: string | null;
+};
+
 const proposalSelect = [
   "id",
   "proposer_id",
@@ -100,6 +117,8 @@ const proposalSelect = [
   "region",
   "specific_place",
   "place_payload",
+  "atmosphere_gender_mood",
+  "atmosphere_age_band_id",
   "hashtags",
   "short_description",
   "activities",
@@ -128,6 +147,13 @@ const profileSelect = [
   "membership_status",
   "membership_end_date",
 ].join(",");
+
+const atmosphereWaitlistStatuses = [
+  "payment_pending",
+  "waitlisted",
+  "approved",
+  "on_hold",
+];
 
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
@@ -189,6 +215,128 @@ function vibe(value: unknown) {
   };
 }
 
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function atmosphereGenderMood(value: unknown) {
+  return normalizeMeetingAtmosphereGenderMood(value);
+}
+
+function atmosphereAgeBandId(value: unknown) {
+  return normalizeMeetingAtmosphereAgeBandId(value);
+}
+
+async function fetchProposalAtmosphereRows(
+  supabase: ReturnType<typeof createAdminClient>,
+  rows: ProposalRow[],
+) {
+  const instanceIds = unique(rows.map((row) => row.converted_instance_id));
+  const templateIds = unique(rows.map((row) => row.converted_template_id));
+  const select =
+    "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status";
+  const waitlistRows: ProposalAtmosphereWaitlistRow[] = [];
+
+  if (instanceIds.length > 0) {
+    const { data: byInstanceId, error: byInstanceIdError } = await supabase
+      .from("meeting_waitlist")
+      .select(select)
+      .in("ticket_instance_id", instanceIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<ProposalAtmosphereWaitlistRow[]>();
+    if (byInstanceIdError) throw byInstanceIdError;
+    waitlistRows.push(...(byInstanceId ?? []));
+
+    const { data: byTicketId, error: byTicketIdError } = await supabase
+      .from("meeting_waitlist")
+      .select(select)
+      .in("ticket_id", instanceIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<ProposalAtmosphereWaitlistRow[]>();
+    if (byTicketIdError) throw byTicketIdError;
+    waitlistRows.push(...(byTicketId ?? []));
+  }
+
+  if (templateIds.length > 0) {
+    const { data: byTemplateId, error: byTemplateIdError } = await supabase
+      .from("meeting_waitlist")
+      .select(select)
+      .in("ticket_template_id", templateIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<ProposalAtmosphereWaitlistRow[]>();
+    if (byTemplateIdError) throw byTemplateIdError;
+    waitlistRows.push(...(byTemplateId ?? []));
+  }
+
+  return waitlistRows;
+}
+
+function proposalIdForAtmosphereRow(
+  row: ProposalAtmosphereWaitlistRow,
+  proposalByInstanceId: Map<string, string>,
+  proposalByTemplateId: Map<string, string>,
+) {
+  if (row.ticket_instance_id && proposalByInstanceId.has(row.ticket_instance_id)) {
+    return proposalByInstanceId.get(row.ticket_instance_id) ?? null;
+  }
+  if (row.ticket_id && proposalByInstanceId.has(row.ticket_id)) {
+    return proposalByInstanceId.get(row.ticket_id) ?? null;
+  }
+  if (row.ticket_template_id && proposalByTemplateId.has(row.ticket_template_id)) {
+    return proposalByTemplateId.get(row.ticket_template_id) ?? null;
+  }
+  return null;
+}
+
+function proposalAtmosphereDefaults(
+  proposals: ProposalRow[],
+  waitlistRows: ProposalAtmosphereWaitlistRow[],
+  profileMap: Map<string, MeetingProposalProfileRow>,
+) {
+  const proposalByInstanceId = new Map(
+    proposals
+      .filter((proposal) => proposal.converted_instance_id)
+      .map((proposal) => [proposal.converted_instance_id!, proposal.id]),
+  );
+  const proposalByTemplateId = new Map(
+    proposals
+      .filter((proposal) => proposal.converted_template_id)
+      .map((proposal) => [proposal.converted_template_id!, proposal.id]),
+  );
+  const userIdsByProposal = new Map<string, Set<string>>();
+
+  for (const row of waitlistRows) {
+    const proposalId = proposalIdForAtmosphereRow(
+      row,
+      proposalByInstanceId,
+      proposalByTemplateId,
+    );
+    if (!proposalId || !row.user_id) continue;
+    const current = userIdsByProposal.get(proposalId) ?? new Set<string>();
+    current.add(row.user_id);
+    userIdsByProposal.set(proposalId, current);
+  }
+
+  return new Map<string, MeetingAtmosphereDefaults>(
+    [...userIdsByProposal.entries()].map(([proposalId, userIds]) => [
+      proposalId,
+      meetingAtmosphereDefaultsFromProfiles(
+        [...userIds]
+          .map((userId) => profileMap.get(userId))
+          .filter(
+            (profile): profile is MeetingProposalProfileRow => Boolean(profile),
+          ),
+      ),
+    ]),
+  );
+}
+
 function profileMembershipStatus(profile: MeetingProposalProfileRow | undefined) {
   if (!profile) return null;
   return displayMembershipStatus({
@@ -201,6 +349,7 @@ function toAdminProposal(
   row: ProposalRow,
   profile?: MeetingProposalProfileRow,
   changeRequests: ProposalChangeRequestRow[] = [],
+  atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): AdminMeetingProposal {
   const displayName =
     profile ? meetingProposalDisplayName(profile) : row.proposer_public_display_name;
@@ -227,6 +376,10 @@ function toAdminProposal(
     region: row.region,
     specificPlace: row.specific_place,
     place: normalizeMeetingPlace(row.place_payload),
+    atmosphereGenderMood: atmosphereGenderMood(row.atmosphere_gender_mood),
+    atmosphereAgeBandId: atmosphereAgeBandId(row.atmosphere_age_band_id),
+    atmosphereDefaultGenderMood: atmosphereDefaults?.genderMood ?? null,
+    atmosphereDefaultAgeBandId: atmosphereDefaults?.ageBandId ?? null,
     hashtags: normalizeProposalHashtags(row.hashtags ?? []),
     shortDescription: row.short_description,
     activities: textList(row.activities).slice(0, 4),
@@ -267,20 +420,31 @@ async function loadProposalData() {
   const rows = (proposalRows ?? []) as unknown as ProposalRow[];
   const proposerIds = Array.from(new Set(rows.map((row) => row.proposer_id)));
   const proposalIds = rows.map((row) => row.id);
+  const atmosphereRows = await fetchProposalAtmosphereRows(supabase, rows);
+  const profileIds = unique([
+    ...proposerIds,
+    ...atmosphereRows.map((row) => row.user_id),
+  ]);
   const profileMap = new Map<string, MeetingProposalProfileRow>();
   const requestsByProposal = new Map<string, ProposalChangeRequestRow[]>();
 
-  if (proposerIds.length > 0) {
+  if (profileIds.length > 0) {
     const { data: profiles, error: profileError } = await supabase
       .from("profiles")
       .select(profileSelect)
-      .in("user_id", proposerIds);
+      .in("user_id", profileIds);
     if (profileError) throw profileError;
 
     for (const profile of (profiles ?? []) as unknown as MeetingProposalProfileRow[]) {
       profileMap.set(profile.user_id, profile);
     }
   }
+
+  const atmosphereDefaultsByProposal = proposalAtmosphereDefaults(
+    rows,
+    atmosphereRows,
+    profileMap,
+  );
 
   if (proposalIds.length > 0) {
     const { data: changeRequests, error: changeRequestError } = await supabase
@@ -308,6 +472,7 @@ async function loadProposalData() {
         row,
         profileMap.get(row.proposer_id),
         requestsByProposal.get(row.id) ?? [],
+        atmosphereDefaultsByProposal.get(row.id) ?? null,
       ),
     ),
   };
@@ -328,6 +493,21 @@ function updatePayload(body: Record<string, unknown>) {
   if ("eventTime" in body) payload.event_time = requiredText(body.eventTime);
   if ("region" in body) payload.region = requiredText(body.region);
   if ("specificPlace" in body) payload.specific_place = text(body.specificPlace);
+  if ("place" in body) {
+    const place = normalizeMeetingPlace(body.place);
+    payload.place_payload = place;
+    if (place) payload.specific_place = place.name;
+  }
+  if ("atmosphereGenderMood" in body) {
+    payload.atmosphere_gender_mood = atmosphereGenderMood(
+      body.atmosphereGenderMood,
+    );
+  }
+  if ("atmosphereAgeBandId" in body) {
+    payload.atmosphere_age_band_id = atmosphereAgeBandId(
+      body.atmosphereAgeBandId,
+    );
+  }
   if ("hashtags" in body) payload.hashtags = tags(body.hashtags);
   if ("shortDescription" in body) {
     payload.short_description = requiredText(body.shortDescription);
@@ -403,6 +583,12 @@ async function syncPublishedProposal(proposal: ProposalRow) {
       address: placeAddress,
       place_payload: place,
       place_visibility: place || proposal.specific_place ? "public" : "hidden",
+      atmosphere_gender_mood: atmosphereGenderMood(
+        proposal.atmosphere_gender_mood,
+      ),
+      atmosphere_age_band_id: atmosphereAgeBandId(
+        proposal.atmosphere_age_band_id,
+      ),
       operation_note: proposal.admin_note,
       visibility,
       score_temperature: proposalVibe.temperature,
@@ -554,6 +740,12 @@ async function convertProposal(proposalId: string) {
       address: proposalPlaceAddress,
       place_payload: proposalPlace,
       place_visibility: proposalPlace || proposal.specific_place ? "public" : "hidden",
+      atmosphere_gender_mood: atmosphereGenderMood(
+        proposal.atmosphere_gender_mood,
+      ),
+      atmosphere_age_band_id: atmosphereAgeBandId(
+        proposal.atmosphere_age_band_id,
+      ),
       operation_code: null,
       operation_note: proposal.admin_note,
       remaining_seat_label_count: 0,
@@ -733,6 +925,78 @@ export async function POST(request: NextRequest) {
     console.error("[admin proposals convert]", error);
     return NextResponse.json(
       { error: "제안을 초대장으로 전환하지 못했습니다." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  if (!isAdminRequest(request)) return unauthorized();
+
+  const proposalId = requiredText(request.nextUrl.searchParams.get("id"));
+  if (!proposalId) {
+    return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+  }
+
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("meeting_proposals")
+      .select("id,converted_template_id,converted_instance_id")
+      .eq("id", proposalId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      return NextResponse.json({ error: "제안을 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    const proposal = data as {
+      id: string;
+      converted_template_id: string | null;
+      converted_instance_id: string | null;
+    };
+    const waitlistFilters = [
+      proposal.converted_instance_id
+        ? `ticket_instance_id.eq.${proposal.converted_instance_id}`
+        : null,
+      proposal.converted_template_id
+        ? `ticket_template_id.eq.${proposal.converted_template_id}`
+        : null,
+    ].filter(Boolean);
+
+    if (waitlistFilters.length > 0) {
+      const { error: waitlistError } = await supabase
+        .from("meeting_waitlist")
+        .delete()
+        .or(waitlistFilters.join(","));
+      if (waitlistError) throw waitlistError;
+    }
+
+    if (proposal.converted_template_id) {
+      const { error: templateError } = await supabase
+        .from("ticket_templates")
+        .delete()
+        .eq("id", proposal.converted_template_id);
+      if (templateError) throw templateError;
+    } else if (proposal.converted_instance_id) {
+      const { error: instanceError } = await supabase
+        .from("ticket_instances")
+        .delete()
+        .eq("id", proposal.converted_instance_id);
+      if (instanceError) throw instanceError;
+    }
+
+    const { error: proposalError } = await supabase
+      .from("meeting_proposals")
+      .delete()
+      .eq("id", proposal.id);
+    if (proposalError) throw proposalError;
+
+    return NextResponse.json(await loadProposalData());
+  } catch (error) {
+    console.error("[admin proposals delete]", error);
+    return NextResponse.json(
+      { error: "제안 티켓을 삭제하지 못했습니다." },
       { status: 500 },
     );
   }

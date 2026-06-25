@@ -257,7 +257,7 @@ async function publishProposalImmediately({
       place_payload: place,
       place_visibility: place || proposal.specific_place ? "public" : "hidden",
       operation_code: null,
-      operation_note: "제출 즉시 공개 · 검토 대기",
+      operation_note: "제출 즉시 공개",
       remaining_seat_label_count: 0,
       max_participant_count: MEETING_MAX_PARTICIPANT_COUNT,
       visibility: "public",
@@ -289,7 +289,7 @@ async function publishProposalImmediately({
       address: placeAddress,
       place_payload: place,
       operation_code: null,
-      operation_note: "제출 즉시 공개 · 검토 대기",
+      operation_note: "제출 즉시 공개",
       place_visibility: place || proposal.specific_place ? "public" : "hidden",
       visibility: "public",
       remaining_seat_label_count: 0,
@@ -355,6 +355,7 @@ async function publishProposalImmediately({
   const { error: proposalUpdateError } = await admin
     .from("meeting_proposals")
     .update({
+      status: "converted_to_ticket",
       converted_template_id: template.id,
       converted_instance_id: instance.id,
       converted_at: now,
@@ -509,7 +510,7 @@ export async function POST(request: Request) {
         vibe: payload.vibe,
         flow: payload.flow,
         proposer_role_agreed: true,
-        status: "pending_review",
+        status: "converted_to_ticket",
       })
       .select(
         "id,proposer_id,proposer_public_display_name,proposer_public_intro,proposer_public_emoji,image_url,pexels_photo_id,pexels_page_url,photographer,photographer_url,image_source,image_selection_method,image_review_model,title,event_date,event_time,region,specific_place,place_payload,hashtags,short_description,activities,vibe,submitted_at",
@@ -536,7 +537,7 @@ export async function POST(request: Request) {
       submittedAt: data.submitted_at,
       ticketTemplateId: published.templateId,
       ticketInstanceId: published.instanceId,
-      status: "pending_review",
+      status: "converted_to_ticket",
     });
   } catch (error) {
     console.error("[meeting proposal submit]", error);

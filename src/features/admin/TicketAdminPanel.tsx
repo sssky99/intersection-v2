@@ -17,9 +17,20 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
+import { NaverPlacePicker } from "@/components/NaverPlacePicker";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { AtmosphereDisplayEditor } from "@/features/admin/AtmosphereDisplayEditor";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
+import {
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+} from "@/lib/meetingAtmosphere";
+import {
+  ticketPlaceFromLegacyFields,
+  ticketPlaceFromMeetingPlace,
+} from "@/lib/placePayload";
+import { meetingRegionFromPlace } from "@/lib/seoulRegion";
 import { defaultTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   AdminMemberName,
@@ -51,6 +62,7 @@ import {
   type TicketStageCopy,
   type UserTicket,
 } from "@/types/ticket";
+import type { MeetingPlace } from "@/types/place";
 import type { Gender } from "@/types/user";
 
 type TicketData = {
@@ -86,6 +98,9 @@ type TicketDraft = {
   region: string;
   placeName: string;
   address: string;
+  place: MeetingPlace | null;
+  atmosphereGenderMood: string;
+  atmosphereAgeBandId: string;
   operationCode: string;
   operationNote: string;
   placeVisibility: PlaceVisibility;
@@ -355,10 +370,13 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
     region: template.region ?? instance?.region ?? template.default_region ?? "",
     placeName: template.place_name ?? instance?.place_name ?? "",
     address: template.address ?? instance?.address ?? "",
+    place: template.place_payload ?? instance?.place_payload ?? null,
+    atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
+    atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
     operationCode: template.operation_code ?? instance?.operation_code ?? "",
     operationNote: template.operation_note ?? instance?.operation_note ?? "",
     placeVisibility:
-      template.place_visibility ?? instance?.place_visibility ?? "confirmed_only",
+      template.place_visibility ?? instance?.place_visibility ?? "public",
     visibility: template.visibility ?? instance?.visibility ?? "draft",
     questionOrder: template.question_order
       ? String(template.question_order)
@@ -417,6 +435,9 @@ function ticketRequestBody(draft: TicketDraft) {
     region: draft.region,
     placeName: draft.placeName,
     address: draft.address,
+    place: draft.place,
+    atmosphereGenderMood: draft.atmosphereGenderMood || null,
+    atmosphereAgeBandId: draft.atmosphereAgeBandId || null,
     operationCode: draft.operationCode,
     operationNote: draft.operationNote,
     placeVisibility: draft.placeVisibility,
@@ -454,6 +475,29 @@ function proposerOptionLabel(profile: AdminProfile) {
   const roleLabel =
     profile.is_test_participant === true ? "운영자" : "제안자";
   return `${meetingProposalDisplayName(profile)} · ${membershipLabel(profile)} · ${roleLabel}`;
+}
+
+function ticketAtmospherePreview(
+  draft: TicketDraft,
+  template: AdminTicketTemplate | null,
+): GatheringTicket["atmosphere"] {
+  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
+    draft.atmosphereAgeBandId,
+  );
+  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
+    draft.atmosphereGenderMood,
+  );
+
+  return {
+    ageBandId:
+      ageBandOverride ?? template?.atmosphere_default_age_band_id ?? null,
+    genderMood:
+      genderMoodOverride ?? template?.atmosphere_default_gender_mood ?? null,
+    defaultAgeBandId: template?.atmosphere_default_age_band_id ?? null,
+    defaultGenderMood: template?.atmosphere_default_gender_mood ?? null,
+    ageBandOverrideId: ageBandOverride,
+    genderMoodOverride,
+  };
 }
 
 function ticketPreview(
@@ -496,8 +540,15 @@ function ticketPreview(
     detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
+    place:
+      ticketPlaceFromMeetingPlace(draft.place) ??
+      ticketPlaceFromLegacyFields({
+        placeName: draft.placeName,
+        address: draft.address,
+      }),
     stageCopy: stageCopyFromDraft(draft),
     proposerLabel: `${proposerName}님의 제안`,
+    atmosphere: ticketAtmospherePreview(draft, template),
     proposerProfile: {
       userId: isSampleTicket
         ? undefined
@@ -883,7 +934,7 @@ export function TicketAdminPanel() {
         title: "새 초대장",
         proposerUserId: firstOperator.user_id,
         visibility: "draft",
-        placeVisibility: "confirmed_only",
+        placeVisibility: "public",
         remainingSeatLabelCount: "0",
         eventTime: "19:00",
         region: "",
@@ -1104,6 +1155,24 @@ export function TicketAdminPanel() {
                       draft={draft}
                       saving={saving}
                       onDraftChange={setDraft}
+                    />
+
+                    <AtmosphereDisplayEditor
+                      genderMood={draft.atmosphereGenderMood}
+                      ageBandId={draft.atmosphereAgeBandId}
+                      defaultGenderMood={
+                        selectedTicket.atmosphere_default_gender_mood
+                      }
+                      defaultAgeBandId={
+                        selectedTicket.atmosphere_default_age_band_id
+                      }
+                      disabled={saving}
+                      onGenderMoodChange={(atmosphereGenderMood) =>
+                        setDraft({ ...draft, atmosphereGenderMood })
+                      }
+                      onAgeBandChange={(atmosphereAgeBandId) =>
+                        setDraft({ ...draft, atmosphereAgeBandId })
+                      }
                     />
 
                     {progressPreviewTicket && (
@@ -1457,12 +1526,28 @@ function BasicEditor({
                 placeholder="성수, 을지로, 강남"
                 onChange={(region) => onDraftChange({ ...draft, region })}
               />
+              <NaverPlacePicker
+                className="col-span-2"
+                title="지도 장소"
+                value={draft.place}
+                onChange={(place) =>
+                  onDraftChange({
+                    ...draft,
+                    place,
+                    placeName: place?.name ?? draft.placeName,
+                    address:
+                      place?.roadAddress ?? place?.jibunAddress ?? draft.address,
+                    region: place
+                      ? meetingRegionFromPlace(place) ?? draft.region
+                      : draft.region,
+                  })
+                }
+              />
               <FormField
                 label="상세 장소명"
                 value={draft.placeName}
                 onChange={(placeName) => onDraftChange({ ...draft, placeName })}
               />
-              {/* TODO: admin ticket editing should use the shared Naver place picker and place_payload. */}
               <FormField
                 label="상세 주소"
                 className="col-span-2"

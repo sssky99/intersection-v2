@@ -3,7 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { canViewMeetingByProposerBirthYear } from "@/lib/meetingAgeVisibility";
 import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
-import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
+import {
+  meetingAtmosphereDefaultsFromProfiles,
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+  normalizeProfileGender,
+  type MeetingAtmosphereDefaults,
+} from "@/lib/meetingAtmosphere";
 import {
   normalizeMeetingPlace,
   ticketPlaceFromLegacyFields,
@@ -42,6 +48,8 @@ type TemplateRow = {
   place_name: string | null;
   address: string | null;
   place_payload: unknown;
+  atmosphere_gender_mood: string | null;
+  atmosphere_age_band_id: string | null;
   visibility: string;
   score_temperature: number | null;
   score_texture: number | null;
@@ -75,6 +83,10 @@ type WaitlistRow = {
   status: string | null;
 };
 
+type AtmosphereWaitlistRow = WaitlistRow & {
+  user_id: string;
+};
+
 type AssignmentRow = {
   ticket_instance_id: string;
 };
@@ -98,6 +110,12 @@ type ProposerProfileRow = {
   birth_year: string | number | null;
 };
 
+type AtmosphereProfileRow = {
+  user_id: string;
+  gender: string | null;
+  birth_year: string | number | null;
+};
+
 const templateSelect = [
   "id",
   "title",
@@ -117,6 +135,8 @@ const templateSelect = [
   "place_name",
   "address",
   "place_payload",
+  "atmosphere_gender_mood",
+  "atmosphere_age_band_id",
   "visibility",
   "score_temperature",
   "score_texture",
@@ -146,6 +166,13 @@ const instanceSelect = [
   "remaining_seat_label_count",
   "visibility",
 ].join(",");
+
+const atmosphereWaitlistStatuses = [
+  "payment_pending",
+  "waitlisted",
+  "approved",
+  "on_hold",
+];
 
 function isMissingPlacePayloadColumn(error: unknown) {
   const databaseError = error as { code?: string; message?: string } | null;
@@ -203,11 +230,153 @@ function textList(value: unknown) {
     : [];
 }
 
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function atmosphereForTicket(
+  template: TemplateRow,
+  defaults: MeetingAtmosphereDefaults | null | undefined,
+): GatheringTicket["atmosphere"] {
+  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
+    template.atmosphere_age_band_id,
+  );
+  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
+    template.atmosphere_gender_mood,
+  );
+
+  return {
+    ageBandId: ageBandOverride ?? defaults?.ageBandId ?? null,
+    genderMood: genderMoodOverride ?? defaults?.genderMood ?? null,
+    defaultAgeBandId: defaults?.ageBandId ?? null,
+    defaultGenderMood: defaults?.genderMood ?? null,
+    ageBandOverrideId: ageBandOverride,
+    genderMoodOverride,
+  };
+}
+
+function atmosphereInstanceId(
+  row: WaitlistRow,
+  instanceMap: Map<string, InstanceRow>,
+  templateDateMap: Map<string, string>,
+) {
+  if (row.ticket_instance_id && instanceMap.has(row.ticket_instance_id)) {
+    return row.ticket_instance_id;
+  }
+  if (row.ticket_id && instanceMap.has(row.ticket_id)) {
+    return row.ticket_id;
+  }
+  if (row.ticket_template_id && row.meeting_date) {
+    return templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ?? null;
+  }
+  return null;
+}
+
+async function fetchAtmosphereDefaultsByInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  instances: InstanceRow[],
+) {
+  const instanceIds = uniqueStrings(instances.map((instance) => instance.id));
+  if (instanceIds.length === 0) {
+    return new Map<string, MeetingAtmosphereDefaults>();
+  }
+
+  const templateIds = uniqueStrings(
+    instances.map((instance) => instance.template_id),
+  );
+  const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+  const templateDateMap = new Map(
+    instances
+      .filter((instance) => instance.event_date)
+      .map((instance) => [
+        `${instance.template_id}|${instance.event_date}`,
+        instance.id,
+      ]),
+  );
+  const waitlistSelect =
+    "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status";
+  const waitlistRows: AtmosphereWaitlistRow[] = [];
+
+  const { data: byInstanceId, error: byInstanceIdError } = await supabase
+    .from("meeting_waitlist")
+    .select(waitlistSelect)
+    .in("ticket_instance_id", instanceIds)
+    .in("status", atmosphereWaitlistStatuses)
+    .returns<AtmosphereWaitlistRow[]>();
+  if (byInstanceIdError) throw byInstanceIdError;
+  waitlistRows.push(...(byInstanceId ?? []));
+
+  const { data: byTicketId, error: byTicketIdError } = await supabase
+    .from("meeting_waitlist")
+    .select(waitlistSelect)
+    .in("ticket_id", instanceIds)
+    .in("status", atmosphereWaitlistStatuses)
+    .returns<AtmosphereWaitlistRow[]>();
+  if (byTicketIdError) throw byTicketIdError;
+  waitlistRows.push(...(byTicketId ?? []));
+
+  if (templateIds.length > 0) {
+    const { data: byTemplateId, error: byTemplateIdError } = await supabase
+      .from("meeting_waitlist")
+      .select(waitlistSelect)
+      .in("ticket_template_id", templateIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<AtmosphereWaitlistRow[]>();
+    if (byTemplateIdError) throw byTemplateIdError;
+    waitlistRows.push(...(byTemplateId ?? []));
+  }
+
+  const userIdsByInstance = new Map<string, Set<string>>();
+  for (const row of waitlistRows) {
+    const instanceId = atmosphereInstanceId(row, instanceMap, templateDateMap);
+    if (!instanceId || !row.user_id) continue;
+    const current = userIdsByInstance.get(instanceId) ?? new Set<string>();
+    current.add(row.user_id);
+    userIdsByInstance.set(instanceId, current);
+  }
+
+  const profileIds = uniqueStrings(
+    [...userIdsByInstance.values()].flatMap((ids) => [...ids]),
+  );
+  if (profileIds.length === 0) {
+    return new Map<string, MeetingAtmosphereDefaults>();
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("user_id,gender,birth_year")
+    .in("user_id", profileIds)
+    .returns<AtmosphereProfileRow[]>();
+  if (profilesError) throw profilesError;
+
+  const profileMap = new Map(
+    (profiles ?? []).map((profile) => [profile.user_id, profile]),
+  );
+
+  return new Map(
+    [...userIdsByInstance.entries()].map(([instanceId, userIds]) => [
+      instanceId,
+      meetingAtmosphereDefaultsFromProfiles(
+        [...userIds]
+          .map((userId) => profileMap.get(userId))
+          .filter((profile): profile is AtmosphereProfileRow => Boolean(profile)),
+      ),
+    ]),
+  );
+}
+
 function toTicket(
   instance: InstanceRow,
   template: TemplateRow,
   name?: string,
   proposerProfile?: ProposerProfileRow,
+  atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
@@ -259,6 +428,7 @@ function toTicket(
     }),
     stageCopy: sanitizeTicketStageCopy(template.stage_copy),
     proposerLabel,
+    atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     proposerProfile: proposerDisplayName
       ? {
           userId: template.proposer_user_id,
@@ -470,6 +640,8 @@ export async function GET(request: Request) {
             template,
           ]),
         );
+        const atmosphereDefaultsByInstance =
+          await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
 
         const tickets = instanceRows
           .filter(
@@ -488,6 +660,7 @@ export async function GET(request: Request) {
                   template.proposer_user_id
                     ? proposerProfileMap.get(template.proposer_user_id)
                     : undefined,
+                  atmosphereDefaultsByInstance.get(instance.id) ?? null,
                 )
               : null;
           })
@@ -600,6 +773,8 @@ export async function GET(request: Request) {
         template,
       ]),
     );
+    const atmosphereDefaultsByInstance =
+      await fetchAtmosphereDefaultsByInstance(supabase, instanceRows);
 
     const tickets = instanceRows
       .filter(
@@ -618,6 +793,7 @@ export async function GET(request: Request) {
               template.proposer_user_id
                 ? proposerProfileMap.get(template.proposer_user_id)
                 : undefined,
+              atmosphereDefaultsByInstance.get(instance.id) ?? null,
             )
           : null;
       })

@@ -104,7 +104,9 @@ export function TicketDetailContent({
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "vibe"}
         >
-          <MeetingAtmospherePanel profile={ticket.proposerProfile} />
+          <MeetingAtmospherePanel
+            profile={ticket.atmosphere ?? ticket.proposerProfile}
+          />
         </TicketDetailSection>
       )}
 
