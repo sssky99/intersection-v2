@@ -45,7 +45,7 @@ type AdminTab =
   | "feedback"
   | "blindDates";
 
-type ViewMode = "list" | "cards";
+type ViewMode = "list" | "cards" | "dropoffs";
 type MembershipFilter = "all" | "active" | "inactive";
 type CompletionFilter = "all" | "complete" | "incomplete";
 
@@ -85,6 +85,10 @@ function cn(...values: Array<string | false | null | undefined>) {
 function display(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return "-";
   return String(value);
+}
+
+function isDropoffProfile(profile: Pick<AdminProfile, "name">) {
+  return !profile.name?.trim();
 }
 
 function questionOrder(question: ProfileQuestion) {
@@ -461,8 +465,17 @@ export function AdminPageClient({
 
   const filteredProfiles = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const baseProfiles = profiles.filter((profile) => {
+      return viewMode === "dropoffs"
+        ? isDropoffProfile(profile)
+        : !isDropoffProfile(profile);
+    });
 
-    return profiles.filter((profile) => {
+    if (viewMode === "dropoffs") {
+      return baseProfiles;
+    }
+
+    return baseProfiles.filter((profile) => {
       const matchesSearch =
         query.length === 0 ||
         `${profile.name ?? ""} ${profile.phone ?? ""}`
@@ -488,7 +501,20 @@ export function AdminPageClient({
         matchesCompletion
       );
     });
-  }, [completionFilter, genderFilter, membershipFilter, profiles, search]);
+  }, [
+    completionFilter,
+    genderFilter,
+    membershipFilter,
+    profiles,
+    search,
+    viewMode,
+  ]);
+
+  const namedProfileCount = useMemo(
+    () => profiles.filter((profile) => !isDropoffProfile(profile)).length,
+    [profiles],
+  );
+  const dropoffProfileCount = profiles.length - namedProfileCount;
 
   useEffect(() => {
     if (filteredProfiles.length === 0) {
@@ -646,6 +672,8 @@ export function AdminPageClient({
               <ApplicantsPanel
                 profiles={filteredProfiles}
                 totalCount={profiles.length}
+                namedCount={namedProfileCount}
+                dropoffCount={dropoffProfileCount}
                 selectedProfile={selectedProfile}
                 selectedProfileId={selectedProfileId}
                 viewMode={viewMode}
@@ -720,6 +748,8 @@ export function AdminPageClient({
 function ApplicantsPanel({
   profiles,
   totalCount,
+  namedCount,
+  dropoffCount,
   selectedProfile,
   selectedProfileId,
   viewMode,
@@ -747,6 +777,8 @@ function ApplicantsPanel({
 }: {
   profiles: AdminProfile[];
   totalCount: number;
+  namedCount: number;
+  dropoffCount: number;
   selectedProfile: AdminProfile | null;
   selectedProfileId: string | null;
   viewMode: ViewMode;
@@ -786,7 +818,9 @@ function ApplicantsPanel({
             <div>
               <h2 className="text-lg font-bold">신청자 관리</h2>
               <p className="mt-1 text-xs text-black/45">
-                전체 {totalCount.toLocaleString()}명 · 표시{" "}
+                전체 {totalCount.toLocaleString()}명 · 참가자{" "}
+                {namedCount.toLocaleString()}명 · 이탈자{" "}
+                {dropoffCount.toLocaleString()}명 · 표시{" "}
                 {profiles.length.toLocaleString()}명
               </p>
               {loading && totalCount > 0 && (
@@ -797,6 +831,18 @@ function ApplicantsPanel({
             </div>
 
             <div className="flex rounded-xl bg-[#f2f3f1] p-1">
+              <button
+                type="button"
+                onClick={() => onViewModeChange("dropoffs")}
+                className={cn(
+                  "h-9 rounded-lg px-4 text-sm font-semibold transition",
+                  viewMode === "dropoffs"
+                    ? "bg-white text-black shadow-sm"
+                    : "text-black/45 hover:text-black",
+                )}
+              >
+                이탈자 보기
+              </button>
               <button
                 type="button"
                 onClick={() => onViewModeChange("list")}
@@ -824,64 +870,79 @@ function ApplicantsPanel({
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_150px_160px_170px_auto] gap-2">
-            <label className="relative block">
-              <Search
-                size={16}
-                aria-hidden
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
-              />
-              <input
-                value={search}
-                onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="이름 또는 전화번호 검색"
-                className="h-10 w-full rounded-xl border border-black/10 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
-              />
-            </label>
+          {viewMode === "dropoffs" ? (
+            <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_auto] gap-2">
+              <p className="flex h-10 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-4 text-sm font-semibold text-black/50">
+                이름이 아직 저장되지 않은 미완성 참가자를 전체 표시합니다.
+              </p>
+              <button
+                type="button"
+                onClick={onReload}
+                className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
+              >
+                새로고침
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_150px_160px_170px_auto] gap-2">
+              <label className="relative block">
+                <Search
+                  size={16}
+                  aria-hidden
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
+                />
+                <input
+                  value={search}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="이름 또는 전화번호 검색"
+                  className="h-10 w-full rounded-xl border border-black/10 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
+                />
+              </label>
 
-            <select
-              value={genderFilter}
-              onChange={(event) => onGenderFilterChange(event.target.value)}
-              className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
-            >
-              <option value="all">성별 전체</option>
-              <option value="여성">여성</option>
-              <option value="남성">남성</option>
-              <option value="비공개">비공개</option>
-            </select>
+              <select
+                value={genderFilter}
+                onChange={(event) => onGenderFilterChange(event.target.value)}
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="all">성별 전체</option>
+                <option value="여성">여성</option>
+                <option value="남성">남성</option>
+                <option value="비공개">비공개</option>
+              </select>
 
-            <select
-              value={membershipFilter}
-              onChange={(event) =>
-                onMembershipFilterChange(event.target.value as MembershipFilter)
-              }
-              className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
-            >
-              <option value="all">멤버십 전체</option>
-              <option value="active">멤버십 보유</option>
-              <option value="inactive">멤버십 없음</option>
-            </select>
+              <select
+                value={membershipFilter}
+                onChange={(event) =>
+                  onMembershipFilterChange(event.target.value as MembershipFilter)
+                }
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="all">멤버십 전체</option>
+                <option value="active">멤버십 보유</option>
+                <option value="inactive">멤버십 없음</option>
+              </select>
 
-            <select
-              value={completionFilter}
-              onChange={(event) =>
-                onCompletionFilterChange(event.target.value as CompletionFilter)
-              }
-              className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
-            >
-              <option value="all">완성 여부 전체</option>
-              <option value="complete">프로필 완성</option>
-              <option value="incomplete">미완성 포함</option>
-            </select>
+              <select
+                value={completionFilter}
+                onChange={(event) =>
+                  onCompletionFilterChange(event.target.value as CompletionFilter)
+                }
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="all">완성 여부 전체</option>
+                <option value="complete">프로필 완성</option>
+                <option value="incomplete">미완성 포함</option>
+              </select>
 
-            <button
-              type="button"
-              onClick={onReload}
-              className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
-            >
-              새로고침
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={onReload}
+                className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
+              >
+                새로고침
+              </button>
+            </div>
+          )}
 
           {membershipSaveError && (
             <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
@@ -901,20 +962,26 @@ function ApplicantsPanel({
           ) : error && profiles.length === 0 ? (
             <StateMessage tone="error" message={error} />
           ) : profiles.length === 0 ? (
-            <StateMessage message="아직 신청자가 없습니다." />
-          ) : viewMode === "list" ? (
+            <StateMessage
+              message={
+                viewMode === "dropoffs"
+                  ? "이탈자가 없습니다."
+                  : "아직 신청자가 없습니다."
+              }
+            />
+          ) : viewMode === "cards" ? (
+            <ApplicantCards
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onSelectProfile={onSelectProfile}
+            />
+          ) : (
             <ApplicantTable
               profiles={profiles}
               selectedProfileId={selectedProfileId}
               onSelectProfile={onSelectProfile}
               savingMembershipUserId={savingMembershipUserId}
               onMembershipStatusChange={onMembershipStatusChange}
-            />
-          ) : (
-            <ApplicantCards
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onSelectProfile={onSelectProfile}
             />
           )}
         </div>
