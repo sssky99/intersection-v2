@@ -1,4 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import { createClient } from "@/lib/supabase/server";
 import type { NaverPlace } from "@/types/place";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +18,22 @@ type NaverLocalSearchItem = {
 type NaverLocalSearchResponse = {
   items?: NaverLocalSearchItem[];
 };
+
+const maxQueryLength = 40;
+
+async function canSearchPlaces(request: NextRequest) {
+  if (
+    isAdminSessionTokenValid(request.cookies.get(ADMIN_SESSION_COOKIE)?.value)
+  ) {
+    return true;
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return Boolean(user);
+}
 
 function cleanNaverText(value: unknown) {
   if (typeof value !== "string") return "";
@@ -57,14 +75,26 @@ function normalizePlace(item: NaverLocalSearchItem): NaverPlace | null {
   };
 }
 
-export async function GET(request: Request) {
+function searchQuery(value: string | null) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+export async function GET(request: NextRequest) {
+  if (!(await canSearchPlaces(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
-  const query = searchParams.get("query")?.trim() ?? "";
+  const query = searchQuery(searchParams.get("query"));
   const clientId = process.env.NAVER_SEARCH_CLIENT_ID;
   const clientSecret = process.env.NAVER_SEARCH_CLIENT_SECRET;
 
   if (!query || query.length < 2) {
     return NextResponse.json({ places: [] });
+  }
+
+  if (query.length > maxQueryLength || !/[\p{L}\p{N}]/u.test(query)) {
+    return NextResponse.json({ error: "Invalid search query." }, { status: 400 });
   }
 
   if (!clientId || !clientSecret) {

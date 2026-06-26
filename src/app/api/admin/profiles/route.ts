@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 const baseProfileFields = [
   "user_id",
   "name",
+  "nickname",
   "gender",
   "birth_year",
   "mbti",
