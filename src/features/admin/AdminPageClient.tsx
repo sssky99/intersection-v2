@@ -17,6 +17,7 @@ import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
+import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
 import {
   AdminMemberName,
@@ -37,6 +38,7 @@ import type { ProfileQuestion, QuestionOption } from "@/types/question";
 
 type AdminTab =
   | "applicants"
+  | "visitors"
   | "membership"
   | "tickets"
   | "calendar"
@@ -59,6 +61,7 @@ const applicantMembershipStatuses: MembershipStatus[] = [
 
 const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
+  { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "티켓 관리" },
   { id: "calendar", label: "달력 관리" },
@@ -704,6 +707,11 @@ export function AdminPageClient({
           {visitedTabs.membership && (
             <div className={cn(activeTab === "membership" ? "block" : "hidden")}>
               <MembershipAdminPanel />
+            </div>
+          )}
+          {visitedTabs.visitors && (
+            <div className={cn(activeTab === "visitors" ? "block" : "hidden")}>
+              <VisitorAdminPanel />
             </div>
           )}
           {visitedTabs.tickets && (

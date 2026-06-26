@@ -23,7 +23,7 @@ export default function KakaoLoginButton({
     const supabase = createClient();
     const origin = window.location.origin;
     const redirectTo = createOAuthRedirectUrl(origin, nextPath);
-    trackEvent('kakao_start_click', {
+    trackEvent('kakao_login_click', {
       next_path: nextPath,
       provider: 'kakao',
     });

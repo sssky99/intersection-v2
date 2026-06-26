@@ -9,7 +9,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
@@ -29,6 +29,7 @@ import {
   MeetingProposalFlow,
   type ProposalMemberProfile,
 } from "@/features/meetings/MeetingProposalFlow";
+import { trackEvent } from "@/lib/analytics";
 import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
@@ -198,6 +199,7 @@ export function MeetingRecommendation({
     useState<string | null>(null);
   const [copiedProposalTicket, setCopiedProposalTicket] =
     useState<GatheringTicket | null>(null);
+  const viewedTicketIdsRef = useRef<Set<string>>(new Set());
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
@@ -222,6 +224,18 @@ export function MeetingRecommendation({
   const proposalRestrictionMessage = canSubmitProposal
     ? null
     : meetingProposalRequirementMessage;
+
+  useEffect(() => {
+    if (screen !== "drawing" || !ticket) return;
+    if (viewedTicketIdsRef.current.has(ticket.id)) return;
+
+    viewedTicketIdsRef.current.add(ticket.id);
+    trackEvent("ticket_detail_view", {
+      ticket_id: ticket.id,
+      template_id: ticket.templateId,
+      proposal_id: ticket.proposalId,
+    });
+  }, [screen, ticket]);
 
   useEffect(() => {
     const restorePaymentPendingScreen = () => {
@@ -364,6 +378,11 @@ export function MeetingRecommendation({
 
     setSaving(true);
     setError(null);
+    trackEvent("application_submit_click", {
+      application_id: ticket.id,
+      ticket_id: ticket.id,
+      template_id: ticket.templateId,
+    });
 
     const response = await fetch("/api/meeting-waitlist", {
       method: "POST",
@@ -374,6 +393,7 @@ export function MeetingRecommendation({
     const data = (await response.json().catch(() => null)) as {
       status?: RecommendationWaitlistStatus;
       code?: string;
+      duplicate?: boolean;
     } | null;
 
     if (response.status === 402 || data?.code === "membership_required") {
@@ -390,6 +410,13 @@ export function MeetingRecommendation({
 
     setWaitlistedTicket(ticket);
     setWaitlistStatus(data?.status ?? "waitlisted");
+    trackEvent("application_created", {
+      application_id: ticket.id,
+      ticket_id: ticket.id,
+      template_id: ticket.templateId,
+      status: data?.status ?? "waitlisted",
+      duplicate: Boolean(data?.duplicate),
+    });
     clearTicketCaches();
     onWaitlisted?.(ticket);
     setScreen("waitlisted");

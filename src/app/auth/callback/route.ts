@@ -5,6 +5,7 @@ import {
   safeLocalOAuthOrigin,
 } from '@/lib/authRedirect';
 import { createClient } from '@/lib/supabase/server';
+import { recordUserEvent } from '@/lib/userEvents';
 import type { ProfileRow } from '@/types/profile';
 
 function cleanRedirect(requestUrl: URL, path = '/', origin = requestUrl.origin) {
@@ -24,6 +25,20 @@ function withLoginSuccessParams(
   url.searchParams.set('login', 'success');
   url.searchParams.set('login_type', loginType);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+function isLocalHostname(hostname: string) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    hostname === '[::1]' ||
+    hostname.startsWith('10.') ||
+    hostname.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    hostname.endsWith('.localhost')
+  );
 }
 
 export async function GET(request: Request) {
@@ -137,6 +152,25 @@ export async function GET(request: Request) {
           cleanOrigin,
         )
     : redirectPath;
+
+  if (user && !isLocalHostname(requestUrl.hostname)) {
+    await recordUserEvent({
+      profileId: user.id,
+      eventName: 'kakao_auth_return',
+      path: requestUrl.pathname,
+      referrer: request.headers.get('referer'),
+      userAgent: request.headers.get('user-agent'),
+      metadata: {
+        login_type: isNewProfile ? 'new' : 'existing',
+        next_path: finalPath,
+      },
+    }).catch((eventError) => {
+      console.warn(
+        'Kakao auth return event could not be recorded:',
+        eventError instanceof Error ? eventError.message : eventError,
+      );
+    });
+  }
 
   return NextResponse.redirect(new URL(finalPath, cleanOrigin));
 }

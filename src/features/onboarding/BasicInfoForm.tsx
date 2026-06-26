@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { trackEvent } from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
@@ -93,6 +93,7 @@ export function BasicInfoForm({
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const startTrackedRef = useRef(false);
   const canSave = useMemo(
     () => basicInfoSteps.every((step) => isStepComplete(step.key, draft)),
     [draft],
@@ -128,6 +129,13 @@ export function BasicInfoForm({
     setDraft(initialValues);
     setVisibleStepCount(1);
   }, [initialValues]);
+
+  useEffect(() => {
+    if (isRegeneration || startTrackedRef.current) return;
+
+    startTrackedRef.current = true;
+    trackEvent("basic_info_start");
+  }, [isRegeneration]);
 
   useEffect(() => {
     if (visibleStepCount >= basicInfoSteps.length) return;

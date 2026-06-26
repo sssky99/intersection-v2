@@ -519,6 +519,7 @@ export function QuestionFlow({
   const [ticketCoachmarkDismissed, setTicketCoachmarkDismissed] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
+  const questionStartTrackedRef = useRef(false);
   const shouldReduceMotion = Boolean(useReducedMotion());
   const question = questions[questionIndex];
   const answer = answers[question.id];
@@ -569,6 +570,25 @@ export function QuestionFlow({
     if (isPreview || isRegeneration) return;
     trackLoginSuccessFromUrl("new");
   }, [isPreview, isRegeneration]);
+
+  useEffect(() => {
+    if (isPreview || isRegeneration || questionStartTrackedRef.current) return;
+
+    questionStartTrackedRef.current = true;
+    trackEvent("question_start", {
+      question_count: questions.length,
+    });
+  }, [isPreview, isRegeneration, questions.length]);
+
+  const trackQuestionAnswered = (targetQuestion: ProfileQuestion) => {
+    if (isPreview || isRegeneration) return;
+
+    trackEvent("question_answered", {
+      question_order: targetQuestion.order ?? targetQuestion.id,
+      question_type: targetQuestion.type,
+      category: targetQuestion.category,
+    });
+  };
 
   const trackQuestionMilestone = (
     key: string,
@@ -671,6 +691,12 @@ export function QuestionFlow({
 
     if (profileError) throw new Error(profileError.message);
 
+    if (!isRegeneration) {
+      trackEvent("questions_complete", {
+        question_count: questions.length,
+      });
+    }
+
     router.replace(
       isRegeneration
         ? "/onboarding/profile?regenerate=1"
@@ -765,6 +791,7 @@ export function QuestionFlow({
 
     try {
       await saveAnswer(question, nextAnswer);
+      trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
       scheduleAutoAdvance(nextAnswers, nextDelay);
     } catch (saveError) {
@@ -827,6 +854,7 @@ export function QuestionFlow({
     setError(null);
     try {
       await saveAnswer(question, answer);
+      trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
       await moveToNext(nextAnswers);
     } catch (saveError) {
@@ -862,6 +890,7 @@ export function QuestionFlow({
 
     try {
       await saveAnswer(question, nextAnswer);
+      trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
       scheduleAutoAdvance(nextAnswers, 650);
     } catch (saveError) {

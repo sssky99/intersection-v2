@@ -7,6 +7,14 @@ type AnalyticsParams = Record<
   AnalyticsParamValue | null | undefined
 >;
 
+const anonymousSessionStorageKey = "intersection_anonymous_session_id";
+
+const supabaseEventNameAliases: Record<string, string> = {
+  kakao_start_click: "kakao_login_click",
+  recommend_tab_view: "recommendation_view",
+  profile_intro_complete: "profile_generated",
+};
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
@@ -22,6 +30,96 @@ function cleanParams(params: AnalyticsParams) {
   ) as Record<string, AnalyticsParamValue>;
 }
 
+function randomId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `anon_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function anonymousSessionId() {
+  try {
+    const existing = window.localStorage.getItem(anonymousSessionStorageKey);
+    if (existing) return existing;
+
+    const nextId = randomId();
+    window.localStorage.setItem(anonymousSessionStorageKey, nextId);
+    return nextId;
+  } catch {
+    return randomId();
+  }
+}
+
+function supabaseEventName(eventName: string) {
+  return supabaseEventNameAliases[eventName] ?? eventName;
+}
+
+function applicationIdFromPayload(payload: Record<string, AnalyticsParamValue>) {
+  const value = payload.application_id ?? payload.applicationId;
+  return typeof value === "string" ? value : undefined;
+}
+
+function isLocalHostname(hostname: string) {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1" ||
+    hostname === "[::1]" ||
+    hostname.startsWith("10.") ||
+    hostname.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname) ||
+    hostname.endsWith(".localhost")
+  );
+}
+
+function shouldTrackSupabaseEvent() {
+  return (
+    process.env.NODE_ENV === "production" &&
+    !isLocalHostname(window.location.hostname) &&
+    window.location.pathname !== "/admin" &&
+    !window.location.pathname.startsWith("/admin/")
+  );
+}
+
+function trackSupabaseEvent(
+  eventName: string,
+  payload: Record<string, AnalyticsParamValue>,
+) {
+  if (!shouldTrackSupabaseEvent()) return;
+
+  const normalizedEventName = supabaseEventName(eventName);
+  const body = JSON.stringify({
+    anonymousSessionId: anonymousSessionId(),
+    applicationId: applicationIdFromPayload(payload),
+    eventName: normalizedEventName,
+    path: window.location.pathname,
+    referrer: document.referrer || null,
+    metadata:
+      normalizedEventName === eventName
+        ? payload
+        : { ...payload, original_event_name: eventName },
+  });
+
+  if (navigator.sendBeacon) {
+    const sent = navigator.sendBeacon(
+      "/api/user-events",
+      new Blob([body], { type: "application/json" }),
+    );
+    if (sent) return;
+  }
+
+  void fetch("/api/user-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // Analytics should never interrupt the user flow.
+  });
+}
+
 export function trackEvent(
   eventName: string,
   params: AnalyticsParams = {},
@@ -30,6 +128,7 @@ export function trackEvent(
 
   const payload = cleanParams(params);
   window.dataLayer = window.dataLayer ?? [];
+  trackSupabaseEvent(eventName, payload);
 
   if (typeof window.gtag === "function") {
     window.gtag("event", eventName, payload);

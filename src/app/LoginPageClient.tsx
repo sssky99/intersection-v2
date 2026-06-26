@@ -4,12 +4,15 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
+import { trackEvent } from '@/lib/analytics';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPageClient() {
   const router = useRouter();
 
   useEffect(() => {
+    trackEvent('landing_view');
+
     let mounted = true;
     const supabase = createClient();
 
