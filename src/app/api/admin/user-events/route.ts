@@ -34,6 +34,14 @@ type UserEventRow = {
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
+type ProfileNameRow = {
+  user_id: string;
+  name: string | null;
+};
+type IdentityLookup = {
+  anonymousProfileIds: Map<string, string>;
+  profileNames: Map<string, string>;
+};
 
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
@@ -77,12 +85,43 @@ function isMissingTableError(error: { code?: string; message?: string }) {
   );
 }
 
-function normalizeEvent(row: UserEventRow) {
+function profileName(row: ProfileNameRow) {
+  return row.name?.trim() || null;
+}
+
+function resolvedProfileId(row: UserEventRow, lookup: IdentityLookup) {
+  if (row.profile_id) return row.profile_id;
+  if (!row.anonymous_session_id) return null;
+  return lookup.anonymousProfileIds.get(row.anonymous_session_id) ?? null;
+}
+
+function fallbackIdentifier(row: UserEventRow) {
+  return row.profile_id ?? row.anonymous_session_id ?? "unknown";
+}
+
+function displayIdentifier(row: UserEventRow, lookup: IdentityLookup) {
+  const profileId = resolvedProfileId(row, lookup);
+  if (profileId) {
+    const name = lookup.profileNames.get(profileId);
+    if (name) return name;
+  }
+
+  return fallbackIdentifier(row);
+}
+
+function applicantName(row: UserEventRow, lookup: IdentityLookup) {
+  const profileId = resolvedProfileId(row, lookup);
+  return profileId ? lookup.profileNames.get(profileId) ?? null : null;
+}
+
+function normalizeEvent(row: UserEventRow, lookup: IdentityLookup) {
   return {
     id: row.id,
     anonymous_session_id: row.anonymous_session_id,
     profile_id: row.profile_id,
     application_id: row.application_id,
+    applicant_name: applicantName(row, lookup),
+    display_identifier: displayIdentifier(row, lookup),
     event_name: row.event_name,
     path: row.path,
     metadata: row.metadata ?? {},
@@ -90,17 +129,61 @@ function normalizeEvent(row: UserEventRow) {
   };
 }
 
-function userKey(row: UserEventRow) {
-  return row.profile_id ?? row.anonymous_session_id ?? "unknown";
+function userKey(row: UserEventRow, lookup: IdentityLookup) {
+  return resolvedProfileId(row, lookup) ?? row.anonymous_session_id ?? "unknown";
 }
 
-function userSummaries(rows: UserEventRow[]) {
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function identityLookup(rows: UserEventRow[]): Promise<IdentityLookup> {
+  const supabase = createAdminClient();
+  const profileIds = new Set<string>();
+  const anonymousProfileIds = new Map<string, string>();
+
+  for (const row of rows) {
+    if (!row.profile_id) continue;
+
+    profileIds.add(row.profile_id);
+    if (row.anonymous_session_id && !anonymousProfileIds.has(row.anonymous_session_id)) {
+      anonymousProfileIds.set(row.anonymous_session_id, row.profile_id);
+    }
+  }
+
+  const profileNames = new Map<string, string>();
+  const profileIdList = Array.from(profileIds);
+  for (const chunk of chunkArray(profileIdList, 300)) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id,name")
+      .in("user_id", chunk)
+      .returns<ProfileNameRow[]>();
+
+    if (error) throw error;
+
+    for (const row of data ?? []) {
+      const name = profileName(row);
+      if (name) profileNames.set(row.user_id, name);
+    }
+  }
+
+  return { anonymousProfileIds, profileNames };
+}
+
+function userSummaries(rows: UserEventRow[], lookup: IdentityLookup) {
   const summaries = new Map<
     string,
     {
       user_key: string;
       profile_id: string | null;
       anonymous_session_id: string | null;
+      applicant_name: string | null;
+      display_identifier: string;
       first_event_at: string;
       last_event_at: string;
       last_event_name: string;
@@ -109,14 +192,19 @@ function userSummaries(rows: UserEventRow[]) {
   >();
 
   for (const row of rows) {
-    const key = userKey(row);
+    const key = userKey(row, lookup);
     const current = summaries.get(key);
+    const rowProfileId = resolvedProfileId(row, lookup);
+    const rowApplicantName = applicantName(row, lookup);
+    const rowDisplayIdentifier = displayIdentifier(row, lookup);
 
     if (!current) {
       summaries.set(key, {
         user_key: key,
-        profile_id: row.profile_id,
+        profile_id: rowProfileId,
         anonymous_session_id: row.anonymous_session_id,
+        applicant_name: rowApplicantName,
+        display_identifier: rowDisplayIdentifier,
         first_event_at: row.created_at,
         last_event_at: row.created_at,
         last_event_name: row.event_name,
@@ -126,6 +214,13 @@ function userSummaries(rows: UserEventRow[]) {
     }
 
     current.event_count += 1;
+    current.profile_id = current.profile_id ?? rowProfileId;
+    current.anonymous_session_id =
+      current.anonymous_session_id ?? row.anonymous_session_id;
+    if (!current.applicant_name && rowApplicantName) {
+      current.applicant_name = rowApplicantName;
+      current.display_identifier = rowApplicantName;
+    }
     if (new Date(row.created_at).getTime() < new Date(current.first_event_at).getTime()) {
       current.first_event_at = row.created_at;
     }
@@ -188,6 +283,7 @@ export async function GET(request: NextRequest) {
       ]);
     if (logError) throw logError;
     if (summaryError) throw summaryError;
+    const lookup = await identityLookup([...(logData ?? []), ...(summaryData ?? [])]);
 
     const funnel = countResults.map((item, index) => {
       const previousCount = index > 0 ? countResults[index - 1].count : null;
@@ -205,8 +301,8 @@ export async function GET(request: NextRequest) {
       range,
       startedAt: start,
       funnel,
-      logs: (logData ?? []).map(normalizeEvent),
-      userSummaries: userSummaries(summaryData ?? []),
+      logs: (logData ?? []).map((row) => normalizeEvent(row, lookup)),
+      userSummaries: userSummaries(summaryData ?? [], lookup),
       tableMissing: false,
     });
   } catch (error) {

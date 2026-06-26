@@ -16,6 +16,8 @@ type VisitorEventLog = {
   anonymous_session_id: string | null;
   profile_id: string | null;
   application_id: string | null;
+  applicant_name: string | null;
+  display_identifier: string;
   event_name: string;
   path: string | null;
   metadata: unknown;
@@ -26,6 +28,8 @@ type VisitorUserSummary = {
   user_key: string;
   profile_id: string | null;
   anonymous_session_id: string | null;
+  applicant_name: string | null;
+  display_identifier: string;
   first_event_at: string;
   last_event_at: string;
   last_event_name: string;
@@ -105,6 +109,13 @@ function metadataText(value: unknown) {
 
 function eventLabel(eventName: string) {
   return eventLabels[eventName] ?? eventName;
+}
+
+function identifierClassName(hasApplicantName: boolean) {
+  return cn(
+    "break-all px-4 py-3 text-xs text-black/65",
+    hasApplicantName ? "font-bold" : "font-mono",
+  );
 }
 
 export function VisitorAdminPanel() {
@@ -234,7 +245,7 @@ export function VisitorAdminPanel() {
             <table className="min-w-[880px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
                 <tr>
-                  <th className="px-4 py-3">식별자</th>
+                  <th className="px-4 py-3">신청자</th>
                   <th className="px-4 py-3">첫 이벤트 시간</th>
                   <th className="px-4 py-3">마지막 이벤트 시간</th>
                   <th className="px-4 py-3">마지막 이벤트명</th>
@@ -244,8 +255,8 @@ export function VisitorAdminPanel() {
               <tbody>
                 {(data?.userSummaries ?? []).map((summary) => (
                   <tr key={summary.user_key} className="border-b border-black/5">
-                    <td className="break-all px-4 py-3 font-mono text-xs text-black/65">
-                      {textOrDash(summary.profile_id ?? summary.anonymous_session_id)}
+                    <td className={identifierClassName(Boolean(summary.applicant_name))}>
+                      {textOrDash(summary.display_identifier)}
                     </td>
                     <td className="px-4 py-3">{formatDateTime(summary.first_event_at)}</td>
                     <td className="px-4 py-3">{formatDateTime(summary.last_event_at)}</td>

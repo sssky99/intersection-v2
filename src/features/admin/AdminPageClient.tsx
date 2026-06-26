@@ -1206,6 +1206,7 @@ function ProfileDetailPanel({
       precisionBonusDraft !== adminMatchingPrecisionBonus(profile),
   );
   const isTestParticipant = Boolean(profile?.is_test_participant);
+  const detailNickname = profile?.nickname?.trim();
 
   const updateScoreDraft = (axis: AdminProfileAxis, value: number) => {
     setScoreDraft((current) => ({
@@ -1266,6 +1267,11 @@ function ProfileDetailPanel({
           </p>
           <h2 className="mt-1 text-xl font-bold">
             <AdminMemberName profile={profile} />
+            {detailNickname && (
+              <span className="ml-1 font-bold text-black/55">
+                ({detailNickname})
+              </span>
+            )}
           </h2>
         </div>
         <button
