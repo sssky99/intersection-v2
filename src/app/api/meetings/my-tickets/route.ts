@@ -909,6 +909,30 @@ function sourceRowInstanceId(row: TicketSourceRow) {
   return row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id ?? null;
 }
 
+function sourceRowAssigned(
+  row: TicketSourceRow,
+  instanceId: string | null,
+  userAssignedInstanceIds: Set<string>,
+) {
+  return Boolean(
+    row.assignment_only || (instanceId && userAssignedInstanceIds.has(instanceId)),
+  );
+}
+
+function effectiveSourceStatus(
+  row: TicketSourceRow,
+  instanceId: string | null,
+  userAssignedInstanceIds: Set<string>,
+) {
+  if (row.status === "approved" && instanceId) {
+    return sourceRowAssigned(row, instanceId, userAssignedInstanceIds)
+      ? row.status
+      : "waitlisted";
+  }
+
+  return row.status;
+}
+
 function pendingTicketCandidate(ticket: UserTicket): PendingTicketCandidate {
   return {
     kind: "pending",
@@ -922,6 +946,7 @@ function pendingTicketCandidate(ticket: UserTicket): PendingTicketCandidate {
 function sourceTicketCandidate(
   row: TicketSourceRow,
   instanceMap: Map<string, InstanceRow>,
+  userAssignedInstanceIds: Set<string>,
   now: Date,
 ): SourceTicketCandidate | null {
   const instanceId = sourceRowInstanceId(row);
@@ -929,7 +954,11 @@ function sourceTicketCandidate(
   const date = instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
   const time = instance?.event_time ?? row.ticket_snapshot?.time;
   const startAt = toStartAt(date, time);
-  const derived = deriveStatus(row.status, startAt, now);
+  const derived = deriveStatus(
+    effectiveSourceStatus(row, instanceId, userAssignedInstanceIds),
+    startAt,
+    now,
+  );
 
   if (!derived.status) return null;
 
@@ -1069,6 +1098,9 @@ export async function GET(request: Request) {
     if (userAssignmentError) throw userAssignmentError;
 
     const userAssignments = userAssignmentData ?? [];
+    const userAssignedInstanceIds = new Set(
+      userAssignments.map((assignment) => assignment.ticket_instance_id),
+    );
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
       const page = paginateItems(
@@ -1160,7 +1192,9 @@ export async function GET(request: Request) {
       [
         ...pendingProposalTickets.map(pendingTicketCandidate),
         ...ticketSourceRows
-          .map((row) => sourceTicketCandidate(row, instanceMap, now))
+          .map((row) =>
+            sourceTicketCandidate(row, instanceMap, userAssignedInstanceIds, now),
+          )
           .filter(
             (candidate): candidate is SourceTicketCandidate =>
               Boolean(candidate),
@@ -1368,10 +1402,15 @@ export async function GET(request: Request) {
         if (!ticket) return null;
 
         const startAt = toStartAt(ticket.date, ticket.time);
-        const derived = deriveStatus(row.status, startAt, now);
+        const effectiveStatus = effectiveSourceStatus(
+          row,
+          instanceId,
+          userAssignedInstanceIds,
+        );
+        const derived = deriveStatus(effectiveStatus, startAt, now);
         if (!derived.status) return null;
 
-        const confirmed = confirmedStatuses.has(row.status);
+        const confirmed = confirmedStatuses.has(effectiveStatus);
         const memberInfoVisible = confirmed && derived.progressIndex >= 1;
         const assignedIds = memberInfoVisible
           ? assignmentsByInstance.get(instanceId ?? "") ?? []
@@ -1414,7 +1453,7 @@ export async function GET(request: Request) {
           id: String(row.id),
           waitlistId: String(row.id),
           ticket,
-          rawStatus: row.status,
+          rawStatus: effectiveStatus,
           status: derived.status,
           statusLabel: derived.statusLabel,
           progressStep: derived.progressStep,

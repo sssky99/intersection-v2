@@ -53,10 +53,10 @@ export function DevOnboardingActions({
       <div className="mt-2 grid grid-cols-2 gap-2">
         <button
           type="button"
-          onClick={() => router.push("/details?view=local")}
+          onClick={() => router.push("/")}
           className="h-10 rounded-xl border border-black/10 bg-white text-xs font-semibold text-black/55"
         >
-          상세페이지 다시보기
+          랜딩 다시보기
         </button>
         <button
           type="button"

@@ -1,8 +1,23 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
-import { AppHome, type AppTab } from "@/features/app/AppHome";
+import {
+  AppHome,
+  type AppTab,
+  type OperatorAccountSwitcher,
+} from "@/features/app/AppHome";
 import { loadTicketQuestionTemplates } from "@/features/onboarding/loadTicketQuestionTemplates";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
+import {
+  decryptOperatorReturnSession,
+  isOperatorAccount,
+  OPERATOR_RETURN_SESSION_COOKIE,
+} from "@/lib/operatorSessionSwitch";
+import {
+  operatorTestAccountByUserId,
+  operatorTestAccounts,
+} from "@/lib/operatorTestAccounts";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 
 type MeetingsPageProps = {
@@ -44,6 +59,27 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   if (!introUsable && !shouldOpenCompletionModal) redirect("/profile/result");
 
   const ticketQuestionTemplates = await loadTicketQuestionTemplates();
+  const cookieStore = await cookies();
+  const returnSession = decryptOperatorReturnSession(
+    cookieStore.get(OPERATOR_RETURN_SESSION_COOKIE)?.value,
+  );
+  const currentTestAccount = operatorTestAccountByUserId(user.id);
+  const { data: authoritativeUserData } =
+    await createAdminClient().auth.admin.getUserById(user.id);
+  const operatorAccountSwitcher: OperatorAccountSwitcher = isOperatorAccount(
+    authoritativeUserData.user ?? user,
+    profile,
+  )
+    ? {
+        mode: "operator",
+        accounts: operatorTestAccounts.map(({ userId, name }) => ({
+          userId,
+          name,
+        })),
+      }
+    : currentTestAccount && returnSession?.targetUserId === user.id
+      ? { mode: "test" }
+      : null;
 
   return (
     <MobileFrame>
@@ -53,6 +89,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
         initialTab={initialTabFromSearchParam(params?.tab)}
         initialProfileCompletionOpen={shouldOpenCompletionModal}
         ticketQuestionTemplates={ticketQuestionTemplates}
+        operatorAccountSwitcher={operatorAccountSwitcher}
       />
     </MobileFrame>
   );

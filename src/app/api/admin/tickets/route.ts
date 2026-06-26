@@ -1247,6 +1247,33 @@ export async function DELETE(request: NextRequest) {
   if (templateId) {
     try {
       const supabase = createAdminClient();
+      const { data: instances, error: instancesError } = await supabase
+        .from("ticket_instances")
+        .select("id")
+        .eq("template_id", templateId);
+      if (instancesError) throw instancesError;
+
+      const instanceIds = (instances ?? []).map((instance) => instance.id);
+      const { error: templateWaitlistError } = await supabase
+        .from("meeting_waitlist")
+        .delete()
+        .eq("ticket_template_id", templateId);
+      if (templateWaitlistError) throw templateWaitlistError;
+
+      if (instanceIds.length > 0) {
+        const { error: instanceWaitlistError } = await supabase
+          .from("meeting_waitlist")
+          .delete()
+          .in("ticket_instance_id", instanceIds);
+        if (instanceWaitlistError) throw instanceWaitlistError;
+
+        const { error: legacyWaitlistError } = await supabase
+          .from("meeting_waitlist")
+          .delete()
+          .in("ticket_id", instanceIds);
+        if (legacyWaitlistError) throw legacyWaitlistError;
+      }
+
       const { error } = await supabase
         .from("ticket_templates")
         .delete()
@@ -1274,6 +1301,18 @@ export async function DELETE(request: NextRequest) {
       .eq("ticket_instance_id", instanceId)
       .eq("profile_id", profileId);
     if (error) throw error;
+
+    const { error: waitlistError } = await supabase
+      .from("meeting_waitlist")
+      .update({
+        status: "not_selected",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", profileId)
+      .or(`ticket_instance_id.eq.${instanceId},ticket_id.eq.${instanceId}`)
+      .not("status", "in", "(completed,feedback_done)");
+    if (waitlistError) throw waitlistError;
+
     return NextResponse.json(await loadTicketData());
   } catch (error) {
     console.error("[admin tickets]", error);

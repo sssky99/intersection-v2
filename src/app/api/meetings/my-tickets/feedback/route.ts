@@ -338,6 +338,13 @@ export async function POST(request: Request) {
         .returns<AssignmentRow[]>();
       if (error) throw error;
       assignedMemberIds = (data ?? []).map((assignment) => assignment.profile_id);
+
+      if (!assignedMemberIds.includes(user.id)) {
+        return NextResponse.json(
+          { error: "Feedback is only available for assigned members." },
+          { status: 403 },
+        );
+      }
     }
 
     const allowedTargetIds = new Set(

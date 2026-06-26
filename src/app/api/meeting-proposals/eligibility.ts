@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  hasActiveProposalMembership,
   hasMeetingProposalParticipation,
   isMeetingProposalOperator,
   meetingProposalEligibleParticipationStatuses,
@@ -27,9 +28,16 @@ function proposalRequirementResponse(
 export async function ensureMeetingProposalEligibility(
   supabase: SupabaseServerClient,
   userId: string,
-  profile: Pick<MeetingProposalProfileRow, "is_test_participant">,
+  profile: Pick<
+    MeetingProposalProfileRow,
+    "is_test_participant" | "membership_status" | "membership_end_date"
+  >,
 ) {
   if (isMeetingProposalOperator(profile)) return null;
+
+  if (!hasActiveProposalMembership(profile)) {
+    return proposalRequirementResponse("participation_required", 403);
+  }
 
   const { count, error } = await supabase
     .from("meeting_waitlist")

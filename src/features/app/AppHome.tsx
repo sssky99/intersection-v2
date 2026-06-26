@@ -94,6 +94,16 @@ import type { LucideIcon } from "lucide-react";
 
 export type AppTab = "browse" | "recommend" | "proposal" | "chat" | "profile";
 
+export type OperatorAccountSwitcher =
+  | {
+      mode: "operator";
+      accounts: Array<{ userId: string; name: string }>;
+    }
+  | {
+      mode: "test";
+    }
+  | null;
+
 type AnswerRow = {
   question_order: number;
   answer_value: string | null;
@@ -448,12 +458,14 @@ export function AppHome({
   initialTab = "recommend",
   initialProfileCompletionOpen = false,
   ticketQuestionTemplates = [],
+  operatorAccountSwitcher = null,
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
   initialProfileCompletionOpen?: boolean;
   ticketQuestionTemplates?: TicketQuestionTemplate[];
+  operatorAccountSwitcher?: OperatorAccountSwitcher;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
@@ -496,6 +508,12 @@ export function AppHome({
   >(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [switchingAccountId, setSwitchingAccountId] = useState<string | null>(
+    null,
+  );
+  const [accountSwitchError, setAccountSwitchError] = useState<string | null>(
+    null,
+  );
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const recommendTabTrackedRef = useRef(false);
@@ -847,11 +865,103 @@ export function AppHome({
     switchTab("browse");
   };
 
+  const applyAccountSession = async ({
+    accessToken,
+    refreshToken,
+  }: {
+    accessToken: string;
+    refreshToken: string;
+  }) => {
+    const { error } = await createClient().auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw error;
+  };
+
+  const switchToTestAccount = async (targetUserId: string) => {
+    if (switchingAccountId) return;
+
+    setSwitchingAccountId(targetUserId);
+    setAccountSwitchError(null);
+    try {
+      const response = await fetch("/api/operator/session-switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        accessToken?: string;
+        refreshToken?: string;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !body?.accessToken || !body.refreshToken) {
+        throw new Error(body?.error ?? "테스트 계정으로 전환하지 못했습니다.");
+      }
+
+      await applyAccountSession({
+        accessToken: body.accessToken,
+        refreshToken: body.refreshToken,
+      });
+      window.location.replace("/meetings?tab=recommend");
+    } catch (error) {
+      setAccountSwitchError(
+        error instanceof Error
+          ? error.message
+          : "테스트 계정으로 전환하지 못했습니다.",
+      );
+      setSwitchingAccountId(null);
+    }
+  };
+
+  const returnToOperatorAccount = async () => {
+    if (switchingAccountId) return;
+
+    setSwitchingAccountId("operator-return");
+    setAccountSwitchError(null);
+    setLogoutError(null);
+    try {
+      const response = await fetch("/api/operator/session-switch", {
+        method: "DELETE",
+      });
+      const body = (await response.json().catch(() => null)) as {
+        accessToken?: string;
+        refreshToken?: string;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !body?.accessToken || !body.refreshToken) {
+        throw new Error(body?.error ?? "운영자 계정으로 돌아가지 못했습니다.");
+      }
+
+      await applyAccountSession({
+        accessToken: body.accessToken,
+        refreshToken: body.refreshToken,
+      });
+      window.location.replace("/meetings?tab=recommend");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "운영자 계정으로 돌아가지 못했습니다.";
+      setAccountSwitchError(message);
+      setLogoutError(message);
+      setSwitchingAccountId(null);
+      setLoggingOut(false);
+    }
+  };
+
   const logout = async () => {
     if (loggingOut) return;
 
     setLoggingOut(true);
     setLogoutError(null);
+
+    if (operatorAccountSwitcher?.mode === "test") {
+      await returnToOperatorAccount();
+      return;
+    }
 
     const { error } = await createClient().auth.signOut();
 
@@ -1011,8 +1121,13 @@ export function AppHome({
             <BasicInfoPanel
               key="basic-info-panel"
               profile={currentProfile}
+              operatorAccountSwitcher={operatorAccountSwitcher}
+              switchingAccountId={switchingAccountId}
+              accountSwitchError={accountSwitchError}
               onProfileUpdated={setCurrentProfile}
               onClose={() => setProfilePanelOpen(false)}
+              onSwitchAccount={switchToTestAccount}
+              onReturnToOperator={returnToOperatorAccount}
             />
           </>
         )}
@@ -4556,16 +4671,6 @@ function ProfileTab({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => {
-            window.location.href = "/details?from=profile";
-          }}
-          className="mt-8 flex h-12 w-full items-center justify-center rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55"
-        >
-          교집합 소개 다시 보기
-        </button>
-
         {profile.is_test_participant && (
           <button
             type="button"
@@ -4580,7 +4685,7 @@ function ProfileTab({
         <button
           type="button"
           onClick={onRequestProfileRegeneration}
-          className="mt-3 flex min-h-[58px] w-full items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-white px-4 py-3 text-left transition hover:border-black/20 hover:bg-black/[0.015]"
+          className="mt-8 flex min-h-[58px] w-full items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-white px-4 py-3 text-left transition hover:border-black/20 hover:bg-black/[0.015]"
         >
           <span>
             <span className="block text-xs font-black text-black/62">
@@ -4625,12 +4730,22 @@ function ProfileTab({
 
 function BasicInfoPanel({
   profile,
+  operatorAccountSwitcher,
+  switchingAccountId,
+  accountSwitchError,
   onProfileUpdated,
   onClose,
+  onSwitchAccount,
+  onReturnToOperator,
 }: {
   profile: ProfileRow;
+  operatorAccountSwitcher: OperatorAccountSwitcher;
+  switchingAccountId: string | null;
+  accountSwitchError: string | null;
   onProfileUpdated: (profile: ProfileRow) => void;
   onClose: () => void;
+  onSwitchAccount: (targetUserId: string) => Promise<void>;
+  onReturnToOperator: () => Promise<void>;
 }) {
   const initialDraft = useMemo<BasicInfoDraft>(
     () => ({
@@ -4898,6 +5013,67 @@ function BasicInfoPanel({
           {saved && (
             <p className="mt-4 rounded-2xl bg-accent/10 px-4 py-3 text-xs font-semibold text-accent">
               기본정보가 저장됐어요.
+            </p>
+          )}
+
+          {operatorAccountSwitcher?.mode === "operator" && (
+            <section className="mt-4 border-t border-black/8 pt-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-black/35">
+                test account
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+                실제 사용자 세션으로 전환합니다.
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {operatorAccountSwitcher.accounts.map((account) => {
+                  const switching = switchingAccountId === account.userId;
+                  return (
+                    <button
+                      key={account.userId}
+                      type="button"
+                      disabled={Boolean(switchingAccountId)}
+                      onClick={() => void onSwitchAccount(account.userId)}
+                      className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-black/10 bg-white text-xs font-bold text-black/65 transition hover:border-black/25 hover:text-black disabled:cursor-wait disabled:opacity-45"
+                    >
+                      {switching && (
+                        <Loader2
+                          size={13}
+                          className="animate-spin"
+                          aria-hidden
+                        />
+                      )}
+                      {account.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {operatorAccountSwitcher?.mode === "test" && (
+            <section className="mt-4 border-t border-black/8 pt-4">
+              <button
+                type="button"
+                disabled={Boolean(switchingAccountId)}
+                onClick={() => void onReturnToOperator()}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-45"
+              >
+                {switchingAccountId === "operator-return" ? (
+                  <Loader2 size={14} className="animate-spin" aria-hidden />
+                ) : (
+                  <LogOut size={14} aria-hidden />
+                )}
+                로그아웃
+              </button>
+              <p className="mt-2 text-center text-[11px] font-semibold text-black/38">
+                원래 운영자 계정으로 돌아갑니다.
+              </p>
+            </section>
+          )}
+
+          {accountSwitchError && (
+            <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-semibold leading-5 text-red-600">
+              {accountSwitchError}
             </p>
           )}
         </>

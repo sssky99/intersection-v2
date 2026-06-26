@@ -55,7 +55,7 @@ export default function KakaoLoginButton({
       disabled={loading}
       style={{ backgroundColor: '#fee500' }}
       className={[
-        'flex h-14 w-full items-center justify-center rounded-full bg-[#fee500] px-5 text-[15px] font-bold text-black shadow-[0_12px_36px_rgba(0,0,0,0.18)] transition active:scale-[0.98] disabled:opacity-60',
+        'flex h-14 w-full items-center justify-center rounded-full bg-[#fee500] px-5 text-[16px] font-extrabold text-black shadow-[0_12px_36px_rgba(0,0,0,0.18)] transition active:scale-[0.98] disabled:opacity-60',
         className,
       ]
         .filter(Boolean)

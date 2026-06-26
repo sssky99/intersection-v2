@@ -95,6 +95,23 @@ export async function POST(request: Request) {
       instance = data as unknown as InstanceRow | null;
     }
 
+    if (instance?.id) {
+      const { data: assignment, error: assignmentError } = await supabase
+        .from("ticket_assignments")
+        .select("ticket_instance_id")
+        .eq("ticket_instance_id", instance.id)
+        .eq("profile_id", user.id)
+        .maybeSingle();
+      if (assignmentError) throw assignmentError;
+
+      if (!assignment) {
+        return NextResponse.json(
+          { error: "Arrival status is only available for assigned members." },
+          { status: 403 },
+        );
+      }
+    }
+
     const startAt = toStartAt(
       instance?.event_date ?? row.ticket_snapshot?.date,
       instance?.event_time ?? row.ticket_snapshot?.time,

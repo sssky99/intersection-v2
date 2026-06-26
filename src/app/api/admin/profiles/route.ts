@@ -363,12 +363,60 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
+    const operatorUpdate =
+      typeof body?.isTestParticipant === "boolean"
+        ? await supabase
+            .from("profiles")
+            .select("provider,is_test_participant")
+            .eq("user_id", userId)
+            .single<{
+              provider: string | null;
+              is_test_participant: boolean | null;
+            }>()
+        : null;
+    if (operatorUpdate?.error) throw operatorUpdate.error;
+
     const { error } = await supabase
       .from("profiles")
       .update(updates)
       .eq("user_id", userId);
 
     if (error) throw error;
+
+    if (operatorUpdate?.data) {
+      const { data: authUserData, error: authUserError } =
+        await supabase.auth.admin.getUserById(userId);
+      if (authUserError || !authUserData.user) {
+        await supabase
+          .from("profiles")
+          .update({
+            is_test_participant:
+              operatorUpdate.data.is_test_participant === true,
+          })
+          .eq("user_id", userId);
+        throw authUserError ?? new Error("auth-user-not-found");
+      }
+
+      const { error: metadataError } =
+        await supabase.auth.admin.updateUserById(userId, {
+          app_metadata: {
+            ...authUserData.user.app_metadata,
+            operator_profile:
+              body?.isTestParticipant === true &&
+              operatorUpdate.data.provider === "kakao",
+          },
+        });
+      if (metadataError) {
+        await supabase
+          .from("profiles")
+          .update({
+            is_test_participant:
+              operatorUpdate.data.is_test_participant === true,
+          })
+          .eq("user_id", userId);
+        throw metadataError;
+      }
+    }
 
     return NextResponse.json({
       profile: normalizeAdminProfile(

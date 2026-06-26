@@ -46,6 +46,8 @@ type WaitlistPatch = {
 type StatusFilter = WaitlistStatus | "all";
 type GenderFilter = "all" | "남성" | "여성" | "unknown";
 type MembershipFilter = MembershipStatus | "all";
+const allDatesValue = "all" as const;
+type DateFilter = typeof allDatesValue | string;
 
 type WaitlistGroup = {
   id: string;
@@ -277,16 +279,24 @@ function countStatuses(rows: AdminWaitlistRow[]) {
   return counts;
 }
 
-function groupWaitlistRows(rows: AdminWaitlistRow[]): WaitlistGroup[] {
+function groupWaitlistRows(
+  rows: AdminWaitlistRow[],
+  includeDateInGroup = false,
+): WaitlistGroup[] {
   const groups = new Map<string, WaitlistGroup>();
 
   rows.forEach((row) => {
-    const id = rowGroupId(row);
+    const date = rowDate(row);
+    const id = includeDateInGroup
+      ? `${date || "no-date"}:${rowGroupId(row)}`
+      : rowGroupId(row);
     const current =
       groups.get(id) ??
       ({
         id,
-        title: ticketTitle(row),
+        title: includeDateInGroup
+          ? `${date ? formatShortDateLabel(date) : "날짜 미선택"} · ${ticketTitle(row)}`
+          : ticketTitle(row),
         rows: [],
         total: 0,
         counts: countStatuses([]),
@@ -330,7 +340,7 @@ export function WaitlistAdminPanel() {
   const [templates, setTemplates] = useState<WaitlistTicketTemplate[]>([]);
   const [instances, setInstances] = useState<WaitlistTicketInstance[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState<DateFilter>(allDatesValue);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
   const [membershipFilter, setMembershipFilter] =
@@ -353,7 +363,11 @@ export function WaitlistAdminPanel() {
         nextRows.map((row) => [rowKey(row), row.admin_note ?? ""]),
       ),
     );
-    setSelectedDate((current) => current || waitlistDateOptions(nextRows)[0] || "");
+    setSelectedDate((current) => {
+      if (current === allDatesValue) return current;
+      const dates = waitlistDateOptions(nextRows);
+      return current && dates.includes(current) ? current : allDatesValue;
+    });
     setSelectedId((current) => {
       if (current && nextRows.some((row) => rowKey(row) === current)) {
         return current;
@@ -392,11 +406,13 @@ export function WaitlistAdminPanel() {
 
   const dateOptions = useMemo(() => waitlistDateOptions(rows), [rows]);
   const dateCounts = useMemo(() => waitlistDateCounts(rows), [rows]);
+  const showingAllDates = selectedDate === allDatesValue;
 
   const dateScopedRows = useMemo(() => {
+    if (showingAllDates) return rows;
     if (!selectedDate) return [];
     return rows.filter((row) => rowDate(row) === selectedDate);
-  }, [rows, selectedDate]);
+  }, [rows, selectedDate, showingAllDates]);
 
   const filteredRows = useMemo(
     () =>
@@ -416,7 +432,10 @@ export function WaitlistAdminPanel() {
     [dateScopedRows, genderFilter, membershipFilter, query, statusFilter],
   );
 
-  const groups = useMemo(() => groupWaitlistRows(filteredRows), [filteredRows]);
+  const groups = useMemo(
+    () => groupWaitlistRows(filteredRows, showingAllDates),
+    [filteredRows, showingAllDates],
+  );
   const selectedRow =
     rows.find((row) => rowKey(row) === selectedId) ?? null;
 
@@ -511,8 +530,10 @@ export function WaitlistAdminPanel() {
             <FilterField label="날짜 선택">
               <input
                 type="date"
-                value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                value={showingAllDates ? "" : selectedDate}
+                onChange={(event) =>
+                  setSelectedDate(event.target.value || allDatesValue)
+                }
                 className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
               />
             </FilterField>
@@ -599,6 +620,28 @@ export function WaitlistAdminPanel() {
         {dateOptions.length > 0 && (
           <div className="shrink-0 overflow-x-auto border-b border-black/10 px-5 py-3">
             <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedDate(allDatesValue)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition",
+                  showingAllDates
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-white text-black/55 hover:border-black/25 hover:text-black",
+                )}
+              >
+                전체 날짜
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px]",
+                    showingAllDates
+                      ? "bg-white/15 text-white"
+                      : "bg-black/5 text-black/45",
+                  )}
+                >
+                  {rows.length}
+                </span>
+              </button>
               {dateOptions.map((date) => (
                 <button
                   key={date}
@@ -635,9 +678,7 @@ export function WaitlistAdminPanel() {
             <StateMessage tone="error" message={error} />
           ) : rows.length === 0 ? (
             <StateMessage message="아직 대기열 등록 내역이 없습니다." />
-          ) : !selectedDate ? (
-            <StateMessage message="날짜를 선택해주세요." />
-          ) : dateScopedRows.length === 0 ? (
+          ) : !showingAllDates && dateScopedRows.length === 0 ? (
             <StateMessage message="이 날짜에 신청한 대기열이 없습니다." />
           ) : filteredRows.length === 0 ? (
             <StateMessage message="필터 조건에 맞는 신청자가 없습니다." />
@@ -646,10 +687,10 @@ export function WaitlistAdminPanel() {
               <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">
-                    selected date
+                    {showingAllDates ? "all dates" : "selected date"}
                   </p>
                   <h3 className="mt-1 text-xl font-black">
-                    {formatDateLabel(selectedDate)}
+                    {showingAllDates ? "전체 날짜" : formatDateLabel(selectedDate)}
                   </h3>
                 </div>
                 <p className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-black/50 ring-1 ring-black/10">

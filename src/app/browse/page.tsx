@@ -24,12 +24,14 @@ export default async function BrowsePage() {
     redirect("/");
   }
 
-  if (!profile.details_seen_at) {
-    redirect("/details");
+  const nextPath = nextOnboardingPath(profile);
+
+  if (!nextPath.startsWith("/meetings")) {
+    redirect(nextPath);
   }
 
   if (profile.browse_seen_at) {
-    redirect(nextOnboardingPath(profile));
+    redirect(nextPath);
   }
 
   const { data } = await supabase
