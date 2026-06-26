@@ -42,6 +42,10 @@ import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
 import {
+  CoachmarkLayer,
+  type CoachmarkStep,
+} from "@/features/app/CoachmarkLayer";
+import {
   MeetingProposalFlow,
   type ProposalMemberProfile,
 } from "@/features/meetings/MeetingProposalFlow";
@@ -174,6 +178,42 @@ const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "proposal", label: "제안", Icon: Plus },
   { id: "chat", label: "채팅", Icon: MessageCircle },
   { id: "profile", label: "프로필", Icon: UserRound },
+];
+
+type MeetingCoachmarkStepId =
+  | "date"
+  | "invitation"
+  | "decision";
+
+const meetingCoachmarkStorageVersion = 1;
+const meetingCoachmarkSteps: Array<
+  CoachmarkStep & { id: MeetingCoachmarkStepId }
+> = [
+  {
+    id: "date",
+    target: "recommend-date-picker",
+    eyebrow: "step 1",
+    title: "먼저 가능한 날짜를 골라보세요.",
+    body: "그날 어울리는 초대장을 준비해드릴게요.",
+    placement: "top",
+  },
+  {
+    id: "invitation",
+    target: "invitation-card",
+    eyebrow: "step 2",
+    title: "초대장을 눌러 자세히 볼 수 있어요.",
+    body: "분위기, 장소, 함께할 사람의 단서를 확인해보세요.",
+    placement: "top",
+  },
+  {
+    id: "decision",
+    target: "invitation-decision",
+    eyebrow: "step 3",
+    title: "마음에 들면 Yes를 눌러주세요.",
+    body: "아니라면 No로 다음 초대장을 받아볼 수 있어요.",
+    placement: "top",
+    activation: "scroll-end",
+  },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -468,6 +508,7 @@ export function AppHome({
   operatorAccountSwitcher?: OperatorAccountSwitcher;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
+  const appShellRef = useRef<HTMLElement | null>(null);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [waitlistedTicketCount, setWaitlistedTicketCount] = useState<
     number | null
@@ -516,6 +557,10 @@ export function AppHome({
   );
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
+  const [coachmarkReady, setCoachmarkReady] = useState(false);
+  const [coachmarkCompleted, setCoachmarkCompleted] = useState(false);
+  const [coachmarkStepIndex, setCoachmarkStepIndex] = useState(0);
+  const [coachmarkLayerActive, setCoachmarkLayerActive] = useState(false);
   const recommendTabTrackedRef = useRef(false);
   const currentMembership = useMemo(
     () => currentMembershipFromProfile(currentProfile),
@@ -588,6 +633,79 @@ export function AppHome({
   const proposalRestrictionMessage = canSubmitProposal
     ? null
     : meetingProposalRequirementMessage;
+  const canReplayCoachmarks = operatorAccountSwitcher?.mode === "operator";
+  const coachmarkStorageKey = useMemo(
+    () =>
+      `intersection:meetings-coachmark:v${meetingCoachmarkStorageVersion}:${userId}`,
+    [userId],
+  );
+  const activeCoachmarkStep = meetingCoachmarkSteps[coachmarkStepIndex] ?? null;
+  const coachmarkSuppressed =
+    profileCompletionOpen ||
+    profileRegenerationConfirmOpen ||
+    questionReviewOpen ||
+    membershipModalOpen ||
+    profilePanelOpen ||
+    proposalNoticeOpen ||
+    chatRoomOpen;
+  const visibleCoachmarkStep =
+    coachmarkReady &&
+    !coachmarkCompleted &&
+    !coachmarkSuppressed &&
+    activeCoachmarkStep &&
+    activeTab === "recommend"
+      ? activeCoachmarkStep
+      : null;
+
+  useEffect(() => {
+    if (!visibleCoachmarkStep) setCoachmarkLayerActive(false);
+  }, [visibleCoachmarkStep]);
+
+  const completeCoachmarkTour = useCallback(() => {
+    setCoachmarkCompleted(true);
+    try {
+      window.localStorage.setItem(coachmarkStorageKey, "1");
+    } catch {
+      // The tour should stay dismissible even when storage is unavailable.
+    }
+  }, [coachmarkStorageKey]);
+
+  const advanceCoachmark = useCallback(
+    (stepId: MeetingCoachmarkStepId) => {
+      if (coachmarkCompleted) return;
+
+      const step = meetingCoachmarkSteps[coachmarkStepIndex];
+      if (!step || step.id !== stepId) return;
+
+      if (coachmarkStepIndex >= meetingCoachmarkSteps.length - 1) {
+        completeCoachmarkTour();
+        return;
+      }
+
+      setCoachmarkStepIndex(coachmarkStepIndex + 1);
+    },
+    [coachmarkCompleted, coachmarkStepIndex, completeCoachmarkTour],
+  );
+
+  const replayCoachmarkTour = useCallback(() => {
+    setMembershipModalOpen(false);
+    setMembershipTicket(null);
+    setProposalNoticeOpen(false);
+    setProfilePanelOpen(false);
+    setQuestionReviewOpen(false);
+    setProfileCompletionOpen(false);
+    setProfileRegenerationConfirmOpen(false);
+    setActiveTab("recommend");
+    setTabUrl("recommend");
+    setCoachmarkReady(true);
+    setCoachmarkCompleted(false);
+    setCoachmarkStepIndex(0);
+    try {
+      window.localStorage.removeItem(coachmarkStorageKey);
+    } catch {
+      // Replaying should still work even when local storage is unavailable.
+    }
+  }, [coachmarkStorageKey]);
 
   const applyUserTicketsResponse = useCallback(
     (response: UserTicketsResponse, mode: "replace" | "append") => {
@@ -648,6 +766,18 @@ export function AppHome({
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    try {
+      setCoachmarkCompleted(
+        window.localStorage.getItem(coachmarkStorageKey) === "1",
+      );
+    } catch {
+      setCoachmarkCompleted(false);
+    }
+    setCoachmarkReady(true);
+    setCoachmarkStepIndex(0);
+  }, [coachmarkStorageKey]);
 
   useEffect(() => {
     trackLoginSuccessFromUrl("existing");
@@ -975,7 +1105,10 @@ export function AppHome({
   };
 
   return (
-    <section className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]">
+    <section
+      ref={appShellRef}
+      className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]"
+    >
       <MembershipFloatingButton
         onClick={() => {
           setProfilePanelOpen(false);
@@ -1150,7 +1283,9 @@ export function AppHome({
           chatRoomOpen
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
-          activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+          activeTab === "chat" || coachmarkLayerActive
+            ? "overflow-hidden"
+            : "overflow-y-auto",
         )}
       >
         <div
@@ -1202,6 +1337,7 @@ export function AppHome({
             onBlindDateOpenRequestHandled={() =>
               setBlindDateOpenRequestPending(false)
             }
+            onCoachmarkProgress={advanceCoachmark}
           />
         </div>
         <div
@@ -1243,6 +1379,8 @@ export function AppHome({
             onOpenQuestionReview={() => setQuestionReviewOpen(true)}
             onOpenProfileCompletionReplay={openProfileCompletionReplay}
             onRequestProfileRegeneration={openProfileRegenerationConfirm}
+            canReplayCoachmarks={canReplayCoachmarks}
+            onReplayCoachmarks={replayCoachmarkTour}
             onLogout={logout}
           />
         </div>
@@ -1350,6 +1488,12 @@ export function AppHome({
           </motion.div>
         )}
       </AnimatePresence>
+      <CoachmarkLayer
+        containerRef={appShellRef}
+        step={visibleCoachmarkStep}
+        onActiveChange={setCoachmarkLayerActive}
+        onDismiss={completeCoachmarkTour}
+      />
     </section>
   );
 }
@@ -4583,6 +4727,8 @@ function ProfileTab({
   onOpenQuestionReview,
   onOpenProfileCompletionReplay,
   onRequestProfileRegeneration,
+  canReplayCoachmarks,
+  onReplayCoachmarks,
   onLogout,
 }: {
   profile: ProfileRow;
@@ -4594,6 +4740,8 @@ function ProfileTab({
   onOpenQuestionReview: () => void;
   onOpenProfileCompletionReplay: () => void;
   onRequestProfileRegeneration: () => void;
+  canReplayCoachmarks: boolean;
+  onReplayCoachmarks: () => void;
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
@@ -4679,6 +4827,17 @@ function ProfileTab({
           >
             <Sparkles size={15} aria-hidden />
             프로필 완성 다시보기
+          </button>
+        )}
+
+        {canReplayCoachmarks && (
+          <button
+            type="button"
+            onClick={onReplayCoachmarks}
+            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-accent/35 bg-accent/[0.08] text-xs font-bold text-black/62 transition hover:border-accent/55 hover:bg-accent/[0.12] hover:text-black/75"
+          >
+            <Sparkles size={15} aria-hidden />
+            코치마크 다시보기
           </button>
         )}
 

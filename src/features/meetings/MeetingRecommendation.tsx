@@ -42,6 +42,7 @@ type Screen =
   | "blindDate"
   | "proposal";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
+export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -160,6 +161,7 @@ export function MeetingRecommendation({
   blindDateOpenRequestId = 0,
   blindDateOpenRequestPending = false,
   onBlindDateOpenRequestHandled,
+  onCoachmarkProgress,
 }: {
   userId: string;
   embedded?: boolean;
@@ -179,6 +181,7 @@ export function MeetingRecommendation({
   blindDateOpenRequestId?: number;
   blindDateOpenRequestPending?: boolean;
   onBlindDateOpenRequestHandled?: () => void;
+  onCoachmarkProgress?: (step: RecommendationCoachmarkStep) => void;
 }) {
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
@@ -343,6 +346,7 @@ export function MeetingRecommendation({
       setSelectedDate(dateWithTickets);
       setTicketIndex(0);
       setScreen("drawing");
+      onCoachmarkProgress?.("date");
     } catch {
       setError("초대장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
     } finally {
@@ -420,6 +424,7 @@ export function MeetingRecommendation({
     clearTicketCaches();
     onWaitlisted?.(ticket);
     setScreen("waitlisted");
+    onCoachmarkProgress?.("decision");
     setSaving(false);
   };
 
@@ -474,16 +479,18 @@ export function MeetingRecommendation({
               </p>
             </header>
 
-            <RecommendationCalendarSelector
-              dates={ticketDates}
-              loading={loadingDates || Boolean(loadingTicketDate)}
-              loadingText={
-                loadingTicketDate
-                  ? "선택한 날짜의 초대장을 불러오고 있어요."
-                  : undefined
-              }
-              onSelect={(date) => void selectDate(date)}
-            />
+            <div data-coachmark-target="recommend-date-picker">
+              <RecommendationCalendarSelector
+                dates={ticketDates}
+                loading={loadingDates || Boolean(loadingTicketDate)}
+                loadingText={
+                  loadingTicketDate
+                    ? "선택한 날짜의 초대장을 불러오고 있어요."
+                    : undefined
+                }
+                onSelect={(date) => void selectDate(date)}
+              />
+            </div>
 
             <button
               type="button"
@@ -541,6 +548,7 @@ export function MeetingRecommendation({
             error={error}
             onNo={rejectTicket}
             onYes={() => void joinWaitlist()}
+            onOpenInvitation={() => onCoachmarkProgress?.("invitation")}
             onCopyProposal={() => copyTicketAsProposal(ticket)}
             onChangeDate={() => {
               setSelectedDate(null);
@@ -683,6 +691,7 @@ function TicketDrawingCard({
   saving,
   error,
   onYes,
+  onOpenInvitation,
   onCopyProposal,
   onNo,
   onChangeDate,
@@ -691,6 +700,7 @@ function TicketDrawingCard({
   saving: boolean;
   error: string | null;
   onYes: () => void;
+  onOpenInvitation: () => void;
   onCopyProposal: () => void;
   onNo: () => void;
   onChangeDate: () => void;
@@ -713,7 +723,9 @@ function TicketDrawingCard({
   }, [ticket.id]);
 
   const openDetail = () => {
-    if (isDrawn && !saving) setDetailOpen(true);
+    if (!isDrawn || saving) return;
+    onOpenInvitation();
+    setDetailOpen(true);
   };
 
   return (
@@ -769,6 +781,7 @@ function TicketDrawingCard({
                   openDetail();
                 }
               }}
+              data-coachmark-target={isDrawn ? "invitation-card" : undefined}
               className={cn(
                 "mx-auto mt-6 block w-[88%] max-w-[330px] rounded-[28px] text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4",
                 isDrawn && !saving && "cursor-pointer active:scale-[0.99]",
@@ -933,6 +946,7 @@ function TicketInsideView({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12, duration: 0.2, ease: "easeOut" }}
+        data-coachmark-target="invitation-decision"
         className="mt-5 grid grid-cols-2 gap-2.5"
       >
         <motion.button
