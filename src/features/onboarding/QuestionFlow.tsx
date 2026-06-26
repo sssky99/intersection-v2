@@ -37,6 +37,18 @@ const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const TICKET_QUESTION_BASE_ORDER = 9;
 const QUESTION_TYPING_SPEED_MS = 18;
 const TICKET_COACHMARK_SESSION_KEY = "intersection-ticket-question-coachmark-dismissed";
+const TICKET_COACHMARK_HINT_SPEED_MS = 24;
+const TICKET_COACHMARK_INTRO_TEXT = "간단하게 취향을 먼저 알려주세요.";
+const TICKET_COACHMARK_CARD_HINT_TEXT = "카드 설명과 분위기를 보고";
+const TICKET_COACHMARK_RATING_HINT_TEXT =
+  "하단 번호로 선호도를 표시해주세요.";
+const TICKET_COACHMARK_CARD_HINT_DELAY_MS = 260;
+const TICKET_COACHMARK_RATING_HINT_DELAY_MS = 1250;
+const TICKET_COACHMARK_TAP_PROMPT_DELAY_MS =
+  TICKET_COACHMARK_RATING_HINT_DELAY_MS +
+  Array.from(TICKET_COACHMARK_RATING_HINT_TEXT).length *
+    TICKET_COACHMARK_HINT_SPEED_MS +
+  360;
 const ticketRatingReactions: Record<string, string[]> = {
   "1": ["👎", "👎"],
   "2": ["👎"],
@@ -218,18 +230,40 @@ function TicketRatingReaction({ rating }: { rating: string }) {
   return <EmojiBurst emojis={ticketRatingReactions[rating] ?? []} />;
 }
 
-function TicketCoachmarkOverlay({ onClose }: { onClose: () => void }) {
+function TicketCoachmarkOverlay({
+  onClose,
+  tapToDismissReady,
+}: {
+  onClose: () => void;
+  tapToDismissReady: boolean;
+}) {
   const shouldReduceMotion = Boolean(useReducedMotion());
+  const dismissOnSurface = () => {
+    if (tapToDismissReady) onClose();
+  };
 
   return (
     <>
       <motion.div
-        className="absolute inset-0 z-40 bg-black/[0.58] backdrop-blur-[1.5px]"
+        className={cn(
+          "absolute inset-0 z-40 bg-black/[0.58] backdrop-blur-[1.5px]",
+          tapToDismissReady ? "cursor-pointer" : "cursor-default",
+        )}
+        role={tapToDismissReady ? "button" : undefined}
+        tabIndex={tapToDismissReady ? 0 : undefined}
+        onClick={dismissOnSurface}
+        onKeyDown={(event) => {
+          if (!tapToDismissReady) return;
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClose();
+          }
+        }}
         initial={shouldReduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={shouldReduceMotion ? undefined : { opacity: 0 }}
         transition={{ duration: 0.24, ease: "easeOut" }}
-        aria-hidden
+        aria-hidden={!tapToDismissReady}
       />
       <motion.button
         type="button"
@@ -243,20 +277,33 @@ function TicketCoachmarkOverlay({ onClose }: { onClose: () => void }) {
       >
         <X size={18} strokeWidth={2.4} aria-hidden />
       </motion.button>
-      <motion.p
-        className="pointer-events-none absolute left-5 top-6 z-[70] text-left text-[32px] font-black uppercase leading-none tracking-[0.04em] text-white"
-        style={{
-          WebkitTextStroke: "1px rgba(0,0,0,0.48)",
-          textShadow:
-            "0 2px 0 rgba(0,0,0,0.28), 0 8px 22px rgba(0,0,0,0.42)",
-        }}
+      <motion.div
+        className="pointer-events-none absolute inset-x-5 top-[68px] z-[70] mx-auto max-w-[360px] rounded-[10px] bg-white px-4 py-3 text-center text-[18px] font-black leading-6 text-black shadow-[0_14px_34px_rgba(0,0,0,0.22)]"
         initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3 }}
         transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
       >
-        <TypingText text="HOW TO..." speedMs={32} startDelayMs={80} />
-      </motion.p>
+        <TypingText
+          text={TICKET_COACHMARK_INTRO_TEXT}
+          speedMs={TICKET_COACHMARK_HINT_SPEED_MS}
+          startDelayMs={80}
+          textClassName="whitespace-normal"
+        />
+      </motion.div>
+      <AnimatePresence>
+        {tapToDismissReady && (
+          <motion.p
+            className="pointer-events-none absolute inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-[70] text-center text-[12px] font-black text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.36)]"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            tap하여 시작하기
+          </motion.p>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -292,7 +339,7 @@ function TicketCoachmarkHint({
     >
       <TypingText
         text={text}
-        speedMs={24}
+        speedMs={TICKET_COACHMARK_HINT_SPEED_MS}
         startDelayMs={delayMs}
         textClassName="whitespace-nowrap"
       />
@@ -517,6 +564,8 @@ export function QuestionFlow({
   const [error, setError] = useState<string | null>(null);
   const [ticketCoachmarkReady, setTicketCoachmarkReady] = useState(isPreview);
   const [ticketCoachmarkDismissed, setTicketCoachmarkDismissed] = useState(false);
+  const [ticketCoachmarkTapDismissReady, setTicketCoachmarkTapDismissReady] =
+    useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
   const questionStartTrackedRef = useRef(false);
@@ -766,7 +815,26 @@ export function QuestionFlow({
     setTicketCoachmarkReady(true);
   }, [isPreview, isRegeneration]);
 
+  useEffect(() => {
+    if (!shouldShowTicketCoachmark) {
+      setTicketCoachmarkTapDismissReady(false);
+      return;
+    }
+
+    if (shouldReduceMotion) {
+      setTicketCoachmarkTapDismissReady(true);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setTicketCoachmarkTapDismissReady(true);
+    }, TICKET_COACHMARK_TAP_PROMPT_DELAY_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [shouldReduceMotion, shouldShowTicketCoachmark]);
+
   const dismissTicketCoachmark = () => {
+    setTicketCoachmarkTapDismissReady(false);
     setTicketCoachmarkDismissed(true);
     if (!isPreview && !isRegeneration) {
       window.sessionStorage.setItem(TICKET_COACHMARK_SESSION_KEY, "1");
@@ -1085,8 +1153,8 @@ export function QuestionFlow({
                 {shouldShowTicketCoachmark && (
                   <TicketCoachmarkHint
                     className="top-6"
-                    delayMs={260}
-                    text="카드 설명과 분위기를 보고"
+                    delayMs={TICKET_COACHMARK_CARD_HINT_DELAY_MS}
+                    text={TICKET_COACHMARK_CARD_HINT_TEXT}
                   />
                 )}
               </motion.div>
@@ -1108,9 +1176,9 @@ export function QuestionFlow({
                 {shouldShowTicketCoachmark && (
                   <TicketCoachmarkHint
                     className="top-[62px]"
-                    delayMs={1250}
+                    delayMs={TICKET_COACHMARK_RATING_HINT_DELAY_MS}
                     placement="rating"
-                    text="하단 번호로 선호도를 표시해주세요."
+                    text={TICKET_COACHMARK_RATING_HINT_TEXT}
                   />
                 )}
                 <div className="flex items-center justify-between px-2 pt-5">
@@ -1135,11 +1203,11 @@ export function QuestionFlow({
                           "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-55",
                           selected
                             ? "text-lg font-extrabold text-black after:absolute after:bottom-0 after:h-[2px] after:w-3 after:rounded-full after:bg-accent"
-                            : "text-black/40 hover:text-black/65",
+                            : "font-bold text-black",
                         )}
                       >
                         {edgeLabel && (
-                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-extrabold leading-none text-black/45">
+                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black leading-none text-black">
                             {edgeLabel}
                           </span>
                         )}
@@ -1212,6 +1280,7 @@ export function QuestionFlow({
         {shouldShowTicketCoachmark && (
           <TicketCoachmarkOverlay
             key="ticket-question-coachmark"
+            tapToDismissReady={ticketCoachmarkTapDismissReady}
             onClose={dismissTicketCoachmark}
           />
         )}
