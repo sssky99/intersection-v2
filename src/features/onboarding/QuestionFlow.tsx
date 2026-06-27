@@ -10,7 +10,11 @@ import {
   parseTicketRatingAnswer,
   ticketRatingOptions,
 } from "@/features/onboarding/ticketRating";
-import { trackEvent, trackLoginSuccessFromUrl } from "@/lib/analytics";
+import {
+  identifyAnalyticsUser,
+  trackEvent,
+  trackLoginSuccessFromUrl,
+} from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import type {
   ProfileQuestion,
@@ -619,6 +623,11 @@ export function QuestionFlow({
     if (isPreview || isRegeneration) return;
     trackLoginSuccessFromUrl("new");
   }, [isPreview, isRegeneration]);
+
+  useEffect(() => {
+    if (isPreview || !userId) return;
+    identifyAnalyticsUser(userId);
+  }, [isPreview, userId]);
 
   useEffect(() => {
     if (isPreview || isRegeneration || questionStartTrackedRef.current) return;

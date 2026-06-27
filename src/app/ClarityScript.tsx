@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
-import { CLARITY_PROJECT_ID } from "@/lib/analytics";
+import { CLARITY_PROJECT_ID, trackAnalyticsPageView } from "@/lib/analytics";
 
 function isLocalHostname(hostname: string) {
   return (
@@ -33,6 +33,11 @@ export function ClarityScript() {
         !isLocalHostname(window.location.hostname),
     );
   }, []);
+
+  useEffect(() => {
+    if (!canLoad || isAdminPath(pathname)) return;
+    trackAnalyticsPageView();
+  }, [canLoad, pathname]);
 
   if (!CLARITY_PROJECT_ID || !canLoad || isAdminPath(pathname)) {
     return null;

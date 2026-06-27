@@ -5,7 +5,7 @@ import { Camera, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
-import { trackEvent } from "@/lib/analytics";
+import { identifyAnalyticsUser, trackEvent } from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import { createClient } from "@/lib/supabase/client";
 import type { Gender } from "@/types/user";
@@ -129,6 +129,10 @@ export function BasicInfoForm({
     setDraft(initialValues);
     setVisibleStepCount(1);
   }, [initialValues]);
+
+  useEffect(() => {
+    identifyAnalyticsUser(userId);
+  }, [userId]);
 
   useEffect(() => {
     if (isRegeneration || startTrackedRef.current) return;

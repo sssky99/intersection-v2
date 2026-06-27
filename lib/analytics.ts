@@ -6,6 +6,7 @@ type AnalyticsParams = Record<
   string,
   AnalyticsParamValue | null | undefined
 >;
+type ClarityFn = ((...args: unknown[]) => void) & { q?: unknown[][] };
 
 const anonymousSessionStorageKey = "intersection_anonymous_session_id";
 
@@ -14,11 +15,27 @@ const supabaseEventNameAliases: Record<string, string> = {
   recommend_tab_view: "recommendation_view",
   profile_intro_complete: "profile_generated",
 };
+const clarityUpgradeEvents = new Set([
+  "questions_complete",
+  "basic_info_complete",
+  "profile_intro_complete",
+  "application_created",
+]);
+const clarityFunnelStatuses: Record<string, string> = {
+  question_start: "question_started",
+  questions_complete: "questions_completed",
+  basic_info_start: "basic_info_started",
+  basic_info_complete: "profile_completed",
+  profile_intro_complete: "profile_generated",
+  recommendation_view: "recommendation_viewed",
+  application_created: "application_created",
+};
 
 declare global {
   interface Window {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
+    clarity?: ClarityFn;
   }
 }
 
@@ -74,13 +91,74 @@ function isLocalHostname(hostname: string) {
   );
 }
 
-function shouldTrackSupabaseEvent() {
+function shouldTrackBrowserAnalytics() {
   return (
     process.env.NODE_ENV === "production" &&
     !isLocalHostname(window.location.hostname) &&
     window.location.pathname !== "/admin" &&
     !window.location.pathname.startsWith("/admin/")
   );
+}
+
+function shouldTrackSupabaseEvent() {
+  return shouldTrackBrowserAnalytics();
+}
+
+function ensureClarityQueue() {
+  if (typeof window.clarity === "function") return window.clarity;
+
+  window.clarity = ((...args: unknown[]) => {
+    const clarity = window.clarity;
+    if (!clarity) return;
+    clarity.q = clarity.q ?? [];
+    clarity.q.push(args);
+  }) as ClarityFn;
+
+  return window.clarity;
+}
+
+function callClarity(...args: unknown[]) {
+  if (!CLARITY_PROJECT_ID || !shouldTrackBrowserAnalytics()) return;
+
+  try {
+    ensureClarityQueue()(...args);
+  } catch {
+    // Clarity should never interrupt the user flow.
+  }
+}
+
+function currentPageId() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+function pageGroup(pathname: string) {
+  if (pathname === "/") return "landing";
+  if (pathname.startsWith("/onboarding/questions")) return "onboarding_questions";
+  if (pathname.startsWith("/onboarding/profile")) return "onboarding_profile";
+  if (pathname.startsWith("/meetings")) return "meetings";
+  if (pathname.startsWith("/profile")) return "profile";
+  if (pathname.startsWith("/browse")) return "browse";
+  return "other";
+}
+
+function trackClarityEvent(
+  eventName: string,
+  payload: Record<string, AnalyticsParamValue>,
+) {
+  callClarity("event", eventName);
+  callClarity("set", "last_event", eventName);
+  callClarity("set", "last_event_path", currentPageId());
+  callClarity("set", "page_group", pageGroup(window.location.pathname));
+
+  const status = clarityFunnelStatuses[eventName];
+  if (status) callClarity("set", "funnel_status", status);
+
+  const mode = payload.mode;
+  if (typeof mode === "string") callClarity("set", "event_mode", mode);
+
+  if (clarityUpgradeEvents.has(eventName)) {
+    callClarity("upgrade", eventName);
+  }
 }
 
 function trackSupabaseEvent(
@@ -128,6 +206,7 @@ export function trackEvent(
 
   const payload = cleanParams(params);
   window.dataLayer = window.dataLayer ?? [];
+  trackClarityEvent(eventName, payload);
   trackSupabaseEvent(eventName, payload);
 
   if (typeof window.gtag === "function") {
@@ -136,6 +215,19 @@ export function trackEvent(
   }
 
   window.dataLayer.push(["event", eventName, payload]);
+}
+
+export function identifyAnalyticsUser(userId: string) {
+  if (typeof window === "undefined" || !userId) return;
+
+  callClarity("identify", userId, anonymousSessionId(), currentPageId());
+}
+
+export function trackAnalyticsPageView() {
+  if (typeof window === "undefined") return;
+
+  callClarity("set", "current_path", currentPageId());
+  callClarity("set", "page_group", pageGroup(window.location.pathname));
 }
 
 export function trackLoginSuccessFromUrl(defaultLoginType?: string) {

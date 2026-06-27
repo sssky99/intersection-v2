@@ -72,7 +72,11 @@ import {
   displayMembershipStatus,
   isMembershipPlan,
 } from "@/features/membership/membershipTypes";
-import { trackEvent, trackLoginSuccessFromUrl } from "@/lib/analytics";
+import {
+  identifyAnalyticsUser,
+  trackEvent,
+  trackLoginSuccessFromUrl,
+} from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import {
@@ -782,6 +786,10 @@ export function AppHome({
   useEffect(() => {
     trackLoginSuccessFromUrl("existing");
   }, []);
+
+  useEffect(() => {
+    identifyAnalyticsUser(userId);
+  }, [userId]);
 
   useEffect(() => {
     if (activeTab !== "recommend" || recommendTabTrackedRef.current) return;
