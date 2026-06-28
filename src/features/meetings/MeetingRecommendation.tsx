@@ -355,6 +355,8 @@ export function MeetingRecommendation({
   };
 
   const rejectTicket = () => {
+    onCoachmarkProgress?.("decision");
+
     if (!selectedDate) return;
     const nextIndex = ticketIndex + 1;
     if (nextIndex >= selectedDate.tickets.length) {
