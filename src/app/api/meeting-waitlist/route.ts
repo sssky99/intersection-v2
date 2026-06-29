@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { displayMembershipStatus } from "@/features/membership/membershipTypes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { isPastTicketDate } from "@/lib/ticketDate";
 import type { GatheringTicket } from "@/types/ticket";
 
 type WaitlistRequest = {
@@ -48,6 +49,13 @@ export async function POST(request: Request) {
     );
   }
 
+  if (isPastTicketDate(ticket.date)) {
+    return NextResponse.json(
+      { error: "This invitation has ended.", code: "ticket_ended" },
+      { status: 410 },
+    );
+  }
+
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("membership_status,membership_end_date,is_test_participant")
@@ -64,14 +72,25 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: instance, error: instanceError } = await admin
     .from("ticket_instances")
-    .select("id,visibility")
+    .select("id,visibility,event_date")
     .eq("id", ticket.id)
-    .maybeSingle<{ id: string; visibility: string | null }>();
+    .maybeSingle<{
+      id: string;
+      visibility: string | null;
+      event_date: string | null;
+    }>();
 
   if (instanceError) {
     return NextResponse.json(
       { error: "Ticket visibility is not available." },
       { status: 400 },
+    );
+  }
+
+  if (instance?.event_date && isPastTicketDate(instance.event_date)) {
+    return NextResponse.json(
+      { error: "This invitation has ended.", code: "ticket_ended" },
+      { status: 410 },
     );
   }
 

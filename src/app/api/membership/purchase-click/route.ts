@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isMembershipPlan } from "@/features/membership/membershipTypes";
+import { isPastTicketDate } from "@/lib/ticketDate";
 import type { GatheringTicket } from "@/types/ticket";
 
 type PurchaseRequest = {
@@ -58,6 +59,41 @@ export async function POST(request: Request) {
     );
   }
 
+  if (body?.ticket && isPastTicketDate(body.ticket.date)) {
+    return NextResponse.json(
+      { error: "This invitation has ended.", code: "ticket_ended" },
+      { status: 410 },
+    );
+  }
+
+  const admin = body?.ticket ? createAdminClient() : null;
+  let ticketInstance: TicketInstanceRow | null = null;
+
+  if (body?.ticket && admin) {
+    const { data: instance, error: instanceError } = await admin
+      .from("ticket_instances")
+      .select("id,template_id,event_date")
+      .eq("id", body.ticket.id)
+      .maybeSingle<TicketInstanceRow>();
+
+    if (instanceError || !instance?.event_date) {
+      console.error("Membership ticket lookup failed:", instanceError?.message);
+      return NextResponse.json(
+        { error: "Ticket information is not available." },
+        { status: 400 },
+      );
+    }
+
+    if (isPastTicketDate(instance.event_date)) {
+      return NextResponse.json(
+        { error: "This invitation has ended.", code: "ticket_ended" },
+        { status: 410 },
+      );
+    }
+
+    ticketInstance = instance;
+  }
+
   const now = new Date().toISOString();
   const { error } = await supabase
     .from("profiles")
@@ -77,22 +113,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (body.ticket) {
-    const admin = createAdminClient();
-    const { data: instance, error: instanceError } = await admin
-      .from("ticket_instances")
-      .select("id,template_id,event_date")
-      .eq("id", body.ticket.id)
-      .maybeSingle<TicketInstanceRow>();
-
-    if (instanceError || !instance?.event_date) {
-      console.error("Membership ticket lookup failed:", instanceError?.message);
-      return NextResponse.json(
-        { error: "Ticket information is not available." },
-        { status: 400 },
-      );
-    }
-
+  if (body.ticket && admin && ticketInstance) {
+    const instance = ticketInstance;
     const { data: existingWaitlist, error: existingWaitlistError } = await admin
       .from("meeting_waitlist")
       .select("id,status")

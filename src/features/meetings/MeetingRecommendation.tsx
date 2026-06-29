@@ -32,6 +32,7 @@ import {
 import { trackEvent } from "@/lib/analytics";
 import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
+import { isPastTicketDate } from "@/lib/ticketDate";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
@@ -204,6 +205,7 @@ export function MeetingRecommendation({
     useState<GatheringTicket | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
+  const ticketEnded = ticket ? isPastTicketDate(ticket.date) : false;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -384,6 +386,11 @@ export function MeetingRecommendation({
   const joinWaitlist = async () => {
     if (!ticket || saving) return;
 
+    if (isPastTicketDate(ticket.date)) {
+      setError("이미 끝이 난 초대장입니다.");
+      return;
+    }
+
     trackEvent("application_submit_click", applicationEventPayload(ticket));
 
     if (membershipStatus !== "active" && membershipStatus !== "pending") {
@@ -557,6 +564,7 @@ export function MeetingRecommendation({
           <TicketDrawingCard
             key={ticket.id}
             ticket={ticket}
+            ended={ticketEnded}
             saving={saving}
             error={error}
             onNo={rejectTicket}
@@ -701,6 +709,7 @@ export function MeetingRecommendation({
 
 function TicketDrawingCard({
   ticket,
+  ended,
   saving,
   error,
   onYes,
@@ -710,6 +719,7 @@ function TicketDrawingCard({
   onChangeDate,
 }: {
   ticket: GatheringTicket;
+  ended: boolean;
   saving: boolean;
   error: string | null;
   onYes: () => void;
@@ -753,6 +763,7 @@ function TicketDrawingCard({
           <TicketInsideView
             key="ticket-inside"
             ticket={ticket}
+            ended={ended}
             saving={saving}
             error={error}
             onClose={() => setDetailOpen(false)}
@@ -880,8 +891,21 @@ function TicketDrawingCard({
   );
 }
 
+function EndedInvitationNoticeButton() {
+  return (
+    <button
+      type="button"
+      disabled
+      className="flex h-[58px] w-full items-center justify-center rounded-[16px] bg-black/[0.06] text-sm font-bold text-black/45"
+    >
+      이미 끝이 난 초대장입니다.
+    </button>
+  );
+}
+
 function TicketInsideView({
   ticket,
+  ended,
   saving,
   error,
   onClose,
@@ -891,6 +915,7 @@ function TicketInsideView({
   onChangeDate,
 }: {
   ticket: GatheringTicket;
+  ended: boolean;
   saving: boolean;
   error: string | null;
   onClose: () => void;
@@ -960,32 +985,43 @@ function TicketInsideView({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12, duration: 0.2, ease: "easeOut" }}
         data-coachmark-target="invitation-decision"
-        className="mt-5 grid grid-cols-2 gap-2.5"
+        className={cn(
+          "mt-5",
+          ended
+            ? "rounded-[18px] bg-black/[0.045] px-4 py-4 text-center"
+            : "grid grid-cols-2 gap-2.5",
+        )}
       >
-        <motion.button
-          whileTap={!saving ? { scale: 0.98 } : undefined}
-          type="button"
-          disabled={saving}
-          onClick={onNo}
-          className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
-        >
-          <span className="text-sm font-bold">No</span>
-          <span className="mt-0.5 text-[10px] font-medium text-black/40">
-            다른 추천 보기
-          </span>
-        </motion.button>
-        <motion.button
-          whileTap={!saving ? { scale: 0.98 } : undefined}
-          type="button"
-          disabled={saving}
-          onClick={onYes}
-          className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
-        >
-          <span className="text-sm font-bold">Yes</span>
-          <span className="mt-0.5 text-[10px] font-medium text-white/60">
-            {saving ? "등록 중..." : "신청하기"}
-          </span>
-        </motion.button>
+        {ended ? (
+          <EndedInvitationNoticeButton />
+        ) : (
+          <>
+            <motion.button
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              type="button"
+              disabled={saving}
+              onClick={onNo}
+              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+            >
+              <span className="text-sm font-bold">No</span>
+              <span className="mt-0.5 text-[10px] font-medium text-black/40">
+                다른 추천 보기
+              </span>
+            </motion.button>
+            <motion.button
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              type="button"
+              disabled={saving}
+              onClick={onYes}
+              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
+            >
+              <span className="text-sm font-bold">Yes</span>
+              <span className="mt-0.5 text-[10px] font-medium text-white/60">
+                {saving ? "등록 중..." : "신청하기"}
+              </span>
+            </motion.button>
+          </>
+        )}
       </motion.div>
       <button
         type="button"
