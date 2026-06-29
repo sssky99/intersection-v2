@@ -163,22 +163,37 @@ export function MembershipModal({
     [selectedPlanId],
   );
 
+  const purchaseEventPayload = () => ({
+    plan: selectedPlan.id,
+    months: selectedPlan.months,
+    application_id: pendingTicket?.id,
+    ticket_id: pendingTicket?.id,
+    template_id: pendingTicket?.templateId,
+    proposal_id: pendingTicket?.proposalId,
+  });
+
   const openPurchaseNotice = () => {
     if (purchaseSaving) return;
 
     setPurchaseError(null);
+    trackEvent("membership_purchase_notice_open", purchaseEventPayload());
     setNoticeOpen(true);
   };
 
   const closePurchaseNotice = () => {
     if (purchaseSaving) return;
 
+    trackEvent("membership_purchase_notice_close", purchaseEventPayload());
     setNoticeOpen(false);
   };
 
   const closeMembershipModal = () => {
     if (purchaseSaving) return;
 
+    trackEvent("membership_required_close", {
+      ...purchaseEventPayload(),
+      notice_open: noticeOpen,
+    });
     setNoticeOpen(false);
     onClose();
   };
@@ -210,8 +225,7 @@ export function MembershipModal({
       }
 
       trackEvent("membership_purchase_click", {
-        plan: selectedPlan.id,
-        months: selectedPlan.months,
+        ...purchaseEventPayload(),
       });
       if (pendingTicket) {
         rememberPendingTicketPayment(userId, pendingTicket);

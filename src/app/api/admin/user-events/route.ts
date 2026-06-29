@@ -19,7 +19,21 @@ const funnelEvents = [
   "ticket_detail_view",
   "application_submit_click",
   "application_created",
+  "membership_required_shown",
+  "membership_required_close",
+  "membership_purchase_notice_open",
+  "membership_purchase_notice_close",
+  "membership_purchase_click",
 ] as const;
+
+const conversionBaseEvents: Record<string, string> = {
+  application_created: "application_submit_click",
+  membership_required_shown: "application_submit_click",
+  membership_required_close: "membership_required_shown",
+  membership_purchase_notice_open: "membership_required_shown",
+  membership_purchase_notice_close: "membership_purchase_notice_open",
+  membership_purchase_click: "membership_purchase_notice_open",
+};
 
 type RangeKey = "today" | "7d" | "30d";
 type UserEventRow = {
@@ -383,14 +397,22 @@ export async function GET(request: NextRequest) {
     if (summaryError) throw summaryError;
     const lookup = await identityLookup([...(logData ?? []), ...(summaryData ?? [])]);
 
+    const countByEventName = new Map<string, number>(
+      countResults.map((item) => [item.eventName, item.count]),
+    );
     const funnel = countResults.map((item, index) => {
-      const previousCount = index > 0 ? countResults[index - 1].count : null;
+      const baseEventName =
+        conversionBaseEvents[item.eventName] ??
+        (index > 0 ? countResults[index - 1].eventName : null);
+      const baseCount =
+        baseEventName == null ? null : countByEventName.get(baseEventName) ?? 0;
       return {
         event_name: item.eventName,
         count: item.count,
+        conversion_base_event_name: baseEventName,
         conversion_rate:
-          previousCount && previousCount > 0
-            ? Math.round((item.count / previousCount) * 1000) / 10
+          baseCount && baseCount > 0
+            ? Math.round((item.count / baseCount) * 1000) / 10
             : null,
       };
     });
@@ -415,6 +437,7 @@ export async function GET(request: NextRequest) {
         funnel: funnelEvents.map((eventName) => ({
           event_name: eventName,
           count: 0,
+          conversion_base_event_name: conversionBaseEvents[eventName] ?? null,
           conversion_rate: null,
         })),
         logs: [],

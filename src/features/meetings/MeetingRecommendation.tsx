@@ -373,22 +373,31 @@ export function MeetingRecommendation({
     setScreen("drawing");
   };
 
+  const applicationEventPayload = (targetTicket: GatheringTicket) => ({
+    application_id: targetTicket.id,
+    ticket_id: targetTicket.id,
+    template_id: targetTicket.templateId,
+    proposal_id: targetTicket.proposalId,
+    membership_status: membershipStatus,
+  });
+
   const joinWaitlist = async () => {
     if (!ticket || saving) return;
 
+    trackEvent("application_submit_click", applicationEventPayload(ticket));
+
     if (membershipStatus !== "active" && membershipStatus !== "pending") {
       setError(null);
+      trackEvent("membership_required_shown", {
+        ...applicationEventPayload(ticket),
+        source: "client_membership_check",
+      });
       onMembershipRequired?.(ticket);
       return;
     }
 
     setSaving(true);
     setError(null);
-    trackEvent("application_submit_click", {
-      application_id: ticket.id,
-      ticket_id: ticket.id,
-      template_id: ticket.templateId,
-    });
 
     const response = await fetch("/api/meeting-waitlist", {
       method: "POST",
@@ -403,6 +412,10 @@ export function MeetingRecommendation({
     } | null;
 
     if (response.status === 402 || data?.code === "membership_required") {
+      trackEvent("membership_required_shown", {
+        ...applicationEventPayload(ticket),
+        source: "waitlist_response",
+      });
       onMembershipRequired?.(ticket);
       setSaving(false);
       return;
@@ -417,9 +430,7 @@ export function MeetingRecommendation({
     setWaitlistedTicket(ticket);
     setWaitlistStatus(data?.status ?? "waitlisted");
     trackEvent("application_created", {
-      application_id: ticket.id,
-      ticket_id: ticket.id,
-      template_id: ticket.templateId,
+      ...applicationEventPayload(ticket),
       status: data?.status ?? "waitlisted",
       duplicate: Boolean(data?.duplicate),
     });

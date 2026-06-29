@@ -571,6 +571,8 @@ export function QuestionFlow({
   const [ticketCoachmarkTapDismissReady, setTicketCoachmarkTapDismissReady] =
     useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const savingRef = useRef(false);
+  const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
   const questionStartTrackedRef = useRef(false);
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -723,6 +725,19 @@ export function QuestionFlow({
     [nextAnswer.questionId]: nextAnswer,
   });
 
+  const beginSaving = () => {
+    if (savingRef.current) return false;
+
+    savingRef.current = true;
+    setSaving(true);
+    return true;
+  };
+
+  const endSaving = () => {
+    savingRef.current = false;
+    setSaving(false);
+  };
+
   const completeOrMoveNext = async (nextAnswers: AnswerMap) => {
     const missingIndex = questions.findIndex(
       (item) => !isComplete(item, nextAnswers[item.id]),
@@ -733,7 +748,13 @@ export function QuestionFlow({
       return;
     }
 
-    if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
+    if (completionSubmittedRef.current) return;
+    completionSubmittedRef.current = true;
+
+    if (!userId) {
+      completionSubmittedRef.current = false;
+      throw new Error("QuestionFlow requires userId in onboarding mode.");
+    }
 
     const { error: profileError } = await createClient()
       .from("profiles")
@@ -747,7 +768,10 @@ export function QuestionFlow({
       )
       .eq("user_id", userId);
 
-    if (profileError) throw new Error(profileError.message);
+    if (profileError) {
+      completionSubmittedRef.current = false;
+      throw new Error(profileError.message);
+    }
 
     if (!isRegeneration) {
       trackEvent("questions_complete", {
@@ -797,7 +821,7 @@ export function QuestionFlow({
     autoAdvanceTimerRef.current = window.setTimeout(() => {
       autoAdvanceTimerRef.current = null;
       void moveToNext(nextAnswers).finally(() => {
-        setSaving(false);
+        if (!completionSubmittedRef.current) endSaving();
         setSelectedFeedback(null);
       });
     }, delayMs);
@@ -851,14 +875,13 @@ export function QuestionFlow({
   };
 
   const selectSingle = async (value: string) => {
-    if (saving) return;
+    if (!beginSaving()) return;
 
     const nextAnswer = { questionId: question.id, value };
     const nextAnswers = answerMapWith(nextAnswer);
     const nextDelay = 420;
 
     updateLocalAnswer(nextAnswer);
-    setSaving(true);
     setError(null);
 
     if (isPreview) {
@@ -874,7 +897,7 @@ export function QuestionFlow({
     } catch (saveError) {
       console.error("Failed to save onboarding answer:", saveError);
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-      setSaving(false);
+      endSaving();
       setSelectedFeedback(null);
     }
   };
@@ -924,10 +947,9 @@ export function QuestionFlow({
   };
 
   const continueQuestion = async () => {
-    if (!answer || !canContinue || saving) return;
+    if (!answer || !canContinue || !beginSaving()) return;
 
     const nextAnswers = answerMapWith(answer);
-    setSaving(true);
     setError(null);
     try {
       await saveAnswer(question, answer);
@@ -938,12 +960,14 @@ export function QuestionFlow({
       console.error("Failed to save onboarding answer:", saveError);
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     } finally {
-      setSaving(false);
+      if (!completionSubmittedRef.current) endSaving();
     }
   };
 
   const selectTicketRating = async (rating: string) => {
-    if (question.type !== "ticket_rating" || !question.ticket || saving) return;
+    if (question.type !== "ticket_rating" || !question.ticket || !beginSaving()) {
+      return;
+    }
 
     const nextAnswer: QuestionAnswer = {
       questionId: question.id,
@@ -956,7 +980,6 @@ export function QuestionFlow({
     };
     const nextAnswers = answerMapWith(nextAnswer);
     updateLocalAnswer(nextAnswer);
-    setSaving(true);
     setSelectedFeedback(rating);
     setError(null);
 
@@ -973,7 +996,7 @@ export function QuestionFlow({
     } catch (saveError) {
       console.error("Failed to save ticket rating:", saveError);
       setError("티켓 반응을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
-      setSaving(false);
+      endSaving();
       setSelectedFeedback(null);
     }
   };

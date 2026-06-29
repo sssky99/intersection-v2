@@ -15,6 +15,7 @@ import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import { profileQuestions } from "@/data/profileQuestions";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
+import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
@@ -45,7 +46,8 @@ type AdminTab =
   | "waitlist"
   | "rooms"
   | "feedback"
-  | "blindDates";
+  | "blindDates"
+  | "funnel";
 
 type ViewMode = "list" | "cards" | "dropoffs";
 type MembershipFilter = "all" | "active" | "inactive";
@@ -69,6 +71,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
   { id: "blindDates", label: "블라인드 데이트 관리" },
+  { id: "funnel", label: "퍼널 관리" },
 ];
 
 const dateFormatter = new Intl.DateTimeFormat("sv-SE", {
@@ -745,6 +748,11 @@ export function AdminPageClient({
           {visitedTabs.blindDates && (
             <div className={cn(activeTab === "blindDates" ? "block" : "hidden")}>
               <BlindDateAdminPanel />
+            </div>
+          )}
+          {visitedTabs.funnel && (
+            <div className={cn(activeTab === "funnel" ? "block" : "hidden")}>
+              <FunnelAdminPanel />
             </div>
           )}
         </section>

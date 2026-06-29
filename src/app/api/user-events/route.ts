@@ -32,6 +32,10 @@ const allowedEventNames = new Set([
   "ticket_detail_view",
   "application_submit_click",
   "application_created",
+  "membership_required_shown",
+  "membership_required_close",
+  "membership_purchase_notice_open",
+  "membership_purchase_notice_close",
   "membership_purchase_click",
 ]);
 

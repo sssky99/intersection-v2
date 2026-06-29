@@ -8,6 +8,7 @@ type VisitorRange = "today" | "7d" | "30d";
 type FunnelMetric = {
   event_name: string;
   count: number;
+  conversion_base_event_name?: string | null;
   conversion_rate: number | null;
 };
 
@@ -71,6 +72,11 @@ const eventLabels: Record<string, string> = {
   ticket_detail_view: "티켓 상세 보기",
   application_submit_click: "신청 클릭",
   application_created: "신청 생성",
+  membership_required_shown: "멤버십 필요 표시",
+  membership_required_close: "멤버십 모달 닫기",
+  membership_purchase_notice_open: "결제 안내 열기",
+  membership_purchase_notice_close: "결제 안내 닫기",
+  membership_purchase_click: "결제창 이동",
 };
 
 const dateFormatter = new Intl.DateTimeFormat("sv-SE", {
@@ -282,8 +288,12 @@ export function VisitorAdminPanel() {
                 </p>
                 <p className="mt-1 text-[11px] font-semibold text-black/45">
                   {metric.conversion_rate === null
-                    ? "이전 단계 없음"
-                    : `이전 단계 대비 ${metric.conversion_rate.toLocaleString()}%`}
+                    ? metric.conversion_base_event_name
+                      ? `${eventLabel(metric.conversion_base_event_name)} 기준 없음`
+                      : "기준 단계 없음"
+                    : `${eventLabel(
+                        metric.conversion_base_event_name ?? "",
+                      )} 대비 ${metric.conversion_rate.toLocaleString()}%`}
                 </p>
               </article>
             ))}

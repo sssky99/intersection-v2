@@ -2,25 +2,38 @@
 
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import KakaoLoginButton from '@/components/KakaoLoginButton';
 import { trackEvent } from '@/lib/analytics';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPageClient() {
   const router = useRouter();
+  const [authChecking, setAuthChecking] = useState(true);
 
   useEffect(() => {
-    trackEvent('landing_view');
-
     let mounted = true;
     const supabase = createClient();
 
-    supabase.auth.getUser().then(({ data }) => {
-      if (mounted && data.user) {
-        router.replace('/meetings?tab=recommend');
-      }
-    });
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        if (!mounted) return;
+
+        if (data.user) {
+          router.replace('/meetings?tab=recommend');
+          return;
+        }
+
+        trackEvent('landing_view');
+        setAuthChecking(false);
+      })
+      .catch(() => {
+        if (!mounted) return;
+
+        trackEvent('landing_view');
+        setAuthChecking(false);
+      });
 
     return () => {
       mounted = false;
@@ -64,7 +77,14 @@ export default function LoginPageClient() {
           </div>
 
           <div className="relative z-10">
-            <KakaoLoginButton />
+            {authChecking ? (
+              <div
+                aria-hidden="true"
+                className="h-14 w-full animate-pulse rounded-full bg-white/15"
+              />
+            ) : (
+              <KakaoLoginButton />
+            )}
           </div>
         </section>
       </main>
