@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type VisitorRange = "today" | "7d" | "30d";
@@ -42,6 +42,7 @@ type VisitorEventsResponse = {
   funnel: FunnelMetric[];
   logs: VisitorEventLog[];
   userSummaries: VisitorUserSummary[];
+  timeline?: VisitorEventLog[];
   tableMissing?: boolean;
   error?: string;
 };
@@ -59,6 +60,9 @@ const eventLabels: Record<string, string> = {
   login_success: "로그인 성공",
   question_start: "질문 시작",
   question_answered: "질문 응답",
+  ticket_test_complete: "티켓 취향 완료",
+  choice_questions_complete: "선택 질문 완료",
+  text_questions_complete: "서술 질문 완료",
   questions_complete: "질문 완료",
   basic_info_start: "기본정보 시작",
   basic_info_complete: "기본정보 완료",
@@ -123,6 +127,11 @@ export function VisitorAdminPanel() {
   const [data, setData] = useState<VisitorEventsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedSummary, setSelectedSummary] =
+    useState<VisitorUserSummary | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<VisitorEventLog[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     setLoading(true);
@@ -152,6 +161,50 @@ export function VisitorAdminPanel() {
     void loadEvents();
   }, [loadEvents]);
 
+  const loadTimeline = useCallback(async (summary: VisitorUserSummary) => {
+    setSelectedSummary(summary);
+    setTimelineEvents([]);
+    setTimelineError(null);
+
+    const params = new URLSearchParams({ range: "7d" });
+    if (summary.profile_id) params.set("profileId", summary.profile_id);
+    if (summary.anonymous_session_id) {
+      params.set("anonymousSessionId", summary.anonymous_session_id);
+    }
+
+    if (!summary.profile_id && !summary.anonymous_session_id) {
+      setTimelineError("이 사용자를 조회할 식별자가 없습니다.");
+      return;
+    }
+
+    setTimelineLoading(true);
+    try {
+      const response = await fetch(`/api/admin/user-events?${params.toString()}`, {
+        cache: "no-store",
+      });
+      const nextData = (await response.json().catch(() => null)) as
+        | VisitorEventsResponse
+        | null;
+
+      if (!response.ok || !nextData) {
+        throw new Error(nextData?.error ?? "visitor-timeline-load-failed");
+      }
+
+      setTimelineEvents(nextData.timeline ?? []);
+    } catch {
+      setTimelineError("사용자 이벤트 타임라인을 불러오지 못했습니다.");
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, []);
+
+  const clearTimeline = () => {
+    setSelectedSummary(null);
+    setTimelineEvents([]);
+    setTimelineError(null);
+    setTimelineLoading(false);
+  };
+
   const totals = useMemo(() => {
     const eventTotal = data?.logs.length ?? 0;
     const userTotal = data?.userSummaries.length ?? 0;
@@ -165,7 +218,7 @@ export function VisitorAdminPanel() {
           <div>
             <h2 className="text-lg font-bold">방문자 관리</h2>
             <p className="mt-1 text-xs text-black/45">
-              Supabase user_events 기준 · 최근 로그 {totals.eventTotal.toLocaleString()}건 · 진행 요약{" "}
+              Supabase user_events 기준 · 표시 로그 {totals.eventTotal.toLocaleString()}건 · 진행 요약{" "}
               {totals.userTotal.toLocaleString()}명
             </p>
             {data?.tableMissing && (
@@ -254,7 +307,23 @@ export function VisitorAdminPanel() {
               </thead>
               <tbody>
                 {(data?.userSummaries ?? []).map((summary) => (
-                  <tr key={summary.user_key} className="border-b border-black/5">
+                  <tr
+                    key={summary.user_key}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void loadTimeline(summary)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        void loadTimeline(summary);
+                      }
+                    }}
+                    className={cn(
+                      "cursor-pointer border-b border-black/5 outline-none transition hover:bg-black/[0.025] focus:bg-accent/[0.08]",
+                      selectedSummary?.user_key === summary.user_key &&
+                        "bg-accent/[0.08]",
+                    )}
+                  >
                     <td className={identifierClassName(Boolean(summary.applicant_name))}>
                       {textOrDash(summary.display_identifier)}
                     </td>
@@ -278,6 +347,93 @@ export function VisitorAdminPanel() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white">
+          <div className="flex items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
+            <div>
+              <h3 className="text-sm font-bold">사용자 이벤트 타임라인</h3>
+              <p className="mt-1 text-[11px] font-semibold text-black/40">
+                사용자별 진행 상태에서 행을 클릭하면 최근 7일 이벤트를 처음부터 불러옵니다.
+              </p>
+            </div>
+            {selectedSummary && (
+              <button
+                type="button"
+                onClick={clearTimeline}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 text-black/45 transition hover:border-black/20 hover:text-black"
+                aria-label="타임라인 닫기"
+              >
+                <X size={15} aria-hidden />
+              </button>
+            )}
+          </div>
+
+          {!selectedSummary ? (
+            <p className="px-4 py-8 text-center text-sm font-semibold text-black/38">
+              위의 사용자 행을 클릭해 주세요.
+            </p>
+          ) : (
+            <div>
+              <div className="border-b border-black/5 px-4 py-3 text-xs font-semibold text-black/50">
+                <span className="font-bold text-black">
+                  {textOrDash(selectedSummary.display_identifier)}
+                </span>
+                <span className="mx-2 text-black/20">·</span>
+                최근 7일
+                {timelineLoading && (
+                  <span className="ml-2 text-accent">불러오는 중...</span>
+                )}
+              </div>
+
+              {timelineError ? (
+                <p className="px-4 py-6 text-sm font-semibold text-red-600">
+                  {timelineError}
+                </p>
+              ) : !timelineLoading && timelineEvents.length === 0 ? (
+                <p className="px-4 py-6 text-sm font-semibold text-black/40">
+                  표시할 이벤트가 없습니다.
+                </p>
+              ) : (
+                <div className="max-h-[420px] overflow-auto">
+                  <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
+                    <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
+                      <tr>
+                        <th className="px-4 py-3">시간</th>
+                        <th className="px-4 py-3">이벤트명</th>
+                        <th className="px-4 py-3">path</th>
+                        <th className="px-4 py-3">anonymous_session_id</th>
+                        <th className="px-4 py-3">metadata</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timelineEvents.map((event) => (
+                        <tr key={event.id} className="border-b border-black/5 align-top">
+                          <td className="whitespace-nowrap px-4 py-3">
+                            {formatDateTime(event.created_at)}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-semibold">
+                            {eventLabel(event.event_name)}
+                          </td>
+                          <td className="max-w-[220px] break-all px-4 py-3 text-black/65">
+                            {event.path ?? "-"}
+                          </td>
+                          <td className="break-all px-4 py-3 font-mono text-xs text-black/65">
+                            {textOrDash(event.anonymous_session_id)}
+                          </td>
+                          <td className="max-w-[440px] px-4 py-3 font-mono text-xs leading-5 text-black/55">
+                            <span className="break-all">
+                              {metadataText(event.metadata)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-white">

@@ -43,6 +43,13 @@ type IdentityLookup = {
   profileNames: Map<string, string>;
 };
 
+const eventSelect =
+  "id,anonymous_session_id,profile_id,application_id,event_name,path,referrer,user_agent,metadata,created_at";
+const detailRowsLimit = 2000;
+const maxDetailAnonymousIds = 50;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
@@ -56,6 +63,17 @@ function unauthorized() {
 function rangeKey(value: string | null): RangeKey {
   if (value === "today" || value === "7d" || value === "30d") return value;
   return "7d";
+}
+
+function uuidParam(value: string | null) {
+  const trimmed = value?.trim();
+  return trimmed && uuidPattern.test(trimmed) ? trimmed : null;
+}
+
+function textParam(value: string | null, maxLength = 160) {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.length > maxLength) return null;
+  return trimmed;
 }
 
 function startOfTodayInKst(now = new Date()) {
@@ -139,6 +157,70 @@ function chunkArray<T>(items: T[], size: number) {
     chunks.push(items.slice(index, index + size));
   }
   return chunks;
+}
+
+function addTimelineRows(
+  rowMap: Map<string, UserEventRow>,
+  anonymousSessionIds: Set<string>,
+  rows: UserEventRow[] | null,
+) {
+  for (const row of rows ?? []) {
+    rowMap.set(row.id, row);
+    if (row.anonymous_session_id) anonymousSessionIds.add(row.anonymous_session_id);
+  }
+}
+
+async function fetchUserTimeline({
+  anonymousSessionId,
+  profileId,
+  start,
+}: {
+  anonymousSessionId: string | null;
+  profileId: string | null;
+  start: string;
+}) {
+  const supabase = createAdminClient();
+  const rowMap = new Map<string, UserEventRow>();
+  const anonymousSessionIds = new Set<string>();
+
+  if (anonymousSessionId) anonymousSessionIds.add(anonymousSessionId);
+
+  if (profileId) {
+    const { data, error } = await supabase
+      .from("user_events")
+      .select(eventSelect)
+      .eq("profile_id", profileId)
+      .gte("created_at", start)
+      .order("created_at", { ascending: true })
+      .limit(detailRowsLimit)
+      .returns<UserEventRow[]>();
+
+    if (error) throw error;
+    addTimelineRows(rowMap, anonymousSessionIds, data ?? []);
+  }
+
+  const anonymousIdList = Array.from(anonymousSessionIds).slice(
+    0,
+    maxDetailAnonymousIds,
+  );
+  if (anonymousIdList.length > 0) {
+    const { data, error } = await supabase
+      .from("user_events")
+      .select(eventSelect)
+      .in("anonymous_session_id", anonymousIdList)
+      .gte("created_at", start)
+      .order("created_at", { ascending: true })
+      .limit(detailRowsLimit)
+      .returns<UserEventRow[]>();
+
+    if (error) throw error;
+    addTimelineRows(rowMap, anonymousSessionIds, data ?? []);
+  }
+
+  return Array.from(rowMap.values()).sort(
+    (left, right) =>
+      new Date(left.created_at).getTime() - new Date(right.created_at).getTime(),
+  );
 }
 
 async function identityLookup(rows: UserEventRow[]): Promise<IdentityLookup> {
@@ -244,9 +326,29 @@ export async function GET(request: NextRequest) {
 
   const range = rangeKey(request.nextUrl.searchParams.get("range"));
   const start = rangeStart(range).toISOString();
+  const detailProfileId = uuidParam(request.nextUrl.searchParams.get("profileId"));
+  const detailAnonymousSessionId = textParam(
+    request.nextUrl.searchParams.get("anonymousSessionId"),
+  );
 
   try {
     const supabase = createAdminClient();
+
+    if (detailProfileId || detailAnonymousSessionId) {
+      const timelineRows = await fetchUserTimeline({
+        anonymousSessionId: detailAnonymousSessionId,
+        profileId: detailProfileId,
+        start,
+      });
+      const lookup = await identityLookup(timelineRows);
+
+      return NextResponse.json({
+        range,
+        startedAt: start,
+        timeline: timelineRows.map((row) => normalizeEvent(row, lookup)),
+        tableMissing: false,
+      });
+    }
 
     const countResults = await Promise.all(
       funnelEvents.map(async (eventName) => {
@@ -264,18 +366,14 @@ export async function GET(request: NextRequest) {
       await Promise.all([
         supabase
           .from("user_events")
-          .select(
-            "id,anonymous_session_id,profile_id,application_id,event_name,path,referrer,user_agent,metadata,created_at",
-          )
+          .select(eventSelect)
           .gte("created_at", start)
           .order("created_at", { ascending: false })
           .limit(200)
           .returns<UserEventRow[]>(),
         supabase
           .from("user_events")
-          .select(
-            "id,anonymous_session_id,profile_id,application_id,event_name,path,referrer,user_agent,metadata,created_at",
-          )
+          .select(eventSelect)
           .gte("created_at", start)
           .order("created_at", { ascending: false })
           .limit(5000)
