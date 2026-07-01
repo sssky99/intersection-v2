@@ -23,6 +23,8 @@ export type TicketStageCopy = {
 export type GatheringTicket = {
   id: string;
   templateId: string;
+  invitationId?: string | null;
+  invitationStatus?: "sent" | "viewed" | "accepted" | null;
   title: string;
   subtitle: string;
   date: string;

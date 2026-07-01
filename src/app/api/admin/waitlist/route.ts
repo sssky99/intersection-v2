@@ -78,7 +78,7 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
   const supabase = createAdminClient();
 
   const { data: waitlistData, error: waitlistError } = await supabase
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(500);
@@ -248,6 +248,13 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
+    const { data: currentParticipation, error: currentParticipationError } =
+      await supabase
+        .from("ticket_participations")
+        .select("user_id,ticket_instance_id")
+        .eq("id", id)
+        .single<{ user_id: string; ticket_instance_id: string | null }>();
+    if (currentParticipationError) throw currentParticipationError;
     let nextTemplateId: string | null | undefined;
     let nextInstanceId: string | null | undefined;
 
@@ -271,7 +278,11 @@ export async function PATCH(request: NextRequest) {
     const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
-    if (status !== undefined) payload.status = status;
+    const effectiveInstanceId =
+      nextInstanceId !== undefined
+        ? nextInstanceId
+        : currentParticipation.ticket_instance_id;
+    if (status !== undefined && !effectiveInstanceId) payload.status = status;
     if (adminNote !== undefined) {
       payload.admin_note =
         typeof adminNote === "string" && adminNote.trim()
@@ -282,10 +293,22 @@ export async function PATCH(request: NextRequest) {
     if (nextTemplateId !== undefined) payload.ticket_template_id = nextTemplateId;
 
     const { error } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .update(payload)
       .eq("id", id);
     if (error) throw error;
+
+    if (status !== undefined && effectiveInstanceId) {
+      const { error: statusError } = await supabase.rpc(
+        "set_ticket_participation_status",
+        {
+          p_ticket_instance_id: effectiveInstanceId,
+          p_user_id: currentParticipation.user_id,
+          p_status: status,
+        },
+      );
+      if (statusError) throw statusError;
+    }
 
     return NextResponse.json(await loadWaitlistData());
   } catch (error) {

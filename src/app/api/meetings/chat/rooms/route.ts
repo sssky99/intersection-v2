@@ -9,9 +9,9 @@ import type {
 
 export const dynamic = "force-dynamic";
 
-type AssignmentRow = {
+type ParticipationRow = {
   ticket_instance_id: string;
-  profile_id: string;
+  user_id: string;
 };
 
 type InstanceRow = {
@@ -21,13 +21,6 @@ type InstanceRow = {
   event_time: string | null;
   region: string | null;
   place_name: string | null;
-};
-
-type WaitlistRow = {
-  user_id: string;
-  ticket_id: string;
-  ticket_instance_id: string | null;
-  status: string;
 };
 
 type ProfileRow = {
@@ -73,10 +66,6 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
-function waitlistInstanceId(row: WaitlistRow) {
-  return row.ticket_instance_id ?? row.ticket_id;
-}
-
 export async function GET() {
   const userSupabase = await createClient();
   const {
@@ -89,22 +78,23 @@ export async function GET() {
 
   try {
     const supabase = createAdminClient();
-    const { data: ownAssignmentData, error: ownAssignmentError } =
+    const { data: ownParticipationData, error: ownParticipationError } =
       await supabase
-        .from("ticket_assignments")
-        .select("ticket_instance_id,profile_id")
-        .eq("profile_id", user.id)
-        .returns<AssignmentRow[]>();
-    if (ownAssignmentError) throw ownAssignmentError;
+        .from("ticket_participations")
+        .select("ticket_instance_id,user_id")
+        .eq("user_id", user.id)
+        .in("status", Array.from(CHAT_MEMBER_STATUSES))
+        .returns<ParticipationRow[]>();
+    if (ownParticipationError) throw ownParticipationError;
 
     const instanceIds = unique(
-      (ownAssignmentData ?? []).map((row) => row.ticket_instance_id),
+      (ownParticipationData ?? []).map((row) => row.ticket_instance_id),
     );
     if (instanceIds.length === 0) {
       return NextResponse.json<MeetingChatRoomsResponse>({ rooms: [] });
     }
 
-    const [instancesResult, assignmentsResult, waitlistResult] =
+    const [instancesResult, participationsResult] =
       await Promise.all([
         supabase
           .from("ticket_instances")
@@ -112,39 +102,21 @@ export async function GET() {
           .in("id", instanceIds)
           .returns<InstanceRow[]>(),
         supabase
-          .from("ticket_assignments")
-          .select("ticket_instance_id,profile_id")
+          .from("ticket_participations")
+          .select("ticket_instance_id,user_id")
           .in("ticket_instance_id", instanceIds)
-          .returns<AssignmentRow[]>(),
-        supabase
-          .from("meeting_waitlist")
-          .select("user_id,ticket_id,ticket_instance_id,status")
-          .or(
-            `ticket_instance_id.in.(${instanceIds.join(",")}),ticket_id.in.(${instanceIds.join(",")})`,
-          )
-          .returns<WaitlistRow[]>(),
+          .in("status", Array.from(CHAT_MEMBER_STATUSES))
+          .returns<ParticipationRow[]>(),
       ]);
 
     const error =
       instancesResult.error ??
-      assignmentsResult.error ??
-      waitlistResult.error;
+      participationsResult.error;
     if (error) throw error;
 
-    const assignments = assignmentsResult.data ?? [];
-    const waitlistRows = waitlistResult.data ?? [];
-    const activeWaitlistKeys = new Set(
-      waitlistRows
-        .filter((row) => CHAT_MEMBER_STATUSES.has(row.status))
-        .map((row) => `${waitlistInstanceId(row)}:${row.user_id}`),
-    );
-    const activeAssignments = assignments.filter((assignment) =>
-      activeWaitlistKeys.has(
-        `${assignment.ticket_instance_id}:${assignment.profile_id}`,
-      ),
-    );
+    const activeParticipations = participationsResult.data ?? [];
     const activeProfileIds = unique(
-      activeAssignments.map((assignment) => assignment.profile_id),
+      activeParticipations.map((participation) => participation.user_id),
     );
 
     let profiles: ProfileRow[] = [];
@@ -161,10 +133,10 @@ export async function GET() {
     const profileMap = new Map(
       profiles.map((profile) => [profile.user_id, profile]),
     );
-    const memberIdsByInstance = activeAssignments.reduce((map, assignment) => {
-      const current = map.get(assignment.ticket_instance_id) ?? [];
-      current.push(assignment.profile_id);
-      map.set(assignment.ticket_instance_id, current);
+    const memberIdsByInstance = activeParticipations.reduce((map, participation) => {
+      const current = map.get(participation.ticket_instance_id) ?? [];
+      current.push(participation.user_id);
+      map.set(participation.ticket_instance_id, current);
       return map;
     }, new Map<string, string[]>());
     const now = new Date();

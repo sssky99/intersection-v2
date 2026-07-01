@@ -133,6 +133,18 @@ function clearTicketCaches() {
   ticketsByDateCache.clear();
 }
 
+async function saveInvitationDecision(
+  ticketInstanceId: string,
+  action: "viewed" | "declined",
+) {
+  const response = await fetch("/api/meetings/invitations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticketInstanceId, action }),
+  });
+  if (!response.ok) throw new Error("invitation-decision-save-failed");
+}
+
 export function MeetingRecommendation({
   userId,
   embedded = false,
@@ -206,6 +218,7 @@ export function MeetingRecommendation({
     if (viewedTicketIdsRef.current.has(ticket.id)) return;
 
     viewedTicketIdsRef.current.add(ticket.id);
+    void saveInvitationDecision(ticket.id, "viewed").catch(() => undefined);
     trackEvent("ticket_detail_view", {
       ticket_id: ticket.id,
       template_id: ticket.templateId,
@@ -330,6 +343,10 @@ export function MeetingRecommendation({
     onCoachmarkProgress?.("decision");
 
     if (!selectedDate) return;
+    if (ticket) {
+      void saveInvitationDecision(ticket.id, "declined").catch(() => undefined);
+      clearTicketCaches();
+    }
     const nextIndex = ticketIndex + 1;
     if (nextIndex >= selectedDate.tickets.length) {
       setSelectedDate(null);

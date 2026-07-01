@@ -42,9 +42,6 @@ type TemplateRow = {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
-  place_name: string | null;
-  address: string | null;
-  place_payload: unknown;
   atmosphere_gender_mood: string | null;
   atmosphere_age_band_id: string | null;
   visibility: string;
@@ -63,7 +60,13 @@ type InstanceRow = {
   event_date: string | null;
   event_time: string | null;
   region: string | null;
+  place_name: string | null;
+  address: string | null;
+  place_payload: unknown;
+  place_visibility: string | null;
   remaining_seat_label_count: number | null;
+  minimum_participant_count: number | null;
+  max_participant_count: number | null;
   visibility: string;
 };
 
@@ -79,8 +82,15 @@ type AtmosphereWaitlistRow = WaitlistRow & {
   user_id: string;
 };
 
-type AssignmentRow = {
+type ParticipationRow = {
   ticket_instance_id: string;
+};
+
+type InvitationRow = {
+  id: string;
+  ticket_instance_id: string;
+  status: "sent" | "viewed" | "accepted" | "declined" | "expired" | "cancelled";
+  expires_at: string | null;
 };
 
 type ProfileAccessRow = {
@@ -117,9 +127,6 @@ const templateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
-  "place_name",
-  "address",
-  "place_payload",
   "atmosphere_gender_mood",
   "atmosphere_age_band_id",
   "visibility",
@@ -131,11 +138,6 @@ const templateSelect = [
   "score_romance",
 ].join(",");
 
-const templateSelectWithoutPlacePayload = templateSelect.replace(
-  ",place_payload",
-  "",
-);
-
 const instanceSelect = [
   "id",
   "template_id",
@@ -143,7 +145,13 @@ const instanceSelect = [
   "event_date",
   "event_time",
   "region",
+  "place_name",
+  "address",
+  "place_payload",
+  "place_visibility",
   "remaining_seat_label_count",
+  "minimum_participant_count",
+  "max_participant_count",
   "visibility",
 ].join(",");
 
@@ -154,14 +162,6 @@ const atmosphereWaitlistStatuses = [
   "on_hold",
 ];
 
-function isMissingPlacePayloadColumn(error: unknown) {
-  const databaseError = error as { code?: string; message?: string } | null;
-  return (
-    databaseError?.code === "42703" &&
-    (databaseError.message ?? "").includes("place_payload")
-  );
-}
-
 async function fetchTemplateRows(
   supabase: ReturnType<typeof createAdminClient>,
   templateIds: string[],
@@ -170,15 +170,6 @@ async function fetchTemplateRows(
     .from("ticket_templates")
     .select(templateSelect)
     .in("id", templateIds);
-
-  if (isMissingPlacePayloadColumn(error)) {
-    const fallback = await supabase
-      .from("ticket_templates")
-      .select(templateSelectWithoutPlacePayload)
-      .in("id", templateIds);
-    if (fallback.error) throw fallback.error;
-    return (fallback.data ?? []) as unknown as TemplateRow[];
-  }
 
   if (error) throw error;
   return (data ?? []) as unknown as TemplateRow[];
@@ -284,7 +275,7 @@ async function fetchAtmosphereDefaultsByInstance(
   const waitlistRows: AtmosphereWaitlistRow[] = [];
 
   const { data: byInstanceId, error: byInstanceIdError } = await supabase
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select(waitlistSelect)
     .in("ticket_instance_id", instanceIds)
     .in("status", atmosphereWaitlistStatuses)
@@ -293,7 +284,7 @@ async function fetchAtmosphereDefaultsByInstance(
   waitlistRows.push(...(byInstanceId ?? []));
 
   const { data: byTicketId, error: byTicketIdError } = await supabase
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select(waitlistSelect)
     .in("ticket_id", instanceIds)
     .in("status", atmosphereWaitlistStatuses)
@@ -303,7 +294,7 @@ async function fetchAtmosphereDefaultsByInstance(
 
   if (templateIds.length > 0) {
     const { data: byTemplateId, error: byTemplateIdError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select(waitlistSelect)
       .in("ticket_template_id", templateIds)
       .in("status", atmosphereWaitlistStatuses)
@@ -356,6 +347,7 @@ function toTicket(
   template: TemplateRow,
   name?: string,
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
+  invitation?: InvitationRow | null,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
@@ -369,11 +361,19 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
-  const place = normalizeMeetingPlace(template.place_payload);
+  const place = normalizeMeetingPlace(instance.place_payload);
+  const placeVisible = instance.place_visibility === "public";
 
   return {
     id: instance.id,
     templateId: instance.template_id,
+    invitationId: invitation?.id ?? null,
+    invitationStatus:
+      invitation?.status === "sent" ||
+      invitation?.status === "viewed" ||
+      invitation?.status === "accepted"
+        ? invitation.status
+        : null,
     title: instance.title || template.title,
     subtitle,
     date: instance.event_date,
@@ -383,8 +383,10 @@ function toTicket(
     activityType: template.activity_type,
     imageUrl: template.image_url ?? undefined,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
-    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
-    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
+    minimumParticipantCount:
+      instance.minimum_participant_count ?? MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount:
+      instance.max_participant_count ?? MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? subtitle,
     reason: template.recommendation_copy ?? subtitle,
     recommendationName: name,
@@ -393,11 +395,13 @@ function toTicket(
     detailFlow: textList(template.detail_flow),
     detailGoodFor: textList(template.detail_good_for),
     detailNotice: template.detail_notice?.trim() || undefined,
-    place: ticketPlaceFromLegacyFields({
-      placeName: template.place_name,
-      address: template.address,
-      place,
-    }),
+    place: placeVisible
+      ? ticketPlaceFromLegacyFields({
+          placeName: instance.place_name,
+          address: instance.address,
+          place,
+        })
+      : null,
     stageCopy: sanitizeTicketStageCopy(template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     vibeScores: {
@@ -514,6 +518,9 @@ export async function GET(request: Request) {
     if (instancesError) throw instancesError;
 
     const publicInstanceRows = (instances ?? []) as unknown as InstanceRow[];
+    const invitationMap = new Map<string, InvitationRow>();
+    const declinedInstanceIds = new Set<string>();
+    let invitedInstanceRows: InstanceRow[] = [];
     let testInstanceRows: InstanceRow[] = [];
     let recommendationProfile: TicketRecommendationProfile | null = null;
     let recommendationAnswers: TicketRecommendationAnswer[] = [];
@@ -521,6 +528,53 @@ export async function GET(request: Request) {
     let canBypassAgeVisibility = false;
 
     if (user) {
+      const { data: invitationData, error: invitationsError } = await supabase
+        .from("ticket_invitations")
+        .select("id,ticket_instance_id,status,expires_at")
+        .eq("user_id", user.id)
+        .returns<InvitationRow[]>();
+      if (invitationsError) throw invitationsError;
+
+      const effectiveInvitations = (invitationData ?? []).map((invitation) =>
+        invitation.expires_at &&
+        new Date(invitation.expires_at).getTime() <= Date.now() &&
+        ["sent", "viewed"].includes(invitation.status)
+          ? { ...invitation, status: "expired" as const }
+          : invitation,
+      );
+
+      for (const invitation of effectiveInvitations) {
+        invitationMap.set(invitation.ticket_instance_id, invitation);
+        if (["declined", "expired", "cancelled"].includes(invitation.status)) {
+          declinedInstanceIds.add(invitation.ticket_instance_id);
+        }
+      }
+
+      const invitedInstanceIds = effectiveInvitations
+        .filter((invitation) =>
+          ["sent", "viewed", "accepted"].includes(invitation.status),
+        )
+        .map((invitation) => invitation.ticket_instance_id);
+      if (invitedInstanceIds.length > 0) {
+        let invitedInstancesQuery = supabase
+          .from("ticket_instances")
+          .select(instanceSelect)
+          .in("id", invitedInstanceIds)
+          .in("visibility", ["invite_only", "public"])
+          .not("event_date", "is", null);
+        if (selectedDate) {
+          invitedInstancesQuery = invitedInstancesQuery.eq(
+            "event_date",
+            selectedDate,
+          );
+        }
+        const { data: invitedInstances, error: invitedInstancesError } =
+          await invitedInstancesQuery;
+        if (invitedInstancesError) throw invitedInstancesError;
+        invitedInstanceRows =
+          (invitedInstances ?? []) as unknown as InstanceRow[];
+      }
+
       const { data: profileAccess, error: profileAccessError } = await supabase
         .from("profiles")
         .select(
@@ -554,7 +608,13 @@ export async function GET(request: Request) {
       const canSeeTestTickets = canBypassAgeVisibility;
 
       if (!canSeeTestTickets) {
-        const instanceRows = publicInstanceRows;
+        const instanceRows = Array.from(
+          new Map(
+            [...publicInstanceRows, ...invitedInstanceRows]
+              .filter((instance) => !declinedInstanceIds.has(instance.id))
+              .map((instance) => [instance.id, instance]),
+          ).values(),
+        );
         const instanceMap = new Map(
           instanceRows.map((instance) => [instance.id, instance]),
         );
@@ -562,7 +622,7 @@ export async function GET(request: Request) {
 
         if (!includeApplied) {
           const { data: waitlistRows, error: waitlistError } = await userSupabase
-            .from("meeting_waitlist")
+            .from("ticket_participations")
             .select(
               "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
             )
@@ -619,9 +679,10 @@ export async function GET(request: Request) {
               ? toTicket(
                   instance,
                   template,
-                  userRecommendationName,
-                  atmosphereDefaultsByInstance.get(instance.id) ?? null,
-                )
+                   userRecommendationName,
+                   atmosphereDefaultsByInstance.get(instance.id) ?? null,
+                   invitationMap.get(instance.id) ?? null,
+                 )
               : null;
           })
           .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
@@ -637,10 +698,11 @@ export async function GET(request: Request) {
       }
 
       const { data: assignments, error: assignmentsError } = await supabase
-        .from("ticket_assignments")
+        .from("ticket_participations")
         .select("ticket_instance_id")
-        .eq("profile_id", user.id)
-        .returns<AssignmentRow[]>();
+        .eq("user_id", user.id)
+        .in("status", ["approved", "completed", "feedback_done"])
+        .returns<ParticipationRow[]>();
 
       if (assignmentsError) throw assignmentsError;
 
@@ -678,7 +740,9 @@ export async function GET(request: Request) {
 
     const instanceRows = Array.from(
       new Map(
-        [...publicInstanceRows, ...testInstanceRows].map((instance) => [
+        [...publicInstanceRows, ...invitedInstanceRows, ...testInstanceRows]
+          .filter((instance) => !declinedInstanceIds.has(instance.id))
+          .map((instance) => [
           instance.id,
           instance,
         ]),
@@ -695,7 +759,7 @@ export async function GET(request: Request) {
 
     if (!includeApplied && user) {
       const { data: waitlistRows, error: waitlistError } = await userSupabase
-        .from("meeting_waitlist")
+        .from("ticket_participations")
         .select(
           "ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status",
         )
@@ -754,6 +818,7 @@ export async function GET(request: Request) {
               template,
               userRecommendationName,
               atmosphereDefaultsByInstance.get(instance.id) ?? null,
+              invitationMap.get(instance.id) ?? null,
             )
           : null;
       })

@@ -71,6 +71,7 @@ type TicketData = {
 };
 
 type TicketDraft = {
+  templateKind: "experience" | "question_sample";
   title: string;
   shortDescription: string;
   detailSummary: string;
@@ -105,6 +106,8 @@ type TicketDraft = {
   visibility: TicketVisibility;
   questionOrder: string;
   remainingSeatLabelCount: string;
+  minimumParticipantCount: string;
+  maxParticipantCount: string;
   scoreTemperature: string;
   scoreTexture: string;
   scoreTone: string;
@@ -130,7 +133,9 @@ const timeHours = Array.from({ length: 12 }, (_, hour) =>
   String(hour + 1).padStart(2, "0"),
 );
 type TimePeriod = (typeof timePeriods)[number];
-const editableTicketVisibilities = ticketVisibilities;
+const editableTicketVisibilities = ticketVisibilities.filter(
+  (visibility) => visibility !== "question",
+);
 
 const fixedDetailNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
@@ -331,10 +336,13 @@ function stageCopyValue(
   return stageCopy?.[key] ?? defaultTicketStageCopy[key];
 }
 
-function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
-  const instance = primaryInstance(template);
+function draftFromTicket(
+  template: AdminTicketTemplate,
+  instance: AdminTicketInstance | null = primaryInstance(template),
+): TicketDraft {
 
   return {
+    templateKind: template.template_kind,
     title: template.title,
     shortDescription: template.short_description ?? "",
     detailSummary: template.detail_summary ?? "",
@@ -358,33 +366,34 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
     moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
     activityType: template.activity_type ?? "",
     recommendationCopy: template.recommendation_copy ?? "",
-    eventDate: template.event_date ?? instance?.event_date ?? "",
+    eventDate: instance?.event_date ?? "",
     eventTime: firstNormalizedTimeValue(
-      template.event_time,
       instance?.event_time,
       template.default_time,
     ),
-    region: template.region ?? instance?.region ?? template.default_region ?? "",
-    placeName: template.place_name ?? instance?.place_name ?? "",
-    address: template.address ?? instance?.address ?? "",
-    place: template.place_payload ?? instance?.place_payload ?? null,
+    region: instance?.region ?? template.default_region ?? "",
+    placeName: instance?.place_name ?? "",
+    address: instance?.address ?? "",
+    place: instance?.place_payload ?? null,
     atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
     atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
-    operationCode: template.operation_code ?? instance?.operation_code ?? "",
-    operationNote: template.operation_note ?? instance?.operation_note ?? "",
-    placeVisibility:
-      template.place_visibility ?? instance?.place_visibility ?? "public",
-    visibility: template.visibility ?? instance?.visibility ?? "draft",
+    operationCode: instance?.operation_code ?? "",
+    operationNote: instance?.operation_note ?? "",
+    placeVisibility: instance?.place_visibility ?? "confirmed_only",
+    visibility:
+      template.template_kind === "question_sample"
+        ? "question"
+        : instance?.visibility ?? "draft",
     questionOrder: template.question_order
       ? String(template.question_order)
-      : template.visibility === "question"
+      : template.template_kind === "question_sample"
         ? "1"
         : "",
     remainingSeatLabelCount: String(
-      template.remaining_seat_label_count ??
-        instance?.remaining_seat_label_count ??
-        0,
+      instance?.remaining_seat_label_count ?? 0,
     ),
+    minimumParticipantCount: String(instance?.minimum_participant_count ?? 3),
+    maxParticipantCount: String(instance?.max_participant_count ?? 6),
     scoreTemperature: scoreDraft(template.score_temperature),
     scoreTexture: scoreDraft(template.score_texture),
     scoreTone: scoreDraft(template.score_tone),
@@ -412,6 +421,7 @@ function ticketRequestBody(draft: TicketDraft) {
   const eventTime = normalizeTimeValue(draft.eventTime);
 
   return {
+    templateKind: draft.templateKind,
     title: draft.title,
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
@@ -438,8 +448,11 @@ function ticketRequestBody(draft: TicketDraft) {
     operationNote: draft.operationNote,
     placeVisibility: draft.placeVisibility,
     visibility: draft.visibility,
-    questionOrder: draft.visibility === "question" ? draft.questionOrder : null,
+    questionOrder:
+      draft.templateKind === "question_sample" ? draft.questionOrder : null,
     remainingSeatLabelCount: draft.remainingSeatLabelCount,
+    minimumParticipantCount: draft.minimumParticipantCount,
+    maxParticipantCount: draft.maxParticipantCount,
     scoreTemperature: draft.scoreTemperature || null,
     scoreTexture: draft.scoreTexture || null,
     scoreTone: draft.scoreTone || null,
@@ -488,7 +501,7 @@ function ticketPreview(
   template: AdminTicketTemplate | null,
   instance: AdminTicketInstance | null,
 ): GatheringTicket {
-  const isSampleTicket = draft.visibility === "question";
+  const isSampleTicket = draft.templateKind === "question_sample";
   const shortDescription =
     draft.shortDescription.trim() || draft.recommendationCopy.trim();
 
@@ -506,8 +519,12 @@ function ticketPreview(
     activityType: draft.activityType.trim() || "admin_ticket",
     imageUrl: draft.imageUrl.trim() || undefined,
     remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
-    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
-    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
+    minimumParticipantCount:
+      Number.parseInt(draft.minimumParticipantCount, 10) ||
+      MEETING_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount:
+      Number.parseInt(draft.maxParticipantCount, 10) ||
+      MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
     reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
     detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
@@ -647,9 +664,13 @@ export function TicketAdminPanel({
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [waitlist, setWaitlist] = useState<AdminTicketWaitlistEntry[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
+    null,
+  );
   const [draft, setDraft] = useState<TicketDraft | null>(null);
   const [query, setQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
+  const [inviteQuery, setInviteQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -687,7 +708,10 @@ export function TicketAdminPanel({
 
   const selectedTicket =
     templates.find((template) => template.id === selectedTicketId) ?? null;
-  const selectedInstance = primaryInstance(selectedTicket);
+  const selectedInstance =
+    selectedTicket?.instances.find(
+      (instance) => instance.id === selectedInstanceId,
+    ) ?? primaryInstance(selectedTicket);
 
   useEffect(() => {
     if (!focusTicketId) return;
@@ -702,10 +726,27 @@ export function TicketAdminPanel({
     [profiles],
   );
   useEffect(() => {
-    setDraft(selectedTicket ? draftFromTicket(selectedTicket) : null);
-    setMemberQuery("");
-    setProgressPreviewOpen(false);
+    setSelectedInstanceId((current) => {
+      if (
+        current &&
+        selectedTicket?.instances.some((instance) => instance.id === current)
+      ) {
+        return current;
+      }
+      return primaryInstance(selectedTicket)?.id ?? null;
+    });
   }, [selectedTicket]);
+
+  useEffect(() => {
+    setDraft(
+      selectedTicket
+        ? draftFromTicket(selectedTicket, selectedInstance)
+        : null,
+    );
+    setMemberQuery("");
+    setInviteQuery("");
+    setProgressPreviewOpen(false);
+  }, [selectedInstance, selectedTicket]);
 
   const instanceById = useMemo(() => {
     const pairs = templates.flatMap((template) =>
@@ -716,8 +757,8 @@ export function TicketAdminPanel({
 
   const assignedProfiles = useMemo(() => {
     if (!selectedInstance) return [];
-    return selectedInstance.assignments
-      .map((assignment) => assignment.profile)
+    return selectedInstance.participants
+      .map((participation) => participation.profile)
       .filter((profile): profile is AdminProfile => Boolean(profile));
   }, [selectedInstance]);
 
@@ -725,7 +766,9 @@ export function TicketAdminPanel({
     if (!selectedTicket || !selectedInstance) return [];
 
     const assignedIds = new Set(
-      selectedInstance.assignments.map((assignment) => assignment.profile_id),
+      selectedInstance.participants.map(
+        (participation) => participation.user_id,
+      ),
     );
     const candidateIds = new Set<string>();
 
@@ -771,6 +814,30 @@ export function TicketAdminPanel({
     waitlist,
   ]);
 
+  const invitableProfiles = useMemo(() => {
+    if (!selectedInstance) return [];
+    const unavailableIds = new Set([
+      ...selectedInstance.participants.map(
+        (participation) => participation.user_id,
+      ),
+      ...selectedInstance.invitations
+        .filter((invitation) =>
+          ["sent", "viewed", "accepted"].includes(invitation.status),
+        )
+        .map((invitation) => invitation.user_id),
+    ]);
+    const normalized = inviteQuery.trim().toLowerCase();
+    if (!normalized) return [];
+    return profiles
+      .filter((profile) => !unavailableIds.has(profile.user_id))
+      .filter((profile) =>
+        `${profile.name ?? ""} ${profile.nickname ?? ""} ${profile.phone ?? ""}`
+          .toLowerCase()
+          .includes(normalized),
+      )
+      .slice(0, 10);
+  }, [inviteQuery, profiles, selectedInstance]);
+
   const previewTicket = draft
     ? ticketPreview(draft, selectedTicket, selectedInstance)
     : null;
@@ -783,7 +850,8 @@ export function TicketAdminPanel({
           selectedInstance,
         })
       : null;
-  const isSampleTicket = draft?.visibility === "question";
+  const isSampleTicket =
+    draft?.templateKind === "question_sample";
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -791,9 +859,9 @@ export function TicketAdminPanel({
     return templates.filter((template) =>
       [
         template.title,
-        template.region,
         template.default_region,
         template.activity_type,
+        ...template.instances.map((instance) => instance.region),
       ]
         .join(" ")
         .toLowerCase()
@@ -842,15 +910,22 @@ export function TicketAdminPanel({
     }
   };
 
-  const createTicket = async () => {
+  const createTicket = async (
+    templateKind: TicketDraft["templateKind"] = "experience",
+  ) => {
+    const sampleOnly = templateKind === "question_sample";
     const data = await runAction(
       "POST",
       {
         action: "create_ticket",
-        title: "새 초대장",
-        visibility: "draft",
-        placeVisibility: "public",
+        templateKind,
+        title: sampleOnly ? "새 샘플 티켓" : "새 초대장",
+        visibility: sampleOnly ? "question" : "draft",
+        questionOrder: sampleOnly ? "1" : null,
+        placeVisibility: "confirmed_only",
         remainingSeatLabelCount: "0",
+        minimumParticipantCount: "3",
+        maxParticipantCount: "6",
         eventTime: "19:00",
         region: "",
       },
@@ -867,7 +942,7 @@ export function TicketAdminPanel({
       {
         action: "duplicate_template",
         templateId: selectedTicket.id,
-        includeInstances: false,
+        includeInstances: true,
       },
       "템플릿을 복제했습니다.",
     );
@@ -881,21 +956,89 @@ export function TicketAdminPanel({
 
   const saveTicket = async () => {
     if (!selectedTicket || !draft) return;
+    if (!isSampleTicket && !selectedInstance) {
+      setError("저장할 회차를 먼저 만들어주세요.");
+      return;
+    }
     await runAction(
       "PATCH",
       {
         entity: "ticket",
         id: selectedTicket.id,
+        instanceId: selectedInstance?.id ?? null,
         ...ticketRequestBody(draft),
       },
       "초대장을 저장했습니다.",
     );
   };
 
+  const createOccurrence = async () => {
+    if (!selectedTicket) return;
+    const previousIds = new Set(
+      selectedTicket.instances.map((instance) => instance.id),
+    );
+    const data = await runAction(
+      "POST",
+      {
+        action: "create_instance",
+        templateId: selectedTicket.id,
+        title: selectedTicket.title,
+        eventTime: selectedTicket.default_time ?? "19:00",
+        region: selectedTicket.default_region ?? "",
+        visibility: "draft",
+        placeVisibility: "confirmed_only",
+        remainingSeatLabelCount: 0,
+        minimumParticipantCount: 3,
+        maxParticipantCount: 6,
+      },
+      "새 회차를 만들었습니다.",
+    );
+    const nextTemplate = data?.templates.find(
+      (template) => template.id === selectedTicket.id,
+    );
+    const created = nextTemplate?.instances.find(
+      (instance) => !previousIds.has(instance.id),
+    );
+    if (created) setSelectedInstanceId(created.id);
+  };
+
+  const duplicateOccurrence = async () => {
+    if (!selectedTicket || !selectedInstance) return;
+    const previousIds = new Set(
+      selectedTicket.instances.map((instance) => instance.id),
+    );
+    const data = await runAction(
+      "POST",
+      { action: "duplicate_instance", instanceId: selectedInstance.id },
+      "회차를 복제했습니다.",
+    );
+    const nextTemplate = data?.templates.find(
+      (template) => template.id === selectedTicket.id,
+    );
+    const created = nextTemplate?.instances.find(
+      (instance) => !previousIds.has(instance.id),
+    );
+    if (created) setSelectedInstanceId(created.id);
+  };
+
+  const deleteOccurrence = async () => {
+    if (!selectedInstance) return;
+    if (!window.confirm("선택한 회차와 연결된 참여 정보를 삭제할까요?")) {
+      return;
+    }
+    await runAction(
+      "DELETE",
+      null,
+      "회차를 삭제했습니다.",
+      `?instanceId=${encodeURIComponent(selectedInstance.id)}`,
+    );
+    setSelectedInstanceId(null);
+  };
+
   const deleteTicket = async () => {
     if (!selectedTicket) return;
     const confirmed = window.confirm(
-      `"${selectedTicket.title}" 초대장을 삭제할까요?\n연결된 운영 티켓과 배정 정보도 함께 삭제됩니다.`,
+      `"${selectedTicket.title}" 초대장을 삭제할까요?\n연결된 운영 회차와 참여 정보도 함께 삭제됩니다.`,
     );
     if (!confirmed) return;
 
@@ -939,6 +1082,7 @@ export function TicketAdminPanel({
         body: JSON.stringify({
           entity: "ticket",
           id: selectedTicket.id,
+          instanceId: selectedInstance?.id ?? null,
           ...ticketRequestBody(nextDraft),
         }),
       });
@@ -961,7 +1105,7 @@ export function TicketAdminPanel({
           <div>
             <h2 className="text-lg font-bold">티켓 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
-              ?? ??, ??, ??? ?????.
+              모임 정보, 일정, 좌석을 관리합니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -973,9 +1117,16 @@ export function TicketAdminPanel({
               새로고침
             </IconButton>
             <IconButton
+              disabled={saving}
+              onClick={() => void createTicket("question_sample")}
+              icon={Plus}
+            >
+              샘플 티켓
+            </IconButton>
+            <IconButton
               primary
               disabled={saving}
-              onClick={() => void createTicket()}
+              onClick={() => void createTicket("experience")}
               icon={Plus}
             >
               초대장 만들기
@@ -1006,7 +1157,7 @@ export function TicketAdminPanel({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="제목, 제안자, 지역 검색"
+              placeholder="제목, 활동, 지역 검색"
               className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>
@@ -1046,6 +1197,18 @@ export function TicketAdminPanel({
                   onSave={() => void saveTicket()}
                   onDelete={() => void deleteTicket()}
                 />
+
+                {!isSampleTicket && (
+                  <OccurrenceManager
+                    instances={selectedTicket.instances}
+                    selectedInstanceId={selectedInstance?.id ?? null}
+                    saving={saving}
+                    onSelect={setSelectedInstanceId}
+                    onCreate={() => void createOccurrence()}
+                    onDuplicate={() => void duplicateOccurrence()}
+                    onDelete={() => void deleteOccurrence()}
+                  />
+                )}
 
                 <BasicEditor
                   draft={draft}
@@ -1101,18 +1264,40 @@ export function TicketAdminPanel({
                     instance={selectedInstance}
                     assignedProfiles={assignedProfiles}
                     assignableProfiles={assignableProfiles}
+                    invitations={selectedInstance.invitations}
+                    invitableProfiles={invitableProfiles}
                     memberQuery={memberQuery}
+                    inviteQuery={inviteQuery}
                     saving={saving}
                     onMemberQueryChange={setMemberQuery}
+                    onInviteQueryChange={setInviteQuery}
                     onAddMember={(profileId) =>
                       void runAction(
                         "POST",
                         {
-                          action: "add_assignment",
+                          action: "add_participant",
                           instanceId: selectedInstance.id,
                           profileId,
                         },
-                        "멤버를 배정했습니다.",
+                        "참여를 확정했습니다.",
+                      )
+                    }
+                    onInvite={(profileId) =>
+                      void runAction(
+                        "POST",
+                        {
+                          action: "send_invitation",
+                          instanceId: selectedInstance.id,
+                          profileId,
+                        },
+                        "초대를 보냈습니다.",
+                      )
+                    }
+                    onCancelInvitation={(invitationId) =>
+                      void runAction(
+                        "POST",
+                        { action: "cancel_invitation", invitationId },
+                        "초대를 취소했습니다.",
                       )
                     }
                     onRemoveMember={(profileId) =>
@@ -1162,18 +1347,14 @@ function TicketListCard({
   onClick: () => void;
 }) {
   const instance = primaryInstance(template);
-  const isSampleTicket = template.visibility === "question";
+  const isSampleTicket = template.template_kind === "question_sample";
   const dateTime = [
-    template.event_date ?? instance?.event_date,
-    firstNormalizedTimeValue(
-      template.event_time,
-      instance?.event_time,
-      template.default_time,
-    ),
+    instance?.event_date,
+    firstNormalizedTimeValue(instance?.event_time, template.default_time),
   ]
     .filter(Boolean)
     .join(" ");
-  const region = template.region ?? instance?.region ?? template.default_region;
+  const region = instance?.region ?? template.default_region;
 
   return (
     <button
@@ -1205,10 +1386,10 @@ function TicketListCard({
             : `${dateTime || "일정 미정"} · ${region || "지역 미정"}`}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <VisibilityBadge visibility={template.visibility} />
+          <VisibilityBadge visibility={instance?.visibility ?? template.visibility} />
           {template.instance_count > 1 && (
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
-              기존 세부 {template.instance_count}
+              회차 {template.instance_count}
             </span>
           )}
         </div>
@@ -1237,7 +1418,7 @@ function TicketEditorHeader({
   onSave: () => void;
   onDelete: () => void;
 }) {
-  const isSampleTicket = draft.visibility === "question";
+  const isSampleTicket = draft.templateKind === "question_sample";
 
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -1265,27 +1446,16 @@ function TicketEditorHeader({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-[220px_160px]">
-        <SelectField
-          label="공개 상태"
-          value={draft.visibility}
-          options={editableTicketVisibilities.map((value) => ({
-            value,
-            label: ticketVisibilityLabels[value],
-          }))}
-          onChange={(visibility) => {
-            const nextVisibility = visibility as TicketVisibility;
-            onDraftChange({
-              ...draft,
-              visibility: nextVisibility,
-              questionOrder:
-                nextVisibility === "question"
-                  ? draft.questionOrder || "1"
-                  : draft.questionOrder,
-            });
-          }}
-        />
-        {isSampleTicket && (
+      <div className="mt-5 grid gap-4 md:grid-cols-[220px_220px]">
+        <div>
+          <span className="text-xs font-semibold text-black/50">
+            초대장 유형
+          </span>
+          <div className="mt-1.5 flex h-10 items-center rounded-xl border border-black/10 bg-black/[0.025] px-3 text-sm font-bold text-black/55">
+            {isSampleTicket ? "샘플 티켓" : "운영 모임"}
+          </div>
+        </div>
+        {isSampleTicket ? (
           <SelectField
             label="샘플 순서"
             value={draft.questionOrder}
@@ -1297,8 +1467,113 @@ function TicketEditorHeader({
               onDraftChange({ ...draft, questionOrder })
             }
           />
+        ) : (
+          <SelectField
+            label="선택 회차 공개 상태"
+            value={draft.visibility}
+            options={editableTicketVisibilities.map((value) => ({
+              value,
+              label: ticketVisibilityLabels[value],
+            }))}
+            onChange={(visibility) =>
+              onDraftChange({
+                ...draft,
+                visibility: visibility as TicketVisibility,
+              })
+            }
+          />
         )}
       </div>
+    </section>
+  );
+}
+
+function OccurrenceManager({
+  instances,
+  selectedInstanceId,
+  saving,
+  onSelect,
+  onCreate,
+  onDuplicate,
+  onDelete,
+}: {
+  instances: AdminTicketInstance[];
+  selectedInstanceId: string | null;
+  saving: boolean;
+  onSelect: (instanceId: string) => void;
+  onCreate: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold">운영 회차</h3>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            일정, 장소, 공개 범위와 참여자는 선택한 회차에만 적용됩니다.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <IconButton
+            disabled={saving || !selectedInstanceId}
+            onClick={onDuplicate}
+            icon={Copy}
+          >
+            회차 복제
+          </IconButton>
+          <IconButton
+            disabled={saving || !selectedInstanceId}
+            onClick={onDelete}
+            icon={Trash2}
+          >
+            회차 삭제
+          </IconButton>
+          <IconButton
+            primary
+            disabled={saving}
+            onClick={onCreate}
+            icon={Plus}
+          >
+            회차 추가
+          </IconButton>
+        </div>
+      </div>
+
+      {instances.length ? (
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {instances.map((instance, index) => (
+            <button
+              key={instance.id}
+              type="button"
+              onClick={() => onSelect(instance.id)}
+              className={cn(
+                "rounded-xl border px-4 py-3 text-left transition",
+                instance.id === selectedInstanceId
+                  ? "border-accent bg-accent/10 ring-2 ring-accent/10"
+                  : "border-black/10 hover:border-black/20",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black">회차 {index + 1}</span>
+                <VisibilityBadge visibility={instance.visibility} />
+              </div>
+              <p className="mt-2 truncate text-sm font-bold">
+                {[instance.event_date, instance.event_time]
+                  .filter(Boolean)
+                  .join(" ") || "일정 미정"}
+              </p>
+              <p className="mt-1 truncate text-xs font-semibold text-black/42">
+                {instance.region || instance.place_name || "지역 미정"} · 참여 {instance.participant_count}명 · 초대 {instance.invitation_count}명
+              </p>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-4 rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
+          운영 회차가 없습니다. 회차를 추가해 주세요.
+        </p>
+      )}
     </section>
   );
 }
@@ -1367,19 +1642,41 @@ function BasicEditor({
               onDraftChange({ ...draft, activityType })
             }
           />
-          <SelectField
-            label="잔여 자리 문구"
-            value={draft.remainingSeatLabelCount}
-            options={Array.from({ length: 7 }, (_, count) => ({
-              value: String(count),
-              label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
-            }))}
-            onChange={(remainingSeatLabelCount) =>
-              onDraftChange({ ...draft, remainingSeatLabelCount })
-            }
-          />
           {!sampleOnly && (
             <>
+              <SelectField
+                label="잔여 자리 문구"
+                value={draft.remainingSeatLabelCount}
+                options={Array.from({ length: 7 }, (_, count) => ({
+                  value: String(count),
+                  label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
+                }))}
+                onChange={(remainingSeatLabelCount) =>
+                  onDraftChange({ ...draft, remainingSeatLabelCount })
+                }
+              />
+              <SelectField
+                label="최소 진행 인원"
+                value={draft.minimumParticipantCount}
+                options={Array.from({ length: 19 }, (_, index) => {
+                  const value = String(index + 2);
+                  return { value, label: `${value}명` };
+                })}
+                onChange={(minimumParticipantCount) =>
+                  onDraftChange({ ...draft, minimumParticipantCount })
+                }
+              />
+              <SelectField
+                label="최대 참여 인원"
+                value={draft.maxParticipantCount}
+                options={Array.from({ length: 19 }, (_, index) => {
+                  const value = String(index + 2);
+                  return { value, label: `${value}명` };
+                })}
+                onChange={(maxParticipantCount) =>
+                  onDraftChange({ ...draft, maxParticipantCount })
+                }
+              />
               <FormField
                 label="날짜"
                 type="date"
@@ -1849,34 +2146,61 @@ function ParticipantPanel({
   instance,
   assignedProfiles,
   assignableProfiles,
+  invitations,
+  invitableProfiles,
   memberQuery,
+  inviteQuery,
   saving,
   onMemberQueryChange,
+  onInviteQueryChange,
   onAddMember,
+  onInvite,
+  onCancelInvitation,
   onRemoveMember,
 }: {
   instance: AdminTicketInstance;
   assignedProfiles: AdminProfile[];
   assignableProfiles: AdminProfile[];
+  invitations: AdminTicketInstance["invitations"];
+  invitableProfiles: AdminProfile[];
   memberQuery: string;
+  inviteQuery: string;
   saving: boolean;
   onMemberQueryChange: (query: string) => void;
+  onInviteQueryChange: (query: string) => void;
   onAddMember: (profileId: string) => void;
+  onInvite: (profileId: string) => void;
+  onCancelInvitation: (invitationId: string) => void;
   onRemoveMember: (profileId: string) => void;
 }) {
+  const invitationStatusLabels = {
+    sent: "전송",
+    viewed: "열람",
+    accepted: "수락",
+    declined: "거절",
+    expired: "만료",
+    cancelled: "취소",
+  } as const;
+
   return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+    <section className="space-y-5 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold">참여자</h3>
+          <h3 className="font-bold">참여자 · 초대</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            배정 {instance.assignment_count}명 · 대기열 {instance.waitlist_count}명
+            참여 {instance.participant_count}명 · 신청 대기 {instance.waitlist_count}명 · 초대 {instance.invitation_count}명
           </p>
         </div>
         <Users size={20} className="text-black/30" aria-hidden />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div>
+        <h4 className="text-sm font-bold">참여 상태</h4>
+        <p className="mt-1 text-xs font-semibold text-black/40">
+          확정 참여자를 관리합니다. 제거하면 참여 상태도 함께 취소됩니다.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           {assignedProfiles.length ? (
             assignedProfiles.map((profile) => (
@@ -1899,7 +2223,7 @@ function ParticipantPanel({
                   disabled={saving}
                   onClick={() => onRemoveMember(profile.user_id)}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40"
-                  aria-label={`${profileName(profile)} 배정 제거`}
+                  aria-label={`${profileName(profile)} 참여 제거`}
                 >
                   <Trash2 size={15} aria-hidden />
                 </button>
@@ -1907,7 +2231,7 @@ function ParticipantPanel({
             ))
           ) : (
             <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-              아직 배정된 멤버가 없습니다.
+              아직 확정된 참여자가 없습니다.
             </p>
           )}
         </div>
@@ -1922,7 +2246,7 @@ function ParticipantPanel({
             <input
               value={memberQuery}
               onChange={(event) => onMemberQueryChange(event.target.value)}
-              placeholder="이름 또는 전화번호 검색"
+              placeholder="신청자 이름 또는 전화번호 검색"
               className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>
@@ -1951,9 +2275,102 @@ function ParticipantPanel({
               ))
             ) : (
               <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
-                추가할 후보가 없습니다.
+                확정할 신청자가 없습니다.
               </p>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-black/8 pt-5">
+        <h4 className="text-sm font-bold">초대 보내기</h4>
+        <p className="mt-1 text-xs font-semibold text-black/40">
+          초대는 참여 확정과 분리되어 기록되며, 수락 시 참여 상태로 전환됩니다.
+        </p>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2">
+            {invitations.length ? (
+              invitations.map((invitation) => {
+                const profile = invitation.profile;
+                const canCancel = ["sent", "viewed"].includes(
+                  invitation.status,
+                );
+                return (
+                  <div
+                    key={invitation.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      {profile ? (
+                        <AdminMemberName profile={profile} />
+                      ) : (
+                        <p className="truncate text-sm font-bold">
+                          {invitation.user_id}
+                        </p>
+                      )}
+                      <p className="mt-1 text-[11px] font-semibold text-black/42">
+                        {invitationStatusLabels[invitation.status]} · {invitation.source_type}
+                      </p>
+                    </div>
+                    {canCancel && (
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => onCancelInvitation(invitation.id)}
+                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 disabled:opacity-40"
+                      >
+                        취소
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
+                보낸 초대가 없습니다.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="relative block">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
+                aria-hidden
+              />
+              <input
+                value={inviteQuery}
+                onChange={(event) => onInviteQueryChange(event.target.value)}
+                placeholder="초대할 멤버 검색"
+                className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
+              />
+            </label>
+            <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+              {invitableProfiles.length ? (
+                invitableProfiles.map((profile) => (
+                  <button
+                    key={profile.user_id}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => onInvite(profile.user_id)}
+                    className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
+                  >
+                    <div>
+                      <AdminMemberName profile={profile} />
+                      <p className="mt-0.5 text-[10px] text-black/40">
+                        {profile.gender ?? "-"} · {profile.birth_year ?? "-"} · {profile.phone ?? "-"}
+                      </p>
+                    </div>
+                    <Plus size={15} aria-hidden />
+                  </button>
+                ))
+              ) : (
+                <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
+                  검색어를 입력하면 초대 가능한 멤버가 표시됩니다.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

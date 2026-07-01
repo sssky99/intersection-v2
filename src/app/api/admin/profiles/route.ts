@@ -130,6 +130,8 @@ const profileSelects = [
   baseProfileSelectWithoutTest,
 ];
 
+const USER_ANSWERS_PAGE_SIZE = 1000;
+
 async function attachProfileAnswers(
   supabase: ReturnType<typeof createAdminClient>,
   profiles: AdminProfile[],
@@ -137,17 +139,28 @@ async function attachProfileAnswers(
   const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
   if (userIds.length === 0) return profiles;
 
-  const { data, error } = await supabase
-    .from("user_answers")
-    .select(
-      "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
-    )
-    .in("user_id", userIds)
-    .order("question_order", { ascending: true });
-  if (error) throw error;
+  const answers: AdminProfileAnswer[] = [];
+
+  for (let from = 0; ; from += USER_ANSWERS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("user_answers")
+      .select(
+        "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
+      )
+      .in("user_id", userIds)
+      .order("user_id", { ascending: true })
+      .order("question_order", { ascending: true })
+      .range(from, from + USER_ANSWERS_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as unknown as AdminProfileAnswer[];
+    answers.push(...page);
+
+    if (page.length < USER_ANSWERS_PAGE_SIZE) break;
+  }
 
   const answersByUserId = new Map<string, AdminProfileAnswer[]>();
-  for (const answer of (data ?? []) as unknown as AdminProfileAnswer[]) {
+  for (const answer of answers) {
     const current = answersByUserId.get(answer.user_id) ?? [];
     current.push(answer);
     answersByUserId.set(answer.user_id, current);

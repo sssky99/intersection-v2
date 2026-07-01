@@ -49,7 +49,7 @@ type InstanceRow = {
 };
 
 type AssignmentRow = {
-  profile_id: string;
+  user_id: string;
 };
 
 const personAxes: PersonAxis[] = ["temperature", "texture", "tone", "rhythm"];
@@ -276,7 +276,7 @@ export async function POST(request: Request) {
   try {
     const supabase = createAdminClient();
     const { data: rowData, error: rowError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select(
         "id,user_id,status,ticket_id,ticket_template_id,ticket_instance_id,ticket_snapshot",
       )
@@ -332,12 +332,13 @@ export async function POST(request: Request) {
     let assignedMemberIds: string[] = [];
     if (instance?.id) {
       const { data, error } = await supabase
-        .from("ticket_assignments")
-        .select("profile_id")
+        .from("ticket_participations")
+        .select("user_id")
         .eq("ticket_instance_id", instance.id)
+        .in("status", ["approved", "completed", "feedback_done"])
         .returns<AssignmentRow[]>();
       if (error) throw error;
-      assignedMemberIds = (data ?? []).map((assignment) => assignment.profile_id);
+      assignedMemberIds = (data ?? []).map((assignment) => assignment.user_id);
 
       if (!assignedMemberIds.includes(user.id)) {
         return NextResponse.json(
@@ -387,7 +388,7 @@ export async function POST(request: Request) {
     if (feedbackError) throw feedbackError;
 
     const { error: updateError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .update({
         status: "feedback_done",
         feedback_completed_at: now,

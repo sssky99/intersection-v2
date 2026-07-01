@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   try {
     const supabase = createAdminClient();
     const { data: rowData, error: rowError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select("id,user_id,status,ticket_id,ticket_instance_id,ticket_snapshot")
       .eq("id", waitlistId)
       .eq("user_id", user.id)
@@ -95,23 +95,6 @@ export async function POST(request: Request) {
       instance = data as unknown as InstanceRow | null;
     }
 
-    if (instance?.id) {
-      const { data: assignment, error: assignmentError } = await supabase
-        .from("ticket_assignments")
-        .select("ticket_instance_id")
-        .eq("ticket_instance_id", instance.id)
-        .eq("profile_id", user.id)
-        .maybeSingle();
-      if (assignmentError) throw assignmentError;
-
-      if (!assignment) {
-        return NextResponse.json(
-          { error: "Arrival status is only available for assigned members." },
-          { status: 403 },
-        );
-      }
-    }
-
     const startAt = toStartAt(
       instance?.event_date ?? row.ticket_snapshot?.date,
       instance?.event_time ?? row.ticket_snapshot?.time,
@@ -132,7 +115,7 @@ export async function POST(request: Request) {
 
     const updatedAt = new Date().toISOString();
     const { error: updateError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .update({
         arrival_status: arrivalStatus,
         arrival_status_updated_at: updatedAt,

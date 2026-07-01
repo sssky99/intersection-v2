@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       event_date: string | null;
     }>();
 
-  if (instanceError) {
+  if (instanceError || !instance) {
     return NextResponse.json(
       { error: "Ticket visibility is not available." },
       { status: 400 },
@@ -97,6 +97,39 @@ export async function POST(request: Request) {
   if (instance?.visibility === "test_only" && !profile.is_test_participant) {
     return NextResponse.json(
       { error: "운영자 전용 티켓 접근 권한이 없습니다." },
+      { status: 403 },
+    );
+  }
+
+  const { data: currentInvitation, error: invitationLookupError } = await admin
+    .from("ticket_invitations")
+    .select("id,status,source_type,inviter_id,expires_at")
+    .eq("ticket_instance_id", ticket.id)
+    .eq("user_id", user.id)
+    .maybeSingle<{
+      id: string;
+      status: string;
+      source_type: "service" | "admin" | "friend";
+      inviter_id: string | null;
+      expires_at: string | null;
+    }>();
+  if (invitationLookupError) {
+    return NextResponse.json(
+      { error: "Ticket invitation is not available." },
+      { status: 400 },
+    );
+  }
+
+  const invitationIsActive = Boolean(
+    currentInvitation &&
+      ["sent", "viewed", "accepted"].includes(currentInvitation.status) &&
+      (!currentInvitation.expires_at ||
+        new Date(currentInvitation.expires_at).getTime() > Date.now()),
+  );
+
+  if (instance.visibility === "invite_only" && !invitationIsActive) {
+    return NextResponse.json(
+      { error: "An invitation is required.", code: "invitation_required" },
       { status: 403 },
     );
   }
@@ -120,7 +153,7 @@ export async function POST(request: Request) {
     membershipStatus === "active" ? "waitlisted" : "payment_pending";
 
   const { data: existingWaitlist, error: existingWaitlistError } = await admin
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select("id,status")
     .eq("user_id", user.id)
     .or(`ticket_instance_id.eq.${ticket.id},ticket_id.eq.${ticket.id}`)
@@ -144,29 +177,41 @@ export async function POST(request: Request) {
     existingWaitlist && protectedStatuses.has(existingWaitlist.status)
       ? existingWaitlist.status
       : waitlistStatus;
-  const waitlistPayload = {
-    ticket_id: ticket.id,
-    ticket_template_id: ticket.templateId,
-    ticket_instance_id: ticket.id,
-    meeting_date: ticket.date,
-    ticket_snapshot: ticket,
-    updated_at: new Date().toISOString(),
-  };
+  const now = new Date().toISOString();
+  const { data: invitation, error: invitationError } = await admin
+    .from("ticket_invitations")
+    .upsert(
+      {
+        ticket_instance_id: ticket.id,
+        user_id: user.id,
+        source_type: currentInvitation?.source_type ?? "service",
+        inviter_id: currentInvitation?.inviter_id ?? null,
+        status: "accepted",
+        responded_at: now,
+        updated_at: now,
+      },
+      { onConflict: "ticket_instance_id,user_id" },
+    )
+    .select("id")
+    .single<{ id: string }>();
+
+  if (invitationError) {
+    console.error("Ticket invitation accept error:", invitationError);
+    return NextResponse.json(
+      { error: "Failed to accept the ticket invitation." },
+      { status: 500 },
+    );
+  }
+
   const waitlistResult =
-    existingWaitlist?.id != null
-      ? effectiveStatus === existingWaitlist.status
-        ? null
-        : await admin
-            .from("meeting_waitlist")
-            .update({
-              ...waitlistPayload,
-              status: effectiveStatus,
-            })
-            .eq("id", existingWaitlist.id)
-      : await admin.from("meeting_waitlist").insert({
-          ...waitlistPayload,
-          user_id: user.id,
-          status: waitlistStatus,
+    existingWaitlist?.id != null && effectiveStatus === existingWaitlist.status
+      ? null
+      : await admin.rpc("set_ticket_participation_status", {
+          p_ticket_instance_id: ticket.id,
+          p_user_id: user.id,
+          p_status: effectiveStatus,
+          p_ticket_snapshot: ticket,
+          p_invitation_id: invitation.id,
         });
 
   if (waitlistResult?.error) {

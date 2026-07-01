@@ -31,14 +31,14 @@ type CalendarTicketData = {
 type AdminCalendarTicket = {
   id: string;
   templateId: string;
-  instanceId: string | null;
+  instanceId: string;
   title: string;
   date: string;
   time: string | null;
   region: string | null;
   imageUrl: string | null;
   visibility: TicketVisibility;
-  assignmentCount: number;
+  participantCount: number;
   waitlistCount: number;
 };
 
@@ -51,7 +51,7 @@ function cn(...values: Array<string | false | null | undefined>) {
 }
 
 function ticketRowsFromTemplate(template: AdminTicketTemplate) {
-  if (template.visibility === "question") return [];
+  if (template.template_kind === "question_sample") return [];
 
   const base = {
     templateId: template.id,
@@ -67,31 +67,15 @@ function ticketRowsFromTemplate(template: AdminTicketTemplate) {
         instanceId: instance.id,
         title: instance.title || template.title,
         date: instance.event_date!,
-        time: instance.event_time ?? template.event_time ?? template.default_time,
-        region: instance.region ?? template.region ?? template.default_region,
+        time: instance.event_time ?? template.default_time,
+        region: instance.region ?? template.default_region,
         visibility: instance.visibility,
-        assignmentCount: instance.assignment_count,
+        participantCount: instance.participant_count,
         waitlistCount: instance.waitlist_count,
       }),
     );
 
-  if (instanceRows.length > 0) return instanceRows;
-  if (!template.event_date) return [];
-
-  return [
-    {
-      ...base,
-      id: template.id,
-      instanceId: null,
-      title: template.title,
-      date: template.event_date,
-      time: template.event_time ?? template.default_time,
-      region: template.region ?? template.default_region,
-      visibility: template.visibility,
-      assignmentCount: template.assignment_count,
-      waitlistCount: template.waitlist_count,
-    },
-  ] satisfies AdminCalendarTicket[];
+  return instanceRows;
 }
 
 function calendarDatesFromTemplates(templates: AdminTicketTemplate[]) {
@@ -324,7 +308,7 @@ function AdminCalendarTicketCard({
             <InfoLine icon={CalendarDays} value={formatTicketDateLabel(ticket.date)} />
             <InfoLine
               icon={RefreshCw}
-              value={`배정 ${ticket.assignmentCount}명 · 대기 ${ticket.waitlistCount}명`}
+              value={`참여 ${ticket.participantCount}명 · 대기 ${ticket.waitlistCount}명`}
             />
           </div>
         </div>

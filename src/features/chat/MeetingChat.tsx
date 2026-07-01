@@ -438,17 +438,7 @@ export function MeetingChat({
         {
           event: "*",
           schema: "public",
-          table: "ticket_assignments",
-          filter: `profile_id=eq.${userId}`,
-        },
-        () => void loadRooms(),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "meeting_waitlist",
+          table: "ticket_participations",
           filter: `user_id=eq.${userId}`,
         },
         () => void loadRooms(),

@@ -14,6 +14,15 @@ type TicketInstanceRow = {
   id: string;
   template_id: string;
   event_date: string | null;
+  visibility: string;
+};
+
+type TicketInvitationRow = {
+  id: string;
+  status: string;
+  source_type: "service" | "admin" | "friend";
+  inviter_id: string | null;
+  expires_at: string | null;
 };
 
 function isTicket(value: PurchaseRequest["ticket"]): value is GatheringTicket {
@@ -68,11 +77,12 @@ export async function POST(request: Request) {
 
   const admin = body?.ticket ? createAdminClient() : null;
   let ticketInstance: TicketInstanceRow | null = null;
+  let ticketInvitation: TicketInvitationRow | null = null;
 
   if (body?.ticket && admin) {
     const { data: instance, error: instanceError } = await admin
       .from("ticket_instances")
-      .select("id,template_id,event_date")
+      .select("id,template_id,event_date,visibility")
       .eq("id", body.ticket.id)
       .maybeSingle<TicketInstanceRow>();
 
@@ -92,6 +102,33 @@ export async function POST(request: Request) {
     }
 
     ticketInstance = instance;
+
+    const { data: invitation, error: invitationError } = await admin
+      .from("ticket_invitations")
+      .select("id,status,source_type,inviter_id,expires_at")
+      .eq("ticket_instance_id", instance.id)
+      .eq("user_id", user.id)
+      .maybeSingle<TicketInvitationRow>();
+    if (invitationError) {
+      return NextResponse.json(
+        { error: "Ticket invitation is not available." },
+        { status: 400 },
+      );
+    }
+    ticketInvitation = invitation;
+
+    const invitationIsActive = Boolean(
+      invitation &&
+        ["sent", "viewed", "accepted"].includes(invitation.status) &&
+        (!invitation.expires_at ||
+          new Date(invitation.expires_at).getTime() > Date.now()),
+    );
+    if (instance.visibility === "invite_only" && !invitationIsActive) {
+      return NextResponse.json(
+        { error: "An invitation is required.", code: "invitation_required" },
+        { status: 403 },
+      );
+    }
   }
 
   const now = new Date().toISOString();
@@ -116,7 +153,7 @@ export async function POST(request: Request) {
   if (body.ticket && admin && ticketInstance) {
     const instance = ticketInstance;
     const { data: existingWaitlist, error: existingWaitlistError } = await admin
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select("id,status")
       .eq("user_id", user.id)
       .or(`ticket_instance_id.eq.${instance.id},ticket_id.eq.${instance.id}`)
@@ -139,30 +176,43 @@ export async function POST(request: Request) {
       "feedback_done",
       "completed",
     ]);
-    const waitlistPayload = {
-      ticket_id: instance.id,
-      ticket_template_id: instance.template_id,
-      ticket_instance_id: instance.id,
-      meeting_date: instance.event_date,
-      ticket_snapshot: body.ticket,
-      updated_at: now,
-    };
+    const { data: acceptedInvitation, error: invitationError } = await admin
+      .from("ticket_invitations")
+      .upsert(
+        {
+          ticket_instance_id: instance.id,
+          user_id: user.id,
+          source_type: ticketInvitation?.source_type ?? "service",
+          inviter_id: ticketInvitation?.inviter_id ?? null,
+          status: "accepted",
+          responded_at: now,
+          updated_at: now,
+        },
+        { onConflict: "ticket_instance_id,user_id" },
+      )
+      .select("id")
+      .single<{ id: string }>();
+    if (invitationError) {
+      console.error(
+        "Membership invitation accept failed:",
+        invitationError.message,
+      );
+      return NextResponse.json(
+        { error: "Failed to accept the ticket invitation." },
+        { status: 500 },
+      );
+    }
 
     const waitlistResult =
-      existingWaitlist?.id != null
-        ? protectedStatuses.has(existingWaitlist.status)
-          ? null
-          : await admin
-              .from("meeting_waitlist")
-              .update({
-                ...waitlistPayload,
-                status: "payment_pending",
-              })
-              .eq("id", existingWaitlist.id)
-        : await admin.from("meeting_waitlist").insert({
-            ...waitlistPayload,
-            user_id: user.id,
-            status: "payment_pending",
+      existingWaitlist?.id != null &&
+      protectedStatuses.has(existingWaitlist.status)
+        ? null
+        : await admin.rpc("set_ticket_participation_status", {
+            p_ticket_instance_id: instance.id,
+            p_user_id: user.id,
+            p_status: "payment_pending",
+            p_ticket_snapshot: body.ticket,
+            p_invitation_id: acceptedInvitation.id,
           });
 
     if (waitlistResult?.error) {

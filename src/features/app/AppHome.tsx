@@ -1145,7 +1145,7 @@ export function AppHome({
 
       {!chatRoomOpen && (
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
-          <div className="pointer-events-auto relative grid grid-cols-5 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+          <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
               const selected = activeTab === id;
 

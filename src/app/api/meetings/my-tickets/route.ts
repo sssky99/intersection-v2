@@ -46,9 +46,6 @@ type TemplateRow = {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
-  place_name: string | null;
-  address: string | null;
-  place_payload: unknown;
   atmosphere_gender_mood: string | null;
   atmosphere_age_band_id: string | null;
   score_temperature: number | null;
@@ -71,6 +68,8 @@ type InstanceRow = {
   place_visibility: string | null;
   place_payload: unknown;
   remaining_seat_label_count: number | null;
+  minimum_participant_count: number | null;
+  max_participant_count: number | null;
   visibility: string | null;
 };
 
@@ -88,13 +87,9 @@ type WaitlistRow = {
   created_at: string | null;
 };
 
-type AssignmentRow = {
+type ParticipantRow = {
   ticket_instance_id: string;
-  profile_id: string;
-};
-
-type UserAssignmentRow = {
-  ticket_instance_id: string;
+  user_id: string;
 };
 
 type MemberArrivalRow = {
@@ -135,9 +130,7 @@ type ProfileAccessRow = {
   public_emoji: string | null;
 };
 
-type TicketSourceRow = WaitlistRow & {
-  assignment_only?: boolean;
-};
+type TicketSourceRow = WaitlistRow;
 
 
 const templateSelect = [
@@ -156,9 +149,6 @@ const templateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
-  "place_name",
-  "address",
-  "place_payload",
   "atmosphere_gender_mood",
   "atmosphere_age_band_id",
   "score_temperature",
@@ -168,11 +158,6 @@ const templateSelect = [
   "score_alcohol",
   "score_romance",
 ].join(",");
-
-const templateSelectWithoutPlacePayload = templateSelect.replace(
-  ",place_payload",
-  "",
-);
 
 const instanceSelect = [
   "id",
@@ -186,6 +171,8 @@ const instanceSelect = [
   "place_visibility",
   "place_payload",
   "remaining_seat_label_count",
+  "minimum_participant_count",
+  "max_participant_count",
   "visibility",
 ].join(",");
 
@@ -232,15 +219,6 @@ async function fetchTemplateRows(
     .from("ticket_templates")
     .select(templateSelect)
     .in("id", templateIds);
-
-  if (isMissingPlacePayloadColumn(error)) {
-    const fallback = await supabase
-      .from("ticket_templates")
-      .select(templateSelectWithoutPlacePayload)
-      .in("id", templateIds);
-    if (fallback.error) throw fallback.error;
-    return (fallback.data ?? []) as unknown as TemplateRow[];
-  }
 
   if (error) throw error;
   return (data ?? []) as unknown as TemplateRow[];
@@ -357,7 +335,7 @@ async function fetchAtmosphereWaitlistRows(
   const rows: AtmosphereWaitlistRow[] = [];
 
   const { data: byInstanceId, error: byInstanceIdError } = await supabase
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select(waitlistSelect)
     .in("ticket_instance_id", instanceIds)
     .in("status", atmosphereWaitlistStatuses)
@@ -366,7 +344,7 @@ async function fetchAtmosphereWaitlistRows(
   rows.push(...(byInstanceId ?? []));
 
   const { data: byTicketId, error: byTicketIdError } = await supabase
-    .from("meeting_waitlist")
+    .from("ticket_participations")
     .select(waitlistSelect)
     .in("ticket_id", instanceIds)
     .in("status", atmosphereWaitlistStatuses)
@@ -376,7 +354,7 @@ async function fetchAtmosphereWaitlistRows(
 
   if (templateIds.length > 0) {
     const { data: byTemplateId, error: byTemplateIdError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select(waitlistSelect)
       .in("ticket_template_id", templateIds)
       .in("status", atmosphereWaitlistStatuses)
@@ -479,9 +457,11 @@ function toTicket(
     "교집합이 준비한 실제 운영 모임";
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
-  const place =
-    normalizeMeetingPlace(instance.place_payload) ??
-    normalizeMeetingPlace(template.place_payload);
+  const place = normalizeMeetingPlace(instance.place_payload);
+  const placeVisible =
+    instance.place_visibility === "public" ||
+    (instance.place_visibility === "confirmed_only" &&
+      confirmedStatuses.has(row.status));
 
   return {
     id: instance.id,
@@ -497,9 +477,13 @@ function toTicket(
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,
     minimumParticipantCount:
-      snapshot?.minimumParticipantCount ?? MEETING_MIN_PARTICIPANT_COUNT,
+      instance.minimum_participant_count ??
+      snapshot?.minimumParticipantCount ??
+      MEETING_MIN_PARTICIPANT_COUNT,
     maxParticipantCount:
-      snapshot?.maxParticipantCount ?? MEETING_MAX_PARTICIPANT_COUNT,
+      instance.max_participant_count ??
+      snapshot?.maxParticipantCount ??
+      MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? snapshot?.peopleHint ?? subtitle,
     reason: template.recommendation_copy ?? snapshot?.reason ?? subtitle,
     detailSummary: template.detail_summary?.trim() || snapshot?.detailSummary,
@@ -513,12 +497,13 @@ function toTicket(
       ? textList(template.detail_good_for)
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
-    place:
-      ticketPlaceFromLegacyFields({
-        placeName: instance.place_name ?? template.place_name,
-        address: instance.address ?? template.address,
-        place,
-      }) ?? snapshot?.place,
+    place: placeVisible
+      ? ticketPlaceFromLegacyFields({
+          placeName: instance.place_name,
+          address: instance.address,
+          place,
+        })
+      : null,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     vibeScores: {
@@ -745,9 +730,7 @@ function sourceRowAssigned(
   instanceId: string | null,
   userAssignedInstanceIds: Set<string>,
 ) {
-  return Boolean(
-    row.assignment_only || (instanceId && userAssignedInstanceIds.has(instanceId)),
-  );
+  return Boolean(instanceId && userAssignedInstanceIds.has(instanceId));
 }
 
 function effectiveSourceStatus(
@@ -877,7 +860,7 @@ export async function GET(request: Request) {
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
 
     const { data: waitlistData, error: waitlistError } = await supabase
-      .from("meeting_waitlist")
+      .from("ticket_participations")
       .select("*")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
@@ -887,20 +870,17 @@ export async function GET(request: Request) {
     const participationCount = waitlistRows.filter((row) =>
       ["completed", "feedback_done"].includes(row.status),
     ).length;
-    const { data: userAssignmentData, error: userAssignmentError } =
-      await supabase
-        .from("ticket_assignments")
-        .select("ticket_instance_id")
-        .eq("profile_id", user.id)
-        .returns<UserAssignmentRow[]>();
-    if (userAssignmentError) throw userAssignmentError;
-
-    const userAssignments = userAssignmentData ?? [];
     const userAssignedInstanceIds = new Set(
-      userAssignments.map((assignment) => assignment.ticket_instance_id),
+      waitlistRows
+        .filter(
+          (participation) =>
+            participation.ticket_instance_id &&
+            confirmedStatuses.has(participation.status),
+        )
+        .map((participation) => participation.ticket_instance_id!),
     );
 
-    if (waitlistRows.length === 0 && userAssignments.length === 0) {
+    if (waitlistRows.length === 0) {
       return ticketsResponse([], participationCount, pagination ? { totalCount: 0, hasMore: false, nextOffset: null } : undefined);
     }
 
@@ -910,7 +890,6 @@ export async function GET(request: Request) {
           (row) =>
             row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id,
         ),
-        ...userAssignments.map((assignment) => assignment.ticket_instance_id),
       ],
     );
 
@@ -920,37 +899,7 @@ export async function GET(request: Request) {
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
-    const waitlistInstanceIds = new Set(
-      waitlistRows
-        .map((row) => row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id)
-        .filter(Boolean),
-    );
-    const assignmentOnlyRows = userAssignments
-      .filter((assignment) => !waitlistInstanceIds.has(assignment.ticket_instance_id))
-      .map((assignment): TicketSourceRow | null => {
-        const instance = instanceMap.get(assignment.ticket_instance_id);
-        if (!instance) return null;
-
-        return {
-          id: `assignment:${assignment.ticket_instance_id}`,
-          user_id: user.id,
-          ticket_id: assignment.ticket_instance_id,
-          ticket_template_id: instance.template_id,
-          ticket_instance_id: assignment.ticket_instance_id,
-          meeting_date: instance.event_date,
-          status: "approved",
-          ticket_snapshot: null,
-          arrival_status: null,
-          arrival_status_updated_at: null,
-          created_at: null,
-          assignment_only: true,
-        };
-      })
-      .filter((row): row is TicketSourceRow => Boolean(row));
-    const ticketSourceRows: TicketSourceRow[] = [
-      ...waitlistRows,
-      ...assignmentOnlyRows,
-    ].filter((row) => {
+    const ticketSourceRows: TicketSourceRow[] = waitlistRows.filter((row) => {
       const instanceId =
         row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id;
       const instance = instanceId ? instanceMap.get(instanceId) : null;
@@ -1009,20 +958,21 @@ export async function GET(request: Request) {
     }
 
     const templateMap = new Map(templates.map((template) => [template.id, template]));
-    let assignments: AssignmentRow[] = [];
+    let assignments: ParticipantRow[] = [];
     if (pagedInstanceIds.length > 0) {
       const { data, error } = await supabase
-        .from("ticket_assignments")
-        .select("ticket_instance_id,profile_id")
-        .in("ticket_instance_id", pagedInstanceIds);
+        .from("ticket_participations")
+        .select("ticket_instance_id,user_id")
+        .in("ticket_instance_id", pagedInstanceIds)
+        .in("status", Array.from(confirmedStatuses));
       if (error) throw error;
-      assignments = (data ?? []) as unknown as AssignmentRow[];
+      assignments = (data ?? []) as unknown as ParticipantRow[];
     }
 
     let memberArrivalRows: MemberArrivalRow[] = [];
     if (pagedInstanceIds.length > 0) {
       const { data: byInstanceId, error: byInstanceIdError } = await supabase
-        .from("meeting_waitlist")
+        .from("ticket_participations")
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
@@ -1032,7 +982,7 @@ export async function GET(request: Request) {
       if (byInstanceIdError) throw byInstanceIdError;
 
       const { data: byTicketId, error: byTicketIdError } = await supabase
-        .from("meeting_waitlist")
+        .from("ticket_participations")
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
@@ -1050,7 +1000,7 @@ export async function GET(request: Request) {
     );
     const profileIds = unique([
       user.id,
-      ...assignments.map((assignment) => assignment.profile_id),
+      ...assignments.map((assignment) => assignment.user_id),
       ...memberArrivalRows.map((arrivalRow) => arrivalRow.user_id),
       ...atmosphereWaitlistRows.map((row) => row.user_id),
     ]);
@@ -1075,7 +1025,7 @@ export async function GET(request: Request) {
     );
     const assignmentsByInstance = assignments.reduce((map, assignment) => {
       const current = map.get(assignment.ticket_instance_id) ?? [];
-      current.push(assignment.profile_id);
+      current.push(assignment.user_id);
       map.set(assignment.ticket_instance_id, current);
       return map;
     }, new Map<string, string[]>());
@@ -1097,7 +1047,7 @@ export async function GET(request: Request) {
     };
 
     for (const assignment of assignments) {
-      addParticipant(assignment.ticket_instance_id, assignment.profile_id);
+      addParticipant(assignment.ticket_instance_id, assignment.user_id);
     }
     for (const arrivalRow of memberArrivalRows) {
       addParticipant(
@@ -1113,7 +1063,11 @@ export async function GET(request: Request) {
           if (!startAt || now < startAt) return false;
           const participantCount =
             participantIdsByInstance.get(instance.id)?.size ?? 0;
-          return participantCount < MEETING_MIN_PARTICIPANT_COUNT;
+          return (
+            participantCount <
+            (instance.minimum_participant_count ??
+              MEETING_MIN_PARTICIPANT_COUNT)
+          );
         })
         .map((instance) => instance.id),
     );
@@ -1128,14 +1082,14 @@ export async function GET(request: Request) {
       };
 
       const { error: cancelByInstanceError } = await supabase
-        .from("meeting_waitlist")
+        .from("ticket_participations")
         .update(cancelPayload)
         .in("ticket_instance_id", autoCancelledIds)
         .in("status", autoCancellationStatuses);
       if (cancelByInstanceError) throw cancelByInstanceError;
 
       const { error: cancelByTicketError } = await supabase
-        .from("meeting_waitlist")
+        .from("ticket_participations")
         .update(cancelPayload)
         .in("ticket_id", autoCancelledIds)
         .in("status", autoCancellationStatuses);
@@ -1208,7 +1162,9 @@ export async function GET(request: Request) {
           };
         });
 
-        const placeVisible = instance?.place_visibility !== "hidden";
+        const placeVisible =
+          instance?.place_visibility === "public" ||
+          (instance?.place_visibility === "confirmed_only" && confirmed);
 
         return {
           id: String(row.id),
@@ -1223,7 +1179,7 @@ export async function GET(request: Request) {
           arrivalOpensAt: isoOrNull(startAt ? addHours(startAt, -3) : null),
           feedbackOpensAt: isoOrNull(startAt ? addHours(startAt, 3) : null),
           canSetArrival:
-            confirmed && !row.assignment_only && derived.canSetArrival,
+            confirmed && derived.canSetArrival,
           arrivalStatus: row.arrival_status ?? null,
           arrivalStatusUpdatedAt: row.arrival_status_updated_at ?? null,
           place: placeVisible

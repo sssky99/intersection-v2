@@ -10,6 +10,7 @@ export type TicketVisibility =
   | "draft"
   | "test_only"
   | "public"
+  | "invite_only"
   | "question"
   | "closed"
   | "archived";
@@ -25,11 +26,36 @@ export type TicketTemplateScores = {
   score_romance: number | null;
 };
 
-export type TicketAssignment = {
+export type TicketParticipation = {
+  id: number | string;
+  ticket_instance_id: string;
+  user_id: string;
+  status: string;
+  applied_at: string | null;
+  confirmed_at: string | null;
+  profile: AdminProfile | null;
+};
+
+export type TicketInvitationStatus =
+  | "sent"
+  | "viewed"
+  | "accepted"
+  | "declined"
+  | "expired"
+  | "cancelled";
+
+export type TicketInvitation = {
   id: string;
   ticket_instance_id: string;
-  profile_id: string;
-  assigned_at: string;
+  user_id: string;
+  source_type: "service" | "admin" | "friend";
+  inviter_id: string | null;
+  status: TicketInvitationStatus;
+  expires_at: string | null;
+  viewed_at: string | null;
+  responded_at: string | null;
+  created_at: string;
+  updated_at: string;
   profile: AdminProfile | null;
 };
 
@@ -57,15 +83,21 @@ export type AdminTicketInstance = {
   place_visibility: PlaceVisibility;
   visibility: TicketVisibility;
   remaining_seat_label_count: number;
+  minimum_participant_count: number;
+  max_participant_count: number;
   created_at: string;
   updated_at: string;
-  assignment_count: number;
+  participant_count: number;
   waitlist_count: number;
-  assignments: TicketAssignment[];
+  invitation_count: number;
+  participants: TicketParticipation[];
+  invitations: TicketInvitation[];
 };
 
 export type AdminTicketTemplate = TicketTemplateScores & {
   id: string;
+  template_kind: "experience" | "question_sample";
+  lifecycle_status: "active" | "archived";
   title: string;
   short_description: string | null;
   detail_summary: string | null;
@@ -80,35 +112,26 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
-  event_date: string | null;
-  event_time: string | null;
-  region: string | null;
-  place_name: string | null;
-  address: string | null;
-  place_payload: MeetingPlace | null;
-  place_visibility: PlaceVisibility;
   atmosphere_gender_mood: MeetingAtmosphereGenderMood | null;
   atmosphere_age_band_id: MeetingAtmosphereAgeBandId | null;
   atmosphere_default_gender_mood: MeetingAtmosphereGenderMood | null;
   atmosphere_default_age_band_id: MeetingAtmosphereAgeBandId | null;
-  operation_code: string | null;
-  operation_note: string | null;
-  remaining_seat_label_count: number;
-  max_participant_count: number;
   visibility: TicketVisibility;
   question_order: number | null;
   created_at: string;
   updated_at: string;
   instances: AdminTicketInstance[];
   instance_count: number;
-  assignment_count: number;
+  participant_count: number;
   waitlist_count: number;
+  invitation_count: number;
 };
 
 export const ticketVisibilities: TicketVisibility[] = [
   "draft",
   "test_only",
   "public",
+  "invite_only",
   "question",
   "closed",
   "archived",
@@ -118,6 +141,7 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
   draft: "미공개",
   test_only: "운영자에게만 공개",
   public: "전체 공개",
+  invite_only: "초대 전용",
   question: "샘플 티켓",
   closed: "마감",
   archived: "보관",
@@ -125,6 +149,7 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
 
 export const placeVisibilities: PlaceVisibility[] = [
   "hidden",
+  "confirmed_only",
   "public",
 ];
 
