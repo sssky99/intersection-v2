@@ -2104,11 +2104,13 @@ function TicketStageContent({
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
         />
-        <PlaceSection userTicket={userTicket} />
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
           className="mt-0"
+          afterActivities={
+            <PlaceSection userTicket={userTicket} revealDetails />
+          }
         />
         <FeedbackGuide userTicket={userTicket} />
       </>
@@ -2124,11 +2126,13 @@ function TicketStageContent({
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
         />
-        <PlaceSection userTicket={userTicket} />
         <TicketDetailContent
           ticket={ticket}
           sections={introDetailSections}
           className="mt-0"
+          afterActivities={
+            <PlaceSection userTicket={userTicket} revealDetails />
+          }
         />
         <MemberIntroCarousel members={userTicket.members} />
       </>
@@ -2138,29 +2142,39 @@ function TicketStageContent({
   if (progressStep === "approved") {
     return (
       <>
-        <PlaceSection userTicket={userTicket} />
-        <TicketDetailContent ticket={ticket} sections={introDetailSections} />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={introDetailSections}
+          afterActivities={
+            <PlaceSection userTicket={userTicket} revealDetails />
+          }
+        />
         <MemberIntroCarousel members={userTicket.members} />
       </>
     );
   }
 
   return (
-    <>
-      <PlaceSection userTicket={userTicket} />
-      <TicketDetailContent
-        ticket={ticket}
-        sections={appliedDetailSections}
-        className="mt-0"
-      />
-    </>
+    <TicketDetailContent
+      ticket={ticket}
+      sections={appliedDetailSections}
+      className="mt-0"
+      afterActivities={<PlaceSection userTicket={userTicket} />}
+    />
   );
 }
 
-function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
+function PlaceSection({
+  userTicket,
+  revealDetails = false,
+}: {
+  userTicket: UserTicket;
+  revealDetails?: boolean;
+}) {
   const hasPlace = Boolean(
     userTicket.place?.name?.trim() || userTicket.place?.address?.trim(),
   );
+  const hasDetailedPlace = revealDetails && hasPlace;
   const hasMap =
     userTicket.place?.source === "naver" &&
     typeof userTicket.place.mapx === "number" &&
@@ -2169,9 +2183,9 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
 
   return (
     <section className="border-t border-black/8 py-5">
-      <h2 className="text-[15px] font-black text-black">오늘의 장소</h2>
+      <h2 className="text-[15px] font-black text-black">만나는 곳</h2>
       <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4">
-        {hasPlace ? (
+        {hasDetailedPlace ? (
           <div className="space-y-3">
             {userTicket.place?.name && (
               <TicketMetaLine Icon={MapPin}>{userTicket.place.name}</TicketMetaLine>
@@ -2198,9 +2212,12 @@ function PlaceSection({ userTicket }: { userTicket: UserTicket }) {
             )}
           </div>
         ) : (
-          <p className="text-sm font-semibold leading-6 text-black/50">
-            상세 장소는 곧 안내될 예정이에요.
-          </p>
+          <div className="space-y-2.5">
+            <TicketMetaLine Icon={MapPin}>{userTicket.ticket.area}</TicketMetaLine>
+            <p className="text-sm font-semibold leading-6 text-black/50">
+              상세 장소는 확정되면 공개돼요.
+            </p>
+          </div>
         )}
       </div>
     </section>

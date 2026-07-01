@@ -49,11 +49,19 @@ function cleanList(items: string[] | undefined) {
   return (items ?? []).map((item) => item.trim()).filter(Boolean);
 }
 
+function activityProse(items: string[]) {
+  return items
+    .map((item) => item.replace(/^[•·\-–—]\s*/, "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function TicketDetailContent({
   ticket,
   className,
   sections = defaultSections,
   startWithBorder = false,
+  afterActivities,
   afterNotice,
   footer,
 }: {
@@ -61,6 +69,7 @@ export function TicketDetailContent({
   className?: string;
   sections?: TicketDetailSectionKey[];
   startWithBorder?: boolean;
+  afterActivities?: ReactNode;
   afterNotice?: ReactNode;
   footer?: ReactNode;
 }) {
@@ -119,9 +128,11 @@ export function TicketDetailContent({
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "activities"}
         >
-          <BulletList items={activities} />
+          <ActivityProse items={activities} />
         </TicketDetailSection>
       )}
+
+      {afterActivities}
 
       {visibleSections.has("notice") && (
         <TicketDetailSection
@@ -293,5 +304,19 @@ function BulletList({ items }: { items: string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function ActivityProse({ items }: { items: string[] }) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-accent/15 bg-gradient-to-br from-accent/[0.09] via-white to-white px-5 py-4 shadow-[0_10px_28px_rgba(126,179,199,0.08)]">
+      <span
+        aria-hidden
+        className="mb-3 block h-1 w-8 rounded-full bg-accent/70"
+      />
+      <p className="break-keep text-[15px] font-semibold leading-[1.9] tracking-[-0.01em] text-black/68 [text-wrap:pretty]">
+        {activityProse(items)}
+      </p>
+    </div>
   );
 }

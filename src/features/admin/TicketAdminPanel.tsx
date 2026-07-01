@@ -429,7 +429,7 @@ function ticketRequestBody(draft: TicketDraft) {
     title: draft.title,
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
-    detailActivities: lines(draft.detailActivities, 4),
+    detailActivities: lines(draft.detailActivities),
     detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice,
@@ -532,7 +532,7 @@ function ticketPreview(
     peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
     reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
     detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
-    detailActivities: lines(draft.detailActivities, 4),
+    detailActivities: lines(draft.detailActivities),
     detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
@@ -1741,7 +1741,8 @@ function ContentEditor({
           label="이 자리에서는 이런 걸 해요"
           className="col-span-2"
           value={draft.detailActivities}
-          placeholder={"영화를 함께 보고 감상을 나눠요\n좋아하는 장면과 캐릭터 이야기를 해요"}
+          placeholder="이 자리에서 함께할 활동과 이야기를 자유롭게 적어주세요."
+          rows={10}
           onChange={(detailActivities) =>
             onDraftChange({ ...draft, detailActivities })
           }

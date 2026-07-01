@@ -252,8 +252,12 @@ function findReplacementTicket(
   reason: TicketRejectionReasonId,
   currentTicket: GatheringTicket,
   tickets: GatheringTicket[],
+  excludedTicketIds: ReadonlySet<string>,
 ) {
-  const candidates = tickets.filter((ticket) => ticket.id !== currentTicket.id);
+  const candidates = tickets.filter(
+    (ticket) =>
+      ticket.id !== currentTicket.id && !excludedTicketIds.has(ticket.id),
+  );
   const currentArea = normalizedTicketText(currentTicket.area);
   const currentActivity = normalizedTicketText(currentTicket.activityType);
   const currentTime = normalizedTicketText(currentTicket.time);
@@ -281,8 +285,8 @@ function findReplacementTicket(
           : activityRejectionReasons.has(reason)
             ? candidates.find((ticket) => {
                 const activity = normalizedTicketText(ticket.activityType);
-                if (currentActivity && activity) {
-                  return activity !== currentActivity;
+                if (currentActivity && activity && activity !== currentActivity) {
+                  return true;
                 }
                 return ticket.templateId !== currentTicket.templateId;
               })
@@ -371,6 +375,7 @@ export function MeetingRecommendation({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
+  const rejectedTicketIdsRef = useRef<Set<string>>(new Set());
   const dateSelectionRunRef = useRef(0);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const ticketEnded = ticket ? isPastTicketDate(ticket.date) : false;
@@ -517,6 +522,7 @@ export function MeetingRecommendation({
   const selectDate = async (date: AvailableDate) => {
     const runId = dateSelectionRunRef.current + 1;
     dateSelectionRunRef.current = runId;
+    rejectedTicketIdsRef.current = new Set();
     setNotice(null);
     setError(null);
     setRejectionTicket(null);
@@ -562,10 +568,13 @@ export function MeetingRecommendation({
   const submitRejectionReason = async (reason: TicketRejectionReasonId) => {
     if (!selectedDate || !rejectionTicket || rejectionSavingReason) return;
 
+    const nextRejectedTicketIds = new Set(rejectedTicketIdsRef.current);
+    nextRejectedTicketIds.add(rejectionTicket.id);
     const replacementTicket = findReplacementTicket(
       reason,
       rejectionTicket,
       selectedDate.tickets,
+      nextRejectedTicketIds,
     );
 
     setRejectionSavingReason(reason);
@@ -584,6 +593,8 @@ export function MeetingRecommendation({
       setRejectionSavingReason(null);
       return;
     }
+
+    rejectedTicketIdsRef.current = nextRejectedTicketIds;
 
     trackEvent("ticket_rejection_reason_selected", {
       ticket_id: rejectionTicket.id,
