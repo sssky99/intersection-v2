@@ -379,7 +379,8 @@ function draftFromTicket(
     atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
     operationCode: instance?.operation_code ?? "",
     operationNote: instance?.operation_note ?? "",
-    placeVisibility: instance?.place_visibility ?? "confirmed_only",
+    placeVisibility:
+      instance?.place_visibility === "hidden" ? "hidden" : "confirmed_only",
     visibility:
       template.template_kind === "question_sample"
         ? "question"

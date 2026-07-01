@@ -634,7 +634,7 @@ async function loadTicketData() {
         place_payload: normalizeMeetingPlace(instance.place_payload),
         place_visibility: isPlaceVisibility(instance.place_visibility)
           ? instance.place_visibility
-          : "public",
+          : "confirmed_only",
         participants: instanceParticipants,
         participant_count: instanceParticipants.length,
         waitlist_count: waitlistCounts.get(instance.id) ?? 0,

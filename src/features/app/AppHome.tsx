@@ -1085,6 +1085,7 @@ export function AppHome({
         >
           <MeetingRecommendation
             userId={userId}
+            userBirthYear={currentProfile.birth_year}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}

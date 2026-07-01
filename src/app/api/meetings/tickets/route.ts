@@ -7,10 +7,6 @@ import {
   normalizeMeetingAtmosphereGenderMood,
   type MeetingAtmosphereDefaults,
 } from "@/lib/meetingAtmosphere";
-import {
-  normalizeMeetingPlace,
-  ticketPlaceFromLegacyFields,
-} from "@/lib/placePayload";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   recommendTickets,
@@ -361,8 +357,6 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
-  const place = normalizeMeetingPlace(instance.place_payload);
-  const placeVisible = instance.place_visibility === "public";
 
   return {
     id: instance.id,
@@ -395,13 +389,7 @@ function toTicket(
     detailFlow: textList(template.detail_flow),
     detailGoodFor: textList(template.detail_good_for),
     detailNotice: template.detail_notice?.trim() || undefined,
-    place: placeVisible
-      ? ticketPlaceFromLegacyFields({
-          placeName: instance.place_name,
-          address: instance.address,
-          place,
-        })
-      : null,
+    place: null,
     stageCopy: sanitizeTicketStageCopy(template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     vibeScores: {
@@ -519,7 +507,7 @@ export async function GET(request: Request) {
 
     const publicInstanceRows = (instances ?? []) as unknown as InstanceRow[];
     const invitationMap = new Map<string, InvitationRow>();
-    const declinedInstanceIds = new Set<string>();
+    const hiddenInvitationInstanceIds = new Set<string>();
     let invitedInstanceRows: InstanceRow[] = [];
     let testInstanceRows: InstanceRow[] = [];
     let recommendationProfile: TicketRecommendationProfile | null = null;
@@ -545,14 +533,18 @@ export async function GET(request: Request) {
 
       for (const invitation of effectiveInvitations) {
         invitationMap.set(invitation.ticket_instance_id, invitation);
-        if (["declined", "expired", "cancelled"].includes(invitation.status)) {
-          declinedInstanceIds.add(invitation.ticket_instance_id);
+        if (["expired", "cancelled"].includes(invitation.status)) {
+          hiddenInvitationInstanceIds.add(invitation.ticket_instance_id);
         }
       }
 
       const invitedInstanceIds = effectiveInvitations
         .filter((invitation) =>
-          ["sent", "viewed", "accepted"].includes(invitation.status),
+          ["sent", "viewed", "accepted", "declined"].includes(
+            invitation.status,
+          ) &&
+          (!invitation.expires_at ||
+            new Date(invitation.expires_at).getTime() > Date.now()),
         )
         .map((invitation) => invitation.ticket_instance_id);
       if (invitedInstanceIds.length > 0) {
@@ -611,7 +603,7 @@ export async function GET(request: Request) {
         const instanceRows = Array.from(
           new Map(
             [...publicInstanceRows, ...invitedInstanceRows]
-              .filter((instance) => !declinedInstanceIds.has(instance.id))
+              .filter((instance) => !hiddenInvitationInstanceIds.has(instance.id))
               .map((instance) => [instance.id, instance]),
           ).values(),
         );
@@ -741,7 +733,7 @@ export async function GET(request: Request) {
     const instanceRows = Array.from(
       new Map(
         [...publicInstanceRows, ...invitedInstanceRows, ...testInstanceRows]
-          .filter((instance) => !declinedInstanceIds.has(instance.id))
+          .filter((instance) => !hiddenInvitationInstanceIds.has(instance.id))
           .map((instance) => [
           instance.id,
           instance,

@@ -430,16 +430,31 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
+function placeOpenForConfirmedStatus(
+  status: string,
+  startAt: Date | null,
+  now: Date,
+  placeVisibility: string | null | undefined,
+) {
+  return Boolean(
+    confirmedStatuses.has(status) &&
+      (placeVisibility === "confirmed_only" || placeVisibility === "public") &&
+      startAt &&
+      now >= addHours(startAt, -24),
+  );
+}
+
 function toTicket(
   row: WaitlistRow,
   instance: InstanceRow | null,
   template: TemplateRow | null,
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
+  placeVisible = false,
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
   if (!instance || !template) {
-    return snapshot?.id ? snapshot : null;
+    return snapshot?.id ? { ...snapshot, place: null } : null;
   }
 
   const date = instance.event_date ?? row.meeting_date ?? snapshot?.date;
@@ -458,10 +473,6 @@ function toTicket(
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
   const place = normalizeMeetingPlace(instance.place_payload);
-  const placeVisible =
-    instance.place_visibility === "public" ||
-    (instance.place_visibility === "confirmed_only" &&
-      confirmedStatuses.has(row.status));
 
   return {
     id: instance.id,
@@ -1108,20 +1119,30 @@ export async function GET(request: Request) {
           row.ticket_snapshot?.templateId ??
           null;
         const template = templateId ? templateMap.get(templateId) ?? null : null;
-        const ticket = toTicket(
-          row,
-          instance,
-          template,
-          instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
-        );
-        if (!ticket) return null;
-
-        const startAt = toStartAt(ticket.date, ticket.time);
         const effectiveStatus = effectiveSourceStatus(
           row,
           instanceId,
           userAssignedInstanceIds,
         );
+        const sourceDate =
+          instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
+        const sourceTime = instance?.event_time ?? row.ticket_snapshot?.time;
+        const startAt = toStartAt(sourceDate, sourceTime);
+        const placeVisible = placeOpenForConfirmedStatus(
+          effectiveStatus,
+          startAt,
+          now,
+          instance?.place_visibility,
+        );
+        const ticket = toTicket(
+          row,
+          instance,
+          template,
+          instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
+          placeVisible,
+        );
+        if (!ticket) return null;
+
         const derived = deriveStatus(effectiveStatus, startAt, now);
         if (!derived.status) return null;
 
@@ -1161,10 +1182,6 @@ export async function GET(request: Request) {
             isSelf: id === user.id,
           };
         });
-
-        const placeVisible =
-          instance?.place_visibility === "public" ||
-          (instance?.place_visibility === "confirmed_only" && confirmed);
 
         return {
           id: String(row.id),

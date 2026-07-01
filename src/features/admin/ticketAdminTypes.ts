@@ -15,7 +15,7 @@ export type TicketVisibility =
   | "closed"
   | "archived";
 
-export type PlaceVisibility = "hidden" | "confirmed_only" | "public";
+export type PlaceVisibility = "hidden" | "confirmed_only";
 
 export type TicketTemplateScores = {
   score_temperature: number | null;
@@ -150,13 +150,11 @@ export const ticketVisibilityLabels: Record<TicketVisibility, string> = {
 export const placeVisibilities: PlaceVisibility[] = [
   "hidden",
   "confirmed_only",
-  "public",
 ];
 
 export const placeVisibilityLabels: Record<PlaceVisibility, string> = {
   hidden: "비공개",
-  confirmed_only: "확정 멤버에게만 공개",
-  public: "전체 공개",
+  confirmed_only: "확정 멤버에게 24시간 전 공개",
 };
 
 export function isTicketVisibility(value: unknown): value is TicketVisibility {

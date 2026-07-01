@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarDays,
   Check,
@@ -8,7 +8,7 @@ import {
   MapPin,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type WheelEvent } from "react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
@@ -29,16 +29,28 @@ import type { BlindDateUserOffer } from "@/types/blindDate";
 
 type Screen =
   | "calendar"
+  | "curating"
   | "drawing"
   | "waitlisted"
   | "blindDate";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
 
+type AgePreference = {
+  baseAge: number;
+  defaultMinAge: number;
+  defaultMaxAge: number;
+  minAge: number;
+  maxAge: number;
+};
+
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+const minimumSelectableAge = 20;
+const maximumSelectableAge = 35;
+const curationLoadingMs = 1000;
 const ticketDatesCacheTtlMs = 30_000;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
@@ -47,6 +59,40 @@ const ticketsByDateCache = new Map<
   { date: AvailableDate; expiresAt: number }
 >();
 const ticketsByDateRequests = new Map<string, Promise<AvailableDate>>();
+
+function clampAge(value: number) {
+  return Math.max(minimumSelectableAge, Math.min(maximumSelectableAge, value));
+}
+
+function ageFromBirthYear(value: string | number | null | undefined) {
+  const year =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : NaN;
+
+  if (!Number.isFinite(year)) return null;
+
+  const age = new Date().getFullYear() + 1 - year;
+  return age > 0 && age < 100 ? age : null;
+}
+
+function defaultAgePreference(
+  birthYear: string | number | null | undefined,
+): AgePreference {
+  const baseAge = clampAge(ageFromBirthYear(birthYear) ?? 28);
+  const defaultMinAge = Math.max(minimumSelectableAge, baseAge - 4);
+  const defaultMaxAge = Math.min(maximumSelectableAge, baseAge + 4);
+
+  return {
+    baseAge,
+    defaultMinAge,
+    defaultMaxAge,
+    minAge: defaultMinAge,
+    maxAge: defaultMaxAge,
+  };
+}
 
 function cachedTicketDates() {
   return ticketDatesCache && ticketDatesCache.expiresAt > Date.now()
@@ -86,7 +132,10 @@ async function fetchTicketDates(force = false) {
   return ticketDatesRequest;
 }
 
-async function fetchTicketsForDate(date: string, force = false) {
+async function fetchTicketsForDate(
+  date: string,
+  force = false,
+) {
   const cached = ticketsByDateCache.get(date);
   if (!force && cached && cached.expiresAt > Date.now()) return cached.date;
 
@@ -130,12 +179,20 @@ async function fetchTicketsForDate(date: string, force = false) {
 
 function clearTicketCaches() {
   ticketDatesCache = null;
+  ticketDatesRequest = null;
   ticketsByDateCache.clear();
+  ticketsByDateRequests.clear();
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 async function saveInvitationDecision(
   ticketInstanceId: string,
-  action: "viewed" | "declined",
+  action: "viewed",
 ) {
   const response = await fetch("/api/meetings/invitations", {
     method: "POST",
@@ -147,6 +204,7 @@ async function saveInvitationDecision(
 
 export function MeetingRecommendation({
   userId,
+  userBirthYear,
   embedded = false,
   active = true,
   membershipStatus,
@@ -162,6 +220,7 @@ export function MeetingRecommendation({
   onCoachmarkProgress,
 }: {
   userId: string;
+  userBirthYear: string | number | null;
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
@@ -176,6 +235,10 @@ export function MeetingRecommendation({
   onBlindDateOpenRequestHandled?: () => void;
   onCoachmarkProgress?: (step: RecommendationCoachmarkStep) => void;
 }) {
+  const initialAgePreference = defaultAgePreference(userBirthYear);
+  const [agePreference, setAgePreference] = useState<AgePreference>(
+    () => initialAgePreference,
+  );
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
   const [ticketIndex, setTicketIndex] = useState(0);
@@ -194,6 +257,7 @@ export function MeetingRecommendation({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
+  const dateSelectionRunRef = useRef(0);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const ticketEnded = ticket ? isPastTicketDate(ticket.date) : false;
   const activeBlindDateOffers = blindDateOffers.filter(
@@ -213,6 +277,24 @@ export function MeetingRecommendation({
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
     activeBlindDateOffers[0] ??
     null;
+
+  useEffect(() => {
+    const nextPreference = defaultAgePreference(userBirthYear);
+    setAgePreference((current) =>
+      current.baseAge === nextPreference.baseAge ? current : nextPreference,
+    );
+  }, [userBirthYear]);
+
+  const updateAgePreference = (preference: AgePreference) => {
+    setAgePreference(preference);
+    setSelectedDate(null);
+    setTicketIndex(0);
+    setLoadingTicketDate(null);
+    setNotice(null);
+    setError(null);
+    if (screen === "drawing") setScreen("calendar");
+  };
+
   useEffect(() => {
     if (screen !== "drawing" || !ticket) return;
     if (viewedTicketIdsRef.current.has(ticket.id)) return;
@@ -317,14 +399,22 @@ export function MeetingRecommendation({
   }, [active]);
 
   const selectDate = async (date: AvailableDate) => {
+    const runId = dateSelectionRunRef.current + 1;
+    dateSelectionRunRef.current = runId;
     setNotice(null);
     setError(null);
     setLoadingTicketDate(date.date);
+    setScreen("curating");
+    const loadingDelay = wait(curationLoadingMs);
 
     try {
       const dateWithTickets = await fetchTicketsForDate(date.date);
+      await loadingDelay;
+      if (dateSelectionRunRef.current !== runId) return;
+
       if (dateWithTickets.tickets.length === 0) {
         setNotice("이 날짜에는 아직 추천 가능한 모임이 없어요.");
+        setScreen("calendar");
         return;
       }
 
@@ -333,9 +423,14 @@ export function MeetingRecommendation({
       setScreen("drawing");
       onCoachmarkProgress?.("date");
     } catch {
+      await loadingDelay;
+      if (dateSelectionRunRef.current !== runId) return;
       setError("초대장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+      setScreen("calendar");
     } finally {
-      setLoadingTicketDate(null);
+      if (dateSelectionRunRef.current === runId) {
+        setLoadingTicketDate(null);
+      }
     }
   };
 
@@ -343,16 +438,12 @@ export function MeetingRecommendation({
     onCoachmarkProgress?.("decision");
 
     if (!selectedDate) return;
-    if (ticket) {
-      void saveInvitationDecision(ticket.id, "declined").catch(() => undefined);
-      clearTicketCaches();
-    }
     const nextIndex = ticketIndex + 1;
     if (nextIndex >= selectedDate.tickets.length) {
       setSelectedDate(null);
       setTicketIndex(0);
       setNotice(
-        "같은 날짜의 추천을 모두 확인했어요. 다른 날짜를 골라주세요.",
+        "같은 날짜의 추천을 모두 확인했어요. 다시 보고 싶으면 같은 날짜를 다시 선택해주세요.",
       );
       setScreen("calendar");
       return;
@@ -458,10 +549,12 @@ export function MeetingRecommendation({
                 <br />
                 받아볼까요?
               </h1>
-              <p className="mt-2 text-sm leading-6 text-black/48">
-                날짜를 고르면 교집합이 어울리는 자리를 하나씩 준비해드려요.
-              </p>
             </header>
+
+            <AgePreferencePicker
+              value={agePreference}
+              onChange={updateAgePreference}
+            />
 
             <div data-coachmark-target="recommend-date-picker">
               <RecommendationCalendarSelector
@@ -507,6 +600,8 @@ export function MeetingRecommendation({
             )}
           </motion.div>
         )}
+
+        {screen === "curating" && <CurationLoadingScreen />}
 
         {screen === "drawing" && ticket && selectedDate && (
           <TicketDrawingCard
@@ -635,6 +730,422 @@ export function MeetingRecommendation({
 
       </AnimatePresence>
     </section>
+  );
+}
+
+function CurationLoadingScreen() {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+
+  return (
+    <motion.div
+      key="curating"
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
+      transition={{ duration: 0.24, ease: "easeOut" }}
+      className="flex min-h-[calc(100dvh-170px)] items-center justify-center"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <section className="w-full rounded-[30px] border border-black/10 bg-white px-5 py-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.08)]">
+        <div className="flex min-h-[390px] flex-col items-center justify-center">
+          <CurationLoadingLogo />
+          <motion.p
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              textShadow: "0 0 18px rgba(126,179,199,0.34)",
+            }}
+            transition={{ duration: 0.28, ease: "easeOut", delay: 0.1 }}
+            className="mt-8 text-[22px] font-black leading-7 text-black"
+          >
+            큐레이션 중
+          </motion.p>
+          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
+            선택한 날짜에 어울리는 자리를 살펴보고 있어요.
+          </p>
+        </div>
+      </section>
+    </motion.div>
+  );
+}
+
+function CurationLoadingLogo() {
+  const shouldReduceMotion = Boolean(useReducedMotion());
+  const strokeWidth = 2;
+  const lensTopY = 30.25;
+  const lensBottomY = 97.75;
+  const lensHeight = lensBottomY - lensTopY;
+  const leftCirclePath =
+    "M71 22 A42 42 0 1 1 71 106 A42 42 0 1 1 71 22";
+  const rightCirclePath =
+    "M121 22 A42 42 0 1 1 121 106 A42 42 0 1 1 121 22";
+  const lensPath = `M96 ${lensTopY} A42 42 0 0 1 96 ${lensBottomY} A42 42 0 0 1 96 ${lensTopY} Z`;
+  const circlePathLength = 264;
+  const lensPathLength = 182;
+  const drawTransition = {
+    duration: shouldReduceMotion ? 0 : 0.42,
+    ease: "easeInOut" as const,
+  };
+  const hiddenCircleStroke = shouldReduceMotion
+    ? false
+    : { opacity: 0, strokeDashoffset: circlePathLength };
+
+  return (
+    <div
+      className="relative flex h-28 w-56 items-center justify-center"
+      aria-hidden
+    >
+      <motion.svg
+        viewBox="0 0 192 128"
+        className="h-28 w-48 overflow-visible drop-shadow-[0_18px_28px_rgba(0,0,0,0.08)]"
+      >
+        <defs>
+          <clipPath
+            id="curation-loading-logo-lens-fill"
+            clipPathUnits="userSpaceOnUse"
+          >
+            <motion.rect
+              x="79"
+              width="34"
+              initial={shouldReduceMotion ? false : { y: lensBottomY, height: 0 }}
+              animate={{ y: lensTopY, height: lensHeight }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.32,
+                ease: [0.16, 1, 0.3, 1],
+                delay: shouldReduceMotion ? 0 : 0.5,
+              }}
+            />
+          </clipPath>
+        </defs>
+
+        <motion.path
+          d={leftCirclePath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circlePathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={hiddenCircleStroke}
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
+          transition={drawTransition}
+        />
+        <motion.path
+          d={rightCirclePath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circlePathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={hiddenCircleStroke}
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
+          transition={{ ...drawTransition, delay: shouldReduceMotion ? 0 : 0.12 }}
+        />
+        <motion.path
+          d={lensPath}
+          fill="#0b0b0b"
+          clipPath="url(#curation-loading-logo-lens-fill)"
+          initial={shouldReduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 0.12,
+            delay: shouldReduceMotion ? 0 : 0.5,
+          }}
+        />
+        <motion.path
+          d={lensPath}
+          fill="none"
+          stroke="#0b0b0b"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={strokeWidth}
+          strokeDasharray={lensPathLength}
+          vectorEffect="non-scaling-stroke"
+          initial={
+            shouldReduceMotion
+              ? false
+              : { opacity: 0, strokeDashoffset: lensPathLength }
+          }
+          animate={{ opacity: 1, strokeDashoffset: 0 }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 0.28,
+            ease: "easeInOut",
+            delay: shouldReduceMotion ? 0 : 0.32,
+          }}
+        />
+      </motion.svg>
+    </div>
+  );
+}
+
+function ageOptions(start: number, end: number) {
+  if (end < start) return [start];
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+}
+
+const ageWheelHeight = 144;
+const ageWheelRowHeight = 36;
+const ageWheelPadding = (ageWheelHeight - ageWheelRowHeight) / 2;
+
+function AgePreferencePicker({
+  value,
+  onChange,
+}: {
+  value: AgePreference;
+  onChange: (value: AgePreference) => void;
+}) {
+  const minimumOptions = ageOptions(minimumSelectableAge, value.defaultMinAge);
+  const maximumOptions = ageOptions(value.defaultMaxAge, maximumSelectableAge);
+
+  return (
+    <section className="mt-7 rounded-[24px] border border-black/10 bg-white p-5 shadow-[0_8px_30px_rgba(0,0,0,0.01)]">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-bold text-black">
+            함께하고 싶은 나이
+          </h2>
+        </div>
+        <span className="rounded-full bg-black/[0.04] px-3 py-1 text-[10px] font-black text-black/45">
+          {value.minAge}세 ~ {value.maxAge}세
+        </span>
+      </div>
+
+      <div
+        className="relative mt-5 overflow-hidden rounded-2xl bg-[#fbfbfa] px-3"
+        style={{ height: ageWheelHeight }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-3 top-1/2 z-10 h-9 -translate-y-1/2 border-y border-black/10"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-10 bg-gradient-to-b from-[#fbfbfa] to-transparent"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-10 bg-gradient-to-t from-[#fbfbfa] to-transparent"
+        />
+        <div className="relative z-10 grid h-full grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)_18px_minmax(0,1fr)]">
+          <AgeWheel
+            ariaLabel="최소 나이"
+            options={minimumOptions}
+            value={value.minAge}
+            selectedPrefix="최소"
+            onChange={(minAge) => onChange({ ...value, minAge })}
+          />
+          <AgeRangeSeparator />
+          <StaticAgeColumn age={value.baseAge} />
+          <AgeRangeSeparator />
+          <AgeWheel
+            ariaLabel="최대 나이"
+            options={maximumOptions}
+            value={value.maxAge}
+            selectedPrefix="최대"
+            onChange={(maxAge) => onChange({ ...value, maxAge })}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgeRangeSeparator() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none flex h-full items-center justify-center text-base font-black text-[#a1a1aa]"
+    >
+      ~
+    </div>
+  );
+}
+
+function StaticAgeColumn({ age }: { age: number }) {
+  return (
+    <div
+      className="pointer-events-none flex h-full items-center justify-center"
+      aria-label={`내 나이 ${age}세`}
+    >
+      <div className="flex h-9 items-center justify-center text-lg font-black tabular-nums text-black">
+        {age}세
+      </div>
+    </div>
+  );
+}
+
+function AgeWheel({
+  ariaLabel,
+  options,
+  value,
+  selectedPrefix,
+  onChange,
+}: {
+  ariaLabel: string;
+  options: number[];
+  value: number;
+  selectedPrefix?: string;
+  onChange: (value: number) => void;
+}) {
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const settleTimerRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const wheelTargetRef = useRef<number | null>(null);
+  const wheelResetTimerRef = useRef<number | null>(null);
+  const [displayValue, setDisplayValue] = useState(value);
+
+  useEffect(() => {
+    const index = Math.max(0, options.indexOf(value));
+    scrollerRef.current?.scrollTo({ top: index * ageWheelRowHeight });
+    setDisplayValue(value);
+  }, [options, value]);
+
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current) {
+        window.clearTimeout(settleTimerRef.current);
+      }
+      if (animationFrameRef.current) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (wheelResetTimerRef.current) {
+        window.clearTimeout(wheelResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const nearestValueForScrollTop = (scrollTop: number) => {
+    const index = Math.max(
+      0,
+      Math.min(
+        options.length - 1,
+        Math.round(scrollTop / ageWheelRowHeight),
+      ),
+    );
+
+    return options[index] ?? value;
+  };
+
+  const nearestValue = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return value;
+
+    return nearestValueForScrollTop(scroller.scrollTop);
+  };
+
+  const updateDisplayValue = () => {
+    animationFrameRef.current = null;
+    setDisplayValue(nearestValue());
+  };
+
+  const queueSettle = (delay: number) => {
+    if (settleTimerRef.current) {
+      window.clearTimeout(settleTimerRef.current);
+    }
+    settleTimerRef.current = window.setTimeout(settle, delay);
+  };
+
+  const resetWheelTarget = () => {
+    if (wheelResetTimerRef.current) {
+      window.clearTimeout(wheelResetTimerRef.current);
+    }
+    wheelResetTimerRef.current = window.setTimeout(() => {
+      wheelTargetRef.current = null;
+    }, 220);
+  };
+
+  const settle = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    const index = Math.max(0, options.indexOf(nearestValue()));
+    const nextValue = options[index] ?? value;
+    scroller.scrollTo({
+      top: index * ageWheelRowHeight,
+      behavior: "smooth",
+    });
+    setDisplayValue(nextValue);
+    if (nextValue !== value) onChange(nextValue);
+  };
+
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    event.preventDefault();
+
+    const maxScrollTop = Math.max(0, (options.length - 1) * ageWheelRowHeight);
+    const currentTarget = wheelTargetRef.current ?? scroller.scrollTop;
+    const rawDelta =
+      event.deltaMode === 0 ? event.deltaY : event.deltaY * ageWheelRowHeight;
+    const deltaRows =
+      Math.abs(rawDelta) >= ageWheelRowHeight
+        ? Math.sign(rawDelta)
+        : rawDelta / ageWheelRowHeight;
+    const nextTop = Math.max(
+      0,
+      Math.min(maxScrollTop, currentTarget + deltaRows * ageWheelRowHeight),
+    );
+
+    wheelTargetRef.current = nextTop;
+    scroller.scrollTo({ top: nextTop, behavior: "smooth" });
+    setDisplayValue(nearestValueForScrollTop(nextTop));
+    resetWheelTarget();
+    queueSettle(180);
+  };
+
+  return (
+    <div
+      ref={scrollerRef}
+      role="listbox"
+      aria-label={ariaLabel}
+      aria-valuemin={options[0]}
+      aria-valuemax={options[options.length - 1]}
+      aria-valuenow={displayValue}
+      tabIndex={0}
+      onScroll={() => {
+        if (!animationFrameRef.current) {
+          animationFrameRef.current =
+            window.requestAnimationFrame(updateDisplayValue);
+        }
+        queueSettle(130);
+      }}
+      onWheel={handleWheel}
+      className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth text-center scrollbar-none overscroll-contain"
+      style={{ paddingBlock: ageWheelPadding }}
+    >
+      {options.map((option) => {
+        const distance = Math.abs(option - displayValue);
+        return (
+          <div
+            key={option}
+            role="option"
+            aria-selected={option === displayValue}
+            className={cn(
+              "flex snap-center items-center justify-center text-lg font-black tabular-nums transition-[color,opacity,transform] duration-200 ease-out",
+              distance === 0
+                ? "scale-[1.02] text-black opacity-100"
+                : distance === 1
+                  ? "text-[#a1a1aa] opacity-80"
+                  : "text-[#d4d4d8] opacity-55",
+            )}
+            style={{ height: ageWheelRowHeight }}
+          >
+            {option === displayValue && selectedPrefix && (
+              <span className="mr-1 text-[10px] font-black text-black/38">
+                {selectedPrefix}
+              </span>
+            )}
+            {option}세
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

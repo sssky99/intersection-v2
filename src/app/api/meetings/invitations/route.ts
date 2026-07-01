@@ -85,7 +85,6 @@ export async function POST(request: Request) {
     }
 
     const now = new Date().toISOString();
-    const nextStatus = action === "declined" ? "declined" : "viewed";
     const { data: invitation, error } = await admin
       .from("ticket_invitations")
       .upsert(
@@ -94,9 +93,9 @@ export async function POST(request: Request) {
           user_id: user.id,
           source_type: existing?.source_type ?? "service",
           inviter_id: existing?.inviter_id ?? null,
-          status: nextStatus,
+          status: "viewed",
           viewed_at: existing?.viewed_at ?? now,
-          responded_at: action === "declined" ? now : null,
+          responded_at: null,
           updated_at: now,
         },
         { onConflict: "ticket_instance_id,user_id" },
