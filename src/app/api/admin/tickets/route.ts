@@ -484,7 +484,7 @@ function instancePayload(body: Record<string, unknown>) {
     operation_note: text(body.operationNote),
     place_visibility: isPlaceVisibility(body.placeVisibility)
       ? body.placeVisibility
-      : ("public" as PlaceVisibility),
+      : ("confirmed_only" as PlaceVisibility),
     visibility:
       operationalVisibility(body.visibility) === "question"
         ? ("draft" as TicketVisibility)

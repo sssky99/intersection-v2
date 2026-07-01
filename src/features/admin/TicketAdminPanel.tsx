@@ -1708,6 +1708,10 @@ function BasicEditor({
                     region: place
                       ? meetingRegionFromPlace(place) ?? draft.region
                       : draft.region,
+                    placeVisibility:
+                      place && draft.placeVisibility === "hidden"
+                        ? "confirmed_only"
+                        : draft.placeVisibility,
                   })
                 }
               />

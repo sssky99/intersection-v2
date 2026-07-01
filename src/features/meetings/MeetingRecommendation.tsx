@@ -467,6 +467,8 @@ export function MeetingRecommendation({
               <RecommendationCalendarSelector
                 dates={ticketDates}
                 loading={loadingDates || Boolean(loadingTicketDate)}
+                weekOffset={0}
+                weekCount={2}
                 loadingText={
                   loadingTicketDate
                     ? "선택한 날짜의 초대장을 불러오고 있어요."

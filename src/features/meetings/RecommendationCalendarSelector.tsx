@@ -20,6 +20,8 @@ type RecommendationCalendarSelectorProps<
   helpText?: string;
   emptyText?: string;
   className?: string;
+  weekOffset?: number;
+  weekCount?: number;
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -54,11 +56,12 @@ function addDays(date: Date, days: number) {
   return next;
 }
 
-function visibleThreeWeekDates() {
+function visibleWeekDates(weekOffset: number, weekCount: number) {
   const currentWeekMonday = startOfWeekMonday(new Date());
-  const firstVisibleDate = addDays(currentWeekMonday, -7);
+  const firstVisibleDate = addDays(currentWeekMonday, weekOffset * 7);
+  const visibleDayCount = Math.max(1, Math.floor(weekCount)) * 7;
 
-  return Array.from({ length: 21 }, (_, index) =>
+  return Array.from({ length: visibleDayCount }, (_, index) =>
     addDays(firstVisibleDate, index),
   );
 }
@@ -87,15 +90,21 @@ export function RecommendationCalendarSelector<
   helpText = "* 파란 점이 있는 날짜를 택하면 교집합이 초대장을 준비해드려요.",
   emptyText = "현재 공개된 초대장 날짜가 없어요.",
   className,
+  weekOffset = -1,
+  weekCount = 3,
 }: RecommendationCalendarSelectorProps<TDate>) {
-  const [visibleDates, setVisibleDates] = useState(visibleThreeWeekDates);
+  const [visibleDates, setVisibleDates] = useState(() =>
+    visibleWeekDates(weekOffset, weekCount),
+  );
   const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
 
   useEffect(() => {
-    const syncVisibleDates = () => setVisibleDates(visibleThreeWeekDates());
+    const syncVisibleDates = () =>
+      setVisibleDates(visibleWeekDates(weekOffset, weekCount));
+    syncVisibleDates();
     const timer = window.setInterval(syncVisibleDates, 60 * 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [weekCount, weekOffset]);
 
   const dateMap = new Map(dates.map((date) => [date.date, date]));
   const visibleDateKeys = new Set(visibleDates.map(dateKey));
