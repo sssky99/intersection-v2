@@ -15,7 +15,6 @@ import {
   Loader2,
   MapPin,
   MessageCircle,
-  Plus,
   X,
   PenLine,
   RotateCcw,
@@ -45,14 +44,9 @@ import {
   CoachmarkLayer,
   type CoachmarkStep,
 } from "@/features/app/CoachmarkLayer";
-import {
-  MeetingProposalFlow,
-  type ProposalMemberProfile,
-} from "@/features/meetings/MeetingProposalFlow";
 import { MeetingChat } from "@/features/chat/MeetingChat";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
-  TicketCopyProposalSection,
   TicketDetailContent,
   type TicketDetailSectionKey,
 } from "@/features/meetings/TicketDetailContent";
@@ -78,7 +72,6 @@ import {
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
-import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import {
   ticketFeedbackBodyText,
   ticketStageText,
@@ -100,7 +93,7 @@ import type {
 import type { Gender } from "@/types/user";
 import type { LucideIcon } from "lucide-react";
 
-export type AppTab = "browse" | "recommend" | "proposal" | "chat" | "profile";
+export type AppTab = "browse" | "recommend" | "chat" | "profile";
 
 export type OperatorAccountSwitcher =
   | {
@@ -129,14 +122,6 @@ type BasicInfoDraft = {
   gender: Gender;
   birthYear: string;
   mbti: string;
-};
-
-type RejectedProposalNotification = {
-  id: string;
-  title: string;
-  rejectionReason: string;
-  updatedAt: string;
-  submittedAt: string;
 };
 
 const basicInfoBirthYearOptions = Array.from(
@@ -179,7 +164,6 @@ type NegativeMemberFeedbackDraft = {
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "recommend", label: "추천", Icon: Sparkles },
   { id: "browse", label: "티켓", Icon: TicketIcon },
-  { id: "proposal", label: "제안", Icon: Plus },
   { id: "chat", label: "채팅", Icon: MessageCircle },
   { id: "profile", label: "프로필", Icon: UserRound },
 ];
@@ -430,10 +414,6 @@ async function fetchUserTickets(options: FetchUserTicketsOptions = {}) {
           typeof data?.participationCount === "number"
             ? data.participationCount
             : 0,
-        proposalParticipationCount:
-          typeof data?.proposalParticipationCount === "number"
-            ? data.proposalParticipationCount
-            : 0,
         totalCount:
           typeof data?.totalCount === "number" ? data.totalCount : undefined,
         hasMore: data?.hasMore === true,
@@ -465,17 +445,6 @@ async function fetchBlindDateOffers() {
     | null;
 
   return response.ok ? data?.offers ?? [] : null;
-}
-
-async function fetchProposalNotifications() {
-  const response = await fetch("/api/meeting-proposals").catch(() => null);
-  if (!response) return null;
-
-  const data = (await response.json().catch(() => null)) as
-    | { rejectedProposals?: RejectedProposalNotification[] }
-    | null;
-
-  return response.ok ? data?.rejectedProposals ?? [] : null;
 }
 
 function currentMembershipFromProfile(profile: ProfileRow): CurrentMembership {
@@ -519,19 +488,10 @@ export function AppHome({
   >(null);
   const [loadingRemainingTickets, setLoadingRemainingTickets] = useState(false);
   const [participationCount, setParticipationCount] = useState(0);
-  const [proposalParticipationCount, setProposalParticipationCount] = useState<
-    number | null
-  >(null);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
-  const [rejectedProposalNotifications, setRejectedProposalNotifications] =
-    useState<RejectedProposalNotification[]>([]);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
-  const [proposalNoticeOpen, setProposalNoticeOpen] =
-    useState(false);
-  const [dismissedProposalNotificationIds, setDismissedProposalNotificationIds] =
-    useState<string[]>([]);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
@@ -599,44 +559,6 @@ export function AppHome({
       ).length,
     [blindDateOffers],
   );
-  const visibleRejectedProposalNotifications = useMemo(
-    () =>
-      rejectedProposalNotifications.filter(
-        (notification) =>
-          notification.rejectionReason.trim() &&
-          !dismissedProposalNotificationIds.includes(
-            `rejected:${notification.id}`,
-          ),
-      ),
-    [dismissedProposalNotificationIds, rejectedProposalNotifications],
-  );
-  const proposalNotificationCount = visibleRejectedProposalNotifications.length;
-  const proposalProfile = useMemo<ProposalMemberProfile>(
-    () => ({
-      userId,
-      displayName: profileNickname(currentProfile),
-      publicIntro: currentProfile.public_intro,
-      publicEmoji: profileEmoji(currentProfile),
-      gender: currentProfile.gender,
-      birthYear: currentProfile.birth_year,
-    }),
-    [
-      currentProfile.birth_year,
-      currentProfile.gender,
-      currentProfile.nickname,
-      currentProfile.name,
-      currentProfile.public_emoji,
-      currentProfile.public_intro,
-      userId,
-    ],
-  );
-  const canSubmitProposal =
-    currentProfile.is_test_participant === true ||
-    (recommendationMembershipStatus === "active" &&
-      (proposalParticipationCount ?? 0) >= 1);
-  const proposalRestrictionMessage = canSubmitProposal
-    ? null
-    : meetingProposalRequirementMessage;
   const canReplayCoachmarks = operatorAccountSwitcher?.mode === "operator";
   const coachmarkStorageKey = useMemo(
     () =>
@@ -650,7 +572,6 @@ export function AppHome({
     questionReviewOpen ||
     membershipModalOpen ||
     profilePanelOpen ||
-    proposalNoticeOpen ||
     chatRoomOpen;
   const visibleCoachmarkStep =
     coachmarkReady &&
@@ -694,7 +615,6 @@ export function AppHome({
   const replayCoachmarkTour = useCallback(() => {
     setMembershipModalOpen(false);
     setMembershipTicket(null);
-    setProposalNoticeOpen(false);
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setProfileCompletionOpen(false);
@@ -720,7 +640,6 @@ export function AppHome({
       );
       setWaitlistedTicketCount(response.totalCount ?? response.tickets.length);
       setParticipationCount(response.participationCount);
-      setProposalParticipationCount(response.proposalParticipationCount);
     },
     [],
   );
@@ -803,39 +722,6 @@ export function AppHome({
   }, [initialProfileCompletionOpen]);
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(
-        `dismissed-proposal-notifications:${userId}`,
-      );
-      const notificationIds = stored ? JSON.parse(stored) : [];
-      setDismissedProposalNotificationIds(
-        Array.isArray(notificationIds)
-          ? notificationIds.filter(
-              (value): value is string => typeof value === "string",
-            )
-          : [],
-      );
-    } catch {
-      setDismissedProposalNotificationIds([]);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        `dismissed-proposal-notifications:${userId}`,
-        JSON.stringify(dismissedProposalNotificationIds),
-      );
-    } catch {
-      // Keep in-memory dismissal working if local storage is unavailable.
-    }
-  }, [dismissedProposalNotificationIds, userId]);
-
-  useEffect(() => {
-    if (proposalNotificationCount === 0) setProposalNoticeOpen(false);
-  }, [proposalNotificationCount]);
-
-  useEffect(() => {
     let cancelled = false;
 
     void loadUserTicketsProgressively({
@@ -846,12 +732,6 @@ export function AppHome({
 
       setBlindDateOffers(offers);
     });
-    void fetchProposalNotifications().then((notifications) => {
-      if (cancelled || !notifications) return;
-
-      setRejectedProposalNotifications(notifications);
-    });
-
     const supabase = createClient();
 
     supabase
@@ -884,10 +764,6 @@ export function AppHome({
       void loadUserTicketsProgressively({
         force: true,
       });
-      void fetchProposalNotifications().then((notifications) => {
-        if (!notifications) return;
-        setRejectedProposalNotifications(notifications);
-      });
     };
 
     const intervalId = window.setInterval(refreshTickets, 30_000);
@@ -911,23 +787,9 @@ export function AppHome({
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setMembershipModalOpen(false);
-    setProposalNoticeOpen(false);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
-  };
-
-  const openProposalNotification = () => {
-    setProfilePanelOpen(false);
-    setQuestionReviewOpen(false);
-    setMembershipModalOpen(false);
-    setProposalNoticeOpen(proposalNotificationCount > 0);
-  };
-
-  const dismissProposalNotification = (notificationId: string) => {
-    setDismissedProposalNotificationIds((current) =>
-      current.includes(notificationId) ? current : [...current, notificationId],
-    );
   };
 
   const openProfileCompletionReplay = () => {
@@ -992,15 +854,6 @@ export function AppHome({
     void loadUserTicketsProgressively({
       force: true,
     });
-  };
-
-  const refreshProposalTicket = async () => {
-    await loadUserTicketsProgressively({ force: true });
-  };
-
-  const openSubmittedProposalTicket = async () => {
-    await refreshProposalTicket();
-    switchTab("browse");
   };
 
   const applyAccountSession = async ({
@@ -1150,34 +1003,8 @@ export function AppHome({
 
       <button
         type="button"
-        onClick={openProposalNotification}
-        title="제안 상태 알림"
-        aria-label={
-          proposalNotificationCount > 0
-            ? `제안 상태 알림 ${proposalNotificationCount}개`
-            : "새 제안 상태 알림 없음"
-        }
-        className="absolute right-[120px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
-      >
-        <img
-          src="/images/icons/notification-bell.png"
-          alt=""
-          draggable={false}
-          className="h-5 w-5 object-contain"
-          aria-hidden
-        />
-        {proposalNotificationCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
-            {proposalNotificationCount}
-          </span>
-        )}
-      </button>
-
-      <button
-        type="button"
         onClick={() => {
           setMembershipModalOpen(false);
-          setProposalNoticeOpen(false);
           setProfilePanelOpen((open) => !open);
         }}
         aria-label="기본정보 카드 열기"
@@ -1191,61 +1018,6 @@ export function AppHome({
       >
         {profileInitial(currentProfile)}
       </button>
-
-      <AnimatePresence>
-        {proposalNoticeOpen && proposalNotificationCount > 0 && (
-          <motion.div
-            key="proposal-notice"
-            initial={{ opacity: 0, y: -8, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 420, damping: 28 }}
-            role="status"
-            className="absolute right-4 top-[calc(66px+env(safe-area-inset-top))] z-30 w-[272px] rounded-2xl border border-black/10 bg-white p-2 shadow-[0_14px_36px_rgba(0,0,0,0.16)]"
-          >
-            <span className="absolute -top-1 right-[114px] h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white" />
-            <button
-              type="button"
-              onClick={() => setProposalNoticeOpen(false)}
-              aria-label="제안 알림 닫기"
-              className="absolute right-2 top-2 rounded-full p-1 text-black/35 transition hover:bg-black/[0.05] hover:text-black"
-            >
-              <X size={14} aria-hidden />
-            </button>
-            <div className="max-h-[calc(100dvh-132px)] space-y-2 overflow-y-auto p-1 pr-5 scrollbar-none">
-              {visibleRejectedProposalNotifications.map((notification) => (
-                <section
-                  key={notification.id}
-                  className="rounded-xl bg-red-50 px-3 py-2.5"
-                >
-                  <p className="text-sm font-bold leading-5 text-red-900">
-                    제안 상태 안내가 도착했어요.
-                  </p>
-                  <p className="mt-1 line-clamp-1 text-xs font-bold text-red-900/45">
-                    {notification.title}
-                  </p>
-                  <p className="mt-2 text-xs font-semibold leading-5 text-red-800/80">
-                    {notification.rejectionReason}
-                  </p>
-                  <div className="mt-1.5 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        dismissProposalNotification(
-                          `rejected:${notification.id}`,
-                        )
-                      }
-                      className="text-[10px] font-bold text-red-900/42 underline underline-offset-2 transition hover:text-red-900"
-                    >
-                      지우기
-                    </button>
-                  </div>
-                </section>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {profilePanelOpen && (
@@ -1304,10 +1076,6 @@ export function AppHome({
             tickets={waitlistedTickets}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
-            userId={userId}
-            proposalProfile={proposalProfile}
-            canOpenProposal={canSubmitProposal}
-            onProposalSubmitted={refreshProposalTicket}
             onGoRecommend={() => switchTab("recommend")}
           />
         </div>
@@ -1320,10 +1088,7 @@ export function AppHome({
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
-            proposalParticipationCount={proposalParticipationCount}
-            proposalRequirementBypassed={currentProfile.is_test_participant === true}
             onWaitlisted={addWaitlistedTicket}
-            onProposalSubmitted={openSubmittedProposalTicket}
             onMembershipRequired={(ticket) => {
               setProfilePanelOpen(false);
               setMembershipTicket(ticket);
@@ -1336,8 +1101,6 @@ export function AppHome({
               setTabUrl("recommend");
             }}
             onOpenList={() => switchTab("browse")}
-            onOpenProposal={() => switchTab("proposal")}
-            proposalProfile={proposalProfile}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}
@@ -1347,20 +1110,6 @@ export function AppHome({
             }
             onCoachmarkProgress={advanceCoachmark}
           />
-        </div>
-        <div
-          aria-hidden={activeTab !== "proposal"}
-          className={cn(activeTab === "proposal" ? "block min-h-full" : "hidden")}
-        >
-          {activeTab === "proposal" && (
-            <ProposalTab
-              profile={proposalProfile}
-              canSubmit={canSubmitProposal}
-              restrictionMessage={proposalRestrictionMessage}
-              onBack={() => switchTab("recommend")}
-              onDone={openSubmittedProposalTicket}
-            />
-          )}
         </div>
         <div
           aria-hidden={activeTab !== "chat"}
@@ -1506,57 +1255,19 @@ export function AppHome({
   );
 }
 
-function ProposalTab({
-  profile,
-  canSubmit,
-  restrictionMessage,
-  onBack,
-  onDone,
-}: {
-  profile: ProposalMemberProfile;
-  canSubmit: boolean;
-  restrictionMessage: string | null;
-  onBack: () => void;
-  onDone: () => void | Promise<void>;
-}) {
-  return (
-    <TabMotion>
-      <section className="min-h-full px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black">
-        <MeetingProposalFlow
-          profile={profile}
-          canSubmit={canSubmit}
-          restrictionMessage={restrictionMessage}
-          onBack={onBack}
-          onDone={onDone}
-        />
-      </section>
-    </TabMotion>
-  );
-}
-
 function TicketListTab({
   tickets,
   totalTicketCount,
   loadingMore,
-  userId,
-  proposalProfile,
-  canOpenProposal,
-  onProposalSubmitted,
   onGoRecommend,
 }: {
   tickets: UserTicket[];
   totalTicketCount: number;
   loadingMore: boolean;
-  userId: string;
-  proposalProfile: ProposalMemberProfile;
-  canOpenProposal: boolean;
-  onProposalSubmitted: () => void | Promise<void>;
   onGoRecommend: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
-  const [copiedProposalTicket, setCopiedProposalTicket] =
-    useState<GatheringTicket | null>(null);
   const dragState = useRef({
     active: false,
     interacting: false,
@@ -1799,46 +1510,14 @@ function TicketListTab({
     setSelectedTicket(ticket);
   };
 
-  const copyTicketAsProposal = (ticket: GatheringTicket) => {
-    if (!canOpenProposal) {
-      window.alert(meetingProposalRequirementMessage);
-      return;
-    }
-
-    setCopiedProposalTicket(ticket);
-  };
-
   return (
     <TabMotion>
       <AnimatePresence mode="wait" initial={false}>
-        {copiedProposalTicket ? (
-          <motion.section
-            key={`copied-proposal-${copiedProposalTicket.id}`}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="min-h-full px-5 pb-6 pt-7"
-          >
-            <MeetingProposalFlow
-              profile={proposalProfile}
-              copiedTicket={copiedProposalTicket}
-              onBack={() => setCopiedProposalTicket(null)}
-              onDone={async () => {
-                await onProposalSubmitted();
-                setCopiedProposalTicket(null);
-                setSelectedTicket(null);
-              }}
-            />
-          </motion.section>
-        ) : selectedTicket ? (
+        {selectedTicket ? (
           <StoredTicketDetailView
             key={`stored-ticket-detail-${selectedTicket.id}`}
             userTicket={selectedTicket}
-            currentUserId={userId}
             onClose={() => setSelectedTicket(null)}
-            onCopyProposal={() =>
-              copyTicketAsProposal(selectedTicket.ticket)
-            }
           />
         ) : (
           <motion.section
@@ -1901,7 +1580,6 @@ function TicketListTab({
                     >
                       <StoredTicketCard
                         userTicket={userTicket}
-                        userId={userId}
                         onOpen={() => openStoredTicket(userTicket)}
                       />
                     </div>
@@ -1935,17 +1613,12 @@ function TicketListTab({
 
 function StoredTicketCard({
   userTicket,
-  userId,
   onOpen,
 }: {
   userTicket: UserTicket;
-  userId: string;
   onOpen: () => void;
 }) {
   const ticket = userTicket.ticket;
-  const isMyProposal =
-    ticket.activityType === "member_proposal" &&
-    ticket.proposerProfile?.userId === userId;
 
   return (
     <motion.div
@@ -1969,9 +1642,8 @@ function StoredTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        proposerLabel={ticket.proposerLabel}
-        badgeLabel={isMyProposal ? "✦ 나의 제안" : userTicket.statusLabel}
-        badgeClassName={statusBadgeClass(userTicket.status, isMyProposal)}
+        badgeLabel={userTicket.statusLabel}
+        badgeClassName={statusBadgeClass(userTicket.status)}
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />
@@ -1981,32 +1653,18 @@ function StoredTicketCard({
 
 export function StoredTicketDetailView({
   userTicket,
-  currentUserId,
   onClose,
-  onCopyProposal,
   previewMode = false,
   selectedProgressStep: controlledProgressStep,
   onProgressStepChange,
 }: {
   userTicket: UserTicket;
-  currentUserId?: string;
   onClose: () => void;
-  onCopyProposal?: () => void;
   previewMode?: boolean;
   selectedProgressStep?: TicketProgressStep;
   onProgressStepChange?: (step: TicketProgressStep) => void;
 }) {
   const ticket = userTicket.ticket;
-  const canRequestProposalChange = Boolean(
-    !previewMode &&
-      currentUserId &&
-      ticket.proposalId &&
-      ticket.activityType === "member_proposal" &&
-      ticket.proposerProfile?.userId === currentUserId,
-  );
-  const proposalRequestSlot = canRequestProposalChange ? (
-    <ProposalChangeRequestSection ticket={ticket} />
-  ) : null;
   const [statusOpen, setStatusOpen] = useState(true);
   const [internalProgressStep, setInternalProgressStep] =
     useState<TicketProgressStep>(userTicket.progressStep);
@@ -2071,8 +1729,6 @@ export function StoredTicketDetailView({
             userTicket={userTicket}
             progressStep={selectedProgressStep}
             previewMode={previewMode}
-            proposalRequestSlot={proposalRequestSlot}
-            onCopyProposal={onCopyProposal}
           />
         </motion.div>
       </motion.article>
@@ -2081,11 +1737,7 @@ export function StoredTicketDetailView({
   );
 }
 
-function statusBadgeClass(_status: UserTicketStatus, isMyProposal = false) {
-  if (isMyProposal) {
-    return "border-[#9ad5e3] bg-[#e8f8fc]/95 text-[#15586b] shadow-[0_10px_22px_rgba(21,88,107,0.2)]";
-  }
-
+function statusBadgeClass(_status: UserTicketStatus) {
   return "border-white/25 bg-white/20 text-white shadow-[0_10px_22px_rgba(0,0,0,0.2)]";
 }
 
@@ -2116,13 +1768,11 @@ const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
 const introDetailSections: TicketDetailSectionKey[] = [
   "summary",
   "vibe",
-  "proposer",
   "activities",
 ];
 const appliedDetailSections: TicketDetailSectionKey[] = [
   "summary",
   "vibe",
-  "proposer",
   "activities",
   "notice",
 ];
@@ -2418,14 +2068,10 @@ function TicketStageContent({
   userTicket,
   progressStep,
   previewMode = false,
-  proposalRequestSlot,
-  onCopyProposal,
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressStep;
   previewMode?: boolean;
-  proposalRequestSlot?: ReactNode;
-  onCopyProposal?: () => void;
 }) {
   const ticket = userTicket.ticket;
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
@@ -2497,212 +2143,7 @@ function TicketStageContent({
         ticket={ticket}
         sections={appliedDetailSections}
         className="mt-0"
-        afterNotice={proposalRequestSlot}
-        footer={
-          onCopyProposal ? (
-            <TicketCopyProposalSection onCopy={onCopyProposal} />
-          ) : null
-        }
       />
-    </>
-  );
-}
-
-type ProposalChangeRequestType = "edit" | "cancel";
-
-function ProposalChangeRequestSection({ ticket }: { ticket: GatheringTicket }) {
-  const [open, setOpen] = useState(false);
-  const [requestType, setRequestType] =
-    useState<ProposalChangeRequestType>("edit");
-  const [message, setMessage] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isCancel = requestType === "cancel";
-  const helperText = isCancel
-    ? "취소 사유를 작성해주세요. 해당 사항은 운영진 확인 후 반영됩니다."
-    : "수정하려는 부분을 적어주세요. 해당 사항은 운영진 확인 후 반영됩니다.";
-
-  const closeModal = () => {
-    if (submitting) return;
-    setOpen(false);
-  };
-
-  const submitRequest = async () => {
-    if (!ticket.proposalId || submitting || !message.trim()) return;
-
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/meeting-proposals/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          proposalId: ticket.proposalId,
-          requestType,
-          message,
-        }),
-      });
-      const data = (await response.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-
-      if (!response.ok) {
-        throw new Error(data?.error ?? "request-failed");
-      }
-
-      setSubmitted(true);
-      setMessage("");
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "요청을 저장하지 못했어요.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          setSubmitted(false);
-          setError(null);
-          setOpen(true);
-        }}
-        className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 text-sm font-black text-black/68 transition hover:border-accent/50 hover:text-black"
-      >
-        <PenLine size={15} aria-hidden />
-        수정 / 취소 요청하기
-      </button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            key="proposal-change-request-modal"
-            className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 px-4 py-5 sm:items-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            role="dialog"
-            aria-modal="true"
-            aria-label="수정 또는 취소 요청"
-          >
-            <motion.section
-              initial={{ y: 24, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 16, opacity: 0 }}
-              transition={ticketFadeTransition}
-              className="w-full max-w-[420px] rounded-[28px] bg-white p-5 shadow-[0_24px_80px_rgba(0,0,0,0.22)]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
-                    proposal request
-                  </p>
-                  <h2 className="mt-1 text-lg font-black text-black">
-                    수정 / 취소 요청하기
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 text-black/45 transition hover:text-black"
-                  aria-label="요청 모달 닫기"
-                >
-                  <X size={16} aria-hidden />
-                </button>
-              </div>
-
-              {submitted ? (
-                <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-5 text-center">
-                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-700">
-                    <Check size={17} aria-hidden />
-                  </div>
-                  <p className="mt-3 text-sm font-black text-emerald-950">
-                    요청이 접수됐어요.
-                  </p>
-                  <p className="mt-1 text-xs font-bold leading-5 text-emerald-800/70">
-                    관리자가 확인한 뒤 수정하거나 취소를 반영할게요.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={closeModal}
-                    className="mt-4 h-10 w-full rounded-full bg-emerald-700 text-xs font-black text-white"
-                  >
-                    확인
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-5 space-y-4">
-                  <label className="block">
-                    <span className="text-xs font-black text-black/55">
-                      요청 사항
-                    </span>
-                    <select
-                      value={requestType}
-                      onChange={(event) => {
-                        setRequestType(
-                          event.target.value as ProposalChangeRequestType,
-                        );
-                        setError(null);
-                      }}
-                      className="mt-1.5 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none focus:border-accent"
-                    >
-                      <option value="edit">수정</option>
-                      <option value="cancel">취소</option>
-                    </select>
-                  </label>
-
-                  <label className="block">
-                    <span className="text-xs font-bold leading-5 text-black/45">
-                      {helperText}
-                    </span>
-                    <textarea
-                      value={message}
-                      maxLength={1200}
-                      onChange={(event) => {
-                        setMessage(event.target.value);
-                        setError(null);
-                      }}
-                      rows={6}
-                      placeholder={
-                        isCancel
-                          ? "예: 일정이 어려워져서 취소하고 싶어요."
-                          : "예: 장소를 성수에서 건대로 바꾸고 싶어요."
-                      }
-                      className="mt-2 w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-6 text-black outline-none placeholder:text-black/25 focus:border-accent"
-                    />
-                  </label>
-
-                  {error && (
-                    <p className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
-                      {error}
-                    </p>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={submitting || !message.trim()}
-                    onClick={() => void submitRequest()}
-                    className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-black text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
-                  >
-                    {submitting && (
-                      <Loader2 size={16} className="animate-spin" aria-hidden />
-                    )}
-                    요청 보내기
-                  </button>
-                </div>
-              )}
-            </motion.section>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </>
   );
 }

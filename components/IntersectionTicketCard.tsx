@@ -7,7 +7,6 @@ type IntersectionTicketCardProps = {
   time?: string | null;
   location?: string | null;
   tags?: string[] | null;
-  proposerLabel?: string | null;
   badgeLabel?: string | null;
   badgeClassName?: string;
   remainingSeatCount?: number | null;
@@ -84,7 +83,6 @@ export function IntersectionTicketCard({
   time,
   location,
   tags,
-  proposerLabel,
   badgeLabel,
   badgeClassName,
   className,
@@ -164,11 +162,6 @@ export function IntersectionTicketCard({
           </span>
         )}
         <div className="absolute inset-x-5 bottom-7 text-left">
-          {proposerLabel && (
-            <p className="mb-3 inline-flex rounded-full border border-white/[0.22] bg-white/[0.16] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px] [text-shadow:0_2px_10px_rgba(0,0,0,0.55)]">
-              {proposerLabel}
-            </p>
-          )}
           <h3 className="whitespace-pre-line text-[32px] font-extrabold leading-[1.12] tracking-normal text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.72)]">
             {title}
           </h3>

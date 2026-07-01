@@ -84,11 +84,6 @@ export function TicketDetailHero({
             ))}
         </button>
       )}
-      {ticket.proposerLabel && (
-        <div className="absolute right-5 top-5 z-10 rounded-full border border-white/22 bg-white/16 px-3 py-1.5 text-[11px] font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.18)] backdrop-blur">
-          {ticket.proposerLabel}
-        </div>
-      )}
       <div className={cn("absolute inset-x-5 bottom-5", badgeLabel && "pr-28")}>
         <h2 className="whitespace-pre-line text-[29px] font-extrabold leading-[1.12] tracking-normal text-white [text-shadow:0_2px_18px_rgba(0,0,0,0.72)]">
           {ticket.title}

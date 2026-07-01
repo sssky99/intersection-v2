@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronDown, Copy } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
@@ -16,7 +15,6 @@ export type TicketDetailSectionKey =
   | "activities"
   | "vibe"
   | "place"
-  | "proposer"
   | "notice";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -27,7 +25,6 @@ const defaultSections: TicketDetailSectionKey[] = [
   "summary",
   "vibe",
   "place",
-  "proposer",
   "activities",
   "notice",
 ];
@@ -84,8 +81,6 @@ export function TicketDetailContent({
       ? "vibe"
       : hasSummary && visibleSections.has("place") && hasPlace
         ? "place"
-      : hasSummary && visibleSections.has("proposer") && ticket.proposerProfile
-        ? "proposer"
         : hasSummary &&
             visibleSections.has("activities") &&
             activities.length > 0
@@ -104,9 +99,7 @@ export function TicketDetailContent({
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "vibe"}
         >
-          <MeetingAtmospherePanel
-            profile={ticket.atmosphere ?? ticket.proposerProfile}
-          />
+          <MeetingAtmospherePanel profile={ticket.atmosphere} />
         </TicketDetailSection>
       )}
 
@@ -117,20 +110,6 @@ export function TicketDetailContent({
           hideTopBorder={firstSectionAfterSummary === "place"}
         >
           <TicketPlacePanel place={ticket.place!} />
-        </TicketDetailSection>
-      )}
-
-      {visibleSections.has("proposer") && ticket.proposerProfile && (
-        <TicketDetailSection
-          title="이 자리를 제안한 멤버"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "proposer"}
-        >
-          <TicketProposerPanel
-            profile={ticket.proposerProfile}
-            proposerLabel={ticket.proposerLabel}
-            resetKey={ticket.id}
-          />
         </TicketDetailSection>
       )}
 
@@ -156,111 +135,6 @@ export function TicketDetailContent({
       )}
 
       {footer}
-    </div>
-  );
-}
-
-export function TicketCopyProposalSection({
-  onCopy,
-}: {
-  onCopy: () => void;
-}) {
-  return (
-    <section className="mt-5 rounded-[24px] border border-black/10 bg-black/[0.025] px-4 py-4">
-      <p className="text-sm font-black leading-6 text-black">
-        이 교집합 내가 제안하고 싶다면?
-      </p>
-      <p className="mt-1.5 text-xs font-semibold leading-5 text-black/45">
-        자리 분위기나 일정이 맞지 않는 경우 내가 해당 교집합을 제안할 수
-        있어요.
-      </p>
-      <button
-        type="button"
-        onClick={onCopy}
-        className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-black px-4 text-sm font-black text-white transition active:scale-[0.99]"
-      >
-        <Copy size={15} aria-hidden />
-        제안 복사하기
-      </button>
-    </section>
-  );
-}
-
-export function TicketProposerPanel({
-  profile,
-  proposerLabel,
-  resetKey,
-}: {
-  profile: NonNullable<GatheringTicket["proposerProfile"]>;
-  proposerLabel?: string | null;
-  resetKey?: string;
-}) {
-  const introParagraphs =
-    profile.publicIntro
-      ?.split(/\n\s*\n/)
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean) ?? [];
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [profile.userId, resetKey]);
-
-  return (
-    <div className="rounded-3xl border border-black/8 bg-black/[0.025] px-4 py-4">
-      <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
-          {profile.publicEmoji?.trim() || "💎"}
-        </div>
-        <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black text-black">
-              {profile.displayName}
-            </p>
-            {proposerLabel && (
-              <p className="mt-1 text-[11px] font-bold text-accent">
-                {proposerLabel}
-              </p>
-            )}
-          </div>
-          {introParagraphs.length > 1 && (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => setExpanded((current) => !current)}
-              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1.5 text-[11px] font-black text-black/62 transition hover:border-black/20 hover:text-black"
-            >
-              {expanded ? "접기" : "자세히 보기"}
-              <ChevronDown
-                size={13}
-                aria-hidden
-                className={
-                  expanded
-                    ? "rotate-180 transition-transform"
-                    : "transition-transform"
-                }
-              />
-            </button>
-          )}
-        </div>
-      </div>
-      {introParagraphs.length > 0 && (
-        <p className="mt-4 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
-          {introParagraphs[0]}
-        </p>
-      )}
-      {introParagraphs.length > 1 && (
-        <div
-          className={cn(
-            "grid overflow-hidden transition-[grid-template-rows,margin] duration-200 ease-out",
-            expanded ? "mt-4 grid-rows-[1fr]" : "grid-rows-[0fr]",
-          )}
-        >
-          <p className="min-h-0 whitespace-pre-line text-sm font-semibold leading-6 text-black/60">
-            {introParagraphs.slice(1).join("\n\n")}
-          </p>
-        </div>
-      )}
     </div>
   );
 }

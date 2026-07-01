@@ -23,7 +23,6 @@ export type TicketStageCopy = {
 export type GatheringTicket = {
   id: string;
   templateId: string;
-  proposalId?: string | null;
   title: string;
   subtitle: string;
   date: string;
@@ -47,15 +46,6 @@ export type GatheringTicket = {
   detailNotice?: string;
   place?: TicketPlace | null;
   stageCopy?: TicketStageCopy | null;
-  proposerLabel?: string;
-  proposerProfile?: {
-    userId?: string | null;
-    displayName: string;
-    publicIntro?: string | null;
-    publicEmoji?: string | null;
-    gender?: Gender | null;
-    birthYear?: string | number | null;
-  };
   atmosphere?: {
     ageBandId?: MeetingAtmosphereAgeBandId | null;
     genderMood?: MeetingAtmosphereGenderMood | null;
@@ -154,7 +144,6 @@ export type UserTicket = {
 export type UserTicketsResponse = {
   tickets: UserTicket[];
   participationCount: number;
-  proposalParticipationCount: number;
   totalCount?: number;
   hasMore?: boolean;
   nextOffset?: number | null;

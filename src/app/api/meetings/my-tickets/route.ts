@@ -2,10 +2,6 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
-  isMeetingProposalParticipationStatus,
-  meetingProposalDisplayName,
-} from "@/lib/meetingProposalAccess";
-import {
   meetingAtmosphereDefaultsFromProfiles,
   normalizeMeetingAtmosphereAgeBandId,
   normalizeMeetingAtmosphereGenderMood,
@@ -61,11 +57,6 @@ type TemplateRow = {
   score_rhythm: number | null;
   score_alcohol: number | null;
   score_romance: number | null;
-  proposal_id: string | null;
-  proposer_user_id: string | null;
-  proposer_display_name: string | null;
-  proposer_public_intro: string | null;
-  proposer_public_emoji: string | null;
 };
 
 type InstanceRow = {
@@ -148,27 +139,6 @@ type TicketSourceRow = WaitlistRow & {
   assignment_only?: boolean;
 };
 
-type PendingProposalRow = {
-  id: string;
-  proposer_id: string;
-  proposer_public_display_name: string;
-  proposer_public_intro: string | null;
-  proposer_public_emoji: string | null;
-  image_url: string | null;
-  title: string;
-  activity_description: string;
-  event_date: string;
-  event_time: string;
-  region: string;
-  specific_place: string | null;
-  place_payload: unknown;
-  hashtags: string[] | null;
-  short_description: string;
-  activities: unknown;
-  vibe: unknown;
-  status: "pending_review" | "approved";
-  submitted_at: string;
-};
 
 const templateSelect = [
   "id",
@@ -197,11 +167,6 @@ const templateSelect = [
   "score_rhythm",
   "score_alcohol",
   "score_romance",
-  "proposal_id",
-  "proposer_user_id",
-  "proposer_display_name",
-  "proposer_public_intro",
-  "proposer_public_emoji",
 ].join(",");
 
 const templateSelectWithoutPlacePayload = templateSelect.replace(
@@ -472,99 +437,6 @@ function mergedStageCopy(...values: unknown[]): TicketStageCopy {
   return merged;
 }
 
-function proposalScore(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(5, Math.max(1, Math.round(value)))
-    : fallback;
-}
-
-function pendingProposalTicket(
-  proposal: PendingProposalRow,
-  profile: ProfileAccessRow | null,
-): UserTicket {
-  const place = normalizeMeetingPlace(proposal.place_payload);
-  const proposalVibe =
-    typeof proposal.vibe === "object" && proposal.vibe
-      ? (proposal.vibe as Record<string, unknown>)
-      : {};
-  const eventTime = proposal.event_time.slice(0, 5);
-  const startAt = toStartAt(proposal.event_date, eventTime);
-  const ticketPlace = ticketPlaceFromLegacyFields({
-    placeName: proposal.specific_place,
-    address: place?.roadAddress ?? place?.jibunAddress,
-    place,
-  });
-  let displayName =
-    proposal.proposer_public_display_name.trim() || "제안 멤버";
-  if (profile) {
-    displayName = meetingProposalDisplayName(profile);
-  }
-
-  const ticket: GatheringTicket = {
-    id: `proposal:${proposal.id}`,
-    templateId: `proposal:${proposal.id}`,
-    proposalId: proposal.id,
-    title: proposal.title,
-    subtitle: proposal.short_description,
-    date: proposal.event_date,
-    time: eventTime,
-    area: proposal.region,
-    moodTags: proposal.hashtags ?? [],
-    activityType: "member_proposal",
-    imageUrl: proposal.image_url ?? undefined,
-    remainingSeatCount: 0,
-    minimumParticipantCount: MEETING_MIN_PARTICIPANT_COUNT,
-    maxParticipantCount: MEETING_MAX_PARTICIPANT_COUNT,
-    peopleHint: proposal.short_description,
-    reason: proposal.short_description,
-    detailSummary: proposal.short_description,
-    detailActivities: textList(proposal.activities),
-    place: ticketPlace,
-    stageCopy: {
-      applied:
-        "제안한 초대장이 티켓에 등록됐어요. 함께할 멤버를 위한 준비가 끝나면 다음 단계로 안내할게요.",
-    },
-    proposerLabel: `${displayName}님의 제안`,
-    proposerProfile: {
-      userId: proposal.proposer_id,
-      displayName,
-      publicIntro:
-        profile?.public_intro ?? proposal.proposer_public_intro ?? null,
-      publicEmoji:
-        profile?.public_emoji ?? proposal.proposer_public_emoji ?? null,
-      gender: normalizeProfileGender(profile?.gender),
-      birthYear: profile?.birth_year ?? null,
-    },
-    vibeScores: {
-      temperature: proposalScore(proposalVibe.temperature, 3),
-      texture: proposalScore(proposalVibe.texture, 3),
-      tone: proposalScore(proposalVibe.tone, 3),
-      rhythm: proposalScore(proposalVibe.rhythm, 3),
-      alcohol: proposalScore(proposalVibe.alcohol, 2),
-      romance: proposalScore(proposalVibe.romance, 2),
-    },
-  };
-
-  return {
-    id: `proposal:${proposal.id}`,
-    waitlistId: `proposal:${proposal.id}`,
-    ticket,
-    rawStatus: `proposal_${proposal.status}`,
-    status: "waitlisted",
-    statusLabel: "신청 완료",
-    progressStep: "applied",
-    progressIndex: 0,
-    meetingStartAt: isoOrNull(startAt),
-    arrivalOpensAt: null,
-    feedbackOpensAt: null,
-    canSetArrival: false,
-    arrivalStatus: null,
-    arrivalStatusUpdatedAt: null,
-    place: ticketPlace,
-    members: [],
-  };
-}
-
 function toStartAt(date: string | null | undefined, time: string | null | undefined) {
   if (!date) return null;
   const normalizedTime = time?.slice(0, 5) || "00:00";
@@ -584,7 +456,6 @@ function toTicket(
   row: WaitlistRow,
   instance: InstanceRow | null,
   template: TemplateRow | null,
-  proposerProfile?: ProfileIntroRow,
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
@@ -608,13 +479,6 @@ function toTicket(
     "교집합이 준비한 실제 운영 모임";
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
-  const proposerDisplayName =
-    (proposerProfile ? meetingProposalDisplayName(proposerProfile) : null) ??
-    template.proposer_display_name?.trim() ??
-    snapshot?.proposerProfile?.displayName;
-  const proposerLabel = proposerDisplayName
-    ? `${proposerDisplayName}님의 제안`
-    : snapshot?.proposerLabel;
   const place =
     normalizeMeetingPlace(instance.place_payload) ??
     normalizeMeetingPlace(template.place_payload);
@@ -622,7 +486,6 @@ function toTicket(
   return {
     id: instance.id,
     templateId: instance.template_id,
-    proposalId: template.proposal_id ?? snapshot?.proposalId ?? null,
     title: instance.title || template.title || snapshot?.title || "티켓",
     subtitle,
     date,
@@ -657,31 +520,7 @@ function toTicket(
         place,
       }) ?? snapshot?.place,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
-    proposerLabel,
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
-    proposerProfile: proposerDisplayName
-      ? {
-          userId:
-            proposerProfile?.user_id ??
-            template.proposer_user_id ??
-            snapshot?.proposerProfile?.userId,
-          displayName: proposerDisplayName,
-          publicIntro:
-            proposerProfile?.public_intro ??
-            template.proposer_public_intro ??
-            snapshot?.proposerProfile?.publicIntro,
-          publicEmoji:
-            proposerProfile?.public_emoji ??
-            template.proposer_public_emoji ??
-            snapshot?.proposerProfile?.publicEmoji,
-          gender: normalizeProfileGender(
-            proposerProfile?.gender ?? snapshot?.proposerProfile?.gender,
-          ),
-          birthYear:
-            proposerProfile?.birth_year ??
-            snapshot?.proposerProfile?.birthYear,
-        }
-      : snapshot?.proposerProfile,
     vibeScores: {
       temperature:
         template.score_temperature ?? snapshot?.vibeScores?.temperature ?? null,
@@ -844,14 +683,6 @@ type UserTicketsPageMeta = {
   nextOffset: number | null;
 };
 
-type PendingTicketCandidate = {
-  kind: "pending";
-  ticket: UserTicket;
-  sortStatus: UserTicketStatus;
-  sortStart: string;
-  sortTitle: string;
-};
-
 type SourceTicketCandidate = {
   kind: "source";
   row: TicketSourceRow;
@@ -861,7 +692,7 @@ type SourceTicketCandidate = {
   sortTitle: string;
 };
 
-type UserTicketCandidate = PendingTicketCandidate | SourceTicketCandidate;
+type UserTicketCandidate = SourceTicketCandidate;
 
 const maxUserTicketsPageLimit = 50;
 
@@ -933,16 +764,6 @@ function effectiveSourceStatus(
   return row.status;
 }
 
-function pendingTicketCandidate(ticket: UserTicket): PendingTicketCandidate {
-  return {
-    kind: "pending",
-    ticket,
-    sortStatus: ticket.status,
-    sortStart: ticket.meetingStartAt ?? `${ticket.ticket.date}T${ticket.ticket.time}`,
-    sortTitle: ticket.ticket.title,
-  };
-}
-
 function sourceTicketCandidate(
   row: TicketSourceRow,
   instanceMap: Map<string, InstanceRow>,
@@ -1010,7 +831,6 @@ function displayNickname(profile: ProfileIntroRow | undefined) {
 function ticketsResponse(
   tickets: UserTicket[],
   participationCount: number,
-  proposalParticipationCount: number,
   pageMeta?: UserTicketsPageMeta,
 ) {
   const totalCount = pageMeta?.totalCount ?? tickets.length;
@@ -1021,7 +841,6 @@ function ticketsResponse(
     {
       tickets,
       participationCount,
-      proposalParticipationCount,
       totalCount,
       hasMore,
       nextOffset,
@@ -1057,24 +876,6 @@ export async function GET(request: Request) {
     if (profileAccessError) throw profileAccessError;
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
 
-    const { data: pendingProposalData, error: pendingProposalError } =
-      await supabase
-        .from("meeting_proposals")
-        .select(
-          "id,proposer_id,proposer_public_display_name,proposer_public_intro,proposer_public_emoji,image_url,title,activity_description,event_date,event_time,region,specific_place,place_payload,hashtags,short_description,activities,vibe,status,submitted_at",
-        )
-        .eq("proposer_id", user.id)
-        .in("status", ["pending_review", "approved"])
-        .is("converted_instance_id", null)
-        .order("submitted_at", { ascending: false });
-    if (pendingProposalError) throw pendingProposalError;
-
-    const pendingProposalTickets = (
-      (pendingProposalData ?? []) as unknown as PendingProposalRow[]
-    ).map((proposal) =>
-      pendingProposalTicket(proposal, profileAccess ?? null),
-    );
-
     const { data: waitlistData, error: waitlistError } = await supabase
       .from("meeting_waitlist")
       .select("*")
@@ -1085,9 +886,6 @@ export async function GET(request: Request) {
     const waitlistRows = (waitlistData ?? []) as unknown as WaitlistRow[];
     const participationCount = waitlistRows.filter((row) =>
       ["completed", "feedback_done"].includes(row.status),
-    ).length;
-    const proposalParticipationCount = waitlistRows.filter((row) =>
-      isMeetingProposalParticipationStatus(row.status),
     ).length;
     const { data: userAssignmentData, error: userAssignmentError } =
       await supabase
@@ -1103,19 +901,7 @@ export async function GET(request: Request) {
     );
 
     if (waitlistRows.length === 0 && userAssignments.length === 0) {
-      const page = paginateItems(
-        pendingProposalTickets
-          .map(pendingTicketCandidate)
-          .sort(compareTicketCandidates),
-        pagination,
-      );
-
-      return ticketsResponse(
-        page.items.map((candidate) => candidate.ticket),
-        participationCount,
-        proposalParticipationCount,
-        page.meta,
-      );
+      return ticketsResponse([], participationCount, pagination ? { totalCount: 0, hasMore: false, nextOffset: null } : undefined);
     }
 
     const instanceIds = unique(
@@ -1172,25 +958,12 @@ export async function GET(request: Request) {
     });
 
     if (ticketSourceRows.length === 0) {
-      const page = paginateItems(
-        pendingProposalTickets
-          .map(pendingTicketCandidate)
-          .sort(compareTicketCandidates),
-        pagination,
-      );
-
-      return ticketsResponse(
-        page.items.map((candidate) => candidate.ticket),
-        participationCount,
-        proposalParticipationCount,
-        page.meta,
-      );
+      return ticketsResponse([], participationCount, { totalCount: 0, hasMore: false, nextOffset: null });
     }
 
     const now = new Date();
     const candidatePage = paginateItems(
       [
-        ...pendingProposalTickets.map(pendingTicketCandidate),
         ...ticketSourceRows
           .map((row) =>
             sourceTicketCandidate(row, instanceMap, userAssignedInstanceIds, now),
@@ -1202,12 +975,6 @@ export async function GET(request: Request) {
       ].sort(compareTicketCandidates),
       pagination,
     );
-    const pagedPendingProposalTickets = candidatePage.items
-      .filter(
-        (candidate): candidate is PendingTicketCandidate =>
-          candidate.kind === "pending",
-      )
-      .map((candidate) => candidate.ticket);
     const pagedTicketSourceRows = candidatePage.items
       .filter(
         (candidate): candidate is SourceTicketCandidate =>
@@ -1226,7 +993,6 @@ export async function GET(request: Request) {
       return ticketsResponse(
         [],
         participationCount,
-        proposalParticipationCount,
         candidatePage.meta,
       );
     }
@@ -1287,7 +1053,6 @@ export async function GET(request: Request) {
       ...assignments.map((assignment) => assignment.profile_id),
       ...memberArrivalRows.map((arrivalRow) => arrivalRow.user_id),
       ...atmosphereWaitlistRows.map((row) => row.user_id),
-      ...templates.map((template) => template.proposer_user_id),
     ]);
 
     let profileRows: ProfileIntroRow[] = [];
@@ -1389,14 +1154,10 @@ export async function GET(request: Request) {
           row.ticket_snapshot?.templateId ??
           null;
         const template = templateId ? templateMap.get(templateId) ?? null : null;
-        const proposerProfile = template?.proposer_user_id
-          ? profileMap.get(template.proposer_user_id)
-          : undefined;
         const ticket = toTicket(
           row,
           instance,
           template,
-          proposerProfile,
           instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
         );
         if (!ticket) return null;
@@ -1483,14 +1244,13 @@ export async function GET(request: Request) {
       })
       .filter((ticket): ticket is UserTicket => Boolean(ticket));
 
-    const visibleTickets = [...tickets, ...pagedPendingProposalTickets].sort(
+    const visibleTickets = [...tickets].sort(
       sortUserTickets,
     );
 
     return ticketsResponse(
       visibleTickets,
       participationCount,
-      proposalParticipationCount,
       candidatePage.meta,
     );
   } catch (error) {

@@ -29,7 +29,6 @@ function toTicketQuestionTemplate(
     recommendationCopy: row.recommendation_copy,
     defaultRegion: null,
     defaultTime: null,
-    proposerLabel: "OO님의 제안",
     questionOrder: row.question_order,
   };
 }

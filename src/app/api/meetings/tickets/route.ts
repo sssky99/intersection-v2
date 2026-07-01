@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { canViewMeetingByProposerBirthYear } from "@/lib/meetingAgeVisibility";
-import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import {
   meetingAtmosphereDefaultsFromProfiles,
   normalizeMeetingAtmosphereAgeBandId,
   normalizeMeetingAtmosphereGenderMood,
-  normalizeProfileGender,
   type MeetingAtmosphereDefaults,
 } from "@/lib/meetingAtmosphere";
 import {
@@ -57,11 +54,6 @@ type TemplateRow = {
   score_rhythm: number | null;
   score_alcohol: number | null;
   score_romance: number | null;
-  proposal_id: string | null;
-  proposer_user_id: string | null;
-  proposer_display_name: string | null;
-  proposer_public_intro: string | null;
-  proposer_public_emoji: string | null;
 };
 
 type InstanceRow = {
@@ -102,15 +94,6 @@ type ProfileAccessRow = {
   score_rhythm: number | null;
 };
 
-type ProposerProfileRow = {
-  user_id: string;
-  name: string | null;
-  nickname: string | null;
-  gender: string | null;
-  birth_year: string | number | null;
-  public_intro: string | null;
-  public_emoji: string | null;
-};
 
 type AtmosphereProfileRow = {
   user_id: string;
@@ -146,11 +129,6 @@ const templateSelect = [
   "score_rhythm",
   "score_alcohol",
   "score_romance",
-  "proposal_id",
-  "proposer_user_id",
-  "proposer_display_name",
-  "proposer_public_intro",
-  "proposer_public_emoji",
 ].join(",");
 
 const templateSelectWithoutPlacePayload = templateSelect.replace(
@@ -377,7 +355,6 @@ function toTicket(
   instance: InstanceRow,
   template: TemplateRow,
   name?: string,
-  proposerProfile?: ProposerProfileRow,
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
@@ -392,18 +369,11 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
-  const proposerDisplayName =
-    (proposerProfile ? meetingProposalDisplayName(proposerProfile) : null) ||
-    template.proposer_display_name?.trim();
-  const proposerLabel = proposerDisplayName
-    ? `${proposerDisplayName}님의 제안`
-    : undefined;
   const place = normalizeMeetingPlace(template.place_payload);
 
   return {
     id: instance.id,
     templateId: instance.template_id,
-    proposalId: template.proposal_id,
     title: instance.title || template.title,
     subtitle,
     date: instance.event_date,
@@ -429,20 +399,7 @@ function toTicket(
       place,
     }),
     stageCopy: sanitizeTicketStageCopy(template.stage_copy),
-    proposerLabel,
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
-    proposerProfile: proposerDisplayName
-      ? {
-          userId: proposerProfile?.user_id ?? template.proposer_user_id,
-          displayName: proposerDisplayName,
-          publicIntro:
-            proposerProfile?.public_intro ?? template.proposer_public_intro,
-          publicEmoji:
-            proposerProfile?.public_emoji ?? template.proposer_public_emoji,
-          gender: normalizeProfileGender(proposerProfile?.gender),
-          birthYear: proposerProfile?.birth_year ?? null,
-        }
-      : undefined,
     vibeScores: {
       temperature: template.score_temperature,
       texture: template.score_texture,
@@ -452,33 +409,6 @@ function toTicket(
       romance: template.score_romance,
     },
   };
-}
-
-async function fetchProposerProfileMap(
-  supabase: ReturnType<typeof createAdminClient>,
-  templates: TemplateRow[],
-) {
-  const proposerIds = Array.from(
-    new Set(
-      templates
-        .map((template) => template.proposer_user_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
-  if (proposerIds.length === 0) return new Map<string, ProposerProfileRow>();
-
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("user_id,name,nickname,gender,birth_year,public_intro,public_emoji")
-    .in("user_id", proposerIds);
-  if (error) throw error;
-
-  return new Map(
-    ((data ?? []) as unknown as ProposerProfileRow[]).map((profile) => [
-      profile.user_id,
-      profile,
-    ]),
-  );
 }
 
 function groupByDate(
@@ -541,22 +471,6 @@ function groupTicketResponseDates({
     : groupByDate(tickets, profile, answers);
 }
 
-function isTicketVisibleByProposerAge({
-  ticket,
-  viewerBirthYear,
-  bypass,
-}: {
-  ticket: GatheringTicket;
-  viewerBirthYear: string | number | null;
-  bypass: boolean;
-}) {
-  return canViewMeetingByProposerBirthYear({
-    viewerBirthYear,
-    proposerBirthYear: ticket.proposerProfile?.birthYear,
-    bypass,
-  });
-}
-
 function searchDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
@@ -604,7 +518,6 @@ export async function GET(request: Request) {
     let recommendationProfile: TicketRecommendationProfile | null = null;
     let recommendationAnswers: TicketRecommendationAnswer[] = [];
     let userRecommendationName: string | undefined;
-    let viewerBirthYear: string | number | null = null;
     let canBypassAgeVisibility = false;
 
     if (user) {
@@ -618,7 +531,6 @@ export async function GET(request: Request) {
       if (profileAccessError) throw profileAccessError;
 
       if (profileAccess) {
-        viewerBirthYear = profileAccess.birth_year;
         canBypassAgeVisibility = profileAccess.is_test_participant === true;
         userRecommendationName = recommendationName(profileAccess);
         recommendationProfile = {
@@ -684,10 +596,6 @@ export async function GET(request: Request) {
         }
 
         const templateRows = await fetchTemplateRows(supabase, templateIds);
-        const proposerProfileMap = await fetchProposerProfileMap(
-          supabase,
-          templateRows,
-        );
         const templateMap = new Map(
           templateRows.map((template) => [
             template.id,
@@ -712,21 +620,11 @@ export async function GET(request: Request) {
                   instance,
                   template,
                   userRecommendationName,
-                  template.proposer_user_id
-                    ? proposerProfileMap.get(template.proposer_user_id)
-                    : undefined,
                   atmosphereDefaultsByInstance.get(instance.id) ?? null,
                 )
               : null;
           })
-          .filter((ticket): ticket is GatheringTicket => Boolean(ticket))
-          .filter((ticket) =>
-            isTicketVisibleByProposerAge({
-              ticket,
-              viewerBirthYear,
-              bypass: canBypassAgeVisibility,
-            }),
-          );
+          .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 
         return datesResponse(
           groupTicketResponseDates({
@@ -831,10 +729,6 @@ export async function GET(request: Request) {
     }
 
     const templateRows = await fetchTemplateRows(supabase, templateIds);
-    const proposerProfileMap = await fetchProposerProfileMap(
-      supabase,
-      templateRows,
-    );
     const templateMap = new Map(
       templateRows.map((template) => [
         template.id,
@@ -859,21 +753,11 @@ export async function GET(request: Request) {
               instance,
               template,
               userRecommendationName,
-              template.proposer_user_id
-                ? proposerProfileMap.get(template.proposer_user_id)
-                : undefined,
               atmosphereDefaultsByInstance.get(instance.id) ?? null,
             )
           : null;
       })
-      .filter((ticket): ticket is GatheringTicket => Boolean(ticket))
-      .filter((ticket) =>
-        isTicketVisibleByProposerAge({
-          ticket,
-          viewerBirthYear,
-          bypass: canBypassAgeVisibility,
-        }),
-      );
+      .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 
     return datesResponse(
       groupTicketResponseDates({

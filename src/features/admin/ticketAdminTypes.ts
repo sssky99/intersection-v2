@@ -97,15 +97,6 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   max_participant_count: number;
   visibility: TicketVisibility;
   question_order: number | null;
-  proposal_id: string | null;
-  proposal_proposer_id: string | null;
-  proposal_original_image_url: string | null;
-  proposal_activity_description: string | null;
-  proposal_submitted_at: string | null;
-  proposer_user_id: string | null;
-  proposer_display_name: string | null;
-  proposer_public_intro: string | null;
-  proposer_public_emoji: string | null;
   created_at: string;
   updated_at: string;
   instances: AdminTicketInstance[];

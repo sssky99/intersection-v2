@@ -38,7 +38,6 @@ type AdminCalendarTicket = {
   region: string | null;
   imageUrl: string | null;
   visibility: TicketVisibility;
-  proposerLabel: string;
   assignmentCount: number;
   waitlistCount: number;
 };
@@ -57,11 +56,6 @@ function ticketRowsFromTemplate(template: AdminTicketTemplate) {
   const base = {
     templateId: template.id,
     imageUrl: template.image_url,
-    proposerLabel: template.proposer_display_name
-      ? `${template.proposer_display_name} 제안`
-      : template.proposal_id
-        ? "멤버 제안"
-        : "운영 생성",
   };
 
   const instanceRows = template.instances
@@ -319,9 +313,6 @@ function AdminCalendarTicketCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[10px] font-bold text-black/50">
               {ticketVisibilityLabels[ticket.visibility]}
-            </span>
-            <span className="rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-bold text-accent">
-              {ticket.proposerLabel}
             </span>
           </div>
           <h4 className="mt-2 text-lg font-black leading-6 text-black">

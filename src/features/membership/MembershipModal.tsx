@@ -169,7 +169,6 @@ export function MembershipModal({
     application_id: pendingTicket?.id,
     ticket_id: pendingTicket?.id,
     template_id: pendingTicket?.templateId,
-    proposal_id: pendingTicket?.proposalId,
   });
 
   const openPurchaseNotice = () => {

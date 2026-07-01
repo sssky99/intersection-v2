@@ -6,7 +6,6 @@ import {
   Check,
   Clock3,
   MapPin,
-  Plus,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,21 +15,13 @@ import {
 } from "@/components/IntersectionTicketCard";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
-import {
-  TicketCopyProposalSection,
-  TicketDetailContent,
-} from "@/features/meetings/TicketDetailContent";
+import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import {
   TicketDetailHero,
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
 import { RecommendationCalendarSelector } from "@/features/meetings/RecommendationCalendarSelector";
-import {
-  MeetingProposalFlow,
-  type ProposalMemberProfile,
-} from "@/features/meetings/MeetingProposalFlow";
 import { trackEvent } from "@/lib/analytics";
-import { meetingProposalRequirementMessage } from "@/lib/meetingProposalAccess";
 import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
 import { isPastTicketDate } from "@/lib/ticketDate";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
@@ -40,8 +31,7 @@ type Screen =
   | "calendar"
   | "drawing"
   | "waitlisted"
-  | "blindDate"
-  | "proposal";
+  | "blindDate";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
 
@@ -148,15 +138,10 @@ export function MeetingRecommendation({
   embedded = false,
   active = true,
   membershipStatus,
-  proposalParticipationCount,
-  proposalRequirementBypassed = false,
   onWaitlisted,
-  onProposalSubmitted,
   onMembershipRequired,
   onPaymentReturn,
   onOpenList,
-  onOpenProposal,
-  proposalProfile,
   blindDateOffers = [],
   onBlindDateOffersChange,
   blindDateOpenRequestId = 0,
@@ -168,15 +153,10 @@ export function MeetingRecommendation({
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
-  proposalParticipationCount: number | null;
-  proposalRequirementBypassed?: boolean;
   onWaitlisted?: (ticket: GatheringTicket) => void;
-  onProposalSubmitted?: () => void | Promise<void>;
   onMembershipRequired?: (ticket: GatheringTicket) => void;
   onPaymentReturn?: () => void;
   onOpenList?: () => void;
-  onOpenProposal?: () => void;
-  proposalProfile: ProposalMemberProfile;
   blindDateOffers?: BlindDateUserOffer[];
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
   blindDateOpenRequestId?: number;
@@ -201,8 +181,6 @@ export function MeetingRecommendation({
   const [error, setError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
-  const [copiedProposalTicket, setCopiedProposalTicket] =
-    useState<GatheringTicket | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const ticketEnded = ticket ? isPastTicketDate(ticket.date) : false;
@@ -223,13 +201,6 @@ export function MeetingRecommendation({
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
     activeBlindDateOffers[0] ??
     null;
-  const canSubmitProposal =
-    proposalRequirementBypassed ||
-    (membershipStatus === "active" && (proposalParticipationCount ?? 0) >= 1);
-  const proposalRestrictionMessage = canSubmitProposal
-    ? null
-    : meetingProposalRequirementMessage;
-
   useEffect(() => {
     if (screen !== "drawing" || !ticket) return;
     if (viewedTicketIdsRef.current.has(ticket.id)) return;
@@ -238,7 +209,6 @@ export function MeetingRecommendation({
     trackEvent("ticket_detail_view", {
       ticket_id: ticket.id,
       template_id: ticket.templateId,
-      proposal_id: ticket.proposalId,
     });
   }, [screen, ticket]);
 
@@ -379,7 +349,6 @@ export function MeetingRecommendation({
     application_id: targetTicket.id,
     ticket_id: targetTicket.id,
     template_id: targetTicket.templateId,
-    proposal_id: targetTicket.proposalId,
     membership_status: membershipStatus,
   });
 
@@ -448,28 +417,6 @@ export function MeetingRecommendation({
     setSaving(false);
   };
 
-  const openProposal = () => {
-    setNotice(null);
-    setError(null);
-    setSelectedDate(null);
-    setTicketIndex(0);
-    setWaitlistedTicket(null);
-    setCopiedProposalTicket(null);
-
-    if (onOpenProposal) {
-      setScreen("calendar");
-      onOpenProposal();
-      return;
-    }
-
-    setScreen("proposal");
-  };
-
-  const copyTicketAsProposal = (sourceTicket: GatheringTicket) => {
-    setCopiedProposalTicket(sourceTicket);
-    setScreen("proposal");
-  };
-
   return (
     <section
       className={cn(
@@ -512,24 +459,6 @@ export function MeetingRecommendation({
               />
             </div>
 
-            <button
-              type="button"
-              onClick={openProposal}
-              className="mt-4 flex min-h-[62px] w-full items-center justify-between gap-4 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-3 text-left shadow-sm transition hover:border-accent/45 hover:bg-accent/[0.12] active:scale-[0.99]"
-            >
-              <span>
-                <span className="block text-sm font-black text-black">
-                  내가 원하는 교집합 제안하기
-                </span>
-                <span className="mt-1 block text-xs font-semibold leading-5 text-black/45">
-                  원하는 자리가 없다면, 직접 교집합을 제안해보세요.
-                </span>
-              </span>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white">
-                <Plus size={18} aria-hidden />
-              </span>
-            </button>
-
             {activeBlindDateOffers.length > 0 && (
               <button
                 type="button"
@@ -570,7 +499,6 @@ export function MeetingRecommendation({
             onNo={rejectTicket}
             onYes={() => void joinWaitlist()}
             onOpenInvitation={() => onCoachmarkProgress?.("invitation")}
-            onCopyProposal={() => copyTicketAsProposal(ticket)}
             onChangeDate={() => {
               setSelectedDate(null);
               setTicketIndex(0);
@@ -686,22 +614,6 @@ export function MeetingRecommendation({
           />
         )}
 
-        {screen === "proposal" && (
-          <MeetingProposalFlow
-            profile={proposalProfile}
-            copiedTicket={copiedProposalTicket}
-            canSubmit={canSubmitProposal}
-            restrictionMessage={proposalRestrictionMessage}
-            onBack={() =>
-              setScreen(copiedProposalTicket ? "drawing" : "calendar")
-            }
-            onDone={async () => {
-              await onProposalSubmitted?.();
-              setCopiedProposalTicket(null);
-              setScreen("calendar");
-            }}
-          />
-        )}
       </AnimatePresence>
     </section>
   );
@@ -714,7 +626,6 @@ function TicketDrawingCard({
   error,
   onYes,
   onOpenInvitation,
-  onCopyProposal,
   onNo,
   onChangeDate,
 }: {
@@ -724,7 +635,6 @@ function TicketDrawingCard({
   error: string | null;
   onYes: () => void;
   onOpenInvitation: () => void;
-  onCopyProposal: () => void;
   onNo: () => void;
   onChangeDate: () => void;
 }) {
@@ -769,7 +679,6 @@ function TicketDrawingCard({
             onClose={() => setDetailOpen(false)}
             onNo={onNo}
             onYes={onYes}
-            onCopyProposal={onCopyProposal}
             onChangeDate={onChangeDate}
           />
         ) : (
@@ -819,7 +728,6 @@ function TicketDrawingCard({
                 time={ticket.time}
                 location={`서울\n${ticket.area}`}
                 tags={ticket.moodTags}
-                proposerLabel={ticket.proposerLabel}
                 remainingSeatCount={ticket.remainingSeatCount}
                 drawn={isDrawn}
                 imageVisible={isImageVisible}
@@ -910,7 +818,6 @@ function TicketInsideView({
   error,
   onClose,
   onYes,
-  onCopyProposal,
   onNo,
   onChangeDate,
 }: {
@@ -920,7 +827,6 @@ function TicketInsideView({
   error: string | null;
   onClose: () => void;
   onYes: () => void;
-  onCopyProposal: () => void;
   onNo: () => void;
   onChangeDate: () => void;
 }) {
@@ -973,10 +879,7 @@ function TicketInsideView({
               {error}
             </p>
           )}
-          <TicketDetailContent
-            ticket={ticket}
-            footer={<TicketCopyProposalSection onCopy={onCopyProposal} />}
-          />
+          <TicketDetailContent ticket={ticket} />
         </motion.div>
       </motion.article>
 

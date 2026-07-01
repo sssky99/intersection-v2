@@ -6,7 +6,6 @@ import {
   normalizeMeetingAtmosphereGenderMood,
   type MeetingAtmosphereDefaults,
 } from "@/lib/meetingAtmosphere";
-import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import {
   meetingPlaceAddress,
   normalizeMeetingPlace,
@@ -40,13 +39,6 @@ type InstanceRow = Omit<
 >;
 type AssignmentRow = Omit<TicketAssignment, "profile">;
 type WaitlistRow = AdminTicketWaitlistEntry;
-type ProposalLinkRow = {
-  id: string;
-  proposer_id: string | null;
-  original_image_url: string | null;
-  activity_description: string | null;
-  submitted_at: string | null;
-};
 
 const candidateWaitlistStatuses = [
   "payment_pending",
@@ -133,11 +125,6 @@ const templateSelect = [
   "max_participant_count",
   "visibility",
   "question_order",
-  "proposal_id",
-  "proposer_user_id",
-  "proposer_display_name",
-  "proposer_public_intro",
-  "proposer_public_emoji",
   "score_temperature",
   "score_texture",
   "score_tone",
@@ -432,10 +419,6 @@ function templatePayload(body: Record<string, unknown>) {
     max_participant_count: 6,
     visibility,
     question_order: questionOrder(body.questionOrder),
-    proposer_user_id: text(body.proposerUserId),
-    proposer_display_name: text(body.proposerDisplayName),
-    proposer_public_intro: text(body.proposerPublicIntro),
-    proposer_public_emoji: text(body.proposerPublicEmoji),
     score_temperature: scoreValue(body.scoreTemperature),
     score_texture: scoreValue(body.scoreTexture),
     score_tone: scoreValue(body.scoreTone),
@@ -473,47 +456,10 @@ function instancePayload(body: Record<string, unknown>) {
 
 type TemplatePayload = ReturnType<typeof templatePayload>;
 
-function publicProfileText(value: string | null | undefined) {
-  return value?.trim() || null;
-}
-
-async function ticketProposerPayload(
-  supabase: ReturnType<typeof createAdminClient>,
-  proposerUserId: string,
-  allowedProposalProposerId: string | null = null,
-) {
-  const profiles = await fetchProfiles(supabase);
-  const profile = profiles.find((item) => item.user_id === proposerUserId);
-  const isAllowedProposalProposer =
-    allowedProposalProposerId !== null &&
-    profile?.user_id === allowedProposalProposerId;
-
-  if (
-    !profile ||
-    (profile.is_test_participant !== true && !isAllowedProposalProposer)
-  ) {
-    throw new AdminTicketRequestError(
-      allowedProposalProposerId
-        ? "제안자는 운영자 또는 승인된 제안자 중에서 선택해주세요."
-        : "관리자에서 직접 만드는 티켓의 제안자는 운영자 중에서 선택해주세요.",
-    );
-  }
-
-  return {
-    proposer_user_id: profile.user_id,
-    proposer_display_name: meetingProposalDisplayName(profile),
-    proposer_public_intro: publicProfileText(profile.public_intro),
-    proposer_public_emoji: publicProfileText(profile.public_emoji),
-  };
-}
-
 async function unifiedTicketPayload(
-  supabase: ReturnType<typeof createAdminClient>,
   body: Record<string, unknown>,
-  allowedProposalProposerId: string | null = null,
 ) {
   const payload = templatePayload(body);
-  const proposerUserId = text(body.proposerUserId);
 
   if (!payload.title) {
     throw new AdminTicketRequestError("티켓 제목을 입력해주세요.");
@@ -525,32 +471,13 @@ async function unifiedTicketPayload(
 
     return {
       ...payload,
-      proposer_user_id: null as string | null,
-      proposer_display_name: null as string | null,
-      proposer_public_intro: null as string | null,
-      proposer_public_emoji: null as string | null,
       default_region: payload.default_region ?? payload.region,
       default_time: payload.default_time ?? payload.event_time,
       max_participant_count: 6,
     };
   }
-  if (!proposerUserId) {
-    throw new AdminTicketRequestError(
-      allowedProposalProposerId
-        ? "제안자 또는 운영자 중에서 선택해주세요."
-        : "제안자를 운영자 중에서 선택해주세요.",
-    );
-  }
-
-  const proposer = await ticketProposerPayload(
-    supabase,
-    proposerUserId,
-    allowedProposalProposerId,
-  );
-
   return {
     ...payload,
-    ...proposer,
     default_region: payload.default_region ?? payload.region,
     default_time: payload.default_time ?? payload.event_time,
     max_participant_count: 6,
@@ -577,71 +504,6 @@ function instancePayloadFromTemplate(
     remaining_seat_label_count: payload.remaining_seat_label_count,
     updated_at: new Date().toISOString(),
   };
-}
-
-async function syncProposerParticipation({
-  supabase,
-  instanceId,
-  templateId,
-  proposerUserId,
-  eventDate,
-}: {
-  supabase: ReturnType<typeof createAdminClient>;
-  instanceId: string;
-  templateId: string;
-  proposerUserId: string | null;
-  eventDate: string | null;
-}) {
-  if (!proposerUserId) return;
-
-  const { error: assignmentError } = await supabase
-    .from("ticket_assignments")
-    .insert({
-      ticket_instance_id: instanceId,
-      profile_id: proposerUserId,
-    });
-  if (assignmentError && assignmentError.code !== "23505") {
-    throw assignmentError;
-  }
-
-  if (!eventDate) return;
-
-  const { data: existingWaitlist, error: existingWaitlistError } =
-    await supabase
-      .from("meeting_waitlist")
-      .select("id")
-      .eq("user_id", proposerUserId)
-      .eq("ticket_instance_id", instanceId)
-      .maybeSingle();
-  if (existingWaitlistError) throw existingWaitlistError;
-
-  const waitlistPayload = {
-    status: "approved",
-    ticket_id: instanceId,
-    ticket_instance_id: instanceId,
-    ticket_template_id: templateId,
-    meeting_date: eventDate,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (existingWaitlist?.id) {
-    const { error } = await supabase
-      .from("meeting_waitlist")
-      .update(waitlistPayload)
-      .eq("id", existingWaitlist.id);
-    if (error) throw error;
-    return;
-  }
-
-  const { error: waitlistInsertError } = await supabase
-    .from("meeting_waitlist")
-    .insert({
-      ...waitlistPayload,
-      user_id: proposerUserId,
-    });
-  if (waitlistInsertError && waitlistInsertError.code !== "23505") {
-    throw waitlistInsertError;
-  }
 }
 
 async function syncTemplateInstance(
@@ -682,13 +544,6 @@ async function syncTemplateInstance(
     .neq("id", instance.id);
   if (archiveError) throw archiveError;
 
-  await syncProposerParticipation({
-    supabase,
-    instanceId: instance.id,
-    templateId,
-    proposerUserId: payload.proposer_user_id,
-    eventDate: payload.event_date,
-  });
 
   return instance.id as string;
 }
@@ -723,27 +578,6 @@ async function loadTicketData() {
   if (error) throw error;
 
   const templateRows = (templatesResult.data ?? []) as unknown as TemplateRow[];
-  const proposalIds = Array.from(
-    new Set(
-      templateRows
-        .map((template) => template.proposal_id)
-        .filter((proposalId): proposalId is string => Boolean(proposalId)),
-    ),
-  );
-  const proposalMap = new Map<string, ProposalLinkRow>();
-
-  if (proposalIds.length) {
-    const { data: proposalLinks, error: proposalLinkError } = await supabase
-      .from("meeting_proposals")
-      .select("id,proposer_id,original_image_url,activity_description,submitted_at")
-      .in("id", proposalIds);
-    if (proposalLinkError) throw proposalLinkError;
-
-    for (const proposal of (proposalLinks ?? []) as ProposalLinkRow[]) {
-      proposalMap.set(proposal.id, proposal);
-    }
-  }
-
   const profiles = await fetchProfiles(supabase);
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const assignments = (assignmentsResult.data ?? []) as unknown as AssignmentRow[];
@@ -791,26 +625,10 @@ async function loadTicketData() {
       const atmosphereDefaults = primaryInstance
         ? atmosphereDefaultsByInstance.get(primaryInstance.id) ?? null
         : null;
-      const proposerProfile = template.proposer_user_id
-        ? profileMap.get(template.proposer_user_id)
-        : null;
-      const sourceProposal = template.proposal_id
-        ? proposalMap.get(template.proposal_id) ?? null
-        : null;
 
       return {
         ...template,
         place_payload: normalizeMeetingPlace(template.place_payload),
-        proposer_display_name: proposerProfile
-          ? meetingProposalDisplayName(proposerProfile)
-          : template.proposer_display_name,
-        proposal_proposer_id: template.proposal_id
-          ? (sourceProposal?.proposer_id ?? null)
-          : null,
-        proposal_original_image_url: sourceProposal?.original_image_url ?? null,
-        proposal_activity_description:
-          sourceProposal?.activity_description ?? null,
-        proposal_submitted_at: sourceProposal?.submitted_at ?? null,
         detail_activities: dbTextList(template.detail_activities),
         detail_flow: dbTextList(template.detail_flow),
         detail_good_for: dbTextList(template.detail_good_for),
@@ -845,28 +663,6 @@ async function loadTicketData() {
   );
 
   return { templates, profiles, waitlist };
-}
-
-async function linkedProposalProposerId(
-  supabase: ReturnType<typeof createAdminClient>,
-  templateId: string,
-) {
-  const { data: template, error } = await supabase
-    .from("ticket_templates")
-    .select("proposal_id,proposer_user_id")
-    .eq("id", templateId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!template?.proposal_id) return null;
-
-  const { data: proposal, error: proposalError } = await supabase
-    .from("meeting_proposals")
-    .select("proposer_id")
-    .eq("id", template.proposal_id)
-    .maybeSingle();
-  if (proposalError) throw proposalError;
-
-  return proposal?.proposer_id ?? template.proposer_user_id ?? null;
 }
 
 async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
@@ -915,7 +711,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
 
     if (action === "create_ticket") {
-      const payload = await unifiedTicketPayload(supabase, body ?? {});
+      const payload = await unifiedTicketPayload(body ?? {});
       const { data: template, error } = await supabase
         .from("ticket_templates")
         .insert(payload)
@@ -978,11 +774,6 @@ export async function POST(request: NextRequest) {
           max_participant_count: 6,
           visibility: sourceTemplate.visibility,
           question_order: null,
-          proposal_id: sourceTemplate.proposal_id,
-          proposer_user_id: sourceTemplate.proposer_user_id,
-          proposer_display_name: sourceTemplate.proposer_display_name,
-          proposer_public_intro: sourceTemplate.proposer_public_intro,
-          proposer_public_emoji: sourceTemplate.proposer_public_emoji,
           score_temperature: sourceTemplate.score_temperature ?? null,
           score_texture: sourceTemplate.score_texture ?? null,
           score_tone: sourceTemplate.score_tone ?? null,
@@ -1196,11 +987,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     if (entity === "ticket") {
-      const payload = await unifiedTicketPayload(
-        supabase,
-        body ?? {},
-        await linkedProposalProposerId(supabase, id),
-      );
+      const payload = await unifiedTicketPayload(body ?? {});
       const { error } = await supabase
         .from("ticket_templates")
         .update(payload)

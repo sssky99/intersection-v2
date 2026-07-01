@@ -21,7 +21,6 @@ import { NaverPlacePicker } from "@/components/NaverPlacePicker";
 import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { AtmosphereDisplayEditor } from "@/features/admin/AtmosphereDisplayEditor";
-import { meetingProposalDisplayName } from "@/lib/meetingProposalAccess";
 import {
   normalizeMeetingAtmosphereAgeBandId,
   normalizeMeetingAtmosphereGenderMood,
@@ -72,7 +71,6 @@ type TicketData = {
 };
 
 type TicketDraft = {
-  proposerUserId: string;
   title: string;
   shortDescription: string;
   detailSummary: string;
@@ -337,7 +335,6 @@ function draftFromTicket(template: AdminTicketTemplate): TicketDraft {
   const instance = primaryInstance(template);
 
   return {
-    proposerUserId: template.proposer_user_id ?? "",
     title: template.title,
     shortDescription: template.short_description ?? "",
     detailSummary: template.detail_summary ?? "",
@@ -415,7 +412,6 @@ function ticketRequestBody(draft: TicketDraft) {
   const eventTime = normalizeTimeValue(draft.eventTime);
 
   return {
-    proposerUserId: draft.proposerUserId,
     title: draft.title,
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
@@ -464,34 +460,6 @@ function updatedDate(value: string) {
   }).format(date);
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function proposerSummary(profile: AdminProfile | null | undefined) {
-  if (!profile) return "제안자 미지정";
-  const roleLabel =
-    profile.is_test_participant === true ? "운영자" : "제안자";
-  return `${meetingProposalDisplayName(profile)} ${roleLabel}`;
-}
-
-function proposerOptionLabel(profile: AdminProfile) {
-  const roleLabel =
-    profile.is_test_participant === true ? "운영자" : "제안자";
-  return `${meetingProposalDisplayName(profile)} · ${membershipLabel(profile)} · ${roleLabel}`;
-}
-
 function ticketAtmospherePreview(
   draft: TicketDraft,
   template: AdminTicketTemplate | null,
@@ -519,22 +487,14 @@ function ticketPreview(
   draft: TicketDraft,
   template: AdminTicketTemplate | null,
   instance: AdminTicketInstance | null,
-  proposer: AdminProfile | null,
 ): GatheringTicket {
   const isSampleTicket = draft.visibility === "question";
-  const proposerName =
-    isSampleTicket
-      ? "OO"
-      : (proposer ? meetingProposalDisplayName(proposer) : null) ||
-        template?.proposer_display_name?.trim() ||
-        "운영자";
   const shortDescription =
     draft.shortDescription.trim() || draft.recommendationCopy.trim();
 
   return {
     id: instance?.id ?? template?.id ?? "preview",
     templateId: template?.id ?? "preview",
-    proposalId: template?.proposal_id ?? null,
     title: draft.title.trim() || "새 초대장",
     subtitle: shortDescription || "교집합 초대장",
     date: isSampleTicket ? "" : draft.eventDate,
@@ -562,22 +522,7 @@ function ticketPreview(
         address: draft.address,
       }),
     stageCopy: stageCopyFromDraft(draft),
-    proposerLabel: `${proposerName}님의 제안`,
     atmosphere: ticketAtmospherePreview(draft, template),
-    proposerProfile: {
-      userId: isSampleTicket
-        ? undefined
-        : proposer?.user_id ?? template?.proposer_user_id,
-      displayName: proposerName,
-      publicIntro: isSampleTicket
-        ? null
-        : proposer?.public_intro ?? template?.proposer_public_intro ?? null,
-      publicEmoji: isSampleTicket
-        ? null
-        : proposer?.public_emoji ?? template?.proposer_public_emoji ?? null,
-      gender: isSampleTicket ? null : profileGender(proposer),
-      birthYear: isSampleTicket ? null : proposer?.birth_year ?? null,
-    },
     vibeScores: {
       temperature: Number.parseInt(draft.scoreTemperature, 10) || null,
       texture: Number.parseInt(draft.scoreTexture, 10) || null,
@@ -650,43 +595,23 @@ function memberFromProfile({
 function progressPreviewUserTicket({
   ticket,
   draft,
-  proposer,
   assignedProfiles,
   selectedInstance,
 }: {
   ticket: GatheringTicket;
   draft: TicketDraft;
-  proposer: AdminProfile | null;
   assignedProfiles: AdminProfile[];
   selectedInstance: AdminTicketInstance | null;
 }): UserTicket {
   const startAt = ticketStartIso(ticket);
-  const proposerName =
-    proposer
-      ? meetingProposalDisplayName(proposer)
-      : ticket.proposerProfile?.displayName ?? "제안자";
-  const proposerId =
-    proposer?.user_id ?? ticket.proposerProfile?.userId ?? "preview-proposer";
-  const members = [
+  const members = assignedProfiles.map((profile, index) =>
     memberFromProfile({
-      profile: proposer,
-      fallbackDisplayName: proposerName,
-      fallbackIntro: ticket.proposerProfile?.publicIntro,
-      fallbackEmoji: ticket.proposerProfile?.publicEmoji,
-      isSelf: true,
-      arrivalStatus: "on_time",
+      profile,
+      fallbackDisplayName: profileName(profile),
+      isSelf: index === 0,
+      arrivalStatus: index % 2 === 0 ? "on_time" : null,
     }),
-    ...assignedProfiles
-      .filter((profile) => profile.user_id !== proposerId)
-      .map((profile, index) =>
-        memberFromProfile({
-          profile,
-          fallbackDisplayName: profileName(profile),
-          isSelf: false,
-          arrivalStatus: index % 2 === 0 ? "on_time" : null,
-        }),
-      ),
-  ];
+  );
 
   return {
     id: `admin-preview:${ticket.id}`,
@@ -776,37 +701,6 @@ export function TicketAdminPanel({
     () => profiles.filter((profile) => profile.is_test_participant === true),
     [profiles],
   );
-  const proposerOptions = useMemo(() => {
-    const options = [...operatorProfiles];
-    const addProfile = (profile: AdminProfile | null | undefined) => {
-      if (!profile) return;
-      if (options.some((option) => option.user_id === profile.user_id)) return;
-      options.push(profile);
-    };
-
-    addProfile(
-      profiles.find((profile) => profile.user_id === selectedTicket?.proposal_proposer_id),
-    );
-    addProfile(
-      profiles.find((profile) => profile.user_id === selectedTicket?.proposer_user_id),
-    );
-    addProfile(
-      profiles.find((profile) => profile.user_id === draft?.proposerUserId),
-    );
-
-    return options;
-  }, [
-    draft?.proposerUserId,
-    operatorProfiles,
-    profiles,
-    selectedTicket?.proposal_proposer_id,
-    selectedTicket?.proposer_user_id,
-  ]);
-  const proposer =
-    profiles.find((profile) => profile.user_id === draft?.proposerUserId) ??
-    profiles.find((profile) => profile.user_id === selectedTicket?.proposer_user_id) ??
-    null;
-
   useEffect(() => {
     setDraft(selectedTicket ? draftFromTicket(selectedTicket) : null);
     setMemberQuery("");
@@ -878,14 +772,13 @@ export function TicketAdminPanel({
   ]);
 
   const previewTicket = draft
-    ? ticketPreview(draft, selectedTicket, selectedInstance, proposer)
+    ? ticketPreview(draft, selectedTicket, selectedInstance)
     : null;
   const progressPreviewTicket =
     previewTicket && draft
       ? progressPreviewUserTicket({
           ticket: previewTicket,
           draft,
-          proposer,
           assignedProfiles,
           selectedInstance,
         })
@@ -898,7 +791,6 @@ export function TicketAdminPanel({
     return templates.filter((template) =>
       [
         template.title,
-        template.proposer_display_name,
         template.region,
         template.default_region,
         template.activity_type,
@@ -951,18 +843,11 @@ export function TicketAdminPanel({
   };
 
   const createTicket = async () => {
-    const firstOperator = operatorProfiles[0];
-    if (!firstOperator) {
-      setError("운영자로 표시된 프로필을 먼저 만들어주세요.");
-      return;
-    }
-
     const data = await runAction(
       "POST",
       {
         action: "create_ticket",
         title: "새 초대장",
-        proposerUserId: firstOperator.user_id,
         visibility: "draft",
         placeVisibility: "public",
         remainingSeatLabelCount: "0",
@@ -1069,23 +954,6 @@ export function TicketAdminPanel({
     }
   };
 
-  const restoreOriginalImage = async () => {
-    const originalImageUrl = selectedTicket?.proposal_original_image_url?.trim();
-    if (!selectedTicket || !draft || saving || !originalImageUrl) return;
-
-    const nextDraft = { ...draft, imageUrl: originalImageUrl };
-    setDraft(nextDraft);
-    await runAction(
-      "PATCH",
-      {
-        entity: "ticket",
-        id: selectedTicket.id,
-        ...ticketRequestBody(nextDraft),
-      },
-      "사용자가 제출한 원본 이미지로 되돌렸습니다.",
-    );
-  };
-
   return (
     <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
@@ -1093,7 +961,7 @@ export function TicketAdminPanel({
           <div>
             <h2 className="text-lg font-bold">티켓 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
-              제안자, 초대장 문구, 일정과 장소를 한 티켓 안에서 관리합니다.
+              ?? ??, ??, ??? ?????.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1172,8 +1040,6 @@ export function TicketAdminPanel({
                 <TicketEditorHeader
                   ticket={selectedTicket}
                   draft={draft}
-                  proposer={proposer}
-                  proposerOptions={proposerOptions}
                   saving={saving}
                   onDraftChange={setDraft}
                   onDuplicate={() => void duplicateTicket()}
@@ -1185,17 +1051,9 @@ export function TicketAdminPanel({
                   draft={draft}
                   saving={saving}
                   sampleOnly={isSampleTicket}
-                  proposalOriginalImageUrl={
-                    selectedTicket.proposal_original_image_url
-                  }
                   onDraftChange={setDraft}
                   onUploadImage={(file) => void uploadImage(file)}
-                  onRestoreOriginalImage={() => void restoreOriginalImage()}
                 />
-
-                {selectedTicket.proposal_id && (
-                  <ProposalSourcePanel ticket={selectedTicket} />
-                )}
 
                 {!isSampleTicket && (
                   <>
@@ -1341,13 +1199,6 @@ function TicketListCard({
       </div>
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-bold">{template.title}</h3>
-        <p className="mt-1 truncate text-xs font-semibold text-black/42">
-          {isSampleTicket
-            ? "OO님의 제안"
-            : template.proposer_display_name
-            ? `${template.proposer_display_name} 제안`
-            : "제안자 미지정"}
-        </p>
         <p className="mt-1 truncate text-[11px] font-semibold text-black/38">
           {isSampleTicket
             ? `샘플 ${template.question_order ?? "-"}번째`
@@ -1372,8 +1223,6 @@ function TicketListCard({
 function TicketEditorHeader({
   ticket,
   draft,
-  proposer,
-  proposerOptions,
   saving,
   onDraftChange,
   onDuplicate,
@@ -1382,8 +1231,6 @@ function TicketEditorHeader({
 }: {
   ticket: AdminTicketTemplate;
   draft: TicketDraft;
-  proposer: AdminProfile | null;
-  proposerOptions: AdminProfile[];
   saving: boolean;
   onDraftChange: (draft: TicketDraft) => void;
   onDuplicate: () => void;
@@ -1401,7 +1248,6 @@ function TicketEditorHeader({
           </p>
           <h3 className="mt-1 text-xl font-bold">{draft.title || "새 초대장"}</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            {isSampleTicket ? "OO님의 제안" : proposerSummary(proposer)} ·{" "}
             {ticketVisibilityLabels[draft.visibility]} ·{" "}
             수정 {updatedDate(ticket.updated_at)}
           </p>
@@ -1419,39 +1265,7 @@ function TicketEditorHeader({
         </div>
       </div>
 
-      <div
-        className={cn(
-          "mt-5 grid gap-4",
-          isSampleTicket
-            ? "md:grid-cols-[minmax(0,1fr)_220px_160px]"
-            : "md:grid-cols-[minmax(0,1fr)_220px]",
-        )}
-      >
-        {isSampleTicket ? (
-          <div className="block">
-            <span className="text-xs font-semibold text-black/50">
-              샘플 제안자
-            </span>
-            <div className="mt-1.5 flex h-11 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-sm font-bold text-black/70">
-              OO님의 제안
-            </div>
-          </div>
-        ) : (
-          <SelectField
-            label="제안자"
-            value={draft.proposerUserId}
-            options={[
-              { value: "", label: "제안자 선택" },
-              ...proposerOptions.map((profile) => ({
-                value: profile.user_id,
-                label: proposerOptionLabel(profile),
-              })),
-            ]}
-            onChange={(proposerUserId) =>
-              onDraftChange({ ...draft, proposerUserId })
-            }
-          />
-        )}
+      <div className="mt-5 grid gap-4 md:grid-cols-[220px_160px]">
         <SelectField
           label="공개 상태"
           value={draft.visibility}
@@ -1493,23 +1307,15 @@ function BasicEditor({
   draft,
   saving,
   sampleOnly,
-  proposalOriginalImageUrl,
   onDraftChange,
   onUploadImage,
-  onRestoreOriginalImage,
 }: {
   draft: TicketDraft;
   saving: boolean;
   sampleOnly: boolean;
-  proposalOriginalImageUrl: string | null;
   onDraftChange: (draft: TicketDraft) => void;
   onUploadImage: (file: File) => void;
-  onRestoreOriginalImage: () => void;
 }) {
-  const canRestoreOriginalImage =
-    Boolean(proposalOriginalImageUrl) &&
-    draft.imageUrl.trim() !== (proposalOriginalImageUrl ?? "").trim();
-
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <h3 className="font-bold">기본 정보</h3>
@@ -1528,16 +1334,6 @@ function BasicEditor({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {proposalOriginalImageUrl && (
-                <button
-                  type="button"
-                  disabled={saving || !canRestoreOriginalImage}
-                  onClick={onRestoreOriginalImage}
-                  className="flex h-9 items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  원본 되돌리기
-                </button>
-              )}
               <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
                 이미지 선택
                 <input
@@ -1660,57 +1456,6 @@ function BasicEditor({
               />
             </>
           )}
-      </div>
-    </section>
-  );
-}
-
-function ProposalSourcePanel({ ticket }: { ticket: AdminTicketTemplate }) {
-  const originalImageUrl = ticket.proposal_original_image_url?.trim() || null;
-  const activityDescription =
-    ticket.proposal_activity_description?.trim() ||
-    "저장된 사용자 입력값이 없습니다.";
-
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-            proposal source
-          </p>
-          <h3 className="mt-1 font-bold">제안 원본</h3>
-          <p className="mt-1 text-xs font-semibold text-black/42">
-            사용자가 AI 초안 생성 전에 입력한 원본 정보입니다.
-          </p>
-        </div>
-        <span className="rounded-full bg-black/[0.05] px-3 py-1 text-[11px] font-bold text-black/45">
-          제출 {formatDateTime(ticket.proposal_submitted_at)}
-        </span>
-      </div>
-
-      <div className="mt-4 grid gap-4 md:grid-cols-[132px_minmax(0,1fr)]">
-        <div className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl bg-black/[0.04]">
-          {originalImageUrl ? (
-            <img
-              src={originalImageUrl}
-              alt="사용자가 제출한 원본 이미지"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div className="flex flex-col items-center gap-2 text-[11px] font-semibold text-black/35">
-              <ImageIcon size={22} aria-hidden />
-              원본 이미지 없음
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 rounded-xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
-            사용자 입력값
-          </p>
-          <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-6 text-black/70">
-            {activityDescription}
-          </p>
-        </div>
       </div>
     </section>
   );
@@ -2237,7 +1982,6 @@ function TicketPreviewPanel({
             time={ticket.time}
             location={ticket.area}
             tags={ticket.moodTags}
-            proposerLabel={ticket.proposerLabel}
             remainingSeatCount={ticket.remainingSeatCount}
           />
         </div>

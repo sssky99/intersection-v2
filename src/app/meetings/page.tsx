@@ -30,7 +30,6 @@ type MeetingsPageProps = {
 function initialTabFromSearchParam(value: string | string[] | undefined): AppTab {
   const tab = Array.isArray(value) ? value[0] : value;
   return tab === "browse" ||
-    tab === "proposal" ||
     tab === "chat" ||
     tab === "profile"
     ? tab
