@@ -1069,7 +1069,7 @@ export function AppHome({
           "min-h-0 flex-1 touch-pan-y scrollbar-none",
           chatRoomOpen
             ? "pb-0"
-            : "pb-[calc(90px+env(safe-area-inset-bottom))]",
+            : "pb-[calc(122px+env(safe-area-inset-bottom))]",
           activeTab === "chat" || coachmarkLayerActive
             ? "overflow-hidden"
             : "overflow-y-auto",

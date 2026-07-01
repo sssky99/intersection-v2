@@ -212,12 +212,6 @@ async function saveInvitationDecision(
   if (!response.ok) throw new Error("invitation-decision-save-failed");
 }
 
-const activityRejectionReasons = new Set<TicketRejectionReasonId>([
-  "activity_not_interested",
-  "want_other_activity",
-  "not_sure",
-]);
-
 const ticketRejectionReasonEmojis: Record<TicketRejectionReasonId, string> = {
   time_mismatch: "⏰",
   region_too_far: "📍",
@@ -236,6 +230,60 @@ function ticketAlcoholScore(ticket: GatheringTicket) {
   return typeof score === "number" && Number.isFinite(score) ? score : null;
 }
 
+type TicketRejectionSessionFilters = {
+  ticketIds: Set<string>;
+  times: Set<string>;
+  areas: Set<string>;
+  activityCategories: Set<string>;
+  excludeHighAlcohol: boolean;
+};
+
+function createTicketRejectionSessionFilters(): TicketRejectionSessionFilters {
+  return {
+    ticketIds: new Set(),
+    times: new Set(),
+    areas: new Set(),
+    activityCategories: new Set(),
+    excludeHighAlcohol: false,
+  };
+}
+
+function ticketActivityCategory(ticket: GatheringTicket) {
+  return (
+    normalizedTicketText(ticket.activityType) || `template:${ticket.templateId}`
+  );
+}
+
+function filtersAfterTicketRejection(
+  current: TicketRejectionSessionFilters,
+  reason: TicketRejectionReasonId,
+  ticket: GatheringTicket,
+) {
+  const next: TicketRejectionSessionFilters = {
+    ticketIds: new Set(current.ticketIds),
+    times: new Set(current.times),
+    areas: new Set(current.areas),
+    activityCategories: new Set(current.activityCategories),
+    excludeHighAlcohol: current.excludeHighAlcohol,
+  };
+
+  next.ticketIds.add(ticket.id);
+
+  if (reason === "time_mismatch") {
+    const time = normalizedTicketText(ticket.time);
+    if (time) next.times.add(time);
+  } else if (reason === "region_too_far") {
+    const area = normalizedTicketText(ticket.area);
+    if (area) next.areas.add(area);
+  } else if (reason === "activity_not_interested") {
+    next.activityCategories.add(ticketActivityCategory(ticket));
+  } else if (reason === "alcohol_burden") {
+    next.excludeHighAlcohol = true;
+  }
+
+  return next;
+}
+
 function rejectionReasonsForTicket(ticket: GatheringTicket) {
   const alcoholScore = ticketAlcoholScore(ticket);
 
@@ -249,50 +297,30 @@ function rejectionReasonsForTicket(ticket: GatheringTicket) {
 }
 
 function findReplacementTicket(
-  reason: TicketRejectionReasonId,
-  currentTicket: GatheringTicket,
   tickets: GatheringTicket[],
-  excludedTicketIds: ReadonlySet<string>,
+  filters: TicketRejectionSessionFilters,
 ) {
-  const candidates = tickets.filter(
-    (ticket) =>
-      ticket.id !== currentTicket.id && !excludedTicketIds.has(ticket.id),
+  return (
+    tickets.find((ticket) => {
+      if (filters.ticketIds.has(ticket.id)) return false;
+      if (filters.times.has(normalizedTicketText(ticket.time))) return false;
+      if (filters.areas.has(normalizedTicketText(ticket.area))) return false;
+      if (filters.activityCategories.has(ticketActivityCategory(ticket))) {
+        return false;
+      }
+
+      const alcoholScore = ticketAlcoholScore(ticket);
+      if (
+        filters.excludeHighAlcohol &&
+        alcoholScore !== null &&
+        alcoholScore >= 4
+      ) {
+        return false;
+      }
+
+      return true;
+    }) ?? null
   );
-  const currentArea = normalizedTicketText(currentTicket.area);
-  const currentActivity = normalizedTicketText(currentTicket.activityType);
-  const currentTime = normalizedTicketText(currentTicket.time);
-
-  const matched =
-    reason === "time_mismatch"
-      ? candidates.find(
-          (ticket) =>
-            normalizedTicketText(ticket.date) ===
-              normalizedTicketText(currentTicket.date) &&
-            normalizedTicketText(ticket.time) !== currentTime,
-        )
-      : reason === "region_too_far"
-        ? candidates.find(
-            (ticket) =>
-              normalizedTicketText(ticket.date) ===
-                normalizedTicketText(currentTicket.date) &&
-              normalizedTicketText(ticket.area) !== currentArea,
-          )
-        : reason === "alcohol_burden"
-          ? candidates.find((ticket) => {
-              const score = ticketAlcoholScore(ticket);
-              return score !== null && score <= 2;
-            })
-          : activityRejectionReasons.has(reason)
-            ? candidates.find((ticket) => {
-                const activity = normalizedTicketText(ticket.activityType);
-                if (currentActivity && activity && activity !== currentActivity) {
-                  return true;
-                }
-                return ticket.templateId !== currentTicket.templateId;
-              })
-            : null;
-
-  return matched ?? null;
 }
 
 async function saveTicketRejectionReason({
@@ -375,7 +403,9 @@ export function MeetingRecommendation({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
-  const rejectedTicketIdsRef = useRef<Set<string>>(new Set());
+  const rejectionSessionFiltersRef = useRef(
+    createTicketRejectionSessionFilters(),
+  );
   const dateSelectionRunRef = useRef(0);
   const ticket = selectedDate?.tickets[ticketIndex] ?? null;
   const ticketEnded = ticket ? isPastTicketDate(ticket.date) : false;
@@ -522,7 +552,7 @@ export function MeetingRecommendation({
   const selectDate = async (date: AvailableDate) => {
     const runId = dateSelectionRunRef.current + 1;
     dateSelectionRunRef.current = runId;
-    rejectedTicketIdsRef.current = new Set();
+    rejectionSessionFiltersRef.current = createTicketRejectionSessionFilters();
     setNotice(null);
     setError(null);
     setRejectionTicket(null);
@@ -568,13 +598,14 @@ export function MeetingRecommendation({
   const submitRejectionReason = async (reason: TicketRejectionReasonId) => {
     if (!selectedDate || !rejectionTicket || rejectionSavingReason) return;
 
-    const nextRejectedTicketIds = new Set(rejectedTicketIdsRef.current);
-    nextRejectedTicketIds.add(rejectionTicket.id);
-    const replacementTicket = findReplacementTicket(
+    const nextRejectionFilters = filtersAfterTicketRejection(
+      rejectionSessionFiltersRef.current,
       reason,
       rejectionTicket,
+    );
+    const replacementTicket = findReplacementTicket(
       selectedDate.tickets,
-      nextRejectedTicketIds,
+      nextRejectionFilters,
     );
 
     setRejectionSavingReason(reason);
@@ -594,7 +625,7 @@ export function MeetingRecommendation({
       return;
     }
 
-    rejectedTicketIdsRef.current = nextRejectedTicketIds;
+    rejectionSessionFiltersRef.current = nextRejectionFilters;
 
     trackEvent("ticket_rejection_reason_selected", {
       ticket_id: rejectionTicket.id,
