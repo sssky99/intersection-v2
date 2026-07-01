@@ -1069,7 +1069,7 @@ export function AppHome({
           "min-h-0 flex-1 touch-pan-y scrollbar-none",
           chatRoomOpen
             ? "pb-0"
-            : "pb-[calc(122px+env(safe-area-inset-bottom))]",
+            : "pb-[calc(90px+env(safe-area-inset-bottom))]",
           activeTab === "chat" || coachmarkLayerActive
             ? "overflow-hidden"
             : "overflow-y-auto",
@@ -1698,7 +1698,7 @@ export function StoredTicketDetailView({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={ticketFadeTransition}
-      className="min-h-full bg-white px-5 pb-7 pt-[calc(72px+env(safe-area-inset-top))] text-black"
+      className="min-h-full bg-white px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-black"
     >
       <button
         type="button"
