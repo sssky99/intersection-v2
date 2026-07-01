@@ -52,8 +52,8 @@ import {
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
 import {
+  MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
-  MEETING_MIN_PARTICIPANT_COUNT,
   type GatheringTicket,
   type TicketArrivalStatus,
   type TicketMemberIntro,
@@ -134,7 +134,7 @@ const timeHours = Array.from({ length: 12 }, (_, hour) =>
 );
 type TimePeriod = (typeof timePeriods)[number];
 const editableTicketVisibilities = ticketVisibilities.filter(
-  (visibility) => visibility !== "question",
+  (visibility) => visibility !== "question" && visibility !== "invite_only",
 );
 
 const fixedDetailNotices = [
@@ -393,7 +393,10 @@ function draftFromTicket(
     remainingSeatLabelCount: String(
       instance?.remaining_seat_label_count ?? 0,
     ),
-    minimumParticipantCount: String(instance?.minimum_participant_count ?? 3),
+    minimumParticipantCount: String(
+      instance?.minimum_participant_count ??
+        MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
+    ),
     maxParticipantCount: String(instance?.max_participant_count ?? 6),
     scoreTemperature: scoreDraft(template.score_temperature),
     scoreTexture: scoreDraft(template.score_texture),
@@ -522,7 +525,7 @@ function ticketPreview(
     remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
     minimumParticipantCount:
       Number.parseInt(draft.minimumParticipantCount, 10) ||
-      MEETING_MIN_PARTICIPANT_COUNT,
+      MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
     maxParticipantCount:
       Number.parseInt(draft.maxParticipantCount, 10) ||
       MEETING_MAX_PARTICIPANT_COUNT,
@@ -671,7 +674,6 @@ export function TicketAdminPanel({
   const [draft, setDraft] = useState<TicketDraft | null>(null);
   const [query, setQuery] = useState("");
   const [memberQuery, setMemberQuery] = useState("");
-  const [inviteQuery, setInviteQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -745,7 +747,6 @@ export function TicketAdminPanel({
         : null,
     );
     setMemberQuery("");
-    setInviteQuery("");
     setProgressPreviewOpen(false);
   }, [selectedInstance, selectedTicket]);
 
@@ -814,30 +815,6 @@ export function TicketAdminPanel({
     selectedTicket,
     waitlist,
   ]);
-
-  const invitableProfiles = useMemo(() => {
-    if (!selectedInstance) return [];
-    const unavailableIds = new Set([
-      ...selectedInstance.participants.map(
-        (participation) => participation.user_id,
-      ),
-      ...selectedInstance.invitations
-        .filter((invitation) =>
-          ["sent", "viewed", "accepted"].includes(invitation.status),
-        )
-        .map((invitation) => invitation.user_id),
-    ]);
-    const normalized = inviteQuery.trim().toLowerCase();
-    if (!normalized) return [];
-    return profiles
-      .filter((profile) => !unavailableIds.has(profile.user_id))
-      .filter((profile) =>
-        `${profile.name ?? ""} ${profile.nickname ?? ""} ${profile.phone ?? ""}`
-          .toLowerCase()
-          .includes(normalized),
-      )
-      .slice(0, 10);
-  }, [inviteQuery, profiles, selectedInstance]);
 
   const previewTicket = draft
     ? ticketPreview(draft, selectedTicket, selectedInstance)
@@ -925,7 +902,7 @@ export function TicketAdminPanel({
         questionOrder: sampleOnly ? "1" : null,
         placeVisibility: "confirmed_only",
         remainingSeatLabelCount: "0",
-        minimumParticipantCount: "3",
+        minimumParticipantCount: String(MEETING_DEFAULT_MIN_PARTICIPANT_COUNT),
         maxParticipantCount: "6",
         eventTime: "19:00",
         region: "",
@@ -989,7 +966,7 @@ export function TicketAdminPanel({
         visibility: "draft",
         placeVisibility: "confirmed_only",
         remainingSeatLabelCount: 0,
-        minimumParticipantCount: 3,
+        minimumParticipantCount: MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
         maxParticipantCount: 6,
       },
       "새 회차를 만들었습니다.",
@@ -1265,13 +1242,9 @@ export function TicketAdminPanel({
                     instance={selectedInstance}
                     assignedProfiles={assignedProfiles}
                     assignableProfiles={assignableProfiles}
-                    invitations={selectedInstance.invitations}
-                    invitableProfiles={invitableProfiles}
                     memberQuery={memberQuery}
-                    inviteQuery={inviteQuery}
                     saving={saving}
                     onMemberQueryChange={setMemberQuery}
-                    onInviteQueryChange={setInviteQuery}
                     onAddMember={(profileId) =>
                       void runAction(
                         "POST",
@@ -1281,24 +1254,6 @@ export function TicketAdminPanel({
                           profileId,
                         },
                         "참여를 확정했습니다.",
-                      )
-                    }
-                    onInvite={(profileId) =>
-                      void runAction(
-                        "POST",
-                        {
-                          action: "send_invitation",
-                          instanceId: selectedInstance.id,
-                          profileId,
-                        },
-                        "초대를 보냈습니다.",
-                      )
-                    }
-                    onCancelInvitation={(invitationId) =>
-                      void runAction(
-                        "POST",
-                        { action: "cancel_invitation", invitationId },
-                        "초대를 취소했습니다.",
                       )
                     }
                     onRemoveMember={(profileId) =>
@@ -1565,7 +1520,7 @@ function OccurrenceManager({
                   .join(" ") || "일정 미정"}
               </p>
               <p className="mt-1 truncate text-xs font-semibold text-black/42">
-                {instance.region || instance.place_name || "지역 미정"} · 참여 {instance.participant_count}명 · 초대 {instance.invitation_count}명
+                {instance.region || instance.place_name || "지역 미정"} · 참여 {instance.participant_count}명
               </p>
             </button>
           ))}
@@ -2151,49 +2106,28 @@ function ParticipantPanel({
   instance,
   assignedProfiles,
   assignableProfiles,
-  invitations,
-  invitableProfiles,
   memberQuery,
-  inviteQuery,
   saving,
   onMemberQueryChange,
-  onInviteQueryChange,
   onAddMember,
-  onInvite,
-  onCancelInvitation,
   onRemoveMember,
 }: {
   instance: AdminTicketInstance;
   assignedProfiles: AdminProfile[];
   assignableProfiles: AdminProfile[];
-  invitations: AdminTicketInstance["invitations"];
-  invitableProfiles: AdminProfile[];
   memberQuery: string;
-  inviteQuery: string;
   saving: boolean;
   onMemberQueryChange: (query: string) => void;
-  onInviteQueryChange: (query: string) => void;
   onAddMember: (profileId: string) => void;
-  onInvite: (profileId: string) => void;
-  onCancelInvitation: (invitationId: string) => void;
   onRemoveMember: (profileId: string) => void;
 }) {
-  const invitationStatusLabels = {
-    sent: "전송",
-    viewed: "열람",
-    accepted: "수락",
-    declined: "거절",
-    expired: "만료",
-    cancelled: "취소",
-  } as const;
-
   return (
     <section className="space-y-5 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold">참여자 · 초대</h3>
+          <h3 className="font-bold">참여자</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            참여 {instance.participant_count}명 · 신청 대기 {instance.waitlist_count}명 · 초대 {instance.invitation_count}명
+            참여 {instance.participant_count}명 · 신청 대기 {instance.waitlist_count}명
           </p>
         </div>
         <Users size={20} className="text-black/30" aria-hidden />
@@ -2287,98 +2221,6 @@ function ParticipantPanel({
         </div>
       </div>
 
-      <div className="border-t border-black/8 pt-5">
-        <h4 className="text-sm font-bold">초대 보내기</h4>
-        <p className="mt-1 text-xs font-semibold text-black/40">
-          초대는 참여 확정과 분리되어 기록되며, 수락 시 참여 상태로 전환됩니다.
-        </p>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            {invitations.length ? (
-              invitations.map((invitation) => {
-                const profile = invitation.profile;
-                const canCancel = ["sent", "viewed"].includes(
-                  invitation.status,
-                );
-                return (
-                  <div
-                    key={invitation.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
-                  >
-                    <div className="min-w-0">
-                      {profile ? (
-                        <AdminMemberName profile={profile} />
-                      ) : (
-                        <p className="truncate text-sm font-bold">
-                          {invitation.user_id}
-                        </p>
-                      )}
-                      <p className="mt-1 text-[11px] font-semibold text-black/42">
-                        {invitationStatusLabels[invitation.status]} · {invitation.source_type}
-                      </p>
-                    </div>
-                    {canCancel && (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => onCancelInvitation(invitation.id)}
-                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold text-red-500 hover:bg-red-50 disabled:opacity-40"
-                      >
-                        취소
-                      </button>
-                    )}
-                  </div>
-                );
-              })
-            ) : (
-              <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-                보낸 초대가 없습니다.
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="relative block">
-              <Search
-                size={15}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
-                aria-hidden
-              />
-              <input
-                value={inviteQuery}
-                onChange={(event) => onInviteQueryChange(event.target.value)}
-                placeholder="초대할 멤버 검색"
-                className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
-              />
-            </label>
-            <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
-              {invitableProfiles.length ? (
-                invitableProfiles.map((profile) => (
-                  <button
-                    key={profile.user_id}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => onInvite(profile.user_id)}
-                    className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
-                  >
-                    <div>
-                      <AdminMemberName profile={profile} />
-                      <p className="mt-0.5 text-[10px] text-black/40">
-                        {profile.gender ?? "-"} · {profile.birth_year ?? "-"} · {profile.phone ?? "-"}
-                      </p>
-                    </div>
-                    <Plus size={15} aria-hidden />
-                  </button>
-                ))
-              ) : (
-                <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
-                  검색어를 입력하면 초대 가능한 멤버가 표시됩니다.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
     </section>
   );
 }

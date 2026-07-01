@@ -44,6 +44,7 @@ import {
   CoachmarkLayer,
   type CoachmarkStep,
 } from "@/features/app/CoachmarkLayer";
+import { useDragScroll } from "@/features/app/useDragScroll";
 import { MeetingChat } from "@/features/chat/MeetingChat";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
@@ -526,6 +527,7 @@ export function AppHome({
   const [coachmarkStepIndex, setCoachmarkStepIndex] = useState(0);
   const [coachmarkLayerActive, setCoachmarkLayerActive] = useState(false);
   const recommendTabTrackedRef = useRef(false);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const currentMembership = useMemo(
     () => currentMembershipFromProfile(currentProfile),
     [currentProfile],
@@ -581,6 +583,10 @@ export function AppHome({
     activeTab === "recommend"
       ? activeCoachmarkStep
       : null;
+
+  useDragScroll(scrollAreaRef, {
+    disabled: activeTab === "chat" || coachmarkLayerActive,
+  });
 
   useEffect(() => {
     if (!visibleCoachmarkStep) setCoachmarkLayerActive(false);
@@ -1058,8 +1064,9 @@ export function AppHome({
       />
 
       <div
+        ref={scrollAreaRef}
         className={cn(
-          "min-h-0 flex-1 scrollbar-none",
+          "min-h-0 flex-1 touch-pan-y scrollbar-none",
           chatRoomOpen
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
@@ -1086,6 +1093,7 @@ export function AppHome({
           <MeetingRecommendation
             userId={userId}
             userBirthYear={currentProfile.birth_year}
+            recommendationName={profileNickname(currentProfile)}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}

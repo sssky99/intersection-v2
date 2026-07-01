@@ -6,6 +6,7 @@ import type {
 } from "@/lib/meetingAtmosphere";
 
 export const MEETING_MIN_PARTICIPANT_COUNT = 3;
+export const MEETING_DEFAULT_MIN_PARTICIPANT_COUNT = 4;
 export const MEETING_MAX_PARTICIPANT_COUNT = 6;
 
 export type TicketStageCopy = {

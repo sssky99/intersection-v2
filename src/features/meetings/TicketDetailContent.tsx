@@ -5,8 +5,8 @@ import { useReducedMotion } from "framer-motion";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
 import { MeetingAtmospherePanel } from "@/features/meetings/MeetingAtmospherePanel";
 import {
+  MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
-  MEETING_MIN_PARTICIPANT_COUNT,
   type GatheringTicket,
 } from "@/types/ticket";
 
@@ -31,7 +31,7 @@ const defaultSections: TicketDetailSectionKey[] = [
 
 function participantNotice(ticket: GatheringTicket) {
   const minimum =
-    ticket.minimumParticipantCount ?? MEETING_MIN_PARTICIPANT_COUNT;
+    ticket.minimumParticipantCount ?? MEETING_DEFAULT_MIN_PARTICIPANT_COUNT;
   const maximum = ticket.maxParticipantCount ?? MEETING_MAX_PARTICIPANT_COUNT;
 
   return [

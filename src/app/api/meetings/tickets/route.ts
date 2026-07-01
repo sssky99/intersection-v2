@@ -14,8 +14,8 @@ import {
   type TicketRecommendationProfile,
 } from "@/lib/ticketRecommendation";
 import {
+  MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
-  MEETING_MIN_PARTICIPANT_COUNT,
   type AvailableDate,
   type GatheringTicket,
 } from "@/types/ticket";
@@ -378,7 +378,8 @@ function toTicket(
     imageUrl: template.image_url ?? undefined,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     minimumParticipantCount:
-      instance.minimum_participant_count ?? MEETING_MIN_PARTICIPANT_COUNT,
+      instance.minimum_participant_count ??
+      MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
     maxParticipantCount:
       instance.max_participant_count ?? MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? subtitle,

@@ -1,7 +1,5 @@
 import {
-  meetingAtmosphereAgeBands,
   meetingAtmosphereSummary,
-  type MeetingAtmosphereAgeBandId,
   type MeetingAtmosphereGenderMood,
   type MeetingAtmosphereProfile,
 } from "@/lib/meetingAtmosphere";
@@ -16,6 +14,13 @@ type MoodVisual = {
   softFill: string;
   stroke: string;
   shadow: string;
+};
+
+type GenderGaugeSegment = {
+  mood: MeetingAtmosphereGenderMood;
+  label: string;
+  startAngle: number;
+  endAngle: number;
 };
 
 const moodVisuals: Record<MeetingAtmosphereGenderMood, MoodVisual> = {
@@ -42,50 +47,57 @@ const moodVisuals: Record<MeetingAtmosphereGenderMood, MoodVisual> = {
   },
 };
 
-const preferenceLegend = [
-  { label: "남성 선호", color: moodVisuals.male.primary },
-  { label: "여성 선호", color: moodVisuals.female.primary },
-  { label: "모두 선호", color: moodVisuals.balanced.primary },
+const genderGaugeSegments: GenderGaugeSegment[] = [
+  { mood: "male", label: "남성 선호", startAngle: -90, endAngle: -18 },
+  { mood: "balanced", label: "모두 선호", startAngle: -18, endAngle: 18 },
+  { mood: "female", label: "여성 선호", startAngle: 18, endAngle: 90 },
 ];
 
-const center = 120;
-const outerRadius = 104;
-const innerRadius = 50;
-const labelRadius = 78;
-const segmentDegrees = 72;
-const segmentGap = 0;
+const moodCopy: Record<MeetingAtmosphereGenderMood, string> = {
+  female: "현재 여성분들이 더 많은 관심을 보이고 있어요",
+  male: "남성 분들이 더 많은 관심을 보이고 있어요.",
+  balanced: "남녀 모두 고르게 관심을 보이고 있어요.",
+};
 
-const bandAngles: Record<MeetingAtmosphereAgeBandId, number> = {
-  "20-early": 0,
-  "20-middle": 72,
-  "20-late": 144,
-  "30-early": 216,
-  "30-middle": 288,
+const gaugeCenterX = 120;
+const gaugeCenterY = 118;
+const gaugeOuterRadius = 104;
+const gaugeInnerRadius = 66;
+const gaugeGapDegrees = 2;
+
+const needleAngles: Record<MeetingAtmosphereGenderMood, number> = {
+  male: -44,
+  balanced: 0,
+  female: 44,
 };
 
 function polarPoint(radius: number, angle: number) {
   const radians = (angle * Math.PI) / 180;
   return {
-    x: center + radius * Math.sin(radians),
-    y: center - radius * Math.cos(radians),
+    x: gaugeCenterX + radius * Math.sin(radians),
+    y: gaugeCenterY - radius * Math.cos(radians),
   };
 }
 
-function segmentPath(angle: number) {
-  const startAngle = angle - segmentDegrees / 2 + segmentGap / 2;
-  const endAngle = angle + segmentDegrees / 2 - segmentGap / 2;
-  const outerStart = polarPoint(outerRadius, startAngle);
-  const outerEnd = polarPoint(outerRadius, endAngle);
-  const innerEnd = polarPoint(innerRadius, endAngle);
-  const innerStart = polarPoint(innerRadius, startAngle);
+function arcSegmentPath(startAngle: number, endAngle: number) {
+  const adjustedStart = startAngle + gaugeGapDegrees / 2;
+  const adjustedEnd = endAngle - gaugeGapDegrees / 2;
+  const outerStart = polarPoint(gaugeOuterRadius, adjustedStart);
+  const outerEnd = polarPoint(gaugeOuterRadius, adjustedEnd);
+  const innerEnd = polarPoint(gaugeInnerRadius, adjustedEnd);
+  const innerStart = polarPoint(gaugeInnerRadius, adjustedStart);
 
   return [
     `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
-    `A ${outerRadius} ${outerRadius} 0 0 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
+    `A ${gaugeOuterRadius} ${gaugeOuterRadius} 0 0 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
     `L ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
-    `A ${innerRadius} ${innerRadius} 0 0 0 ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
+    `A ${gaugeInnerRadius} ${gaugeInnerRadius} 0 0 0 ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
     "Z",
   ].join(" ");
+}
+
+function midpointAngle(segment: GenderGaugeSegment) {
+  return (segment.startAngle + segment.endAngle) / 2;
 }
 
 export function MeetingAtmospherePanel({
@@ -97,8 +109,10 @@ export function MeetingAtmospherePanel({
 }) {
   const summary = meetingAtmosphereSummary(profile);
   const visual = moodVisuals[summary.genderMood];
-  const selectedBandId = summary.ageBand?.id ?? "20-middle";
-  const needleAngle = bandAngles[selectedBandId];
+  const activeSegment =
+    genderGaugeSegments.find((segment) => segment.mood === summary.genderMood) ??
+    genderGaugeSegments[1];
+  const needleAngle = needleAngles[activeSegment.mood];
 
   return (
     <div className={cn("rounded-[28px] border border-black/8 bg-white p-4", className)}>
@@ -109,14 +123,14 @@ export function MeetingAtmospherePanel({
         }}
       >
         <div
-          className="flex items-center gap-3 text-[10px] font-bold text-black/45"
-          aria-label="선호 색상 안내"
+          className="flex flex-wrap items-center justify-start gap-x-3 gap-y-1 text-[10px] font-bold text-black/45"
+          aria-label="성별 관심도 색상 안내"
         >
-          {preferenceLegend.map((item) => (
-            <span key={item.label} className="inline-flex items-center gap-1">
+          {genderGaugeSegments.map((item) => (
+            <span key={item.mood} className="inline-flex items-center gap-1">
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: item.color }}
+                style={{ backgroundColor: moodVisuals[item.mood].primary }}
                 aria-hidden
               />
               {item.label}
@@ -124,89 +138,68 @@ export function MeetingAtmospherePanel({
           ))}
         </div>
 
-        <div className="mx-auto aspect-square w-full max-w-[268px]">
+        <div className="mx-auto mt-2 w-full max-w-[268px]">
           <svg
-            viewBox="0 0 240 240"
+            viewBox="0 0 240 132"
             role="img"
-            aria-label={`${summary.agePhrase} ${summary.genderPhrase}`}
-            className="h-full w-full overflow-visible"
+            aria-label={`성별 관심도. ${moodCopy[summary.genderMood]}`}
+            className="h-auto w-full overflow-visible"
           >
             <defs>
               <filter id="meeting-atmosphere-needle-shadow">
                 <feDropShadow
                   dx="0"
                   dy="8"
-                  stdDeviation="6"
+                  stdDeviation="5"
                   floodColor={visual.shadow}
                 />
               </filter>
             </defs>
 
-            <circle cx={center} cy={center} r="111" fill="rgba(0,0,0,0.025)" />
-            <circle cx={center} cy={center} r="49" fill="white" />
-
-            {meetingAtmosphereAgeBands.map((band) => {
-              const angle = bandAngles[band.id];
-              const selected = band.id === selectedBandId;
-              const labelPoint = polarPoint(labelRadius, angle);
-              const [decade, phase] = band.label.split(" ");
+            {genderGaugeSegments.map((segment) => {
+              const segmentVisual = moodVisuals[segment.mood];
+              const selected = segment.mood === summary.genderMood;
 
               return (
-                <g key={band.id}>
+                <g key={segment.mood}>
                   <path
-                    d={segmentPath(angle)}
-                    fill={selected ? visual.softFill : "rgba(0,0,0,0.04)"}
-                    stroke={selected ? visual.stroke : "rgba(255,255,255,0.72)"}
-                    strokeWidth={selected ? 2 : 0.8}
+                    d={arcSegmentPath(segment.startAngle, segment.endAngle)}
+                    fill={segmentVisual.softFill}
+                    stroke={selected ? segmentVisual.stroke : "rgba(255,255,255,0.75)"}
+                    strokeWidth={selected ? 2.5 : 1}
                   />
-                  <text
-                    x={labelPoint.x}
-                    y={labelPoint.y - 5}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill={selected ? visual.primary : "rgba(0,0,0,0.48)"}
-                    fontSize={selected ? 11 : 10}
-                    fontWeight={selected ? 900 : 800}
-                  >
-                    <tspan x={labelPoint.x} dy="0">
-                      {decade}
-                    </tspan>
-                    <tspan x={labelPoint.x} dy="13">
-                      {phase}
-                    </tspan>
-                  </text>
                 </g>
               );
             })}
 
             <g
-              transform={`rotate(${needleAngle} ${center} ${center})`}
+              transform={`rotate(${needleAngle} ${gaugeCenterX} ${gaugeCenterY})`}
               filter="url(#meeting-atmosphere-needle-shadow)"
             >
               <path
-                d="M 120 44 L 128 119 L 120 134 L 112 119 Z"
+                d={`M ${gaugeCenterX - 6} ${gaugeCenterY - 2} L ${gaugeCenterX} 34 L ${gaugeCenterX + 6} ${gaugeCenterY - 2} Z`}
                 fill={visual.primary}
               />
             </g>
             <circle
-              cx={center}
-              cy={center}
-              r="18"
+              cx={gaugeCenterX}
+              cy={gaugeCenterY}
+              r="19"
               fill="white"
               stroke="rgba(0,0,0,0.08)"
               strokeWidth="1"
             />
-            <circle cx={center} cy={center} r="7" fill={visual.primary} />
+            <circle cx={gaugeCenterX} cy={gaugeCenterY} r="7" fill={visual.primary} />
           </svg>
         </div>
       </div>
 
       <div className="mt-3 rounded-2xl bg-black/[0.025] px-4 py-3">
-        <p className="text-[15px] font-black leading-6 text-black/82">
-          {summary.agePhrase}
+        <p className="text-sm font-semibold leading-6 text-black/70">
+          성비는 최대한 비슷하게 조정돼요.
         </p>
-        <p className="mt-1 text-[15px] font-black leading-6 text-black/82">
-          {summary.genderPhrase}
+        <p className="mt-1 text-sm font-semibold leading-6 text-black/70">
+          {moodCopy[summary.genderMood]}
         </p>
       </div>
     </div>

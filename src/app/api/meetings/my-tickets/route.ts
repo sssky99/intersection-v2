@@ -17,8 +17,8 @@ import {
   ticketStageCopyKeys,
 } from "@/lib/ticketStageCopy";
 import {
+  MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
-  MEETING_MIN_PARTICIPANT_COUNT,
   type GatheringTicket,
   type TicketArrivalStatus,
   type TicketMemberIntro,
@@ -490,7 +490,7 @@ function toTicket(
     minimumParticipantCount:
       instance.minimum_participant_count ??
       snapshot?.minimumParticipantCount ??
-      MEETING_MIN_PARTICIPANT_COUNT,
+      MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
     maxParticipantCount:
       instance.max_participant_count ??
       snapshot?.maxParticipantCount ??
@@ -1077,7 +1077,7 @@ export async function GET(request: Request) {
           return (
             participantCount <
             (instance.minimum_participant_count ??
-              MEETING_MIN_PARTICIPANT_COUNT)
+              MEETING_DEFAULT_MIN_PARTICIPANT_COUNT)
           );
         })
         .map((instance) => instance.id),

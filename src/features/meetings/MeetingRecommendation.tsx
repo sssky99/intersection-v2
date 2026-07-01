@@ -8,7 +8,13 @@ import {
   MapPin,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type WheelEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type WheelEvent,
+} from "react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
@@ -26,6 +32,10 @@ import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
 import { isPastTicketDate } from "@/lib/ticketDate";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
+import {
+  ticketRejectionReasonLabels,
+  type TicketRejectionReasonId,
+} from "@/types/ticketRejection";
 
 type Screen =
   | "calendar"
@@ -50,7 +60,7 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 const minimumSelectableAge = 20;
 const maximumSelectableAge = 35;
-const curationLoadingMs = 1000;
+const curationLoadingMs = 2000;
 const ticketDatesCacheTtlMs = 30_000;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
@@ -202,9 +212,107 @@ async function saveInvitationDecision(
   if (!response.ok) throw new Error("invitation-decision-save-failed");
 }
 
+const activityRejectionReasons = new Set<TicketRejectionReasonId>([
+  "activity_not_interested",
+  "want_other_activity",
+  "not_sure",
+]);
+
+const ticketRejectionReasonEmojis: Record<TicketRejectionReasonId, string> = {
+  time_mismatch: "⏰",
+  region_too_far: "📍",
+  alcohol_burden: "🍺",
+  activity_not_interested: "🎯",
+  want_other_activity: "🔎",
+  not_sure: "🤔",
+};
+
+function normalizedTicketText(value: string | null | undefined) {
+  return value?.trim().toLocaleLowerCase("ko-KR") ?? "";
+}
+
+function ticketAlcoholScore(ticket: GatheringTicket) {
+  const score = ticket.vibeScores?.alcohol;
+  return typeof score === "number" && Number.isFinite(score) ? score : null;
+}
+
+function rejectionReasonsForTicket(ticket: GatheringTicket) {
+  const alcoholScore = ticketAlcoholScore(ticket);
+
+  return (Object.keys(ticketRejectionReasonLabels) as TicketRejectionReasonId[])
+    .filter(
+      (reason) =>
+        reason !== "alcohol_burden" ||
+        (alcoholScore !== null && alcoholScore >= 4),
+    )
+    .map((id) => ({ id, label: ticketRejectionReasonLabels[id] }));
+}
+
+function findReplacementTicket(
+  reason: TicketRejectionReasonId,
+  currentTicket: GatheringTicket,
+  tickets: GatheringTicket[],
+) {
+  const candidates = tickets.filter((ticket) => ticket.id !== currentTicket.id);
+  const currentArea = normalizedTicketText(currentTicket.area);
+  const currentActivity = normalizedTicketText(currentTicket.activityType);
+  const currentTime = normalizedTicketText(currentTicket.time);
+
+  const matched =
+    reason === "time_mismatch"
+      ? candidates.find(
+          (ticket) =>
+            normalizedTicketText(ticket.date) ===
+              normalizedTicketText(currentTicket.date) &&
+            normalizedTicketText(ticket.time) !== currentTime,
+        )
+      : reason === "region_too_far"
+        ? candidates.find(
+            (ticket) =>
+              normalizedTicketText(ticket.date) ===
+                normalizedTicketText(currentTicket.date) &&
+              normalizedTicketText(ticket.area) !== currentArea,
+          )
+        : reason === "alcohol_burden"
+          ? candidates.find((ticket) => {
+              const score = ticketAlcoholScore(ticket);
+              return score !== null && score <= 2;
+            })
+          : activityRejectionReasons.has(reason)
+            ? candidates.find((ticket) => {
+                const activity = normalizedTicketText(ticket.activityType);
+                if (currentActivity && activity) {
+                  return activity !== currentActivity;
+                }
+                return ticket.templateId !== currentTicket.templateId;
+              })
+            : null;
+
+  return matched ?? null;
+}
+
+async function saveTicketRejectionReason({
+  reason,
+  ticket,
+  replacementTicket,
+}: {
+  reason: TicketRejectionReasonId;
+  ticket: GatheringTicket;
+  replacementTicket: GatheringTicket | null;
+}) {
+  const response = await fetch("/api/meetings/rejections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason, ticket, replacementTicket }),
+  });
+
+  if (!response.ok) throw new Error("ticket-rejection-save-failed");
+}
+
 export function MeetingRecommendation({
   userId,
   userBirthYear,
+  recommendationName,
   embedded = false,
   active = true,
   membershipStatus,
@@ -221,6 +329,7 @@ export function MeetingRecommendation({
 }: {
   userId: string;
   userBirthYear: string | number | null;
+  recommendationName?: string;
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
@@ -254,6 +363,11 @@ export function MeetingRecommendation({
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rejectionTicket, setRejectionTicket] =
+    useState<GatheringTicket | null>(null);
+  const [rejectionSavingReason, setRejectionSavingReason] =
+    useState<TicketRejectionReasonId | null>(null);
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
@@ -292,6 +406,8 @@ export function MeetingRecommendation({
     setLoadingTicketDate(null);
     setNotice(null);
     setError(null);
+    setRejectionTicket(null);
+    setRejectionError(null);
     if (screen === "drawing") setScreen("calendar");
   };
 
@@ -403,6 +519,8 @@ export function MeetingRecommendation({
     dateSelectionRunRef.current = runId;
     setNotice(null);
     setError(null);
+    setRejectionTicket(null);
+    setRejectionError(null);
     setLoadingTicketDate(date.date);
     setScreen("curating");
     const loadingDelay = wait(curationLoadingMs);
@@ -434,22 +552,65 @@ export function MeetingRecommendation({
     }
   };
 
-  const rejectTicket = () => {
+  const openRejectionSheet = () => {
+    if (!ticket || saving || rejectionSavingReason) return;
     onCoachmarkProgress?.("decision");
+    setRejectionTicket(ticket);
+    setRejectionError(null);
+  };
 
-    if (!selectedDate) return;
-    const nextIndex = ticketIndex + 1;
-    if (nextIndex >= selectedDate.tickets.length) {
+  const submitRejectionReason = async (reason: TicketRejectionReasonId) => {
+    if (!selectedDate || !rejectionTicket || rejectionSavingReason) return;
+
+    const replacementTicket = findReplacementTicket(
+      reason,
+      rejectionTicket,
+      selectedDate.tickets,
+    );
+
+    setRejectionSavingReason(reason);
+    setRejectionError(null);
+
+    try {
+      await saveTicketRejectionReason({
+        reason,
+        ticket: rejectionTicket,
+        replacementTicket,
+      });
+    } catch {
+      setRejectionError(
+        "거절 사유를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+      setRejectionSavingReason(null);
+      return;
+    }
+
+    trackEvent("ticket_rejection_reason_selected", {
+      ticket_id: rejectionTicket.id,
+      template_id: rejectionTicket.templateId,
+      reason,
+      replacement_ticket_id: replacementTicket?.id ?? null,
+      replacement_template_id: replacementTicket?.templateId ?? null,
+    });
+
+    setRejectionSavingReason(null);
+    setRejectionTicket(null);
+
+    if (!replacementTicket) {
       setSelectedDate(null);
       setTicketIndex(0);
       setNotice(
-        "같은 날짜의 추천을 모두 확인했어요. 다시 보고 싶으면 같은 날짜를 다시 선택해주세요.",
+        "조건에 맞는 다른 추천이 아직 없어요. 다른 날짜를 골라주세요.",
       );
       setScreen("calendar");
       return;
     }
 
-    setTicketIndex(nextIndex);
+    const nextIndex = selectedDate.tickets.findIndex(
+      (candidate) => candidate.id === replacementTicket.id,
+    );
+    setTicketIndex(nextIndex >= 0 ? nextIndex : 0);
+    setNotice(null);
     setScreen("drawing");
   };
 
@@ -601,21 +762,25 @@ export function MeetingRecommendation({
           </motion.div>
         )}
 
-        {screen === "curating" && <CurationLoadingScreen />}
+        {screen === "curating" && (
+          <CurationLoadingScreen recommendationName={recommendationName} />
+        )}
 
         {screen === "drawing" && ticket && selectedDate && (
           <TicketDrawingCard
             key={ticket.id}
             ticket={ticket}
             ended={ticketEnded}
-            saving={saving}
+            saving={saving || Boolean(rejectionSavingReason)}
             error={error}
-            onNo={rejectTicket}
+            onNo={openRejectionSheet}
             onYes={() => void joinWaitlist()}
             onOpenInvitation={() => onCoachmarkProgress?.("invitation")}
             onChangeDate={() => {
               setSelectedDate(null);
               setTicketIndex(0);
+              setRejectionTicket(null);
+              setRejectionError(null);
               setScreen("calendar");
             }}
           />
@@ -729,12 +894,124 @@ export function MeetingRecommendation({
         )}
 
       </AnimatePresence>
+      <AnimatePresence>
+        {rejectionTicket && (
+          <TicketRejectionBottomSheet
+            ticket={rejectionTicket}
+            savingReason={rejectionSavingReason}
+            error={rejectionError}
+            onClose={() => {
+              if (rejectionSavingReason) return;
+              setRejectionTicket(null);
+              setRejectionError(null);
+            }}
+            onSelectReason={(reason) => void submitRejectionReason(reason)}
+          />
+        )}
+      </AnimatePresence>
     </section>
   );
 }
 
-function CurationLoadingScreen() {
+function TicketRejectionBottomSheet({
+  ticket,
+  savingReason,
+  error,
+  onClose,
+  onSelectReason,
+}: {
+  ticket: GatheringTicket;
+  savingReason: TicketRejectionReasonId | null;
+  error: string | null;
+  onClose: () => void;
+  onSelectReason: (reason: TicketRejectionReasonId) => void;
+}) {
+  const reasons = rejectionReasonsForTicket(ticket);
+
+  return (
+    <motion.div
+      key="ticket-rejection-sheet"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/25 px-4 pb-[calc(14px+env(safe-area-inset-bottom))]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-label="거절 사유 선택"
+        initial={{ y: 32, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 28, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 360, damping: 32 }}
+        onClick={(event) => event.stopPropagation()}
+        className="flex min-h-[64dvh] w-full max-w-[390px] flex-col rounded-t-[28px] border border-black/10 bg-white px-5 pb-8 pt-4 shadow-[0_-24px_80px_rgba(0,0,0,0.18)]"
+      >
+        <div className="mx-auto h-1.5 w-10 rounded-full bg-black/12" />
+        <div className="mt-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-accent">
+              reason
+            </p>
+            <h2 className="mt-2 text-xl font-black leading-7 text-black">
+              거절 이유를 알려주세요.
+            </h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
+              거절 이유에 맞춰서 다른 만남을 추천해드려요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={Boolean(savingReason)}
+            aria-label="거절 사유 닫기"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48 shadow-sm transition hover:text-black disabled:opacity-40"
+          >
+            <X size={17} aria-hidden />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-2">
+          {reasons.map((reason) => (
+            <button
+              key={reason.id}
+              type="button"
+              disabled={Boolean(savingReason)}
+              onClick={() => onSelectReason(reason.id)}
+              className="flex min-h-[52px] items-center justify-between gap-3 rounded-[16px] border border-black/10 bg-white px-4 py-3 text-left text-sm font-bold text-black transition hover:border-black/20 hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <span className="flex min-w-0 items-center gap-2 break-words">
+                <span aria-hidden>{ticketRejectionReasonEmojis[reason.id]}</span>
+                <span>{reason.label}</span>
+              </span>
+              {savingReason === reason.id && (
+                <span className="shrink-0 text-[11px] font-black text-accent">
+                  저장 중
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+            {error}
+          </p>
+        )}
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function CurationLoadingScreen({
+  recommendationName,
+}: {
+  recommendationName?: string;
+}) {
   const shouldReduceMotion = Boolean(useReducedMotion());
+  const displayName = recommendationName?.trim() || "회원";
 
   return (
     <motion.div
@@ -760,7 +1037,7 @@ function CurationLoadingScreen() {
             transition={{ duration: 0.28, ease: "easeOut", delay: 0.1 }}
             className="mt-8 text-[22px] font-black leading-7 text-black"
           >
-            큐레이션 중
+            {displayName}님에게 딱 맞는 만남을 찾는 중
           </motion.p>
           <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
             선택한 날짜에 어울리는 자리를 살펴보고 있어요.
@@ -891,6 +1168,9 @@ function ageOptions(start: number, end: number) {
 const ageWheelHeight = 144;
 const ageWheelRowHeight = 36;
 const ageWheelPadding = (ageWheelHeight - ageWheelRowHeight) / 2;
+const ageWheelDragSensitivity = 0.5;
+const ageWheelStepCooldownMs = 180;
+const ageWheelWheelThresholdPx = 8;
 
 function AgePreferencePicker({
   value,
@@ -997,7 +1277,23 @@ function AgeWheel({
   const animationFrameRef = useRef<number | null>(null);
   const wheelTargetRef = useRef<number | null>(null);
   const wheelResetTimerRef = useRef<number | null>(null);
+  const wheelDeltaBufferRef = useRef(0);
+  const wheelStepLockUntilRef = useRef(0);
+  const dragStateRef = useRef<{
+    active: boolean;
+    pointerId: number | null;
+    startY: number;
+    startScrollTop: number;
+    moved: boolean;
+  }>({
+    active: false,
+    pointerId: null,
+    startY: 0,
+    startScrollTop: 0,
+    moved: false,
+  });
   const [displayValue, setDisplayValue] = useState(value);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const index = Math.max(0, options.indexOf(value));
@@ -1016,6 +1312,7 @@ function AgeWheel({
       if (wheelResetTimerRef.current) {
         window.clearTimeout(wheelResetTimerRef.current);
       }
+      dragStateRef.current.active = false;
     };
   }, []);
 
@@ -1073,6 +1370,77 @@ function AgeWheel({
     if (nextValue !== value) onChange(nextValue);
   };
 
+  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
+    const state = dragStateRef.current;
+    if (!state.active || state.pointerId !== event.pointerId) return;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    dragStateRef.current = {
+      active: false,
+      pointerId: null,
+      startY: 0,
+      startScrollTop: 0,
+      moved: false,
+    };
+    setDragging(false);
+    wheelTargetRef.current = null;
+    settle();
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+
+    event.preventDefault();
+    if (settleTimerRef.current) {
+      window.clearTimeout(settleTimerRef.current);
+    }
+    if (wheelResetTimerRef.current) {
+      window.clearTimeout(wheelResetTimerRef.current);
+    }
+    wheelTargetRef.current = null;
+    wheelDeltaBufferRef.current = 0;
+    wheelStepLockUntilRef.current = 0;
+    dragStateRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScrollTop: scroller.scrollTop,
+      moved: false,
+    };
+    setDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const state = dragStateRef.current;
+    const scroller = scrollerRef.current;
+    if (!state.active || state.pointerId !== event.pointerId || !scroller) {
+      return;
+    }
+
+    event.preventDefault();
+    const maxScrollTop = Math.max(0, (options.length - 1) * ageWheelRowHeight);
+    const deltaY = event.clientY - state.startY;
+    const nextTop = Math.max(
+      0,
+      Math.min(
+        maxScrollTop,
+        state.startScrollTop - deltaY * ageWheelDragSensitivity,
+      ),
+    );
+
+    if (Math.abs(deltaY) > 2) {
+      dragStateRef.current.moved = true;
+    }
+    scroller.scrollTop = nextTop;
+    setDisplayValue(nearestValueForScrollTop(nextTop));
+  };
+
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
@@ -1080,23 +1448,33 @@ function AgeWheel({
     event.preventDefault();
 
     const maxScrollTop = Math.max(0, (options.length - 1) * ageWheelRowHeight);
-    const currentTarget = wheelTargetRef.current ?? scroller.scrollTop;
     const rawDelta =
       event.deltaMode === 0 ? event.deltaY : event.deltaY * ageWheelRowHeight;
-    const deltaRows =
-      Math.abs(rawDelta) >= ageWheelRowHeight
-        ? Math.sign(rawDelta)
-        : rawDelta / ageWheelRowHeight;
-    const nextTop = Math.max(
-      0,
-      Math.min(maxScrollTop, currentTarget + deltaRows * ageWheelRowHeight),
-    );
+    if (!rawDelta) return;
 
+    wheelDeltaBufferRef.current += rawDelta;
+    const now = window.performance.now();
+    if (now < wheelStepLockUntilRef.current) return;
+    if (Math.abs(wheelDeltaBufferRef.current) < ageWheelWheelThresholdPx) return;
+
+    const currentTarget = wheelTargetRef.current ?? scroller.scrollTop;
+    const currentIndex = Math.max(
+      0,
+      Math.min(options.length - 1, Math.round(currentTarget / ageWheelRowHeight)),
+    );
+    const nextIndex = Math.max(
+      0,
+      Math.min(options.length - 1, currentIndex + Math.sign(wheelDeltaBufferRef.current)),
+    );
+    const nextTop = Math.min(maxScrollTop, nextIndex * ageWheelRowHeight);
+
+    wheelDeltaBufferRef.current = 0;
+    wheelStepLockUntilRef.current = now + ageWheelStepCooldownMs;
     wheelTargetRef.current = nextTop;
     scroller.scrollTo({ top: nextTop, behavior: "smooth" });
-    setDisplayValue(nearestValueForScrollTop(nextTop));
+    setDisplayValue(options[nextIndex] ?? nearestValueForScrollTop(nextTop));
     resetWheelTarget();
-    queueSettle(180);
+    queueSettle(ageWheelStepCooldownMs + 40);
   };
 
   return (
@@ -1113,10 +1491,20 @@ function AgeWheel({
           animationFrameRef.current =
             window.requestAnimationFrame(updateDisplayValue);
         }
-        queueSettle(130);
+        if (!dragStateRef.current.active) {
+          queueSettle(130);
+        }
       }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={stopDragging}
+      onPointerCancel={stopDragging}
       onWheel={handleWheel}
-      className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth text-center scrollbar-none overscroll-contain"
+      className={cn(
+        "h-full snap-y snap-mandatory overflow-y-auto text-center scrollbar-none overscroll-contain select-none",
+        !dragging && "scroll-smooth",
+        dragging ? "cursor-grabbing" : "cursor-grab",
+      )}
       style={{ paddingBlock: ageWheelPadding }}
     >
       {options.map((option) => {

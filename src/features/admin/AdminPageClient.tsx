@@ -18,6 +18,7 @@ import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
+import { TicketRejectionAdminPanel } from "@/features/admin/TicketRejectionAdminPanel";
 import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
 import {
@@ -42,6 +43,7 @@ type AdminTab =
   | "visitors"
   | "membership"
   | "tickets"
+  | "ticketRejections"
   | "calendar"
   | "waitlist"
   | "rooms"
@@ -66,6 +68,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "티켓 관리" },
+  { id: "ticketRejections", label: "거절 사유 관리" },
   { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
@@ -723,6 +726,15 @@ export function AdminPageClient({
                 focusTicketId={ticketFocusId}
                 onFocusTicketHandled={() => setTicketFocusId(null)}
               />
+            </div>
+          )}
+          {visitedTabs.ticketRejections && (
+            <div
+              className={cn(
+                activeTab === "ticketRejections" ? "block" : "hidden",
+              )}
+            >
+              <TicketRejectionAdminPanel />
             </div>
           )}
           {visitedTabs.calendar && (

@@ -36,29 +36,6 @@ export type TicketParticipation = {
   profile: AdminProfile | null;
 };
 
-export type TicketInvitationStatus =
-  | "sent"
-  | "viewed"
-  | "accepted"
-  | "declined"
-  | "expired"
-  | "cancelled";
-
-export type TicketInvitation = {
-  id: string;
-  ticket_instance_id: string;
-  user_id: string;
-  source_type: "service" | "admin" | "friend";
-  inviter_id: string | null;
-  status: TicketInvitationStatus;
-  expires_at: string | null;
-  viewed_at: string | null;
-  responded_at: string | null;
-  created_at: string;
-  updated_at: string;
-  profile: AdminProfile | null;
-};
-
 export type AdminTicketWaitlistEntry = {
   user_id: string;
   ticket_id: string;
@@ -89,9 +66,7 @@ export type AdminTicketInstance = {
   updated_at: string;
   participant_count: number;
   waitlist_count: number;
-  invitation_count: number;
   participants: TicketParticipation[];
-  invitations: TicketInvitation[];
 };
 
 export type AdminTicketTemplate = TicketTemplateScores & {
@@ -124,7 +99,6 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   instance_count: number;
   participant_count: number;
   waitlist_count: number;
-  invitation_count: number;
 };
 
 export const ticketVisibilities: TicketVisibility[] = [

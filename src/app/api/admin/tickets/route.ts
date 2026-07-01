@@ -23,10 +23,10 @@ import {
   type AdminTicketTemplate,
   type AdminTicketWaitlistEntry,
   type PlaceVisibility,
-  type TicketInvitation,
   type TicketParticipation,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
+import { MEETING_DEFAULT_MIN_PARTICIPANT_COUNT } from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
 
@@ -36,18 +36,14 @@ type TemplateRow = Omit<
   | "instance_count"
   | "participant_count"
   | "waitlist_count"
-  | "invitation_count"
 >;
 type InstanceRow = Omit<
   AdminTicketInstance,
   | "participant_count"
   | "waitlist_count"
-  | "invitation_count"
   | "participants"
-  | "invitations"
 >;
 type ParticipationRow = Omit<TicketParticipation, "profile">;
-type InvitationRow = Omit<TicketInvitation, "profile">;
 type WaitlistRow = AdminTicketWaitlistEntry & {
   id?: number | string;
   applied_at?: string | null;
@@ -181,20 +177,6 @@ const participationSelect = [
   "status",
   "applied_at",
   "confirmed_at",
-].join(",");
-
-const invitationSelect = [
-  "id",
-  "ticket_instance_id",
-  "user_id",
-  "source_type",
-  "inviter_id",
-  "status",
-  "expires_at",
-  "viewed_at",
-  "responded_at",
-  "created_at",
-  "updated_at",
 ].join(",");
 
 function isAdminRequest(request: NextRequest) {
@@ -465,7 +447,7 @@ function instancePayload(body: Record<string, unknown>) {
 
   const minimumParticipantCount = participantLimit(
     body.minimumParticipantCount,
-    3,
+    MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   );
   const maxParticipantCount = Math.max(
     minimumParticipantCount,
@@ -543,7 +525,7 @@ async function fetchAllAdminTicketRows(
 
 async function loadTicketData() {
   const supabase = createAdminClient();
-  const [templateData, instanceData, participationData, invitationData, profiles] =
+  const [templateData, instanceData, participationData, profiles] =
     await Promise.all([
       fetchAllAdminTicketRows((from, to) =>
         supabase
@@ -574,14 +556,6 @@ async function loadTicketData() {
           .order("id")
           .range(from, to),
       ),
-      fetchAllAdminTicketRows((from, to) =>
-        supabase
-          .from("ticket_invitations")
-          .select(invitationSelect)
-          .order("created_at", { ascending: false })
-          .order("id")
-          .range(from, to),
-      ),
       fetchProfiles(supabase),
     ]);
 
@@ -589,7 +563,6 @@ async function loadTicketData() {
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const participations = participationData as unknown as ParticipationRow[];
   const waitlist = participations as unknown as WaitlistRow[];
-  const invitations = invitationData as unknown as InvitationRow[];
   const waitlistCounts = new Map<string, number>();
   const instanceRows = instanceData as unknown as InstanceRow[];
   const atmosphereDefaultsByInstance = buildAtmosphereDefaultsByInstance({
@@ -622,13 +595,6 @@ async function loadTicketData() {
           ...participation,
           profile: profileMap.get(participation.user_id) ?? null,
         }));
-      const instanceInvitations = invitations
-        .filter((invitation) => invitation.ticket_instance_id === instance.id)
-        .map((invitation) => ({
-          ...invitation,
-          profile: profileMap.get(invitation.user_id) ?? null,
-        }));
-
       return {
         ...instance,
         place_payload: normalizeMeetingPlace(instance.place_payload),
@@ -638,10 +604,6 @@ async function loadTicketData() {
         participants: instanceParticipants,
         participant_count: instanceParticipants.length,
         waitlist_count: waitlistCounts.get(instance.id) ?? 0,
-        invitations: instanceInvitations,
-        invitation_count: instanceInvitations.filter((invitation) =>
-          ["sent", "viewed", "accepted"].includes(invitation.status),
-        ).length,
       };
     },
   );
@@ -677,10 +639,6 @@ async function loadTicketData() {
         ),
         waitlist_count: templateInstances.reduce(
           (sum, instance) => sum + instance.waitlist_count,
-          0,
-        ),
-        invitation_count: templateInstances.reduce(
-          (sum, instance) => sum + instance.invitation_count,
           0,
         ),
       };
@@ -960,43 +918,6 @@ export async function POST(request: NextRequest) {
         p_user_id: profileId,
         p_status: "approved",
       });
-      if (error) throw error;
-    } else if (action === "send_invitation") {
-      const instanceId = text(body?.instanceId);
-      const profileId = text(body?.profileId);
-      if (!instanceId || !profileId) {
-        return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
-      }
-
-      const now = new Date().toISOString();
-      const { error } = await supabase.from("ticket_invitations").upsert(
-        {
-          ticket_instance_id: instanceId,
-          user_id: profileId,
-          source_type: "admin",
-          inviter_id: null,
-          status: "sent",
-          expires_at: text(body?.expiresAt),
-          viewed_at: null,
-          responded_at: null,
-          updated_at: now,
-        },
-        { onConflict: "ticket_instance_id,user_id" },
-      );
-      if (error) throw error;
-    } else if (action === "cancel_invitation") {
-      const invitationId = text(body?.invitationId);
-      if (!invitationId) {
-        return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
-      }
-      const { error } = await supabase
-        .from("ticket_invitations")
-        .update({
-          status: "cancelled",
-          responded_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invitationId);
       if (error) throw error;
     } else {
       return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
