@@ -49,11 +49,15 @@ function cleanList(items: string[] | undefined) {
   return (items ?? []).map((item) => item.trim()).filter(Boolean);
 }
 
-function activityProse(items: string[]) {
-  return items
-    .map((item) => item.replace(/^[•·\-–—]\s*/, "").trim())
-    .filter(Boolean)
-    .join(" ");
+function activityParagraphs(items: string[]) {
+  return items.flatMap((item) =>
+    item
+      .split(/\r?\n[\t ]*\r?\n/)
+      .map((paragraph) =>
+        paragraph.replace(/^[•·\-–—]\s*/, "").trim(),
+      )
+      .filter(Boolean),
+  );
 }
 
 export function TicketDetailContent({
@@ -314,9 +318,16 @@ function ActivityProse({ items }: { items: string[] }) {
         aria-hidden
         className="mb-3 block h-1 w-8 rounded-full bg-accent/70"
       />
-      <p className="break-keep text-[15px] font-semibold leading-[1.9] tracking-[-0.01em] text-black/68 [text-wrap:pretty]">
-        {activityProse(items)}
-      </p>
+      <div className="space-y-2.5">
+        {activityParagraphs(items).map((paragraph, index) => (
+          <p
+            key={`${index}-${paragraph}`}
+            className="whitespace-pre-wrap break-keep text-[15px] font-normal leading-6 tracking-normal text-black/68 [text-wrap:pretty]"
+          >
+            {paragraph}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }

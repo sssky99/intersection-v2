@@ -219,6 +219,11 @@ function lines(value: string, limit?: number) {
   return typeof limit === "number" ? items.slice(0, limit) : items;
 }
 
+function prose(value: string) {
+  const text = value.trim();
+  return text ? [text] : [];
+}
+
 function customNoticeLines(value: string) {
   return lines(value).filter((item) => !fixedDetailNotices.includes(item));
 }
@@ -429,7 +434,7 @@ function ticketRequestBody(draft: TicketDraft) {
     title: draft.title,
     shortDescription: draft.shortDescription,
     detailSummary: draft.detailSummary,
-    detailActivities: lines(draft.detailActivities),
+    detailActivities: prose(draft.detailActivities),
     detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice,
@@ -532,7 +537,7 @@ function ticketPreview(
     peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
     reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
     detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
-    detailActivities: lines(draft.detailActivities),
+    detailActivities: prose(draft.detailActivities),
     detailFlow: [],
     detailGoodFor: lines(draft.detailGoodFor),
     detailNotice: draft.detailNotice.trim() || undefined,
