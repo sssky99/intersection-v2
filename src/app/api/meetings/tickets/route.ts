@@ -19,6 +19,7 @@ import {
   type AvailableDate,
   type GatheringTicket,
 } from "@/types/ticket";
+import { inferTicketCategory } from "@/types/ticketCategory";
 
 export const dynamic = "force-dynamic";
 
@@ -374,7 +375,12 @@ function toTicket(
     time,
     area,
     moodTags: template.mood_tags ?? [],
-    activityType: template.activity_type,
+    activityType: inferTicketCategory({
+      activityType: template.activity_type,
+      title: instance.title || template.title,
+      moodTags: template.mood_tags,
+      shortDescription: subtitle,
+    }),
     imageUrl: template.image_url ?? undefined,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     minimumParticipantCount:

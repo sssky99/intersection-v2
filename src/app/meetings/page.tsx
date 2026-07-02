@@ -6,7 +6,6 @@ import {
   type AppTab,
   type OperatorAccountSwitcher,
 } from "@/features/app/AppHome";
-import { loadTicketQuestionTemplates } from "@/features/onboarding/loadTicketQuestionTemplates";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 import {
   decryptOperatorReturnSession,
@@ -57,7 +56,6 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
     (profileCompleteParam === "1" && !introUsable);
   if (!introUsable && !shouldOpenCompletionModal) redirect("/profile/result");
 
-  const ticketQuestionTemplates = await loadTicketQuestionTemplates();
   const cookieStore = await cookies();
   const returnSession = decryptOperatorReturnSession(
     cookieStore.get(OPERATOR_RETURN_SESSION_COOKIE)?.value,
@@ -87,7 +85,6 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
         profile={profile}
         initialTab={initialTabFromSearchParam(params?.tab)}
         initialProfileCompletionOpen={shouldOpenCompletionModal}
-        ticketQuestionTemplates={ticketQuestionTemplates}
         operatorAccountSwitcher={operatorAccountSwitcher}
       />
     </MobileFrame>

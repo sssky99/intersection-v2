@@ -1,5 +1,9 @@
-import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import type { GatheringTicket } from "@/types/ticket";
+import {
+  inferTicketCategory,
+  normalizeTicketCategory,
+  type TicketCategory,
+} from "@/types/ticketCategory";
 
 export type TicketRecommendationAnswer = {
   question_order: number;
@@ -17,10 +21,8 @@ export type TicketRecommendationProfile = {
 
 type UserPreferences = {
   answers: Map<number, TicketRecommendationAnswer>;
-  exactRatings: Map<string, number>;
-  ratedSignals: Array<{ rating: number; signals: string[] }>;
   roles: string[];
-  comfortablePeople: string[];
+  ticketCategories: TicketCategory[];
   romancePreference: number | null;
 };
 
@@ -32,33 +34,13 @@ type RankedTicket = {
 };
 
 const MAX_RECOMMENDATIONS_PER_DATE = 5;
-
-const preferenceScoreByRating: Record<number, number> = {
-  1: -48,
-  2: -22,
-  3: 0,
-  4: 24,
-  5: 48,
-};
-
-const comfortSignalKeywords: Record<string, string[]> = {
-  opens_conversation: ["대화", "아이스", "가벼운", "친해"],
-  warm_reactor: ["따뜻", "공감", "편안"],
-  good_questioner: ["대화", "이야기", "질문"],
-  calm_listener: ["차분", "조용", "편안"],
-  humor: ["유머", "웃음", "즐거"],
-  not_pushy: ["부담", "편안", "차분"],
-  deep_talker: ["깊", "생각", "가치관"],
-  casual_talker: ["가벼", "일상", "편안"],
-};
+const TICKET_CATEGORY_QUESTION_ORDER = 10;
+const ticketCategoryPreferenceScores = [42, 30, 20] as const;
 
 const roleSignalKeywords: Record<string, string[]> = {
+  opener: ["대화", "아이스", "가벼", "친해", "활기"],
+  connector: ["대화", "공감", "편안", "질문"],
   listener: ["차분", "편안", "소규모"],
-  reactor: ["대화", "공감", "편안"],
-  questioner: ["대화", "이야기", "질문"],
-  starter: ["아이스", "가벼", "친해"],
-  mood_maker: ["유머", "웃음", "활기"],
-  organizer: ["차분", "정리", "편안"],
 };
 
 function normalize(value: string) {
@@ -115,50 +97,33 @@ function ticketText(ticket: GatheringTicket) {
     .join(" ");
 }
 
-function signalOverlap(left: Set<string>, right: string[]) {
-  return right.some((signal) => left.has(signal));
-}
-
 function buildPreferences(
   rows: TicketRecommendationAnswer[],
 ): UserPreferences {
   const answers = new Map(rows.map((row) => [row.question_order, row]));
-  const exactRatings = new Map<string, number>();
-  const ratedSignals: Array<{ rating: number; signals: string[] }> = [];
-
-  for (const row of rows) {
-    const rating = parseTicketRatingAnswer(row.answer_text);
-    const value = ratingValue(rating?.rating);
-    if (!rating || value == null) continue;
-
-    exactRatings.set(rating.ticket_id, value);
-    ratedSignals.push({
-      rating: value,
-      signals: Array.from(signalSet(rating.signal_tags)),
-    });
-  }
+  const roles = [5, 6, 7]
+    .flatMap((order) => answerValues(answers, order))
+    .filter((role, index, values) => values.indexOf(role) === index);
+  const ticketCategories = answerValues(answers, TICKET_CATEGORY_QUESTION_ORDER)
+    .map(normalizeTicketCategory)
+    .filter((category): category is TicketCategory => Boolean(category))
+    .filter((category, index, values) => values.indexOf(category) === index)
+    .slice(0, 3);
 
   return {
     answers,
-    exactRatings,
-    ratedSignals,
-    roles: answerValues(answers, 5),
-    comfortablePeople: answerValues(answers, 6),
-    romancePreference: ratingValue(answerValues(answers, 7)[0]),
+    roles,
+    ticketCategories,
+    romancePreference: ratingValue(answerValues(answers, 8)[0]),
   };
-}
-
-function isExcluded(ticket: GatheringTicket, preferences: UserPreferences) {
-  const exactRating = preferences.exactRatings.get(ticket.templateId);
-  if (exactRating === 1) return true;
-
-  return false;
 }
 
 function vibeScore(
   ticket: GatheringTicket,
-  profile: TicketRecommendationProfile,
+  profile: TicketRecommendationProfile | null,
 ) {
+  if (!profile) return { score: 0, reason: null };
+
   const axes: Array<{
     profile: number | null;
     ticket: number | null | undefined;
@@ -203,39 +168,6 @@ function vibeScore(
   };
 }
 
-function directPreferenceScore(
-  ticket: GatheringTicket,
-  preferences: UserPreferences,
-  signals: Set<string>,
-) {
-  const exactRating = preferences.exactRatings.get(ticket.templateId);
-  if (exactRating != null) {
-    return {
-      score: preferenceScoreByRating[exactRating],
-      reason:
-        exactRating >= 4
-          ? "높게 평가한 티켓 취향과 직접 맞아요."
-          : null,
-    };
-  }
-
-  const relatedRatings = preferences.ratedSignals.filter((rating) =>
-    signalOverlap(signals, rating.signals),
-  );
-  if (relatedRatings.length === 0) return { score: 0, reason: null };
-
-  const averageRating =
-    relatedRatings.reduce((sum, rating) => sum + rating.rating, 0) /
-    relatedRatings.length;
-  const score = Math.max(-16, Math.min(16, (averageRating - 3) * 8));
-
-  return {
-    score,
-    reason:
-      score >= 8 ? "좋게 평가한 티켓과 활동이나 분위기가 닮아 있어요." : null,
-  };
-}
-
 function conditionScore(
   ticket: GatheringTicket,
   preferences: UserPreferences,
@@ -256,12 +188,9 @@ function conditionScore(
     }
   }
 
-  const preferenceSignals = [
-    ...preferences.roles.flatMap((role) => roleSignalKeywords[role] ?? []),
-    ...preferences.comfortablePeople.flatMap(
-      (person) => comfortSignalKeywords[person] ?? [],
-    ),
-  ];
+  const preferenceSignals = preferences.roles.flatMap(
+    (role) => roleSignalKeywords[role] ?? [],
+  );
   const matchedSignals = preferenceSignals.filter((keyword) =>
     text.includes(normalize(keyword)),
   );
@@ -277,9 +206,34 @@ function conditionScore(
   return { score, reasons };
 }
 
+function categoryPreferenceScore(
+  ticket: GatheringTicket,
+  preferences: UserPreferences,
+) {
+  const category = inferTicketCategory({
+    activityType: ticket.activityType,
+    title: ticket.title,
+    moodTags: ticket.moodTags,
+    shortDescription: ticket.subtitle,
+  });
+  if (!category) return { score: 0, reason: null };
+
+  const priorityIndex = preferences.ticketCategories.indexOf(category);
+  if (priorityIndex === -1) return { score: 0, reason: null };
+
+  const score = ticketCategoryPreferenceScores[priorityIndex] ?? 0;
+  return {
+    score,
+    reason:
+      priorityIndex === 0
+        ? "1순위로 고른 관심 분야와 맞아요."
+        : "관심 분야 우선순위를 반영했어요.",
+  };
+}
+
 function rankTicket(
   ticket: GatheringTicket,
-  profile: TicketRecommendationProfile,
+  profile: TicketRecommendationProfile | null,
   preferences: UserPreferences,
 ): RankedTicket {
   const text = normalize(ticketText(ticket));
@@ -289,18 +243,18 @@ function rankTicket(
     ticket.subtitle,
     ...ticket.moodTags,
   ]);
-  const direct = directPreferenceScore(ticket, preferences, signals);
+  const category = categoryPreferenceScore(ticket, preferences);
   const vibe = vibeScore(ticket, profile);
   const conditions = conditionScore(ticket, preferences, text);
   const reasons = [
-    direct.reason ? { text: direct.reason, weight: Math.max(direct.score, 0) } : null,
+    category.reason ? { text: category.reason, weight: category.score } : null,
     vibe.reason ? { text: vibe.reason, weight: vibe.score } : null,
     ...conditions.reasons,
   ].filter((reason): reason is { text: string; weight: number } => Boolean(reason));
 
   return {
     ticket,
-    score: direct.score + vibe.score + conditions.score,
+    score: category.score + vibe.score + conditions.score,
     reasons,
     signals,
   };
@@ -308,9 +262,22 @@ function rankTicket(
 
 function diversityPenalty(candidate: RankedTicket, selected: RankedTicket[]) {
   return selected.reduce((penalty, current) => {
+    const candidateCategory = inferTicketCategory({
+      activityType: candidate.ticket.activityType,
+      title: candidate.ticket.title,
+      moodTags: candidate.ticket.moodTags,
+      shortDescription: candidate.ticket.subtitle,
+    });
+    const currentCategory = inferTicketCategory({
+      activityType: current.ticket.activityType,
+      title: current.ticket.title,
+      moodTags: current.ticket.moodTags,
+      shortDescription: current.ticket.subtitle,
+    });
     const sameActivity =
-      candidate.ticket.activityType &&
-      candidate.ticket.activityType === current.ticket.activityType;
+      (candidateCategory && candidateCategory === currentCategory) ||
+      (candidate.ticket.activityType &&
+        candidate.ticket.activityType === current.ticket.activityType);
     const sharedSignals = Array.from(candidate.signals).filter((signal) =>
       current.signals.has(signal),
     ).length;
@@ -333,11 +300,12 @@ export function recommendTickets(
   profile: TicketRecommendationProfile | null,
   rows: TicketRecommendationAnswer[],
 ) {
-  if (!profile) return tickets.slice(0, MAX_RECOMMENDATIONS_PER_DATE);
-
   const preferences = buildPreferences(rows);
+  if (!profile && preferences.ticketCategories.length === 0) {
+    return tickets.slice(0, MAX_RECOMMENDATIONS_PER_DATE);
+  }
+
   const ranked = tickets
-    .filter((ticket) => !isExcluded(ticket, preferences))
     .map((ticket) => rankTicket(ticket, profile, preferences))
     .sort(
       (left, right) =>

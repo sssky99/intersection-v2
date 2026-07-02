@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { displayMembershipStatus } from "@/features/membership/membershipTypes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { isPastTicketDate } from "@/lib/ticketDate";
@@ -9,9 +8,7 @@ type WaitlistRequest = {
   ticket?: Partial<GatheringTicket>;
 };
 
-type ProfileMembership = {
-  membership_status: string | null;
-  membership_end_date: string | null;
+type ProfileAccess = {
   is_test_participant: boolean | null;
 };
 
@@ -58,13 +55,13 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("membership_status,membership_end_date,is_test_participant")
+    .select("is_test_participant")
     .eq("user_id", user.id)
-    .maybeSingle<ProfileMembership>();
+    .maybeSingle<ProfileAccess>();
 
   if (profileError || !profile) {
     return NextResponse.json(
-      { error: "Profile membership state is not available." },
+      { error: "Profile state is not available." },
       { status: 400 },
     );
   }
@@ -134,23 +131,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const membershipStatus = displayMembershipStatus({
-    status: profile.membership_status,
-    endDate: profile.membership_end_date,
-  });
-
-  if (membershipStatus !== "active" && membershipStatus !== "pending") {
-    return NextResponse.json(
-      {
-        error: "Membership is required.",
-        code: "membership_required",
-      },
-      { status: 402 },
-    );
-  }
-
-  const waitlistStatus =
-    membershipStatus === "active" ? "waitlisted" : "payment_pending";
+  const waitlistStatus = "payment_pending";
 
   const { data: existingWaitlist, error: existingWaitlistError } = await admin
     .from("ticket_participations")
@@ -169,6 +150,8 @@ export async function POST(request: Request) {
   }
 
   const protectedStatuses = new Set([
+    "waitlisted",
+    "on_hold",
     "approved",
     "feedback_done",
     "completed",

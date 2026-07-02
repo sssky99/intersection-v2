@@ -16,7 +16,7 @@ export type TicketStageCopyKey = (typeof ticketStageCopyKeys)[number];
 
 export const defaultTicketStageCopy: Record<TicketStageCopyKey, string> = {
   paymentPending:
-    "결제 확인이 완료되면 대기열 등록 상태로 전환돼요. 운영자가 확인한 뒤 참여 확정 여부를 안내합니다.",
+    "노쇼 방지비 입금 확인이 완료되면 대기열 등록 상태로 전환돼요. 운영자가 확인한 뒤 참여 확정 여부를 안내합니다.",
   waitlisted:
     "신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터 확인할 수 있어요.",
   applied:

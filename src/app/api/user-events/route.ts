@@ -21,7 +21,6 @@ const allowedEventNames = new Set([
   "login_success",
   "question_start",
   "question_answered",
-  "ticket_test_complete",
   "choice_questions_complete",
   "text_questions_complete",
   "questions_complete",

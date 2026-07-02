@@ -61,7 +61,6 @@ const eventLabels: Record<string, string> = {
   login_success: "로그인 성공",
   question_start: "질문 시작",
   question_answered: "질문 응답",
-  ticket_test_complete: "티켓 취향 완료",
   choice_questions_complete: "선택 질문 완료",
   text_questions_complete: "서술 질문 완료",
   questions_complete: "질문 완료",

@@ -42,7 +42,7 @@ function participantNotice(ticket: GatheringTicket) {
 
 const commonNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
-  "결제 확인 후 대기열 등록이 완료돼요.",
+  "노쇼 방지비 입금 확인 후 대기열 등록이 완료돼요.",
 ];
 
 function cleanList(items: string[] | undefined) {

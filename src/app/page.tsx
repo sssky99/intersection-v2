@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { postLoginPath } from '@/lib/authRedirect';
-import LoginPageClient from './LoginPageClient';
+import { DetailsPreviewClient } from './admin/details-preview/DetailsPreviewClient';
 
 type HomeSearchParams = Record<string, string | string[] | undefined>;
 
@@ -48,5 +48,5 @@ export default async function Home({
     redirect(`/auth/callback?${callbackQuery(resolvedSearchParams)}`);
   }
 
-  return <LoginPageClient />;
+  return <DetailsPreviewClient asLandingPage />;
 }

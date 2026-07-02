@@ -27,6 +27,7 @@ import {
   type UserTicket,
   type UserTicketStatus,
 } from "@/types/ticket";
+import { inferTicketCategory } from "@/types/ticketCategory";
 
 export const dynamic = "force-dynamic";
 
@@ -258,7 +259,7 @@ const statusPriority: Record<UserTicketStatus, number> = {
 };
 
 const statusLabels: Record<UserTicketStatus, string> = {
-  payment_pending: "결제 확인 필요",
+  payment_pending: "입금 확인 필요",
   waitlisted: "신청 완료",
   approved: "참여 확정",
   in_progress: "진행 중",
@@ -454,7 +455,19 @@ function toTicket(
   const snapshot = row.ticket_snapshot;
 
   if (!instance || !template) {
-    return snapshot?.id ? { ...snapshot, place: null } : null;
+    return snapshot?.id
+      ? {
+          ...snapshot,
+          activityType:
+            inferTicketCategory({
+              activityType: snapshot.activityType,
+              title: snapshot.title,
+              moodTags: snapshot.moodTags,
+              shortDescription: snapshot.subtitle,
+            }) ?? snapshot.activityType,
+          place: null,
+        }
+      : null;
   }
 
   const date = instance.event_date ?? row.meeting_date ?? snapshot?.date;
@@ -463,7 +476,20 @@ function toTicket(
     template.default_time?.slice(0, 5) ??
     snapshot?.time;
 
-  if (!date || !time) return snapshot?.id ? snapshot : null;
+  if (!date || !time) {
+    return snapshot?.id
+      ? {
+          ...snapshot,
+          activityType:
+            inferTicketCategory({
+              activityType: snapshot.activityType,
+              title: snapshot.title,
+              moodTags: snapshot.moodTags,
+              shortDescription: snapshot.subtitle,
+            }) ?? snapshot.activityType,
+        }
+      : null;
+  }
 
   const subtitle =
     template.short_description ??
@@ -483,7 +509,14 @@ function toTicket(
     time,
     area,
     moodTags: template.mood_tags ?? snapshot?.moodTags ?? [],
-    activityType: template.activity_type ?? snapshot?.activityType,
+    activityType:
+      inferTicketCategory({
+        activityType: template.activity_type ?? snapshot?.activityType,
+        title: instance.title || template.title || snapshot?.title,
+        moodTags: template.mood_tags ?? snapshot?.moodTags,
+        shortDescription: subtitle,
+      }) ??
+      snapshot?.activityType,
     imageUrl: template.image_url ?? snapshot?.imageUrl,
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,

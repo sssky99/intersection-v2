@@ -68,7 +68,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
 });
 
 const statusMetricLabels: Record<WaitlistStatus, string> = {
-  payment_pending: "결제전",
+  payment_pending: "입금전",
   waitlisted: "대기",
   approved: "승인",
   on_hold: "보류",

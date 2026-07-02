@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { profileQuestions } from "@/data/profileQuestions";
-import { loadTicketQuestionTemplates } from "@/features/onboarding/loadTicketQuestionTemplates";
 import { generateProfileText, publicProfileModel } from "@/lib/openai";
 import {
   buildFallbackIntro,
@@ -96,16 +95,10 @@ function profileScoresFromAnswers(answers: DraftAnswerRow[]) {
   };
 }
 
-async function requiredQuestionOrders() {
-  const ticketQuestionTemplates = await loadTicketQuestionTemplates();
-  const staticOrders = profileQuestions
-    .filter((question) => question.type !== "ticket_rating")
-    .map((question) => question.order ?? question.id);
-  const ticketOrders = ticketQuestionTemplates.map(
-    (template) => 9 + template.questionOrder,
-  );
-
-  return Array.from(new Set([...staticOrders, ...ticketOrders])).sort(
+function requiredQuestionOrders() {
+  return Array.from(
+    new Set(profileQuestions.map((question) => question.order ?? question.id)),
+  ).sort(
     (left, right) => left - right,
   );
 }
@@ -256,7 +249,7 @@ export async function POST(request: Request) {
 
   const answers = draftAnswers ?? [];
   const answeredOrders = new Set(answers.map((answer) => answer.question_order));
-  const missingOrders = (await requiredQuestionOrders()).filter(
+  const missingOrders = requiredQuestionOrders().filter(
     (order) => !answeredOrders.has(order),
   );
 

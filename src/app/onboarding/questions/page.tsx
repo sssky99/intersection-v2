@@ -4,7 +4,6 @@ import {
   QuestionFlow,
   type StoredAnswerRow,
 } from "@/features/onboarding/QuestionFlow";
-import { loadTicketQuestionTemplates } from "@/features/onboarding/loadTicketQuestionTemplates";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 
 type QuestionsPageProps = {
@@ -35,14 +34,11 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
     )
     .eq("user_id", user.id)
     .order("question_order");
-  const ticketQuestionTemplates = await loadTicketQuestionTemplates();
-
   return (
     <MobileFrame>
       <QuestionFlow
         userId={user.id}
         initialRows={(data ?? []) as StoredAnswerRow[]}
-        ticketQuestionTemplates={ticketQuestionTemplates}
         mode={isRegeneration ? "regeneration" : "onboarding"}
       />
     </MobileFrame>

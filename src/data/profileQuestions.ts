@@ -1,4 +1,5 @@
 import type { ProfileQuestion } from "@/types/question";
+import { ticketCategories } from "@/types/ticketCategory";
 
 export const questionCategories = [
   { key: "온도", label: "온도", icon: "Coffee" },
@@ -6,10 +7,9 @@ export const questionCategories = [
   { key: "톤", label: "톤", icon: "Heart" },
   { key: "리듬", label: "리듬", icon: "Sparkles" },
   { key: "모임 역할", label: "모임 역할", icon: "Users" },
-  { key: "모임 역할 - 상대", label: "편한 상대", icon: "Users" },
+  { key: "관심 분야", label: "관심 분야", icon: "Ticket" },
   { key: "관계 기대", label: "관계 기대", icon: "Heart" },
   { key: "나이 조건", label: "나이 조건", icon: "Users" },
-  { key: "모임 취향", label: "모임 취향", icon: "Ticket" },
   { key: "나의 일", label: "나의 일", icon: "PenLine" },
   { key: "관심 주제", label: "관심 주제", icon: "Sparkles" },
 ] as const;
@@ -115,48 +115,60 @@ const baseQuestions: ProfileQuestion[] = [
     id: 5,
     order: 5,
     category: "모임 역할",
-    type: "multi_choice",
-    maxSelections: 2,
-    question: "처음 만난 자리에서\n나에게 가까운 모습을 골라주세요.",
-    description: "최대 2개까지 선택할 수 있어요.",
+    type: "single_choice",
+    question: "처음 만난 자리에서 나는 보통\n어떤 쪽에 가까운가요?",
     options: [
-      { value: "listener", label: "주로 편하게 듣는 편이에요." },
-      { value: "reactor", label: "주로 리액션으로 대화를 받아주는 편이에요." },
       {
-        value: "questioner",
-        label: "주로 질문을 던져 대화를 이어가는 편이에요.",
+        value: "opener",
+        label: "어색하면 먼저 말문을 여는 편이에요.",
       },
-      { value: "starter", label: "주로 어색하면 먼저 말을 꺼내는 편이에요." },
-      { value: "mood_maker", label: "주로 분위기를 밝게 만드는 편이에요." },
       {
-        value: "organizer",
-        label: "주로 대화가 산만하면 자연스럽게 정리하는 편이에요.",
+        value: "connector",
+        label: "누군가 말을 꺼내면 자연스럽게 이어주는 편이에요.",
+      },
+      {
+        value: "listener",
+        label: "먼저 나서기보다는 편하게 듣고 반응하는 편이에요.",
       },
     ],
   },
   {
     id: 6,
     order: 6,
-    category: "모임 역할 - 상대",
-    type: "multi_choice",
-    maxSelections: 2,
+    category: "모임 역할",
+    type: "single_choice",
     question:
-      "처음 만나는 자리에서\n내가 편하게 느끼는 사람은 어떤 사람인가요?",
-    description: "최대 2개까지 선택할 수 있어요.",
+      "누군가 조용히 있는 것 같다면,\n나는 보통 어떻게 하나요?",
     options: [
-      { value: "opens_conversation", label: "먼저 말문을 열어주는 사람" },
-      { value: "warm_reactor", label: "리액션이 따뜻한 사람" },
-      { value: "good_questioner", label: "질문을 잘 던져주는 사람" },
-      { value: "calm_listener", label: "차분히 들어주는 사람" },
-      { value: "humor", label: "유머로 분위기를 풀어주는 사람" },
-      { value: "not_pushy", label: "과하게 다가오지 않는 사람" },
-      { value: "deep_talker", label: "생각이나 가치관을 깊게 나누는 사람" },
-      { value: "casual_talker", label: "가볍고 편한 이야기를 잘하는 사람" },
+      {
+        value: "opener",
+        label: "자연스럽게 질문을 던져 참여시켜보는 편이에요.",
+      },
+      {
+        value: "connector",
+        label: "옆에서 조용히 챙겨주는 편이에요.",
+      },
+      {
+        value: "listener",
+        label: "굳이 끌어내기보다는 편하게 있을 수 있게 두는 편이에요.",
+      },
+    ],
+  },
+  {
+    id: 8,
+    order: 7,
+    category: "모임 역할",
+    type: "single_choice",
+    question: "주변 사람이 보는 나의 모습은\n어떤 사람인가요?",
+    options: [
+      { value: "opener", label: "대화를 주도하는 사람" },
+      { value: "connector", label: "리액션이 좋은 사람" },
+      { value: "listener", label: "경청을 잘 해주는 사람" },
     ],
   },
   {
     id: 7,
-    order: 7,
+    order: 8,
     category: "관계 기대",
     type: "single_choice",
     question: "교집합에서 어떤 만남을 기대하나요?",
@@ -194,13 +206,26 @@ const baseQuestions: ProfileQuestion[] = [
     order: 9,
     category: "나이 조건",
     type: "single_choice",
-    question:
-      "분위기가 잘 맞는다면\n어느 정도 나이 차이까지 괜찮으신가요?",
+    question: "선호하는 나이대를 말씀해주세요.",
+    description: "기본적으로 위아래 4살까지 만날 수 있게 해드려요.",
     options: [
-      { value: "older_ok", label: "3살 이상 연상도 괜찮아요." },
-      { value: "younger_ok", label: "3살 이상 연하도 괜찮아요." },
-      { value: "age_flexible", label: "분위기가 맞으면 나이는 거의 상관 없어요." },
+      { value: "older_preferred", label: "1. 연상을 선호해요." },
+      { value: "younger_preferred", label: "2. 연하를 선호해요." },
+      { value: "age_flexible", label: "3. 나이는 크게 상관 없어요." },
     ],
+  },
+  {
+    id: 10,
+    order: 10,
+    category: "관심 분야",
+    type: "multi_choice",
+    maxSelections: 3,
+    question: "다음 중 내가 관심 있는 분야를\n최대 3개까지 골라주세요.",
+    description: "선택한 순서대로 1·2·3순위가 반영됩니다.",
+    options: ticketCategories.map((category) => ({
+      value: category,
+      label: category,
+    })),
   },
   {
     id: 15,

@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  ExternalLink,
   Gift,
   Info,
   LogOut,
@@ -56,9 +57,6 @@ import {
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
 import {
-  parseTicketRatingAnswer,
-} from "@/features/onboarding/ticketRating";
-import {
   MembershipFloatingButton,
   MembershipModal,
   type CurrentMembership,
@@ -79,10 +77,7 @@ import {
 } from "@/lib/ticketStageCopy";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
-import type {
-  QuestionAnswer,
-  TicketQuestionTemplate,
-} from "@/types/question";
+import type { QuestionAnswer } from "@/types/question";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
@@ -225,14 +220,28 @@ function rowToAnswer(row: AnswerRow): QuestionAnswer {
   const question = profileQuestions.find(
     (item) => (item.order ?? item.id) === row.question_order,
   );
-  const value = question
-    ? question.type === "ticket_rating"
-      ? parseTicketRatingAnswer(row.answer_text) ?? ""
-      : row.answer_values ??
-        (question.type === "text"
-          ? row.answer_text ?? row.answer_value ?? ""
-          : row.answer_value ?? "")
+  const optionValues = new Set(
+    (question?.options ?? []).map((option) =>
+      typeof option === "string" ? option : option.value,
+    ),
+  );
+  const storedValue = question
+    ? row.answer_values ??
+      (question.type === "text"
+        ? row.answer_text ?? row.answer_value ?? ""
+        : row.answer_value ?? "")
     : "";
+  const value =
+    question?.type === "single_choice"
+      ? typeof storedValue === "string" &&
+        optionValues.has(storedValue)
+        ? storedValue
+        : ""
+      : question?.type === "multi_choice"
+        ? (Array.isArray(storedValue) ? storedValue : [storedValue])
+            .filter((item): item is string => typeof item === "string")
+            .filter((item) => optionValues.has(item))
+      : storedValue;
 
   return {
     questionId: question?.id ?? row.question_order,
@@ -471,14 +480,12 @@ export function AppHome({
   profile,
   initialTab = "recommend",
   initialProfileCompletionOpen = false,
-  ticketQuestionTemplates = [],
   operatorAccountSwitcher = null,
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
   initialProfileCompletionOpen?: boolean;
-  ticketQuestionTemplates?: TicketQuestionTemplate[];
   operatorAccountSwitcher?: OperatorAccountSwitcher;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
@@ -752,10 +759,17 @@ export function AppHome({
         setAnswerRows(data);
         setAnswers(
           Object.fromEntries(
-            data.map((row) => {
-              const answer = rowToAnswer(row);
-              return [answer.questionId, answer];
-            }),
+            data
+              .filter((row) =>
+                profileQuestions.some(
+                  (question) =>
+                    (question.order ?? question.id) === row.question_order,
+                ),
+              )
+              .map((row) => {
+                const answer = rowToAnswer(row);
+                return [answer.questionId, answer];
+              }),
           ) as AnswerMap,
         );
       });
@@ -1092,23 +1106,11 @@ export function AppHome({
         >
           <MeetingRecommendation
             userId={userId}
-            userBirthYear={currentProfile.birth_year}
             recommendationName={profileNickname(currentProfile)}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
             onWaitlisted={addWaitlistedTicket}
-            onMembershipRequired={(ticket) => {
-              setProfilePanelOpen(false);
-              setMembershipTicket(ticket);
-              setMembershipModalOpen(true);
-            }}
-            onPaymentReturn={() => {
-              setMembershipModalOpen(false);
-              setMembershipTicket(null);
-              setActiveTab("recommend");
-              setTabUrl("recommend");
-            }}
             onOpenList={() => switchTab("browse")}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
@@ -1248,7 +1250,6 @@ export function AppHome({
             <QuestionFlow
               mode="preview"
               initialRows={answerRows}
-              ticketQuestionTemplates={ticketQuestionTemplates}
               onPreviewComplete={() => setQuestionReviewOpen(false)}
             />
           </motion.div>
@@ -4271,8 +4272,16 @@ function ProfileTab({
           className="mt-5"
         />
 
+        <a
+          href="/"
+          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-accent/35 bg-accent/[0.08] text-xs font-bold text-black/62 transition hover:border-accent/55 hover:bg-accent/[0.12] hover:text-black/75"
+        >
+          <ExternalLink size={15} aria-hidden />
+          상세페이지 다시보기
+        </a>
+
         {profile.is_test_participant && (
-          <div className="mt-5 space-y-3">
+          <div className="mt-3 space-y-3">
             <button
               type="button"
               onClick={onOpenQuestionReview}

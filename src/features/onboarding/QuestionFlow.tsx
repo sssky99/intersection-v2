@@ -1,15 +1,10 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import { profileQuestions, questionCategories } from "@/data/profileQuestions";
-import {
-  parseTicketRatingAnswer,
-  ticketRatingOptions,
-} from "@/features/onboarding/ticketRating";
 import {
   identifyAnalyticsUser,
   trackEvent,
@@ -20,11 +15,7 @@ import type {
   ProfileQuestion,
   QuestionAnswer,
   QuestionOption,
-  TicketRatingAnswer,
-  TicketQuestionTemplate,
 } from "@/types/question";
-
-export type { TicketQuestionTemplate } from "@/types/question";
 
 export type StoredAnswerRow = {
   question_order: number;
@@ -38,28 +29,78 @@ type AnswerMap = Record<number, QuestionAnswer>;
 type QuestionFlowMode = "onboarding" | "preview" | "regeneration";
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
-const TICKET_QUESTION_BASE_ORDER = 9;
-const QUESTION_TYPING_SPEED_MS = 18;
-const TICKET_COACHMARK_SESSION_KEY = "intersection-ticket-question-coachmark-dismissed";
-const TICKET_COACHMARK_HINT_SPEED_MS = 24;
-const TICKET_COACHMARK_INTRO_TEXT = "간단하게 취향을 먼저 알려주세요.";
-const TICKET_COACHMARK_CARD_HINT_TEXT = "카드 설명과 분위기를 보고";
-const TICKET_COACHMARK_RATING_HINT_TEXT =
-  "하단 번호로 선호도를 표시해주세요.";
-const TICKET_COACHMARK_CARD_HINT_DELAY_MS = 260;
-const TICKET_COACHMARK_RATING_HINT_DELAY_MS = 1250;
-const TICKET_COACHMARK_TAP_PROMPT_DELAY_MS =
-  TICKET_COACHMARK_RATING_HINT_DELAY_MS +
-  Array.from(TICKET_COACHMARK_RATING_HINT_TEXT).length *
-    TICKET_COACHMARK_HINT_SPEED_MS +
-  360;
-const ticketRatingReactions: Record<string, string[]> = {
-  "1": ["👎", "👎"],
-  "2": ["👎"],
-  "3": ["😐"],
-  "4": ["❤️"],
-  "5": ["❤️", "❤️"],
+const AGE_RANGE_DEFAULT_YEARS = 4;
+const AGE_RANGE_MIN_YEARS = 4;
+const AGE_RANGE_MAX_YEARS = 10;
+const AGE_RANGE_TRACK_MAX = AGE_RANGE_MAX_YEARS * 2;
+
+type AgeRangeYears = {
+  down: number;
+  up: number;
 };
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function isAgeRangeQuestion(question: ProfileQuestion) {
+  return Boolean(
+    question.options?.some((option) => {
+      const value = typeof option === "string" ? option : option.value;
+      return value.startsWith("age_range");
+    }),
+  );
+}
+
+function ageRangeAnswerValue({ down, up }: AgeRangeYears) {
+  return `age_range_down_${down}_up_${up}`;
+}
+
+function ageRangeYearsFromAnswer(value: QuestionAnswer["value"] | undefined) {
+  if (typeof value !== "string") {
+    return {
+      down: AGE_RANGE_DEFAULT_YEARS,
+      up: AGE_RANGE_DEFAULT_YEARS,
+    };
+  }
+
+  const splitMatch = /^age_range_down_(\d+)_up_(\d+)$/.exec(value);
+  if (splitMatch) {
+    return {
+      down: clamp(
+        Number(splitMatch[1]),
+        AGE_RANGE_MIN_YEARS,
+        AGE_RANGE_MAX_YEARS,
+      ),
+      up: clamp(
+        Number(splitMatch[2]),
+        AGE_RANGE_MIN_YEARS,
+        AGE_RANGE_MAX_YEARS,
+      ),
+    };
+  }
+
+  const match = /^age_range_(\d+)$/.exec(value);
+  const years = match ? Number(match[1]) : AGE_RANGE_DEFAULT_YEARS;
+  const legacyYears = Number.isFinite(years)
+    ? clamp(years, AGE_RANGE_MIN_YEARS, AGE_RANGE_MAX_YEARS)
+    : AGE_RANGE_DEFAULT_YEARS;
+
+  return {
+    down: legacyYears,
+    up: legacyYears,
+  };
+}
+
+function defaultAgeRangeAnswer(question: ProfileQuestion): QuestionAnswer {
+  return {
+    questionId: question.id,
+    value: ageRangeAnswerValue({
+      down: AGE_RANGE_DEFAULT_YEARS,
+      up: AGE_RANGE_DEFAULT_YEARS,
+    }),
+  };
+}
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -81,324 +122,8 @@ function optionMeta(question: ProfileQuestion, value: string) {
     .find((option) => option.value === value);
 }
 
-function ticketAnswer(value: QuestionAnswer["value"] | undefined) {
-  if (
-    value &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    "ticket_id" in value
-  ) {
-    return value as TicketRatingAnswer;
-  }
-  return null;
-}
-
-function TypingText({
-  className,
-  speedMs = QUESTION_TYPING_SPEED_MS,
-  startDelayMs = 0,
-  textClassName = "whitespace-pre-line",
-  text,
-}: {
-  className?: string;
-  speedMs?: number;
-  startDelayMs?: number;
-  textClassName?: string;
-  text: string;
-}) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-  const [displayText, setDisplayText] = useState(
-    shouldReduceMotion ? text : "",
-  );
-
-  useEffect(() => {
-    if (shouldReduceMotion) {
-      setDisplayText(text);
-      return;
-    }
-
-    const characters = Array.from(text);
-    let index = 0;
-    let timer: number | null = null;
-    setDisplayText("");
-
-    if (characters.length === 0) return;
-
-    const startTyping = () => {
-      timer = window.setInterval(() => {
-        index += 1;
-        setDisplayText(characters.slice(0, index).join(""));
-
-        if (index >= characters.length) {
-          setDisplayText(text);
-          if (timer) window.clearInterval(timer);
-        }
-      }, speedMs);
-    };
-
-    const delayTimer = window.setTimeout(startTyping, startDelayMs);
-
-    return () => {
-      window.clearTimeout(delayTimer);
-      if (timer) window.clearInterval(timer);
-    };
-  }, [shouldReduceMotion, speedMs, startDelayMs, text]);
-
-  return (
-    <span aria-label={text} className={cn("grid", className)}>
-      <span
-        aria-hidden="true"
-        className={cn("invisible col-start-1 row-start-1", textClassName)}
-      >
-        {text}
-      </span>
-      <span
-        aria-hidden="true"
-        className={cn("col-start-1 row-start-1", textClassName)}
-      >
-        {displayText}
-      </span>
-    </span>
-  );
-}
-
-function OnboardingTicketPreview({ question }: { question: ProfileQuestion }) {
-  const [drawn, setDrawn] = useState(false);
-  const [imageVisible, setImageVisible] = useState(false);
-
-  useEffect(() => {
-    setDrawn(false);
-    setImageVisible(false);
-    const revealTimer = window.setTimeout(() => {
-      setImageVisible(true);
-      setDrawn(true);
-    }, 650);
-
-    return () => window.clearTimeout(revealTimer);
-  }, [question.id]);
-
-  if (!question.ticket) return null;
-
-  return (
-    <TicketDrawingFrame
-      motionKey={question.ticket.id}
-      title={question.ticket.title}
-      imageUrl={question.ticket.imageUrl}
-      date={question.ticket.dateLabel}
-      time={question.ticket.timeLabel}
-      location={question.ticket.locationLabel}
-      tags={question.ticket.tags}
-      drawn={drawn}
-      imageVisible={imageVisible}
-      className="!w-[82%] !max-w-[292px] sm:!max-w-[310px]"
-    />
-  );
-}
-
-function EmojiBurst({ emojis }: { emojis: string[] }) {
-  return (
-    <span
-      className="pointer-events-none absolute bottom-6 left-1/2 z-10 h-10 w-12 -translate-x-1/2"
-      aria-hidden
-    >
-      {emojis.map((emoji, index) => {
-        const pairOffset = emojis.length > 1;
-        const left = pairOffset ? (index === 0 ? "44%" : "56%") : "50%";
-        const rotate = pairOffset ? (index === 0 ? -14 : 12) : 0;
-
-        return (
-          <motion.span
-            key={`${emoji}-${index}`}
-            initial={{ opacity: 0, x: "-50%", y: 16, scale: 0.64, rotate }}
-            animate={{
-              opacity: [0, 1, 1, 0],
-              x: "-50%",
-              y: [16, -12, -30, -42],
-              scale: [0.64, 1.16, 1, 0.9],
-              rotate: [rotate, rotate * -0.3, rotate],
-            }}
-            transition={{ duration: 0.62, ease: "easeOut", delay: index * 0.04 }}
-            className="absolute bottom-0 left-1/2 text-[21px] drop-shadow-[0_3px_8px_rgba(0,0,0,0.18)]"
-            style={{ left }}
-          >
-            {emoji}
-          </motion.span>
-        );
-      })}
-    </span>
-  );
-}
-
-function TicketRatingReaction({ rating }: { rating: string }) {
-  return <EmojiBurst emojis={ticketRatingReactions[rating] ?? []} />;
-}
-
-function TicketCoachmarkOverlay({
-  onClose,
-  tapToDismissReady,
-}: {
-  onClose: () => void;
-  tapToDismissReady: boolean;
-}) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-  const dismissOnSurface = () => {
-    if (tapToDismissReady) onClose();
-  };
-
-  return (
-    <>
-      <motion.div
-        className={cn(
-          "absolute inset-0 z-40 bg-black/[0.58] backdrop-blur-[1.5px]",
-          tapToDismissReady ? "cursor-pointer" : "cursor-default",
-        )}
-        role={tapToDismissReady ? "button" : undefined}
-        tabIndex={tapToDismissReady ? 0 : undefined}
-        onClick={dismissOnSurface}
-        onKeyDown={(event) => {
-          if (!tapToDismissReady) return;
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onClose();
-          }
-        }}
-        initial={shouldReduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-        transition={{ duration: 0.24, ease: "easeOut" }}
-        aria-hidden={!tapToDismissReady}
-      />
-      <motion.button
-        type="button"
-        aria-label="코치마크 닫기"
-        onClick={onClose}
-        className="absolute right-4 top-4 z-[80] flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-black/55 shadow-[0_8px_22px_rgba(0,0,0,0.18)] backdrop-blur transition hover:text-black"
-        initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.96 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-      >
-        <X size={18} strokeWidth={2.4} aria-hidden />
-      </motion.button>
-      <motion.div
-        className="pointer-events-none absolute inset-x-5 top-[68px] z-[70] mx-auto max-w-[360px] rounded-[10px] bg-white px-4 py-3 text-center text-[18px] font-black leading-6 text-black shadow-[0_14px_34px_rgba(0,0,0,0.22)]"
-        initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3 }}
-        transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
-      >
-        <TypingText
-          text={TICKET_COACHMARK_INTRO_TEXT}
-          speedMs={TICKET_COACHMARK_HINT_SPEED_MS}
-          startDelayMs={80}
-          textClassName="whitespace-normal"
-        />
-      </motion.div>
-      <AnimatePresence>
-        {tapToDismissReady && (
-          <motion.p
-            className="pointer-events-none absolute inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-[70] text-center text-[12px] font-black text-white drop-shadow-[0_3px_12px_rgba(0,0,0,0.36)]"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={shouldReduceMotion ? undefined : { opacity: 0, y: 3 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
-          >
-            tap하여 시작하기
-          </motion.p>
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
-
-function TicketCoachmarkHint({
-  className,
-  delayMs,
-  placement = "center",
-  text,
-}: {
-  className?: string;
-  delayMs: number;
-  placement?: "center" | "rating";
-  text: string;
-}) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-  const delay = shouldReduceMotion ? 0 : delayMs / 1000;
-  const positionClass =
-    placement === "rating"
-      ? "left-[44%] -translate-x-1/2"
-      : "left-1/2 -translate-x-1/2";
-
-  return (
-    <motion.p
-      className={cn(
-        "pointer-events-none absolute z-[70] min-w-max whitespace-nowrap rounded-full bg-white px-5 py-2 text-center text-[12px] font-extrabold leading-4 text-black shadow-[0_12px_30px_rgba(0,0,0,0.22)]",
-        positionClass,
-        className,
-      )}
-      initial={shouldReduceMotion ? false : { opacity: 0, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.28, delay, ease: "easeOut" }}
-    >
-      <TypingText
-        text={text}
-        speedMs={TICKET_COACHMARK_HINT_SPEED_MS}
-        startDelayMs={delayMs}
-        textClassName="whitespace-nowrap"
-      />
-    </motion.p>
-  );
-}
-
-function templateToTicketQuestion(
-  template: TicketQuestionTemplate,
-): ProfileQuestion {
-  const order = TICKET_QUESTION_BASE_ORDER + template.questionOrder;
-  const signalTags = [
-    template.activityType,
-    template.recommendationCopy,
-    ...template.moodTags,
-  ]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .slice(0, 4);
-
-  return {
-    id: order,
-    order,
-    category: "모임 취향",
-    type: "ticket_rating",
-    question: "이런 자리는 어떠세요?",
-    ticket: {
-      id: template.id,
-      title: template.title,
-      imageUrl: template.imageUrl ?? "",
-      dateLabel: "",
-      timeLabel: "",
-      locationLabel: "",
-      tags: template.moodTags,
-    },
-    intent:
-      template.recommendationCopy ??
-      template.activityType ??
-      template.shortDescription ??
-      "모임 취향 선호 파악",
-    signalTags: signalTags.length > 0 ? signalTags : ["모임 취향"],
-  };
-}
-
-function questionsWithTicketTemplates(
-  ticketQuestionTemplates: TicketQuestionTemplate[],
-) {
-  if (ticketQuestionTemplates.length === 0) return profileQuestions;
-
-  const dynamicTicketQuestions = ticketQuestionTemplates
-    .map(templateToTicketQuestion)
-    .sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
-  const staticQuestions = profileQuestions
-    .filter((question) => question.type !== "ticket_rating")
-    .sort((left, right) => (left.order ?? left.id) - (right.order ?? right.id));
-
-  return [...dynamicTicketQuestions, ...staticQuestions];
+function optionValues(question: ProfileQuestion) {
+  return new Set((question.options ?? []).map((option) => optionValue(option)));
 }
 
 function rowToAnswer(
@@ -408,14 +133,25 @@ function rowToAnswer(
   const question = questions.find(
     (item) => (item.order ?? item.id) === row.question_order,
   );
-  const value = question
-    ? question.type === "ticket_rating"
-      ? parseTicketRatingAnswer(row.answer_text) ?? ""
-      : row.answer_values ??
-        (question.type === "text"
-          ? row.answer_text ?? row.answer_value ?? ""
-          : row.answer_value ?? "")
+  const storedValue = question
+    ? row.answer_values ??
+      (question.type === "text"
+        ? row.answer_text ?? row.answer_value ?? ""
+        : row.answer_value ?? "")
     : "";
+  const value =
+    question && isAgeRangeQuestion(question) && typeof storedValue === "string"
+      ? storedValue
+      : question?.type === "single_choice"
+      ? typeof storedValue === "string" &&
+        optionValues(question).has(storedValue)
+        ? storedValue
+        : ""
+      : question?.type === "multi_choice"
+        ? (Array.isArray(storedValue) ? storedValue : [storedValue])
+            .filter((item): item is string => typeof item === "string")
+            .filter((item) => optionValues(question).has(item))
+        : storedValue;
 
   return {
     questionId: question?.id ?? row.question_order,
@@ -427,17 +163,10 @@ function rowToAnswer(
 function isComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
   if (!answer) return false;
 
-  if (question.type === "ticket_rating") {
-    const rating = ticketAnswer(answer.value);
-    return Boolean(rating?.ticket_id && rating.rating);
-  }
-
   const value = answer.value;
   const hasValue = Array.isArray(value)
     ? value.length > 0
-    : typeof value === "object"
-      ? false
-      : Boolean(String(value).trim());
+    : Boolean(String(value).trim());
 
   if (!hasValue) return false;
 
@@ -453,14 +182,6 @@ function isComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
 }
 
 function toAnswerPayload(question: ProfileQuestion, answer: QuestionAnswer) {
-  if (question.type === "ticket_rating") {
-    return {
-      answer_value: null,
-      answer_values: null,
-      answer_text: JSON.stringify(answer.value),
-    };
-  }
-
   if (Array.isArray(answer.value)) {
     return {
       answer_value: null,
@@ -519,13 +240,11 @@ function profileScoresFromAnswers(answers: AnswerMap) {
 export function QuestionFlow({
   userId,
   initialRows,
-  ticketQuestionTemplates = [],
   mode = "onboarding",
   onPreviewComplete,
 }: {
   userId?: string;
   initialRows: StoredAnswerRow[];
-  ticketQuestionTemplates?: TicketQuestionTemplate[];
   mode?: QuestionFlowMode;
   onPreviewComplete?: () => void;
 }) {
@@ -533,17 +252,21 @@ export function QuestionFlow({
   const searchParams = useSearchParams();
   const isPreview = mode === "preview";
   const isRegeneration = mode === "regeneration";
-  const questions = useMemo(
-    () => questionsWithTicketTemplates(ticketQuestionTemplates),
-    [ticketQuestionTemplates],
-  );
+  const questions = profileQuestions;
   const initialAnswers = useMemo(
     () =>
       Object.fromEntries(
-        initialRows.map((row) => {
-          const answer = rowToAnswer(row, questions);
-          return [answer.questionId, answer];
-        }),
+        initialRows
+          .filter((row) =>
+            questions.some(
+              (question) =>
+                (question.order ?? question.id) === row.question_order,
+            ),
+          )
+          .map((row) => {
+            const answer = rowToAnswer(row, questions);
+            return [answer.questionId, answer];
+          }),
       ) as AnswerMap,
     [initialRows, questions],
   );
@@ -562,23 +285,35 @@ export function QuestionFlow({
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
   const [saving, setSaving] = useState(false);
-  const [selectedFeedback, setSelectedFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [ticketCoachmarkReady, setTicketCoachmarkReady] = useState(isPreview);
-  const [ticketCoachmarkDismissed, setTicketCoachmarkDismissed] = useState(false);
-  const [ticketCoachmarkTapDismissReady, setTicketCoachmarkTapDismissReady] =
-    useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
   const savingRef = useRef(false);
   const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
   const questionStartTrackedRef = useRef(false);
-  const shouldReduceMotion = Boolean(useReducedMotion());
   const question = questions[questionIndex];
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
   const progressPercent = ((questionIndex + 1) / questions.length) * 100;
-  const canContinue = isComplete(question, answer);
+  const isAgeRange = isAgeRangeQuestion(question);
+  const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
+  const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
+  const ageRangeUpTrackValue = AGE_RANGE_MAX_YEARS + ageRangeYears.up;
+  const ageRangeDownPercent =
+    (ageRangeDownTrackValue / AGE_RANGE_TRACK_MAX) * 100;
+  const ageRangeUpPercent =
+    (ageRangeUpTrackValue / AGE_RANGE_TRACK_MAX) * 100;
+  const ageRangeTickMarks = [
+    { value: 0, label: "10" },
+    { value: 2, label: "8" },
+    { value: 4, label: "6" },
+    { value: 6, label: "4" },
+    { value: 14, label: "4" },
+    { value: 16, label: "6" },
+    { value: 18, label: "8" },
+    { value: 20, label: "10" },
+  ];
+  const canContinue = isAgeRange || isComplete(question, answer);
   const scaleOptions =
     question.type === "single_choice"
       ? SCALE_VALUES.map((value) =>
@@ -588,36 +323,7 @@ export function QuestionFlow({
         )
       : [];
   const usesNumericScale = scaleOptions.length === SCALE_VALUES.length;
-  const selectedTicketAnswer = ticketAnswer(answer?.value);
-  const shouldShowTicketCoachmark =
-    ticketCoachmarkReady &&
-    !ticketCoachmarkDismissed &&
-    questionIndex === 0 &&
-    question.type === "ticket_rating";
-  const cardCoachmarkAnimation = shouldShowTicketCoachmark
-    ? {
-        filter: shouldReduceMotion
-          ? "drop-shadow(0 0 30px rgba(255,255,255,0.62))"
-          : [
-              "drop-shadow(0 0 12px rgba(255,255,255,0.38))",
-              "drop-shadow(0 0 34px rgba(255,255,255,0.78))",
-              "drop-shadow(0 0 18px rgba(126,179,199,0.58))",
-            ],
-        scale: shouldReduceMotion ? 1 : [1, 1.015, 1],
-      }
-    : undefined;
-  const ratingCoachmarkAnimation = shouldShowTicketCoachmark
-    ? {
-        filter: shouldReduceMotion
-          ? "drop-shadow(0 0 24px rgba(255,255,255,0.62))"
-          : [
-              "drop-shadow(0 0 0 rgba(255,255,255,0))",
-              "drop-shadow(0 0 28px rgba(255,255,255,0.72))",
-              "drop-shadow(0 0 16px rgba(126,179,199,0.55))",
-            ],
-        scale: shouldReduceMotion ? 1 : [1, 1.03, 1],
-      }
-    : undefined;
+  const hideNumericScaleValues = false;
 
   useEffect(() => {
     if (isPreview || isRegeneration) return;
@@ -672,17 +378,9 @@ export function QuestionFlow({
     if (isPreview || isRegeneration) return;
 
     trackQuestionMilestone(
-      "ticket_test_complete",
-      "ticket_test_complete",
-      questions.filter((item) => item.type === "ticket_rating"),
-      nextAnswers,
-    );
-    trackQuestionMilestone(
       "choice_questions_complete",
       "choice_questions_complete",
-      questions.filter(
-        (item) => item.type !== "ticket_rating" && item.type !== "text",
-      ),
+      questions.filter((item) => item.type !== "text"),
       nextAnswers,
     );
     trackQuestionMilestone(
@@ -820,7 +518,6 @@ export function QuestionFlow({
       autoAdvanceTimerRef.current = null;
       void moveToNext(nextAnswers).finally(() => {
         if (!completionSubmittedRef.current) endSaving();
-        setSelectedFeedback(null);
       });
     }, delayMs);
   };
@@ -832,45 +529,6 @@ export function QuestionFlow({
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (isPreview || isRegeneration) {
-      setTicketCoachmarkDismissed(false);
-      setTicketCoachmarkReady(true);
-      return;
-    }
-
-    setTicketCoachmarkDismissed(
-      window.sessionStorage.getItem(TICKET_COACHMARK_SESSION_KEY) === "1",
-    );
-    setTicketCoachmarkReady(true);
-  }, [isPreview, isRegeneration]);
-
-  useEffect(() => {
-    if (!shouldShowTicketCoachmark) {
-      setTicketCoachmarkTapDismissReady(false);
-      return;
-    }
-
-    if (shouldReduceMotion) {
-      setTicketCoachmarkTapDismissReady(true);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setTicketCoachmarkTapDismissReady(true);
-    }, TICKET_COACHMARK_TAP_PROMPT_DELAY_MS);
-
-    return () => window.clearTimeout(timer);
-  }, [shouldReduceMotion, shouldShowTicketCoachmark]);
-
-  const dismissTicketCoachmark = () => {
-    setTicketCoachmarkTapDismissReady(false);
-    setTicketCoachmarkDismissed(true);
-    if (!isPreview && !isRegeneration) {
-      window.sessionStorage.setItem(TICKET_COACHMARK_SESSION_KEY, "1");
-    }
-  };
 
   const selectSingle = async (value: string) => {
     if (!beginSaving()) return;
@@ -896,8 +554,20 @@ export function QuestionFlow({
       console.error("Failed to save onboarding answer:", saveError);
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       endSaving();
-      setSelectedFeedback(null);
     }
+  };
+
+  const selectAgeRange = (direction: keyof AgeRangeYears, years: number) => {
+    const nextYears = {
+      ...ageRangeYears,
+      [direction]: clamp(years, AGE_RANGE_MIN_YEARS, AGE_RANGE_MAX_YEARS),
+    };
+
+    setError(null);
+    updateLocalAnswer({
+      questionId: question.id,
+      value: ageRangeAnswerValue(nextYears),
+    });
   };
 
   const toggleMultiple = (value: string) => {
@@ -945,12 +615,18 @@ export function QuestionFlow({
   };
 
   const continueQuestion = async () => {
-    if (!answer || !canContinue || !beginSaving()) return;
+    const answerToContinue =
+      answer ?? (isAgeRange ? defaultAgeRangeAnswer(question) : undefined);
 
-    const nextAnswers = answerMapWith(answer);
+    if (!answerToContinue || !canContinue || !beginSaving()) return;
+
+    const nextAnswers = {
+      ...answers,
+      [answerToContinue.questionId]: answerToContinue,
+    };
     setError(null);
     try {
-      await saveAnswer(question, answer);
+      await saveAnswer(question, answerToContinue);
       trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
       await moveToNext(nextAnswers);
@@ -959,43 +635,6 @@ export function QuestionFlow({
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       if (!completionSubmittedRef.current) endSaving();
-    }
-  };
-
-  const selectTicketRating = async (rating: string) => {
-    if (question.type !== "ticket_rating" || !question.ticket || !beginSaving()) {
-      return;
-    }
-
-    const nextAnswer: QuestionAnswer = {
-      questionId: question.id,
-      value: {
-        ticket_id: question.ticket.id,
-        rating,
-        title: question.ticket.title,
-        signal_tags: question.signalTags ?? [],
-      },
-    };
-    const nextAnswers = answerMapWith(nextAnswer);
-    updateLocalAnswer(nextAnswer);
-    setSelectedFeedback(rating);
-    setError(null);
-
-    if (isPreview) {
-      scheduleAutoAdvance(nextAnswers, 650);
-      return;
-    }
-
-    try {
-      await saveAnswer(question, nextAnswer);
-      trackQuestionAnswered(question);
-      trackQuestionMilestones(nextAnswers);
-      scheduleAutoAdvance(nextAnswers, 650);
-    } catch (saveError) {
-      console.error("Failed to save ticket rating:", saveError);
-      setError("티켓 반응을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
-      endSaving();
-      setSelectedFeedback(null);
     }
   };
 
@@ -1032,18 +671,11 @@ export function QuestionFlow({
             </div>
           </div>
 
-          <div className={cn("mb-6", question.type === "ticket_rating" && "mb-4")}>
-            {question.type !== "ticket_rating" && (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                {categoryLabel}
-              </span>
-            )}
-            <h1
-              className={cn(
-                "whitespace-pre-line text-xl font-bold leading-8 tracking-tight text-black",
-                question.type !== "ticket_rating" && "mt-2",
-              )}
-            >
+          <div className="mb-6">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
+              {categoryLabel}
+            </span>
+            <h1 className="mt-2 whitespace-pre-line text-xl font-bold leading-8 tracking-tight text-black">
               {question.question}
             </h1>
             {question.scaleLabel && !usesNumericScale && (
@@ -1071,7 +703,11 @@ export function QuestionFlow({
                     whileTap={!saving ? { scale: 0.98 } : undefined}
                     disabled={saving}
                     onClick={() => void selectSingle(value)}
-                    aria-label={`${value}. ${optionLabel(option)}`}
+                    aria-label={
+                      hideNumericScaleValues
+                        ? optionLabel(option)
+                        : `${value}. ${optionLabel(option)}`
+                    }
                     className={cn(
                       "flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all disabled:cursor-wait",
                       selected
@@ -1079,9 +715,11 @@ export function QuestionFlow({
                         : "border-black/10 bg-white text-black/70 hover:border-black/20",
                     )}
                   >
-                    <span className="shrink-0 text-xs font-extrabold tabular-nums opacity-55">
-                      {value}.
-                    </span>
+                    {!hideNumericScaleValues && (
+                      <span className="shrink-0 text-xs font-extrabold tabular-nums opacity-55">
+                        {value}.
+                      </span>
+                    )}
                     <span className="flex-1">{optionLabel(option)}</span>
                     {selected && <Check size={16} aria-hidden />}
                   </motion.button>
@@ -1090,7 +728,92 @@ export function QuestionFlow({
             </div>
           )}
 
-          {question.type === "single_choice" && !usesNumericScale && (
+          {question.type === "single_choice" && isAgeRange && (
+            <div className="rounded-[28px] border border-black/10 bg-white px-5 py-7 shadow-[0_18px_46px_rgba(0,0,0,0.045)]">
+              <div className="mx-auto flex min-h-[154px] max-w-[300px] flex-col justify-center rounded-[26px] border border-black/10 bg-[#f8f8f5] px-5 py-6 text-center shadow-[0_16px_38px_rgba(0,0,0,0.045)]">
+                <p className="whitespace-pre-line text-[22px] font-extrabold leading-[1.34] tracking-[-0.035em] text-black">
+                  아래로 {ageRangeYears.down}살{"\n"}
+                  위로 {ageRangeYears.up}살{"\n"}
+                  까지 가능해요.
+                </p>
+              </div>
+
+              <div className="mt-8">
+                <div className="flex items-center justify-between px-1 text-[12px] font-black text-accent">
+                  <span>아래로</span>
+                  <span>위로</span>
+                </div>
+              </div>
+
+              <div className="relative mt-3 min-h-[86px] px-1 pt-8">
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-x-1 top-[35px] h-2 rounded-full bg-black/[0.07]"
+                />
+                <div
+                  aria-hidden="true"
+                  className="absolute top-[35px] h-2 rounded-full bg-accent"
+                  style={{
+                    left: `${ageRangeDownPercent}%`,
+                    width: `${ageRangeUpPercent - ageRangeDownPercent}%`,
+                  }}
+                />
+                {ageRangeTickMarks.map((tick) => {
+                  const percent = (tick.value / AGE_RANGE_TRACK_MAX) * 100;
+
+                  return (
+                    <span
+                      key={`${tick.value}-${tick.label}`}
+                      aria-hidden="true"
+                      className="absolute top-[31px] flex -translate-x-1/2 flex-col items-center gap-2 text-[10px] font-black tabular-nums text-black/38"
+                      style={{ left: `${percent}%` }}
+                    >
+                      <span className="h-4 w-px bg-black/12" />
+                      <span>{tick.label}</span>
+                    </span>
+                  );
+                })}
+                <input
+                  type="range"
+                  min={0}
+                  max={AGE_RANGE_TRACK_MAX}
+                  step={1}
+                  value={ageRangeDownTrackValue}
+                  disabled={saving}
+                  aria-label={`아래로 ${ageRangeYears.down}살까지 허용`}
+                  onChange={(event) => {
+                    const trackValue = clamp(
+                      Number(event.currentTarget.value),
+                      0,
+                      AGE_RANGE_MAX_YEARS - AGE_RANGE_MIN_YEARS,
+                    );
+                    selectAgeRange("down", AGE_RANGE_MAX_YEARS - trackValue);
+                  }}
+                  className="pointer-events-none absolute inset-x-0 top-[25px] z-20 h-7 w-full appearance-none bg-transparent outline-none disabled:opacity-60 [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)]"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={AGE_RANGE_TRACK_MAX}
+                  step={1}
+                  value={ageRangeUpTrackValue}
+                  disabled={saving}
+                  aria-label={`위로 ${ageRangeYears.up}살까지 허용`}
+                  onChange={(event) => {
+                    const trackValue = clamp(
+                      Number(event.currentTarget.value),
+                      AGE_RANGE_MAX_YEARS + AGE_RANGE_MIN_YEARS,
+                      AGE_RANGE_TRACK_MAX,
+                    );
+                    selectAgeRange("up", trackValue - AGE_RANGE_MAX_YEARS);
+                  }}
+                  className="pointer-events-none absolute inset-x-0 top-[25px] z-30 h-7 w-full appearance-none bg-transparent outline-none disabled:opacity-60 [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)]"
+                />
+              </div>
+            </div>
+          )}
+
+          {question.type === "single_choice" && !usesNumericScale && !isAgeRange && (
             <div className="space-y-2">
               {(question.options ?? []).map((option) => {
                 const value = optionValue(option);
@@ -1104,14 +827,14 @@ export function QuestionFlow({
                     disabled={saving}
                     onClick={() => void selectSingle(value)}
                     className={cn(
-                      "flex min-h-11 w-full items-center justify-between rounded-xl border px-3.5 py-2.5 text-left text-xs font-semibold transition-all",
+                      "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all disabled:cursor-wait",
                       selected
                         ? "border-black bg-black text-white shadow-sm"
                         : "border-black/10 bg-white text-black/70 hover:border-black/20",
                     )}
                   >
-                    <span>{optionLabel(option)}</span>
-                    {selected && <Check size={13} aria-hidden />}
+                    <span className="flex-1">{optionLabel(option)}</span>
+                    {selected && <Check size={16} aria-hidden />}
                   </motion.button>
                 );
               })}
@@ -1123,7 +846,8 @@ export function QuestionFlow({
               <div className="space-y-2">
                 {(question.options ?? []).map((option) => {
                   const value = optionValue(option);
-                  const selected = selectedValues.includes(value);
+                  const priorityIndex = selectedValues.indexOf(value);
+                  const selected = priorityIndex !== -1;
 
                   return (
                     <motion.button
@@ -1132,14 +856,19 @@ export function QuestionFlow({
                       whileTap={{ scale: 0.96 }}
                       onClick={() => toggleMultiple(value)}
                       className={cn(
-                        "flex min-h-11 w-full items-center justify-between rounded-xl border px-3.5 py-2.5 text-left text-xs font-semibold transition-all",
+                        "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all",
                         selected
                           ? "border-black bg-black text-white shadow-sm"
                           : "border-black/10 bg-white text-black/70 hover:border-black/20",
                       )}
                     >
                       <span>{optionLabel(option)}</span>
-                      {selected && <Check size={13} aria-hidden />}
+                      {selected ? (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/14 px-2 py-1 text-[10px] font-black text-current">
+                          {priorityIndex + 1}순위
+                          <Check size={12} aria-hidden />
+                        </span>
+                      ) : null}
                     </motion.button>
                   );
                 })}
@@ -1161,101 +890,6 @@ export function QuestionFlow({
                   className="h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-xs outline-none focus:border-accent"
                 />
               )}
-            </div>
-          )}
-
-          {question.type === "ticket_rating" && question.ticket && (
-            <div>
-              <motion.div
-                className={cn(
-                  "relative",
-                  shouldShowTicketCoachmark && "pointer-events-none z-50",
-                )}
-                animate={cardCoachmarkAnimation}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 1.3,
-                  ease: "easeInOut",
-                  repeat: shouldReduceMotion ? 0 : Infinity,
-                  repeatDelay: 1.7,
-                }}
-              >
-                <OnboardingTicketPreview question={question} />
-                {shouldShowTicketCoachmark && (
-                  <TicketCoachmarkHint
-                    className="top-6"
-                    delayMs={TICKET_COACHMARK_CARD_HINT_DELAY_MS}
-                    text={TICKET_COACHMARK_CARD_HINT_TEXT}
-                  />
-                )}
-              </motion.div>
-
-              <motion.div
-                className={cn(
-                  "relative mt-4",
-                  shouldShowTicketCoachmark && "pointer-events-none z-50",
-                )}
-                animate={ratingCoachmarkAnimation}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 1.15,
-                  delay: shouldReduceMotion ? 0 : 1.05,
-                  ease: "easeInOut",
-                  repeat: shouldReduceMotion ? 0 : Infinity,
-                  repeatDelay: 1.85,
-                }}
-              >
-                {shouldShowTicketCoachmark && (
-                  <TicketCoachmarkHint
-                    className="top-[62px]"
-                    delayMs={TICKET_COACHMARK_RATING_HINT_DELAY_MS}
-                    placement="rating"
-                    text={TICKET_COACHMARK_RATING_HINT_TEXT}
-                  />
-                )}
-                <div className="flex items-center justify-between px-2 pt-5">
-                  {ticketRatingOptions.map((option) => {
-                    const selected = selectedTicketAnswer?.rating === option.value;
-                    const edgeLabel =
-                      option.value === "1"
-                        ? "별로예요"
-                        : option.value === "5"
-                          ? "좋아요"
-                          : null;
-
-                    return (
-                      <motion.button
-                        key={option.value}
-                        type="button"
-                        whileTap={!saving ? { scale: 0.98 } : undefined}
-                        disabled={saving}
-                        onClick={() => void selectTicketRating(option.value)}
-                        aria-label={`${option.value}점: ${option.label}`}
-                        className={cn(
-                          "relative flex h-10 w-10 items-center justify-center bg-transparent text-sm font-semibold transition-colors disabled:cursor-wait disabled:opacity-55",
-                          selected
-                            ? "text-lg font-extrabold text-black after:absolute after:bottom-0 after:h-[2px] after:w-3 after:rounded-full after:bg-accent"
-                            : "font-bold text-black",
-                        )}
-                      >
-                        {edgeLabel && (
-                          <span className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-black leading-none text-black">
-                            {edgeLabel}
-                          </span>
-                        )}
-                        <span aria-hidden>{option.value}</span>
-                        <span className="sr-only">{option.label}</span>
-                        <AnimatePresence>
-                          {selectedFeedback === option.value && (
-                            <TicketRatingReaction
-                              key={`reaction-${option.value}`}
-                              rating={option.value}
-                            />
-                          )}
-                        </AnimatePresence>
-                      </motion.button>
-                    );
-                  })}
-                </div>
-              </motion.div>
             </div>
           )}
 
@@ -1306,16 +940,6 @@ export function QuestionFlow({
         </p>
       )}
 
-      <AnimatePresence>
-        {shouldShowTicketCoachmark && (
-          <TicketCoachmarkOverlay
-            key="ticket-question-coachmark"
-            tapToDismissReady={ticketCoachmarkTapDismissReady}
-            onClose={dismissTicketCoachmark}
-          />
-        )}
-      </AnimatePresence>
-
       <div className="sticky bottom-0 mt-auto flex items-center justify-between bg-white/95 pb-[calc(4px+env(safe-area-inset-bottom))] pt-5 backdrop-blur">
         <button
           type="button"
@@ -1330,7 +954,7 @@ export function QuestionFlow({
           <ChevronLeft size={19} aria-hidden />
         </button>
 
-        {(question.type === "multi_choice" || question.type === "text") && (
+        {(question.type === "multi_choice" || question.type === "text" || isAgeRange) && (
           <button
             type="button"
             aria-label={saving ? "답변 저장 중" : "다음 질문"}
@@ -1351,7 +975,7 @@ export function QuestionFlow({
           </button>
         )}
 
-        {question.type !== "multi_choice" && question.type !== "text" && (
+        {question.type !== "multi_choice" && question.type !== "text" && !isAgeRange && (
           <div className="h-11 w-11" />
         )}
       </div>

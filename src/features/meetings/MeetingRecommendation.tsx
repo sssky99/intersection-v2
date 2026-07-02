@@ -5,6 +5,8 @@ import {
   CalendarDays,
   Check,
   Clock3,
+  Copy,
+  Landmark,
   MapPin,
   X,
 } from "lucide-react";
@@ -12,8 +14,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type PointerEvent,
-  type WheelEvent,
 } from "react";
 import {
   formatTicketDateLabel,
@@ -28,7 +28,6 @@ import {
 } from "@/features/meetings/TicketDetailHero";
 import { RecommendationCalendarSelector } from "@/features/meetings/RecommendationCalendarSelector";
 import { trackEvent } from "@/lib/analytics";
-import { takePendingTicketPayment } from "@/lib/pendingTicketPayment";
 import { isPastTicketDate } from "@/lib/ticketDate";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
@@ -46,22 +45,15 @@ type Screen =
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
 
-type AgePreference = {
-  baseAge: number;
-  defaultMinAge: number;
-  defaultMaxAge: number;
-  minAge: number;
-  maxAge: number;
-};
-
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-const minimumSelectableAge = 20;
-const maximumSelectableAge = 35;
 const curationLoadingMs = 2000;
 const ticketDatesCacheTtlMs = 30_000;
+const noShowDepositBankName = "카카오뱅크";
+const noShowDepositAccountNumber = "7942-26-95406";
+const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
 const ticketsByDateCache = new Map<
@@ -69,40 +61,6 @@ const ticketsByDateCache = new Map<
   { date: AvailableDate; expiresAt: number }
 >();
 const ticketsByDateRequests = new Map<string, Promise<AvailableDate>>();
-
-function clampAge(value: number) {
-  return Math.max(minimumSelectableAge, Math.min(maximumSelectableAge, value));
-}
-
-function ageFromBirthYear(value: string | number | null | undefined) {
-  const year =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseInt(value, 10)
-        : NaN;
-
-  if (!Number.isFinite(year)) return null;
-
-  const age = new Date().getFullYear() + 1 - year;
-  return age > 0 && age < 100 ? age : null;
-}
-
-function defaultAgePreference(
-  birthYear: string | number | null | undefined,
-): AgePreference {
-  const baseAge = clampAge(ageFromBirthYear(birthYear) ?? 28);
-  const defaultMinAge = Math.max(minimumSelectableAge, baseAge - 4);
-  const defaultMaxAge = Math.min(maximumSelectableAge, baseAge + 4);
-
-  return {
-    baseAge,
-    defaultMinAge,
-    defaultMaxAge,
-    minAge: defaultMinAge,
-    maxAge: defaultMaxAge,
-  };
-}
 
 function cachedTicketDates() {
   return ticketDatesCache && ticketDatesCache.expiresAt > Date.now()
@@ -210,6 +168,25 @@ async function saveInvitationDecision(
     body: JSON.stringify({ ticketInstanceId, action }),
   });
   if (!response.ok) throw new Error("invitation-decision-save-failed");
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!copied) throw new Error("copy-failed");
 }
 
 const ticketRejectionReasonEmojis: Record<TicketRejectionReasonId, string> = {
@@ -343,14 +320,11 @@ async function saveTicketRejectionReason({
 
 export function MeetingRecommendation({
   userId,
-  userBirthYear,
   recommendationName,
   embedded = false,
   active = true,
   membershipStatus,
   onWaitlisted,
-  onMembershipRequired,
-  onPaymentReturn,
   onOpenList,
   blindDateOffers = [],
   onBlindDateOffersChange,
@@ -360,14 +334,11 @@ export function MeetingRecommendation({
   onCoachmarkProgress,
 }: {
   userId: string;
-  userBirthYear: string | number | null;
   recommendationName?: string;
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
   onWaitlisted?: (ticket: GatheringTicket) => void;
-  onMembershipRequired?: (ticket: GatheringTicket) => void;
-  onPaymentReturn?: () => void;
   onOpenList?: () => void;
   blindDateOffers?: BlindDateUserOffer[];
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
@@ -376,10 +347,6 @@ export function MeetingRecommendation({
   onBlindDateOpenRequestHandled?: () => void;
   onCoachmarkProgress?: (step: RecommendationCoachmarkStep) => void;
 }) {
-  const initialAgePreference = defaultAgePreference(userBirthYear);
-  const [agePreference, setAgePreference] = useState<AgePreference>(
-    () => initialAgePreference,
-  );
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
   const [ticketIndex, setTicketIndex] = useState(0);
@@ -400,6 +367,11 @@ export function MeetingRecommendation({
   const [rejectionSavingReason, setRejectionSavingReason] =
     useState<TicketRejectionReasonId | null>(null);
   const [rejectionError, setRejectionError] = useState<string | null>(null);
+  const [depositTicket, setDepositTicket] = useState<GatheringTicket | null>(
+    null,
+  );
+  const [depositAccountCopied, setDepositAccountCopied] = useState(false);
+  const [depositCopyError, setDepositCopyError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
@@ -428,25 +400,6 @@ export function MeetingRecommendation({
     null;
 
   useEffect(() => {
-    const nextPreference = defaultAgePreference(userBirthYear);
-    setAgePreference((current) =>
-      current.baseAge === nextPreference.baseAge ? current : nextPreference,
-    );
-  }, [userBirthYear]);
-
-  const updateAgePreference = (preference: AgePreference) => {
-    setAgePreference(preference);
-    setSelectedDate(null);
-    setTicketIndex(0);
-    setLoadingTicketDate(null);
-    setNotice(null);
-    setError(null);
-    setRejectionTicket(null);
-    setRejectionError(null);
-    if (screen === "drawing") setScreen("calendar");
-  };
-
-  useEffect(() => {
     if (screen !== "drawing" || !ticket) return;
     if (viewedTicketIdsRef.current.has(ticket.id)) return;
 
@@ -457,40 +410,6 @@ export function MeetingRecommendation({
       template_id: ticket.templateId,
     });
   }, [screen, ticket]);
-
-  useEffect(() => {
-    const restorePaymentPendingScreen = () => {
-      const pendingTicket = takePendingTicketPayment(userId);
-      if (!pendingTicket) return;
-
-      setSelectedDate(null);
-      setTicketIndex(0);
-      setWaitlistedTicket(pendingTicket);
-      setWaitlistStatus("payment_pending");
-      setNotice(null);
-      setError(null);
-      clearTicketCaches();
-      onWaitlisted?.(pendingTicket);
-      onPaymentReturn?.();
-      setScreen("waitlisted");
-    };
-    const restoreWhenVisible = () => {
-      if (document.visibilityState === "visible") {
-        restorePaymentPendingScreen();
-      }
-    };
-
-    restorePaymentPendingScreen();
-    window.addEventListener("pageshow", restorePaymentPendingScreen);
-    window.addEventListener("focus", restorePaymentPendingScreen);
-    document.addEventListener("visibilitychange", restoreWhenVisible);
-
-    return () => {
-      window.removeEventListener("pageshow", restorePaymentPendingScreen);
-      window.removeEventListener("focus", restorePaymentPendingScreen);
-      document.removeEventListener("visibilitychange", restoreWhenVisible);
-    };
-  }, [userId]);
 
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
@@ -663,7 +582,7 @@ export function MeetingRecommendation({
     membership_status: membershipStatus,
   });
 
-  const joinWaitlist = async () => {
+  const openDepositSheet = () => {
     if (!ticket || saving) return;
 
     if (isPastTicketDate(ticket.date)) {
@@ -672,16 +591,32 @@ export function MeetingRecommendation({
     }
 
     trackEvent("application_submit_click", applicationEventPayload(ticket));
+    setDepositTicket(ticket);
+    setDepositAccountCopied(false);
+    setDepositCopyError(null);
+    setError(null);
+    onCoachmarkProgress?.("decision");
+  };
 
-    if (membershipStatus !== "active" && membershipStatus !== "pending") {
-      setError(null);
-      trackEvent("membership_required_shown", {
-        ...applicationEventPayload(ticket),
-        source: "client_membership_check",
+  const copyDepositAccount = async () => {
+    if (!depositTicket || saving) return;
+
+    try {
+      await copyTextToClipboard(noShowDepositAccountText);
+      setDepositAccountCopied(true);
+      setDepositCopyError(null);
+      trackEvent("no_show_deposit_account_copy", {
+        ...applicationEventPayload(depositTicket),
       });
-      onMembershipRequired?.(ticket);
-      return;
+    } catch {
+      setDepositCopyError(
+        "계좌번호를 복사하지 못했어요. 직접 선택해서 복사해주세요.",
+      );
     }
+  };
+
+  const submitDepositPaymentPending = async () => {
+    if (!depositTicket || saving || !depositAccountCopied) return;
 
     setSaving(true);
     setError(null);
@@ -689,7 +624,7 @@ export function MeetingRecommendation({
     const response = await fetch("/api/meeting-waitlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticket }),
+      body: JSON.stringify({ ticket: depositTicket }),
     });
 
     const data = (await response.json().catch(() => null)) as {
@@ -698,33 +633,27 @@ export function MeetingRecommendation({
       duplicate?: boolean;
     } | null;
 
-    if (response.status === 402 || data?.code === "membership_required") {
-      trackEvent("membership_required_shown", {
-        ...applicationEventPayload(ticket),
-        source: "waitlist_response",
-      });
-      onMembershipRequired?.(ticket);
-      setSaving(false);
-      return;
-    }
-
     if (!response.ok) {
-      setError("대기열 등록에 실패했어요. 잠시 후 다시 시도해주세요.");
+      setDepositCopyError(
+        "입금 확인 요청을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
       setSaving(false);
       return;
     }
 
-    setWaitlistedTicket(ticket);
-    setWaitlistStatus(data?.status ?? "waitlisted");
+    setWaitlistedTicket(depositTicket);
+    setWaitlistStatus(data?.status ?? "payment_pending");
     trackEvent("application_created", {
-      ...applicationEventPayload(ticket),
-      status: data?.status ?? "waitlisted",
+      ...applicationEventPayload(depositTicket),
+      status: data?.status ?? "payment_pending",
       duplicate: Boolean(data?.duplicate),
     });
     clearTicketCaches();
-    onWaitlisted?.(ticket);
+    onWaitlisted?.(depositTicket);
+    setDepositTicket(null);
+    setDepositAccountCopied(false);
+    setDepositCopyError(null);
     setScreen("waitlisted");
-    onCoachmarkProgress?.("decision");
     setSaving(false);
   };
 
@@ -753,11 +682,6 @@ export function MeetingRecommendation({
                 받아볼까요?
               </h1>
             </header>
-
-            <AgePreferencePicker
-              value={agePreference}
-              onChange={updateAgePreference}
-            />
 
             <div data-coachmark-target="recommend-date-picker">
               <RecommendationCalendarSelector
@@ -816,7 +740,7 @@ export function MeetingRecommendation({
             saving={saving || Boolean(rejectionSavingReason)}
             error={error}
             onNo={openRejectionSheet}
-            onYes={() => void joinWaitlist()}
+            onYes={openDepositSheet}
             onOpenInvitation={() => onCoachmarkProgress?.("invitation")}
             onChangeDate={() => {
               setSelectedDate(null);
@@ -845,7 +769,7 @@ export function MeetingRecommendation({
             <h1 className="mt-2 text-[28px] font-bold leading-9 text-black">
               {waitlistStatus === "payment_pending" ? (
                 <>
-                  결제 확인 요청이
+                  입금 확인 요청이
                   <br />
                   기록됐어요.
                 </>
@@ -859,7 +783,7 @@ export function MeetingRecommendation({
             </h1>
             <p className="mt-3 text-sm leading-6 text-black/48">
               {waitlistStatus === "payment_pending"
-                ? "운영자가 결제 상태를 확인한 뒤 자리 신청을 이어서 처리할게요."
+                ? "운영자가 예약금 입금을 확인한 뒤 자리 신청을 이어서 처리할게요."
                 : "운영자가 자리 구성을 확인한 뒤 참여 승인 여부를 안내해드릴게요."}
             </p>
 
@@ -874,7 +798,7 @@ export function MeetingRecommendation({
               <div className="mt-5 border-t border-black/8 pt-4">
                 {(waitlistStatus === "payment_pending"
                   ? [
-                      "결제 확인 필요",
+                      "입금 확인 필요",
                       "운영자 확인",
                       "모임 대기 등록",
                       "참여 승인 및 안내",
@@ -951,7 +875,170 @@ export function MeetingRecommendation({
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {depositTicket && (
+          <NoShowDepositBottomSheet
+            saving={saving}
+            accountCopied={depositAccountCopied}
+            copyError={depositCopyError}
+            onCopy={() => void copyDepositAccount()}
+            onSubmit={() => void submitDepositPaymentPending()}
+            onClose={() => {
+              if (saving) return;
+              setDepositTicket(null);
+              setDepositAccountCopied(false);
+              setDepositCopyError(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </section>
+  );
+}
+
+function NoShowDepositBottomSheet({
+  saving,
+  accountCopied,
+  copyError,
+  onCopy,
+  onSubmit,
+  onClose,
+}: {
+  saving: boolean;
+  accountCopied: boolean;
+  copyError: string | null;
+  onCopy: () => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      key="no-show-deposit-sheet"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/25 px-4 pb-[calc(14px+env(safe-area-inset-bottom))]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-label="예약금 입금 안내"
+        initial={{ y: 32, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 28, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 360, damping: 32 }}
+        onClick={(event) => event.stopPropagation()}
+        className="flex w-full max-w-[390px] flex-col rounded-t-[28px] border border-black/10 bg-white px-5 pb-8 pt-4 shadow-[0_-24px_80px_rgba(0,0,0,0.18)]"
+      >
+        <div className="mx-auto h-1.5 w-10 rounded-full bg-black/12" />
+        <div className="mt-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="mt-2 text-xl font-black leading-7 text-black">
+              신청을 하려면
+              <br />
+              예약금이 필요해요.
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="예약금 입금 안내 닫기"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48 shadow-sm transition hover:text-black disabled:opacity-40"
+          >
+            <X size={17} aria-hidden />
+          </button>
+        </div>
+
+        <div className="mt-6 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-[19px] font-black leading-none text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+            >
+              ₩
+            </span>
+            <p className="text-sm font-black text-black">예약금 : 20000원</p>
+          </div>
+        </div>
+
+        <p className="mt-3 flex items-start gap-2 text-[13px] font-semibold leading-5 text-black/58">
+          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
+            <Check size={13} strokeWidth={3} aria-hidden />
+          </span>
+          <span>
+            모임에 정상 참여하는 경우 예약금은{" "}
+            <span className="rounded-md bg-sky-100 px-1.5 py-0.5 font-black text-sky-700">
+              전액 환급
+            </span>
+            됩니다.
+          </span>
+        </p>
+
+        <div className="mt-5 rounded-[20px] border border-black/10 bg-gradient-to-br from-[#fbfbfa] to-white px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]">
+              <Landmark size={19} aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wider text-black/35">
+                계좌번호
+              </p>
+              <p className="mt-1 text-sm font-black text-black">
+                {noShowDepositBankName}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-black/[0.06] bg-black/[0.035] px-4 py-3">
+            <p className="text-[13px] font-black tabular-nums tracking-[0] text-black/78">
+              {noShowDepositAccountNumber}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onCopy}
+            className="flex h-[52px] items-center justify-center gap-2 rounded-[16px] border border-black/12 bg-white text-sm font-black text-black transition hover:border-black/20 hover:bg-black/[0.03] disabled:opacity-45"
+          >
+            {accountCopied ? (
+              <Check size={16} aria-hidden />
+            ) : (
+              <Copy size={16} aria-hidden />
+            )}
+            {accountCopied ? "복사됐어요" : "계좌 복사하기"}
+          </button>
+          <button
+            type="button"
+            disabled={saving || !accountCopied}
+            onClick={onSubmit}
+            className={cn(
+              "h-[52px] rounded-[16px] text-sm font-black transition",
+              accountCopied && !saving
+                ? "bg-emerald-500 text-white shadow-[0_12px_26px_rgba(16,185,129,0.28)] hover:bg-emerald-600"
+                : "cursor-not-allowed bg-black/10 text-black/28",
+            )}
+          >
+            {saving ? "저장 중..." : "입금했어요"}
+          </button>
+        </div>
+
+        {!accountCopied && !copyError && (
+          <p className="mt-3 text-center text-[11px] font-semibold text-black/38">
+            계좌를 복사하면 입금 완료 버튼이 활성화돼요.
+          </p>
+        )}
+        {copyError && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+            {copyError}
+          </p>
+        )}
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -1198,383 +1285,6 @@ function CurationLoadingLogo() {
           }}
         />
       </motion.svg>
-    </div>
-  );
-}
-
-function ageOptions(start: number, end: number) {
-  if (end < start) return [start];
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
-const ageWheelHeight = 144;
-const ageWheelRowHeight = 36;
-const ageWheelPadding = (ageWheelHeight - ageWheelRowHeight) / 2;
-const ageWheelDragSensitivity = 0.5;
-const ageWheelStepCooldownMs = 180;
-const ageWheelWheelThresholdPx = 8;
-
-function AgePreferencePicker({
-  value,
-  onChange,
-}: {
-  value: AgePreference;
-  onChange: (value: AgePreference) => void;
-}) {
-  const minimumOptions = ageOptions(minimumSelectableAge, value.defaultMinAge);
-  const maximumOptions = ageOptions(value.defaultMaxAge, maximumSelectableAge);
-
-  return (
-    <section className="mt-7 rounded-[24px] border border-black/10 bg-white p-5 shadow-[0_8px_30px_rgba(0,0,0,0.01)]">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-sm font-bold text-black">
-            함께하고 싶은 나이
-          </h2>
-        </div>
-        <span className="rounded-full bg-black/[0.04] px-3 py-1 text-[10px] font-black text-black/45">
-          {value.minAge}세 ~ {value.maxAge}세
-        </span>
-      </div>
-
-      <div
-        className="relative mt-5 overflow-hidden rounded-2xl bg-[#fbfbfa] px-3"
-        style={{ height: ageWheelHeight }}
-      >
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-3 top-1/2 z-10 h-9 -translate-y-1/2 border-y border-black/10"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-10 bg-gradient-to-b from-[#fbfbfa] to-transparent"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-10 bg-gradient-to-t from-[#fbfbfa] to-transparent"
-        />
-        <div className="relative z-10 grid h-full grid-cols-[minmax(0,1fr)_18px_minmax(0,1fr)_18px_minmax(0,1fr)]">
-          <AgeWheel
-            ariaLabel="최소 나이"
-            options={minimumOptions}
-            value={value.minAge}
-            selectedPrefix="최소"
-            onChange={(minAge) => onChange({ ...value, minAge })}
-          />
-          <AgeRangeSeparator />
-          <StaticAgeColumn age={value.baseAge} />
-          <AgeRangeSeparator />
-          <AgeWheel
-            ariaLabel="최대 나이"
-            options={maximumOptions}
-            value={value.maxAge}
-            selectedPrefix="최대"
-            onChange={(maxAge) => onChange({ ...value, maxAge })}
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function AgeRangeSeparator() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none flex h-full items-center justify-center text-base font-black text-[#a1a1aa]"
-    >
-      ~
-    </div>
-  );
-}
-
-function StaticAgeColumn({ age }: { age: number }) {
-  return (
-    <div
-      className="pointer-events-none flex h-full items-center justify-center"
-      aria-label={`내 나이 ${age}세`}
-    >
-      <div className="flex h-9 items-center justify-center text-lg font-black tabular-nums text-black">
-        {age}세
-      </div>
-    </div>
-  );
-}
-
-function AgeWheel({
-  ariaLabel,
-  options,
-  value,
-  selectedPrefix,
-  onChange,
-}: {
-  ariaLabel: string;
-  options: number[];
-  value: number;
-  selectedPrefix?: string;
-  onChange: (value: number) => void;
-}) {
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const settleTimerRef = useRef<number | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const wheelTargetRef = useRef<number | null>(null);
-  const wheelResetTimerRef = useRef<number | null>(null);
-  const wheelDeltaBufferRef = useRef(0);
-  const wheelStepLockUntilRef = useRef(0);
-  const dragStateRef = useRef<{
-    active: boolean;
-    pointerId: number | null;
-    startY: number;
-    startScrollTop: number;
-    moved: boolean;
-  }>({
-    active: false,
-    pointerId: null,
-    startY: 0,
-    startScrollTop: 0,
-    moved: false,
-  });
-  const [displayValue, setDisplayValue] = useState(value);
-  const [dragging, setDragging] = useState(false);
-
-  useEffect(() => {
-    const index = Math.max(0, options.indexOf(value));
-    scrollerRef.current?.scrollTo({ top: index * ageWheelRowHeight });
-    setDisplayValue(value);
-  }, [options, value]);
-
-  useEffect(() => {
-    return () => {
-      if (settleTimerRef.current) {
-        window.clearTimeout(settleTimerRef.current);
-      }
-      if (animationFrameRef.current) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (wheelResetTimerRef.current) {
-        window.clearTimeout(wheelResetTimerRef.current);
-      }
-      dragStateRef.current.active = false;
-    };
-  }, []);
-
-  const nearestValueForScrollTop = (scrollTop: number) => {
-    const index = Math.max(
-      0,
-      Math.min(
-        options.length - 1,
-        Math.round(scrollTop / ageWheelRowHeight),
-      ),
-    );
-
-    return options[index] ?? value;
-  };
-
-  const nearestValue = () => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return value;
-
-    return nearestValueForScrollTop(scroller.scrollTop);
-  };
-
-  const updateDisplayValue = () => {
-    animationFrameRef.current = null;
-    setDisplayValue(nearestValue());
-  };
-
-  const queueSettle = (delay: number) => {
-    if (settleTimerRef.current) {
-      window.clearTimeout(settleTimerRef.current);
-    }
-    settleTimerRef.current = window.setTimeout(settle, delay);
-  };
-
-  const resetWheelTarget = () => {
-    if (wheelResetTimerRef.current) {
-      window.clearTimeout(wheelResetTimerRef.current);
-    }
-    wheelResetTimerRef.current = window.setTimeout(() => {
-      wheelTargetRef.current = null;
-    }, 220);
-  };
-
-  const settle = () => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-
-    const index = Math.max(0, options.indexOf(nearestValue()));
-    const nextValue = options[index] ?? value;
-    scroller.scrollTo({
-      top: index * ageWheelRowHeight,
-      behavior: "smooth",
-    });
-    setDisplayValue(nextValue);
-    if (nextValue !== value) onChange(nextValue);
-  };
-
-  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current;
-    if (!state.active || state.pointerId !== event.pointerId) return;
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    dragStateRef.current = {
-      active: false,
-      pointerId: null,
-      startY: 0,
-      startScrollTop: 0,
-      moved: false,
-    };
-    setDragging(false);
-    wheelTargetRef.current = null;
-    settle();
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "mouse" || event.button !== 0) return;
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-
-    event.preventDefault();
-    if (settleTimerRef.current) {
-      window.clearTimeout(settleTimerRef.current);
-    }
-    if (wheelResetTimerRef.current) {
-      window.clearTimeout(wheelResetTimerRef.current);
-    }
-    wheelTargetRef.current = null;
-    wheelDeltaBufferRef.current = 0;
-    wheelStepLockUntilRef.current = 0;
-    dragStateRef.current = {
-      active: true,
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startScrollTop: scroller.scrollTop,
-      moved: false,
-    };
-    setDragging(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current;
-    const scroller = scrollerRef.current;
-    if (!state.active || state.pointerId !== event.pointerId || !scroller) {
-      return;
-    }
-
-    event.preventDefault();
-    const maxScrollTop = Math.max(0, (options.length - 1) * ageWheelRowHeight);
-    const deltaY = event.clientY - state.startY;
-    const nextTop = Math.max(
-      0,
-      Math.min(
-        maxScrollTop,
-        state.startScrollTop - deltaY * ageWheelDragSensitivity,
-      ),
-    );
-
-    if (Math.abs(deltaY) > 2) {
-      dragStateRef.current.moved = true;
-    }
-    scroller.scrollTop = nextTop;
-    setDisplayValue(nearestValueForScrollTop(nextTop));
-  };
-
-  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    const scroller = scrollerRef.current;
-    if (!scroller) return;
-
-    event.preventDefault();
-
-    const maxScrollTop = Math.max(0, (options.length - 1) * ageWheelRowHeight);
-    const rawDelta =
-      event.deltaMode === 0 ? event.deltaY : event.deltaY * ageWheelRowHeight;
-    if (!rawDelta) return;
-
-    wheelDeltaBufferRef.current += rawDelta;
-    const now = window.performance.now();
-    if (now < wheelStepLockUntilRef.current) return;
-    if (Math.abs(wheelDeltaBufferRef.current) < ageWheelWheelThresholdPx) return;
-
-    const currentTarget = wheelTargetRef.current ?? scroller.scrollTop;
-    const currentIndex = Math.max(
-      0,
-      Math.min(options.length - 1, Math.round(currentTarget / ageWheelRowHeight)),
-    );
-    const nextIndex = Math.max(
-      0,
-      Math.min(options.length - 1, currentIndex + Math.sign(wheelDeltaBufferRef.current)),
-    );
-    const nextTop = Math.min(maxScrollTop, nextIndex * ageWheelRowHeight);
-
-    wheelDeltaBufferRef.current = 0;
-    wheelStepLockUntilRef.current = now + ageWheelStepCooldownMs;
-    wheelTargetRef.current = nextTop;
-    scroller.scrollTo({ top: nextTop, behavior: "smooth" });
-    setDisplayValue(options[nextIndex] ?? nearestValueForScrollTop(nextTop));
-    resetWheelTarget();
-    queueSettle(ageWheelStepCooldownMs + 40);
-  };
-
-  return (
-    <div
-      ref={scrollerRef}
-      role="listbox"
-      aria-label={ariaLabel}
-      aria-valuemin={options[0]}
-      aria-valuemax={options[options.length - 1]}
-      aria-valuenow={displayValue}
-      tabIndex={0}
-      onScroll={() => {
-        if (!animationFrameRef.current) {
-          animationFrameRef.current =
-            window.requestAnimationFrame(updateDisplayValue);
-        }
-        if (!dragStateRef.current.active) {
-          queueSettle(130);
-        }
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={stopDragging}
-      onPointerCancel={stopDragging}
-      onWheel={handleWheel}
-      className={cn(
-        "h-full snap-y snap-mandatory overflow-y-auto text-center scrollbar-none overscroll-contain select-none",
-        !dragging && "scroll-smooth",
-        dragging ? "cursor-grabbing" : "cursor-grab",
-      )}
-      style={{ paddingBlock: ageWheelPadding }}
-    >
-      {options.map((option) => {
-        const distance = Math.abs(option - displayValue);
-        return (
-          <div
-            key={option}
-            role="option"
-            aria-selected={option === displayValue}
-            className={cn(
-              "flex snap-center items-center justify-center text-lg font-black tabular-nums transition-[color,opacity,transform] duration-200 ease-out",
-              distance === 0
-                ? "scale-[1.02] text-black opacity-100"
-                : distance === 1
-                  ? "text-[#a1a1aa] opacity-80"
-                  : "text-[#d4d4d8] opacity-55",
-            )}
-            style={{ height: ageWheelRowHeight }}
-          >
-            {option === displayValue && selectedPrefix && (
-              <span className="mr-1 text-[10px] font-black text-black/38">
-                {selectedPrefix}
-              </span>
-            )}
-            {option}세
-          </div>
-        );
-      })}
     </div>
   );
 }

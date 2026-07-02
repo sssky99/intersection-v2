@@ -34,7 +34,7 @@ export const waitlistStatusLabels: Record<WaitlistStatus, string> = {
   on_hold: "보류",
   not_selected: "미선정",
   cancelled: "취소",
-  payment_pending: "결제 확인 필요",
+  payment_pending: "입금 확인 필요",
   feedback_done: "피드백 완료",
   completed: "모임 종료",
 };

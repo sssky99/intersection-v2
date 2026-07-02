@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ExternalLink,
   Image as ImageIcon,
   LogOut,
   Save,
@@ -646,14 +647,25 @@ export function AdminPageClient({
                 운영 관리자
               </h1>
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
-            >
-              <LogOut size={16} aria-hidden />
-              로그아웃
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href="/admin/details-preview"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-3.5 text-sm font-semibold text-white transition hover:bg-black/85"
+              >
+                <ExternalLink size={15} aria-hidden />
+                상세페이지 다시보기
+              </a>
+              <button
+                type="button"
+                onClick={logout}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
+              >
+                <LogOut size={16} aria-hidden />
+                로그아웃
+              </button>
+            </div>
           </div>
 
           <nav className="mt-5 flex flex-wrap gap-2">
@@ -1735,14 +1747,26 @@ function ProfileAnswerCard({ answer }: { answer: AdminProfileAnswer }) {
       </p>
       <div className="mt-3 space-y-2">
         {values.length > 0 ? (
-          values.map((value) => (
-            <p
-              key={value}
-              className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/64"
-            >
-              {selectedOptionDisplay(question, value, answer.other_text)}
-            </p>
-          ))
+          values.map((value, index) => {
+            const displayText = selectedOptionDisplay(
+              question,
+              value,
+              answer.other_text,
+            );
+            const rankedDisplayText =
+              question.category === "관심 분야"
+                ? `${index + 1}순위. ${displayText.replace(/^\d+번\.\s*/, "")}`
+                : displayText;
+
+            return (
+              <p
+                key={value}
+                className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/64"
+              >
+                {rankedDisplayText}
+              </p>
+            );
+          })
         ) : (
           <p className="rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/40">
             -

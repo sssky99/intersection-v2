@@ -27,6 +27,10 @@ import {
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
 import { MEETING_DEFAULT_MIN_PARTICIPANT_COUNT } from "@/types/ticket";
+import {
+  inferTicketCategory,
+  normalizeTicketCategory,
+} from "@/types/ticketCategory";
 
 export const dynamic = "force-dynamic";
 
@@ -423,7 +427,7 @@ function templatePayload(body: Record<string, unknown>) {
     stage_copy: sanitizeTicketStageCopy(body.stageCopy),
     image_url: text(body.imageUrl),
     mood_tags: tags(body.moodTags),
-    activity_type: text(body.activityType),
+    activity_type: normalizeTicketCategory(body.activityType),
     recommendation_copy: text(body.recommendationCopy),
     default_region: text(body.defaultRegion),
     default_time: timeText(body.defaultTime),
@@ -757,7 +761,12 @@ export async function POST(request: NextRequest) {
           stage_copy: sourceTemplate.stage_copy ?? {},
           image_url: sourceTemplate.image_url,
           mood_tags: sourceTemplate.mood_tags,
-          activity_type: sourceTemplate.activity_type,
+          activity_type: inferTicketCategory({
+            activityType: sourceTemplate.activity_type,
+            title: sourceTemplate.title,
+            moodTags: sourceTemplate.mood_tags,
+            shortDescription: sourceTemplate.short_description,
+          }),
           recommendation_copy: sourceTemplate.recommendation_copy,
           default_region: sourceTemplate.default_region,
           default_time: sourceTemplate.default_time,

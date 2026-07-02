@@ -61,6 +61,11 @@ import {
   type TicketStageCopy,
   type UserTicket,
 } from "@/types/ticket";
+import {
+  inferTicketCategory,
+  normalizeTicketCategory,
+  ticketCategoryOptions,
+} from "@/types/ticketCategory";
 import type { MeetingPlace } from "@/types/place";
 import type { Gender } from "@/types/user";
 
@@ -136,10 +141,14 @@ type TimePeriod = (typeof timePeriods)[number];
 const editableTicketVisibilities = ticketVisibilities.filter(
   (visibility) => visibility !== "question" && visibility !== "invite_only",
 );
+const ticketCategorySelectOptions = [
+  { value: "", label: "카테고리 선택" },
+  ...ticketCategoryOptions,
+];
 
 const fixedDetailNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
-  "결제 확인 후 대기열 등록이 완료 돼요.",
+  "노쇼 방지비 입금 확인 후 대기열 등록이 완료돼요.",
 ];
 
 const scoreFields: Array<{
@@ -369,7 +378,13 @@ function draftFromTicket(
     feedbackBody: stageCopyValue(template.stage_copy, "feedbackBody"),
     imageUrl: template.image_url ?? "",
     moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
-    activityType: template.activity_type ?? "",
+    activityType:
+      inferTicketCategory({
+        activityType: template.activity_type,
+        title: template.title,
+        moodTags: template.mood_tags,
+        shortDescription: template.short_description,
+      }) ?? "",
     recommendationCopy: template.recommendation_copy ?? "",
     eventDate: instance?.event_date ?? "",
     eventTime: firstNormalizedTimeValue(
@@ -441,7 +456,7 @@ function ticketRequestBody(draft: TicketDraft) {
     stageCopy: stageCopyFromDraft(draft),
     imageUrl: draft.imageUrl,
     moodTags: tags(draft.moodTags),
-    activityType: draft.activityType,
+    activityType: normalizeTicketCategory(draft.activityType),
     recommendationCopy: draft.recommendationCopy,
     defaultRegion: draft.region,
     defaultTime: eventTime,
@@ -525,7 +540,7 @@ function ticketPreview(
       : normalizeTimeValue(draft.eventTime) || "시간 미정",
     area: isSampleTicket ? "" : draft.region.trim() || "지역 미정",
     moodTags: tags(draft.moodTags),
-    activityType: draft.activityType.trim() || "admin_ticket",
+    activityType: normalizeTicketCategory(draft.activityType) ?? undefined,
     imageUrl: draft.imageUrl.trim() || undefined,
     remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
     minimumParticipantCount:
@@ -843,7 +858,12 @@ export function TicketAdminPanel({
       [
         template.title,
         template.default_region,
-        template.activity_type,
+        inferTicketCategory({
+          activityType: template.activity_type,
+          title: template.title,
+          moodTags: template.mood_tags,
+          shortDescription: template.short_description,
+        }),
         ...template.instances.map((instance) => instance.region),
       ]
         .join(" ")
@@ -1140,7 +1160,7 @@ export function TicketAdminPanel({
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="제목, 활동, 지역 검색"
+              placeholder="제목, 카테고리, 지역 검색"
               className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>
@@ -1595,10 +1615,10 @@ function BasicEditor({
               onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
             }
           />
-          <FormField
-            label="활동 유형"
+          <SelectField
+            label="티켓 카테고리"
             value={draft.activityType}
-            placeholder="movie"
+            options={ticketCategorySelectOptions}
             onChange={(activityType) =>
               onDraftChange({ ...draft, activityType })
             }
@@ -2291,7 +2311,7 @@ function StageCopyEditor({
       <h3 className="mt-1 text-sm font-bold">실제 진행상황 문구</h3>
       <div className="mt-3 space-y-3">
         <TextAreaField
-          label="결제 확인 안내"
+          label="입금 확인 안내"
           rows={2}
           value={draft.stagePaymentPendingText}
           onChange={(stagePaymentPendingText) =>
