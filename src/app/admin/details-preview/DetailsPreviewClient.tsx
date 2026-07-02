@@ -267,18 +267,7 @@ export function DetailsPreviewClient({
           id="details-flow"
           className="relative z-20 border-t border-black/[0.06] bg-[#f1f0eb] px-6 pb-36 pt-16"
         >
-          <motion.div
-            initial={reduceMotion ? false : { opacity: 0, y: 18 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.5 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          >
-            <p className="text-[14px] font-bold tracking-[-0.02em] text-black/38">
-              어떻게 진행되나요?
-            </p>
-          </motion.div>
-
-          <div className="mt-8 space-y-8">
+          <div className="space-y-8">
             {detailSteps.map((step, index) => (
               <motion.article
                 key={step.label}

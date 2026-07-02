@@ -1168,12 +1168,51 @@ function CurationLoadingScreen({
           >
             {displayName}님에게 딱 맞는 만남을 찾는 중
           </motion.p>
-          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
+          <CurationLoadingDots shouldReduceMotion={shouldReduceMotion} />
+          <p className="mt-2 text-sm font-semibold leading-6 text-black/48">
             선택한 날짜에 어울리는 자리를 살펴보고 있어요.
           </p>
         </div>
       </section>
     </motion.div>
+  );
+}
+
+function CurationLoadingDots({
+  shouldReduceMotion,
+}: {
+  shouldReduceMotion: boolean;
+}) {
+  const opacityKeyframes = [
+    [1, 1, 1, 1],
+    [0, 1, 1, 0],
+    [0, 0, 1, 0],
+  ];
+
+  return (
+    <div
+      className="mt-2 flex h-4 w-12 items-center justify-center gap-1.5"
+      aria-hidden
+    >
+      {opacityKeyframes.map((opacity, index) => (
+        <motion.span
+          key={index}
+          className="h-1.5 w-1.5 rounded-full bg-accent"
+          initial={{ opacity: shouldReduceMotion ? 1 : opacity[0] }}
+          animate={{ opacity: shouldReduceMotion ? 1 : opacity }}
+          transition={
+            shouldReduceMotion
+              ? { duration: 0 }
+              : {
+                  duration: 1.2,
+                  ease: "linear",
+                  repeat: Infinity,
+                  times: [0, 0.34, 0.67, 1],
+                }
+          }
+        />
+      ))}
+    </div>
   );
 }
 
