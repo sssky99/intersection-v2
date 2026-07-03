@@ -30,6 +30,14 @@ import {
   ticketPlaceFromMeetingPlace,
 } from "@/lib/placePayload";
 import { meetingRegionFromPlace } from "@/lib/seoulRegion";
+import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
+import {
+  TICKET_COURSE_MAX_STEPS,
+  ensureMinimumStoredTicketCourseSteps,
+  legacyStoredTicketCourseSteps,
+  normalizeStoredTicketCourseSteps,
+  type StoredTicketCourseStep,
+} from "@/lib/ticketCourse";
 import { defaultTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   AdminMemberName,
@@ -75,6 +83,18 @@ type TicketData = {
   waitlist: AdminTicketWaitlistEntry[];
 };
 
+type TicketCourseStepDraft = {
+  id: string;
+  order: number;
+  title: string;
+  activityType: string;
+  imageUrl: string;
+  placeName: string;
+  address: string;
+  place: MeetingPlace | null;
+  isMainActivity: boolean;
+};
+
 type TicketDraft = {
   templateKind: "experience" | "question_sample";
   title: string;
@@ -94,6 +114,7 @@ type TicketDraft = {
   feedbackTitle: string;
   feedbackBody: string;
   imageUrl: string;
+  courseSteps: TicketCourseStepDraft[];
   moodTags: string;
   activityType: string;
   recommendationCopy: string;
@@ -343,6 +364,151 @@ function scoreDraft(value: number | null) {
   return value == null ? "" : String(value);
 }
 
+function blankCourseStep(order: number): TicketCourseStepDraft {
+  return {
+    id: `step-${order}`,
+    order,
+    title: "",
+    activityType: "",
+    imageUrl: "",
+    placeName: "",
+    address: "",
+    place: null,
+    isMainActivity: order === 1,
+  };
+}
+
+function courseStepDraftFromStored(
+  step: StoredTicketCourseStep,
+): TicketCourseStepDraft {
+  return {
+    id: step.id,
+    order: step.order,
+    title: step.title ?? "",
+    activityType: step.activityType ?? "",
+    imageUrl: step.imageUrl ?? "",
+    placeName: step.placeName ?? "",
+    address: step.address ?? "",
+    place: step.place,
+    isMainActivity: step.isMainActivity,
+  };
+}
+
+function draftCourseStepsFromTicket(
+  template: AdminTicketTemplate,
+  instance: AdminTicketInstance | null,
+) {
+  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const courseSteps = ensureMinimumStoredTicketCourseSteps(
+    storedSteps.length
+      ? storedSteps
+      : legacyStoredTicketCourseSteps({
+          title: template.title,
+          activityType: template.activity_type,
+          imageUrl: template.image_url,
+          placeName: instance?.place_name,
+          address: instance?.address,
+          place: instance?.place_payload,
+        }),
+  );
+
+  return courseSteps.map(courseStepDraftFromStored);
+}
+
+function normalizeDraftCourseSteps(steps: TicketCourseStepDraft[]) {
+  const next = steps.slice(0, TICKET_COURSE_MAX_STEPS).map((step, index) => ({
+    ...step,
+    id: step.id || `step-${index + 1}`,
+    order: index + 1,
+  }));
+
+  while (next.length < 2) {
+    next.push(blankCourseStep(next.length + 1));
+  }
+
+  const mainIndex = Math.max(
+    0,
+    next.findIndex((step) => step.isMainActivity),
+  );
+
+  return next.map((step, index) => ({
+    ...step,
+    order: index + 1,
+    isMainActivity: index === mainIndex,
+  }));
+}
+
+function mainDraftCourseStep(steps: TicketCourseStepDraft[]) {
+  return (
+    steps.find((step) => step.isMainActivity) ??
+    steps[0] ??
+    blankCourseStep(1)
+  );
+}
+
+function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
+  return normalizeDraftCourseSteps(steps).map((step) => ({
+    id: step.id,
+    order: step.order,
+    title: step.title.trim() || null,
+    activityType: normalizeTicketCategory(step.activityType) ?? null,
+    imageUrl: step.imageUrl.trim() || null,
+    placeName: step.placeName.trim() || null,
+    address: step.address.trim() || null,
+    place: step.place,
+    isMainActivity: step.isMainActivity,
+  }));
+}
+
+function syncDraftCourseFields(draft: TicketDraft): TicketDraft {
+  const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
+  const mainStep = mainDraftCourseStep(courseSteps);
+
+  return {
+    ...draft,
+    courseSteps,
+    imageUrl: mainStep.imageUrl,
+    activityType: mainStep.activityType,
+    placeName: mainStep.placeName,
+    address: mainStep.address,
+    place: mainStep.place,
+  };
+}
+
+function courseStepDraftHasContent(step: TicketCourseStepDraft) {
+  return Boolean(
+    step.title.trim() ||
+      step.activityType.trim() ||
+      step.imageUrl.trim() ||
+      step.placeName.trim() ||
+      step.address.trim() ||
+      step.place,
+  );
+}
+
+function ticketCourseStepsFromDraft(
+  draft: TicketDraft,
+): GatheringTicket["courseSteps"] {
+  return normalizeDraftCourseSteps(draft.courseSteps)
+    .filter(courseStepDraftHasContent)
+    .map((step, index) => ({
+      id: step.id,
+      order: index + 1,
+      title: step.title.trim() || null,
+      activityType: normalizeTicketCategory(step.activityType) ?? null,
+      imageUrl: step.imageUrl.trim() || null,
+      placeName: step.placeName.trim() || null,
+      address: step.address.trim() || null,
+      place:
+        ticketPlaceFromMeetingPlace(step.place) ??
+        ticketPlaceFromLegacyFields({
+          placeName: step.placeName,
+          address: step.address,
+        }),
+      isMainActivity: step.isMainActivity,
+    }));
+}
+
 function stageCopyValue(
   stageCopy: TicketStageCopy | null | undefined,
   key: keyof TicketStageCopy,
@@ -354,6 +520,8 @@ function draftFromTicket(
   template: AdminTicketTemplate,
   instance: AdminTicketInstance | null = primaryInstance(template),
 ): TicketDraft {
+  const courseSteps = draftCourseStepsFromTicket(template, instance);
+  const mainCourseStep = mainDraftCourseStep(courseSteps);
 
   return {
     templateKind: template.template_kind,
@@ -376,15 +544,18 @@ function draftFromTicket(
     stageFeedbackOpenText: stageCopyValue(template.stage_copy, "feedbackOpen"),
     feedbackTitle: stageCopyValue(template.stage_copy, "feedbackTitle"),
     feedbackBody: stageCopyValue(template.stage_copy, "feedbackBody"),
-    imageUrl: template.image_url ?? "",
+    imageUrl: mainCourseStep.imageUrl || template.image_url || "",
+    courseSteps,
     moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
     activityType:
-      inferTicketCategory({
+      mainCourseStep.activityType ||
+      (inferTicketCategory({
         activityType: template.activity_type,
         title: template.title,
         moodTags: template.mood_tags,
         shortDescription: template.short_description,
-      }) ?? "",
+      }) ??
+        ""),
     recommendationCopy: template.recommendation_copy ?? "",
     eventDate: instance?.event_date ?? "",
     eventTime: firstNormalizedTimeValue(
@@ -392,9 +563,9 @@ function draftFromTicket(
       template.default_time,
     ),
     region: instance?.region ?? template.default_region ?? "",
-    placeName: instance?.place_name ?? "",
-    address: instance?.address ?? "",
-    place: instance?.place_payload ?? null,
+    placeName: mainCourseStep.placeName || instance?.place_name || "",
+    address: mainCourseStep.address || instance?.address || "",
+    place: mainCourseStep.place ?? instance?.place_payload ?? null,
     atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
     atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
     operationCode: instance?.operation_code ?? "",
@@ -442,47 +613,52 @@ function stageCopyFromDraft(draft: TicketDraft): TicketStageCopy {
 }
 
 function ticketRequestBody(draft: TicketDraft) {
+  const syncedDraft = syncDraftCourseFields(draft);
+  const mainCourseStep = mainDraftCourseStep(syncedDraft.courseSteps);
   const eventTime = normalizeTimeValue(draft.eventTime);
 
   return {
-    templateKind: draft.templateKind,
-    title: draft.title,
-    shortDescription: draft.shortDescription,
-    detailSummary: draft.detailSummary,
-    detailActivities: prose(draft.detailActivities),
+    templateKind: syncedDraft.templateKind,
+    title: syncedDraft.title,
+    shortDescription: syncedDraft.shortDescription,
+    detailSummary: syncedDraft.detailSummary,
+    detailActivities: prose(syncedDraft.detailActivities),
     detailFlow: [],
-    detailGoodFor: lines(draft.detailGoodFor),
-    detailNotice: draft.detailNotice,
-    stageCopy: stageCopyFromDraft(draft),
-    imageUrl: draft.imageUrl,
-    moodTags: tags(draft.moodTags),
-    activityType: normalizeTicketCategory(draft.activityType),
-    recommendationCopy: draft.recommendationCopy,
-    defaultRegion: draft.region,
+    detailGoodFor: lines(syncedDraft.detailGoodFor),
+    detailNotice: syncedDraft.detailNotice,
+    stageCopy: stageCopyFromDraft(syncedDraft),
+    imageUrl: mainCourseStep.imageUrl,
+    courseSteps: storedCourseStepsFromDraft(syncedDraft.courseSteps),
+    moodTags: tags(syncedDraft.moodTags),
+    activityType: normalizeTicketCategory(mainCourseStep.activityType),
+    recommendationCopy: syncedDraft.recommendationCopy,
+    defaultRegion: syncedDraft.region,
     defaultTime: eventTime,
-    eventDate: draft.eventDate,
+    eventDate: syncedDraft.eventDate,
     eventTime,
-    region: draft.region,
-    placeName: draft.placeName,
-    address: draft.address,
-    place: draft.place,
-    atmosphereGenderMood: draft.atmosphereGenderMood || null,
-    atmosphereAgeBandId: draft.atmosphereAgeBandId || null,
-    operationCode: draft.operationCode,
-    operationNote: draft.operationNote,
-    placeVisibility: draft.placeVisibility,
-    visibility: draft.visibility,
+    region: syncedDraft.region,
+    placeName: mainCourseStep.placeName,
+    address: mainCourseStep.address,
+    place: mainCourseStep.place,
+    atmosphereGenderMood: syncedDraft.atmosphereGenderMood || null,
+    atmosphereAgeBandId: syncedDraft.atmosphereAgeBandId || null,
+    operationCode: syncedDraft.operationCode,
+    operationNote: syncedDraft.operationNote,
+    placeVisibility: syncedDraft.placeVisibility,
+    visibility: syncedDraft.visibility,
     questionOrder:
-      draft.templateKind === "question_sample" ? draft.questionOrder : null,
-    remainingSeatLabelCount: draft.remainingSeatLabelCount,
-    minimumParticipantCount: draft.minimumParticipantCount,
-    maxParticipantCount: draft.maxParticipantCount,
-    scoreTemperature: draft.scoreTemperature || null,
-    scoreTexture: draft.scoreTexture || null,
-    scoreTone: draft.scoreTone || null,
-    scoreRhythm: draft.scoreRhythm || null,
-    scoreAlcohol: draft.scoreAlcohol || null,
-    scoreRomance: draft.scoreRomance || null,
+      syncedDraft.templateKind === "question_sample"
+        ? syncedDraft.questionOrder
+        : null,
+    remainingSeatLabelCount: syncedDraft.remainingSeatLabelCount,
+    minimumParticipantCount: syncedDraft.minimumParticipantCount,
+    maxParticipantCount: syncedDraft.maxParticipantCount,
+    scoreTemperature: syncedDraft.scoreTemperature || null,
+    scoreTexture: syncedDraft.scoreTexture || null,
+    scoreTone: syncedDraft.scoreTone || null,
+    scoreRhythm: syncedDraft.scoreRhythm || null,
+    scoreAlcohol: syncedDraft.scoreAlcohol || null,
+    scoreRomance: syncedDraft.scoreRomance || null,
   };
 }
 
@@ -525,52 +701,61 @@ function ticketPreview(
   template: AdminTicketTemplate | null,
   instance: AdminTicketInstance | null,
 ): GatheringTicket {
+  const syncedDraft = syncDraftCourseFields(draft);
+  const mainCourseStep = mainDraftCourseStep(syncedDraft.courseSteps);
+  const courseSteps = ticketCourseStepsFromDraft(syncedDraft);
   const isSampleTicket = draft.templateKind === "question_sample";
   const shortDescription =
-    draft.shortDescription.trim() || draft.recommendationCopy.trim();
+    syncedDraft.shortDescription.trim() ||
+    syncedDraft.recommendationCopy.trim();
 
   return {
     id: instance?.id ?? template?.id ?? "preview",
     templateId: template?.id ?? "preview",
-    title: draft.title.trim() || "새 초대장",
+    title: syncedDraft.title.trim() || "새 초대장",
     subtitle: shortDescription || "교집합 초대장",
-    date: isSampleTicket ? "" : draft.eventDate,
+    date: isSampleTicket ? "" : syncedDraft.eventDate,
     time: isSampleTicket
       ? ""
-      : normalizeTimeValue(draft.eventTime) || "시간 미정",
-    area: isSampleTicket ? "" : draft.region.trim() || "지역 미정",
-    moodTags: tags(draft.moodTags),
-    activityType: normalizeTicketCategory(draft.activityType) ?? undefined,
-    imageUrl: draft.imageUrl.trim() || undefined,
-    remainingSeatCount: Number.parseInt(draft.remainingSeatLabelCount, 10) || 0,
+      : normalizeTimeValue(syncedDraft.eventTime) || "시간 미정",
+    area: isSampleTicket ? "" : syncedDraft.region.trim() || "지역 미정",
+    moodTags: tags(syncedDraft.moodTags),
+    activityType:
+      normalizeTicketCategory(mainCourseStep.activityType) ?? undefined,
+    imageUrl: mainCourseStep.imageUrl.trim() || undefined,
+    courseSteps,
+    remainingSeatCount:
+      Number.parseInt(syncedDraft.remainingSeatLabelCount, 10) || 0,
     minimumParticipantCount:
-      Number.parseInt(draft.minimumParticipantCount, 10) ||
+      Number.parseInt(syncedDraft.minimumParticipantCount, 10) ||
       MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
     maxParticipantCount:
-      Number.parseInt(draft.maxParticipantCount, 10) ||
+      Number.parseInt(syncedDraft.maxParticipantCount, 10) ||
       MEETING_MAX_PARTICIPANT_COUNT,
-    peopleHint: draft.recommendationCopy.trim() || shortDescription || "초대장",
-    reason: draft.recommendationCopy.trim() || shortDescription || "초대장",
-    detailSummary: draft.detailSummary.trim() || shortDescription || undefined,
-    detailActivities: prose(draft.detailActivities),
+    peopleHint:
+      syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
+    reason: syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
+    detailSummary:
+      syncedDraft.detailSummary.trim() || shortDescription || undefined,
+    detailActivities: prose(syncedDraft.detailActivities),
     detailFlow: [],
-    detailGoodFor: lines(draft.detailGoodFor),
-    detailNotice: draft.detailNotice.trim() || undefined,
+    detailGoodFor: lines(syncedDraft.detailGoodFor),
+    detailNotice: syncedDraft.detailNotice.trim() || undefined,
     place:
-      ticketPlaceFromMeetingPlace(draft.place) ??
+      ticketPlaceFromMeetingPlace(mainCourseStep.place) ??
       ticketPlaceFromLegacyFields({
-        placeName: draft.placeName,
-        address: draft.address,
+        placeName: mainCourseStep.placeName,
+        address: mainCourseStep.address,
       }),
-    stageCopy: stageCopyFromDraft(draft),
-    atmosphere: ticketAtmospherePreview(draft, template),
+    stageCopy: stageCopyFromDraft(syncedDraft),
+    atmosphere: ticketAtmospherePreview(syncedDraft, template),
     vibeScores: {
-      temperature: Number.parseInt(draft.scoreTemperature, 10) || null,
-      texture: Number.parseInt(draft.scoreTexture, 10) || null,
-      tone: Number.parseInt(draft.scoreTone, 10) || null,
-      rhythm: Number.parseInt(draft.scoreRhythm, 10) || null,
-      alcohol: Number.parseInt(draft.scoreAlcohol, 10) || null,
-      romance: Number.parseInt(draft.scoreRomance, 10) || null,
+      temperature: Number.parseInt(syncedDraft.scoreTemperature, 10) || null,
+      texture: Number.parseInt(syncedDraft.scoreTexture, 10) || null,
+      tone: Number.parseInt(syncedDraft.scoreTone, 10) || null,
+      rhythm: Number.parseInt(syncedDraft.scoreRhythm, 10) || null,
+      alcohol: Number.parseInt(syncedDraft.scoreAlcohol, 10) || null,
+      romance: Number.parseInt(syncedDraft.scoreRomance, 10) || null,
     },
   };
 }
@@ -864,6 +1049,12 @@ export function TicketAdminPanel({
           moodTags: template.mood_tags,
           shortDescription: template.short_description,
         }),
+        ...template.course_steps.flatMap((step) => [
+          step.title,
+          step.activityType,
+          step.placeName,
+          step.address,
+        ]),
         ...template.instances.map((instance) => instance.region),
       ]
         .join(" ")
@@ -1054,7 +1245,7 @@ export function TicketAdminPanel({
     setSelectedTicketId(data?.templates[0]?.id ?? null);
   };
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = async (file: File, stepId?: string) => {
     if (!selectedTicket || !draft || saving) return;
     setSaving(true);
     setError(null);
@@ -1077,7 +1268,16 @@ export function TicketAdminPanel({
         throw new Error(uploadData?.error ?? "이미지를 업로드하지 못했습니다.");
       }
 
-      const nextDraft = { ...draft, imageUrl: uploadData.imageUrl };
+      const targetStepId =
+        stepId ?? mainDraftCourseStep(draft.courseSteps).id;
+      const nextDraft = syncDraftCourseFields({
+        ...draft,
+        courseSteps: draft.courseSteps.map((step) =>
+          step.id === targetStepId
+            ? { ...step, imageUrl: uploadData.imageUrl ?? "" }
+            : step,
+        ),
+      });
       setDraft(nextDraft);
       const saveResponse = await fetch("/api/admin/tickets", {
         method: "PATCH",
@@ -1218,7 +1418,7 @@ export function TicketAdminPanel({
                   saving={saving}
                   sampleOnly={isSampleTicket}
                   onDraftChange={setDraft}
-                  onUploadImage={(file) => void uploadImage(file)}
+                  onUploadImage={(file, stepId) => void uploadImage(file, stepId)}
                 />
 
                 {!isSampleTicket && (
@@ -1336,6 +1536,10 @@ function TicketListCard({
     .filter(Boolean)
     .join(" ");
   const region = instance?.region ?? template.default_region;
+  const courseCount = Math.max(
+    2,
+    Math.min(TICKET_COURSE_MAX_STEPS, template.course_steps?.length || 2),
+  );
 
   return (
     <button
@@ -1368,6 +1572,11 @@ function TicketListCard({
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <VisibilityBadge visibility={instance?.visibility ?? template.visibility} />
+          {!isSampleTicket && (
+            <span className="rounded-full bg-black/[0.045] px-2 py-1 text-[10px] font-bold text-black/45">
+              {courseCount}차 코스
+            </span>
+          )}
           {template.instance_count > 1 && (
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
               회차 {template.instance_count}
@@ -1570,176 +1779,352 @@ function BasicEditor({
   saving: boolean;
   sampleOnly: boolean;
   onDraftChange: (draft: TicketDraft) => void;
-  onUploadImage: (file: File) => void;
+  onUploadImage: (file: File, stepId: string) => void;
 }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <h3 className="font-bold">기본 정보</h3>
       <div className="mt-4 grid grid-cols-2 gap-4">
-          <TextAreaField
-            label="초대장 제목"
-            className="col-span-2"
-            value={draft.title}
-            onChange={(title) => onDraftChange({ ...draft, title })}
-          />
-          <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 py-2.5">
-            <div>
-              <p className="text-xs font-semibold text-black/50">대표 이미지</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-black/35">
-                {draft.imageUrl ? "오른쪽 미리보기에 반영돼요." : "이미지 없음"}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
-                이미지 선택
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={saving}
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) onUploadImage(file);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-          <FormField
+        <TextAreaField
+          label="초대장 제목"
+          className="col-span-2"
+          value={draft.title}
+          onChange={(title) => onDraftChange({ ...draft, title })}
+        />
+        <FormField
           label="분위기 태그"
           className="col-span-2"
           value={draft.moodTags}
           placeholder="#영화 #산책 #편한 대화"
-            onChange={(moodTags) =>
-              onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
-            }
-          />
-          <SelectField
-            label="티켓 카테고리"
-            value={draft.activityType}
-            options={ticketCategorySelectOptions}
-            onChange={(activityType) =>
-              onDraftChange({ ...draft, activityType })
-            }
-          />
-          {!sampleOnly && (
-            <>
-              <SelectField
-                label="잔여 자리 문구"
-                value={draft.remainingSeatLabelCount}
-                options={Array.from({ length: 7 }, (_, count) => ({
-                  value: String(count),
-                  label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
-                }))}
-                onChange={(remainingSeatLabelCount) =>
-                  onDraftChange({ ...draft, remainingSeatLabelCount })
-                }
-              />
-              <SelectField
-                label="최소 진행 인원"
-                value={draft.minimumParticipantCount}
-                options={Array.from({ length: 19 }, (_, index) => {
-                  const value = String(index + 2);
-                  return { value, label: `${value}명` };
-                })}
-                onChange={(minimumParticipantCount) =>
-                  onDraftChange({ ...draft, minimumParticipantCount })
-                }
-              />
-              <SelectField
-                label="최대 참여 인원"
-                value={draft.maxParticipantCount}
-                options={Array.from({ length: 19 }, (_, index) => {
-                  const value = String(index + 2);
-                  return { value, label: `${value}명` };
-                })}
-                onChange={(maxParticipantCount) =>
-                  onDraftChange({ ...draft, maxParticipantCount })
-                }
-              />
-              <FormField
-                label="날짜"
-                type="date"
-                value={draft.eventDate}
-                onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
-              />
-              <TimeSplitField
-                label="시간"
-                value={draft.eventTime}
-                onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
-              />
-              <FormField
-                label="지역"
-                value={draft.region}
-                placeholder="성수, 을지로, 강남"
-                onChange={(region) => onDraftChange({ ...draft, region })}
-              />
-              <NaverPlacePicker
-                className="col-span-2"
-                title="지도 장소"
-                value={draft.place}
-                onChange={(place) =>
-                  onDraftChange({
-                    ...draft,
-                    place,
-                    placeName: place?.name ?? draft.placeName,
-                    address:
-                      place?.roadAddress ?? place?.jibunAddress ?? draft.address,
-                    region: place
-                      ? meetingRegionFromPlace(place) ?? draft.region
-                      : draft.region,
-                    placeVisibility:
-                      place && draft.placeVisibility === "hidden"
-                        ? "confirmed_only"
-                        : draft.placeVisibility,
-                  })
-                }
-              />
-              <FormField
-                label="상세 장소명"
-                value={draft.placeName}
-                onChange={(placeName) => onDraftChange({ ...draft, placeName })}
-              />
-              <FormField
-                label="상세 주소"
-                className="col-span-2"
-                value={draft.address}
-                onChange={(address) => onDraftChange({ ...draft, address })}
-              />
-              <SelectField
-                label="장소 공개"
-                value={draft.placeVisibility}
-                options={placeVisibilities.map((value) => ({
-                  value,
-                  label: placeVisibilityLabels[value],
-                }))}
-                onChange={(placeVisibility) =>
-                  onDraftChange({
-                    ...draft,
-                    placeVisibility: placeVisibility as PlaceVisibility,
-                  })
-                }
-              />
-              <FormField
-                label="운영 코드"
-                value={draft.operationCode}
-                onChange={(operationCode) =>
-                  onDraftChange({ ...draft, operationCode })
-                }
-              />
-              <TextAreaField
-                label="운영 메모"
-                className="col-span-2"
-                value={draft.operationNote}
-                onChange={(operationNote) =>
-                  onDraftChange({ ...draft, operationNote })
-                }
-              />
-            </>
-          )}
+          onChange={(moodTags) =>
+            onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
+          }
+        />
+        <CourseStepsEditor
+          draft={draft}
+          saving={saving}
+          onDraftChange={onDraftChange}
+          onUploadImage={onUploadImage}
+        />
+        {!sampleOnly && (
+          <>
+            <SelectField
+              label="잔여 자리 문구"
+              value={draft.remainingSeatLabelCount}
+              options={Array.from({ length: 7 }, (_, count) => ({
+                value: String(count),
+                label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
+              }))}
+              onChange={(remainingSeatLabelCount) =>
+                onDraftChange({ ...draft, remainingSeatLabelCount })
+              }
+            />
+            <SelectField
+              label="최소 진행 인원"
+              value={draft.minimumParticipantCount}
+              options={Array.from({ length: 19 }, (_, index) => {
+                const value = String(index + 2);
+                return { value, label: `${value}명` };
+              })}
+              onChange={(minimumParticipantCount) =>
+                onDraftChange({ ...draft, minimumParticipantCount })
+              }
+            />
+            <SelectField
+              label="최대 참여 인원"
+              value={draft.maxParticipantCount}
+              options={Array.from({ length: 19 }, (_, index) => {
+                const value = String(index + 2);
+                return { value, label: `${value}명` };
+              })}
+              onChange={(maxParticipantCount) =>
+                onDraftChange({ ...draft, maxParticipantCount })
+              }
+            />
+            <FormField
+              label="날짜"
+              type="date"
+              value={draft.eventDate}
+              onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
+            />
+            <TimeSplitField
+              label="시간"
+              value={draft.eventTime}
+              onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
+            />
+            <FormField
+              label="지역"
+              value={draft.region}
+              placeholder="성수, 을지로, 강남"
+              onChange={(region) => onDraftChange({ ...draft, region })}
+            />
+            <SelectField
+              label="장소 공개"
+              value={draft.placeVisibility}
+              options={placeVisibilities.map((value) => ({
+                value,
+                label: placeVisibilityLabels[value],
+              }))}
+              onChange={(placeVisibility) =>
+                onDraftChange({
+                  ...draft,
+                  placeVisibility: placeVisibility as PlaceVisibility,
+                })
+              }
+            />
+            <FormField
+              label="운영 코드"
+              value={draft.operationCode}
+              onChange={(operationCode) =>
+                onDraftChange({ ...draft, operationCode })
+              }
+            />
+            <TextAreaField
+              label="운영 메모"
+              className="col-span-2"
+              value={draft.operationNote}
+              onChange={(operationNote) =>
+                onDraftChange({ ...draft, operationNote })
+              }
+            />
+          </>
+        )}
       </div>
     </section>
+  );
+}
+
+function CourseStepsEditor({
+  draft,
+  saving,
+  onDraftChange,
+  onUploadImage,
+}: {
+  draft: TicketDraft;
+  saving: boolean;
+  onDraftChange: (draft: TicketDraft) => void;
+  onUploadImage: (file: File, stepId: string) => void;
+}) {
+  const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
+
+  const commit = (
+    steps: TicketCourseStepDraft[],
+    patch: Partial<TicketDraft> = {},
+  ) => {
+    onDraftChange(
+      syncDraftCourseFields({
+        ...draft,
+        ...patch,
+        courseSteps: normalizeDraftCourseSteps(steps),
+      }),
+    );
+  };
+
+  const updateStep = (
+    stepId: string,
+    updater: (step: TicketCourseStepDraft) => TicketCourseStepDraft,
+    patch: Partial<TicketDraft> = {},
+  ) => {
+    commit(
+      courseSteps.map((step) => (step.id === stepId ? updater(step) : step)),
+      patch,
+    );
+  };
+
+  const setMainStep = (stepId: string) => {
+    commit(
+      courseSteps.map((step) => ({
+        ...step,
+        isMainActivity: step.id === stepId,
+      })),
+    );
+  };
+
+  const addStep = () => {
+    if (courseSteps.length >= TICKET_COURSE_MAX_STEPS) return;
+    commit([...courseSteps, blankCourseStep(courseSteps.length + 1)]);
+  };
+
+  const removeStep = (stepId: string) => {
+    if (courseSteps.length <= 2) return;
+    commit(courseSteps.filter((step) => step.id !== stepId));
+  };
+
+  return (
+    <div className="col-span-2 space-y-3 rounded-2xl border border-black/8 bg-black/[0.025] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h4 className="text-sm font-bold">코스 구성</h4>
+          <p className="mt-1 text-xs font-semibold text-black/42">
+            기본 2차 코스이며, 필요하면 3차까지 추가할 수 있어요.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={saving || courseSteps.length >= TICKET_COURSE_MAX_STEPS}
+          onClick={addStep}
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
+        >
+          <Plus size={14} aria-hidden />
+          3차 코스 추가
+        </button>
+      </div>
+
+      {courseSteps.map((step, index) => {
+        const canRemove = courseSteps.length > 2 && index >= 2;
+        const stepLabel = `${index + 1}차`;
+
+        return (
+          <section
+            key={step.id}
+            className="rounded-2xl border border-black/10 bg-white p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-accent">{stepLabel}</p>
+                <h5 className="mt-1 text-sm font-bold">
+                  {step.title.trim() || `${stepLabel} 활동`}
+                </h5>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setMainStep(step.id)}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition disabled:opacity-40",
+                    step.isMainActivity
+                      ? "bg-accent text-white"
+                      : "border border-black/10 bg-white text-black/50 hover:border-black/20 hover:text-black",
+                  )}
+                >
+                  {step.isMainActivity && <Check size={14} aria-hidden />}
+                  메인 활동
+                </button>
+                {canRemove && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => removeStep(step.id)}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-red-500 transition hover:bg-red-50 disabled:opacity-40"
+                    aria-label={`${stepLabel} 코스 삭제`}
+                  >
+                    <Trash2 size={14} aria-hidden />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <FormField
+                label={`${stepLabel} 활동명`}
+                value={step.title}
+                placeholder={index === 0 ? "전시 보기" : "카페에서 대화"}
+                onChange={(title) =>
+                  updateStep(step.id, (current) => ({ ...current, title }))
+                }
+              />
+              <SelectField
+                label={`${stepLabel} 활동 카테고리`}
+                value={step.activityType}
+                options={ticketCategorySelectOptions}
+                onChange={(activityType) =>
+                  updateStep(step.id, (current) => ({
+                    ...current,
+                    activityType,
+                  }))
+                }
+              />
+              <FormField
+                label={`${stepLabel} 이미지 URL`}
+                className="col-span-2"
+                value={step.imageUrl}
+                placeholder="이미지 URL을 붙여넣거나 파일을 업로드해주세요"
+                onChange={(imageUrl) =>
+                  updateStep(step.id, (current) => ({ ...current, imageUrl }))
+                }
+              />
+              <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 py-2.5">
+                <div>
+                  <p className="text-xs font-semibold text-black/50">
+                    {stepLabel} 이미지
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-black/35">
+                    {step.imageUrl
+                      ? step.isMainActivity
+                        ? "대표 이미지로 사용돼요."
+                        : "코스 이미지로 저장돼요."
+                      : "이미지 없음"}
+                  </p>
+                </div>
+                <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
+                  이미지 선택
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={saving}
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) onUploadImage(file, step.id);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+              <NaverPlacePicker
+                className="col-span-2"
+                title={`${stepLabel} 장소 검색`}
+                value={step.place}
+                onChange={(place) => {
+                  const nextRegion = place
+                    ? meetingRegionFromPlace(place) ?? draft.region
+                    : draft.region;
+                  const shouldSyncRegion =
+                    step.isMainActivity || !draft.region.trim();
+                  updateStep(
+                    step.id,
+                    (current) => ({
+                      ...current,
+                      place,
+                      placeName: place?.name ?? current.placeName,
+                      address:
+                        place?.roadAddress ??
+                        place?.jibunAddress ??
+                        current.address,
+                    }),
+                    {
+                      region: shouldSyncRegion ? nextRegion : draft.region,
+                      placeVisibility:
+                        place && draft.placeVisibility === "hidden"
+                          ? "confirmed_only"
+                          : draft.placeVisibility,
+                    },
+                  );
+                }}
+              />
+              <FormField
+                label={`${stepLabel} 상세 장소명`}
+                value={step.placeName}
+                onChange={(placeName) =>
+                  updateStep(step.id, (current) => ({
+                    ...current,
+                    placeName,
+                  }))
+                }
+              />
+              <FormField
+                label={`${stepLabel} 상세 주소`}
+                value={step.address}
+                onChange={(address) =>
+                  updateStep(step.id, (current) => ({ ...current, address }))
+                }
+              />
+            </div>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -1916,9 +2301,15 @@ function AdminProgressPreviewModal({
   onSave: () => void;
   onClose: () => void;
 }) {
-  const [selectedProgressStep, setSelectedProgressStep] =
-    useState<TicketProgressStep>(userTicket.progressStep);
-  const activeCopyConfig = progressStepCopyEditorConfig[selectedProgressStep];
+  const [selectedProgressStep, setSelectedProgressStep] = useState<string>(
+    userTicket.progressStep,
+  );
+  const selectedCopyProgressStep = (
+    selectedProgressStep.startsWith("activity:")
+      ? "in_progress"
+      : selectedProgressStep
+  ) as TicketProgressStep;
+  const activeCopyConfig = progressStepCopyEditorConfig[selectedCopyProgressStep];
 
   useEffect(() => {
     setSelectedProgressStep(userTicket.progressStep);
@@ -1937,8 +2328,10 @@ function AdminProgressPreviewModal({
             userTicket={userTicket}
             onClose={onClose}
             previewMode
-            selectedProgressStep={selectedProgressStep}
-            onProgressStepChange={setSelectedProgressStep}
+            selectedProgressStep={
+              selectedProgressStep as TicketProgressStep | `activity:${string}`
+            }
+            onProgressStepChange={(step) => setSelectedProgressStep(step)}
           />
         </div>
 
@@ -1975,7 +2368,7 @@ function AdminProgressPreviewModal({
 
           <div className="mt-5">
             <ProgressStepCopyEditor
-              selectedProgressStep={selectedProgressStep}
+              selectedProgressStep={selectedCopyProgressStep}
               draft={draft}
               onDraftChange={onDraftChange}
             />
@@ -2268,6 +2661,7 @@ function TicketPreviewPanel({
           <IntersectionTicketCard
             title={ticket.title}
             imageUrl={ticket.imageUrl}
+            imageUrls={ticketBackgroundImageUrls(ticket)}
             date={ticket.date}
             time={ticket.time}
             location={ticket.area}

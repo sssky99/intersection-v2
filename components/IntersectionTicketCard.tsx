@@ -1,8 +1,12 @@
-import React from "react";
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { uniqueTicketImageUrls } from "@/lib/ticketImages";
 
 type IntersectionTicketCardProps = {
   title: string;
   imageUrl?: string | null;
+  imageUrls?: ReadonlyArray<string | null | undefined> | null;
   date?: string | null;
   time?: string | null;
   location?: string | null;
@@ -20,6 +24,10 @@ type IntersectionTicketCardProps = {
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
+
+const backgroundRotationMs = 3000;
+const backgroundTransitionMs = 720;
+const imageKeySeparator = "\u0000";
 
 function weekdayLabel(date: Date) {
   return ["일", "월", "화", "수", "목", "금", "토"][date.getDay()];
@@ -76,9 +84,128 @@ function inlineLocation(value?: string | null) {
   );
 }
 
+function usePrefersReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () =>
+      setPrefersReducedMotion(mediaQuery.matches);
+
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => {
+      mediaQuery.removeEventListener("change", updatePreference);
+    };
+  }, []);
+
+  return prefersReducedMotion;
+}
+
+export function RotatingTicketBackground({
+  imageUrls,
+  visible = true,
+  className,
+}: {
+  imageUrls: ReadonlyArray<string | null | undefined>;
+  visible?: boolean;
+  className?: string;
+}) {
+  const normalizedImageUrls = uniqueTicketImageUrls(imageUrls);
+  const imageKey = normalizedImageUrls.join(imageKeySeparator);
+  const stableImageUrls = useMemo(
+    () => (imageKey ? imageKey.split(imageKeySeparator) : []),
+    [imageKey],
+  );
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [incomingImage, setIncomingImage] = useState<{
+    index: number;
+    key: number;
+  } | null>(null);
+  const activeIndexRef = useRef(0);
+  const transitionKeyRef = useRef(0);
+  const transitionActiveRef = useRef(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    activeIndexRef.current = 0;
+    transitionKeyRef.current = 0;
+    transitionActiveRef.current = false;
+    setActiveIndex(0);
+    setIncomingImage(null);
+  }, [imageKey]);
+
+  useEffect(() => {
+    if (!visible || prefersReducedMotion || stableImageUrls.length < 2) return;
+
+    let timeoutId: number | undefined;
+    const rotate = () => {
+      if (transitionActiveRef.current) return;
+
+      const nextIndex =
+        (activeIndexRef.current + 1) % stableImageUrls.length;
+      transitionKeyRef.current += 1;
+      transitionActiveRef.current = true;
+      setIncomingImage({
+        index: nextIndex,
+        key: transitionKeyRef.current,
+      });
+
+      timeoutId = window.setTimeout(() => {
+        activeIndexRef.current = nextIndex;
+        transitionActiveRef.current = false;
+        setActiveIndex(nextIndex);
+        setIncomingImage(null);
+      }, backgroundTransitionMs);
+    };
+
+    const intervalId = window.setInterval(rotate, backgroundRotationMs);
+    return () => {
+      window.clearInterval(intervalId);
+      if (timeoutId) window.clearTimeout(timeoutId);
+      transitionActiveRef.current = false;
+    };
+  }, [imageKey, prefersReducedMotion, stableImageUrls.length, visible]);
+
+  if (stableImageUrls.length === 0) return null;
+
+  const activeImageUrl =
+    stableImageUrls[Math.min(activeIndex, stableImageUrls.length - 1)];
+  const incomingImageUrl =
+    incomingImage == null ? null : stableImageUrls[incomingImage.index];
+
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "absolute inset-0 transition-opacity duration-[350ms]",
+        visible ? "opacity-100" : "opacity-0",
+        className,
+      )}
+    >
+      <img
+        src={activeImageUrl}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      {incomingImage && incomingImageUrl && (
+        <img
+          key={incomingImage.key}
+          src={incomingImageUrl}
+          alt=""
+          draggable={false}
+          className="ticket-clock-wipe absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+    </div>
+  );
+}
+
 export function IntersectionTicketCard({
   title,
   imageUrl,
+  imageUrls,
   date,
   time,
   location,
@@ -93,7 +220,11 @@ export function IntersectionTicketCard({
   const dateLabel = formatTicketDateLabel(date);
   const timeLabel = formatTicketTimeLabel(time);
   const tagItems = normalizeTags(tags);
-  const hasImage = Boolean(imageUrl);
+  const backgroundImageUrls = uniqueTicketImageUrls([
+    imageUrl,
+    ...(imageUrls ?? []),
+  ]);
+  const hasImage = backgroundImageUrls.length > 0;
   const imageSurfaceVisible = hasImage ? imageVisible : true;
   const dateTimeLabel = [dateLabel, timeLabel].filter(Boolean).join(" ");
   const locationLabel = inlineLocation(location);
@@ -108,14 +239,9 @@ export function IntersectionTicketCard({
       )}
     >
       {hasImage ? (
-        <img
-          src={imageUrl ?? ""}
-          alt=""
-          draggable={false}
-          className={cn(
-            "absolute inset-0 h-full w-full object-cover transition-opacity duration-[350ms]",
-            imageVisible ? "opacity-100" : "opacity-0",
-          )}
+        <RotatingTicketBackground
+          imageUrls={backgroundImageUrls}
+          visible={imageVisible}
         />
       ) : (
         <div className="absolute inset-0 bg-black" />

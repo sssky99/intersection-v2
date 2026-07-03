@@ -85,16 +85,38 @@ function ticketScoreToInternal(value: number | null | undefined) {
 }
 
 function ticketText(ticket: GatheringTicket) {
+  const courseSteps = ticket.courseSteps ?? [];
+
   return [
     ticket.title,
     ticket.subtitle,
     ticket.activityType,
+    ...courseSteps.flatMap((step) => [
+      step.title,
+      step.activityType,
+      step.placeName,
+    ]),
     ...ticket.moodTags,
     ...(ticket.detailActivities ?? []),
     ...(ticket.detailGoodFor ?? []),
   ]
     .filter((value): value is string => Boolean(value?.trim()))
     .join(" ");
+}
+
+function mainActivityType(ticket: GatheringTicket) {
+  return (
+    ticket.courseSteps?.find((step) => step.isMainActivity)?.activityType ??
+    ticket.courseSteps?.[0]?.activityType ??
+    ticket.activityType
+  );
+}
+
+function auxiliaryActivityTypes(ticket: GatheringTicket) {
+  return (ticket.courseSteps ?? [])
+    .filter((step) => !step.isMainActivity)
+    .map((step) => step.activityType)
+    .filter((value): value is string => Boolean(value?.trim()));
 }
 
 function buildPreferences(
@@ -211,23 +233,45 @@ function categoryPreferenceScore(
   preferences: UserPreferences,
 ) {
   const category = inferTicketCategory({
-    activityType: ticket.activityType,
+    activityType: mainActivityType(ticket),
     title: ticket.title,
     moodTags: ticket.moodTags,
     shortDescription: ticket.subtitle,
   });
-  if (!category) return { score: 0, reason: null };
+  const priorityIndex = category
+    ? preferences.ticketCategories.indexOf(category)
+    : -1;
 
-  const priorityIndex = preferences.ticketCategories.indexOf(category);
-  if (priorityIndex === -1) return { score: 0, reason: null };
+  if (priorityIndex !== -1) {
+    const score = ticketCategoryPreferenceScores[priorityIndex] ?? 0;
+    return {
+      score,
+      reason:
+        priorityIndex === 0
+          ? "1순위로 고른 관심 분야와 맞아요."
+          : "관심 분야 우선순위를 반영했어요.",
+    };
+  }
 
-  const score = ticketCategoryPreferenceScores[priorityIndex] ?? 0;
+  const auxiliaryPriorityIndex = auxiliaryActivityTypes(ticket)
+    .map((activityType) =>
+      inferTicketCategory({
+        activityType,
+        title: ticket.title,
+        moodTags: ticket.moodTags,
+        shortDescription: ticket.subtitle,
+      }),
+    )
+    .filter((item): item is TicketCategory => Boolean(item))
+    .map((item) => preferences.ticketCategories.indexOf(item))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right)[0];
+
+  if (auxiliaryPriorityIndex == null) return { score: 0, reason: null };
+
   return {
-    score,
-    reason:
-      priorityIndex === 0
-        ? "1순위로 고른 관심 분야와 맞아요."
-        : "관심 분야 우선순위를 반영했어요.",
+    score: (ticketCategoryPreferenceScores[auxiliaryPriorityIndex] ?? 0) * 0.35,
+    reason: "보조 코스의 관심 분야도 함께 반영했어요.",
   };
 }
 
@@ -238,9 +282,13 @@ function rankTicket(
 ): RankedTicket {
   const text = normalize(ticketText(ticket));
   const signals = signalSet([
-    ticket.activityType,
+    mainActivityType(ticket),
     ticket.title,
     ticket.subtitle,
+    ...(ticket.courseSteps ?? []).flatMap((step) => [
+      step.title,
+      step.activityType,
+    ]),
     ...ticket.moodTags,
   ]);
   const category = categoryPreferenceScore(ticket, preferences);
@@ -263,21 +311,21 @@ function rankTicket(
 function diversityPenalty(candidate: RankedTicket, selected: RankedTicket[]) {
   return selected.reduce((penalty, current) => {
     const candidateCategory = inferTicketCategory({
-      activityType: candidate.ticket.activityType,
+      activityType: mainActivityType(candidate.ticket),
       title: candidate.ticket.title,
       moodTags: candidate.ticket.moodTags,
       shortDescription: candidate.ticket.subtitle,
     });
     const currentCategory = inferTicketCategory({
-      activityType: current.ticket.activityType,
+      activityType: mainActivityType(current.ticket),
       title: current.ticket.title,
       moodTags: current.ticket.moodTags,
       shortDescription: current.ticket.subtitle,
     });
     const sameActivity =
       (candidateCategory && candidateCategory === currentCategory) ||
-      (candidate.ticket.activityType &&
-        candidate.ticket.activityType === current.ticket.activityType);
+      (mainActivityType(candidate.ticket) &&
+        mainActivityType(candidate.ticket) === mainActivityType(current.ticket));
     const sharedSignals = Array.from(candidate.signals).filter((signal) =>
       current.signals.has(signal),
     ).length;

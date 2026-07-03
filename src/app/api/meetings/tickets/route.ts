@@ -9,6 +9,12 @@ import {
 } from "@/lib/meetingAtmosphere";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
+  displayTicketCourseSteps,
+  ensureMinimumStoredTicketCourseSteps,
+  legacyStoredTicketCourseSteps,
+  normalizeStoredTicketCourseSteps,
+} from "@/lib/ticketCourse";
+import {
   recommendTickets,
   type TicketRecommendationAnswer,
   type TicketRecommendationProfile,
@@ -34,6 +40,7 @@ type TemplateRow = {
   detail_notice: string | null;
   stage_copy: unknown;
   image_url: string | null;
+  course_steps: unknown;
   mood_tags: string[] | null;
   activity_type: string | null;
   recommendation_copy: string | null;
@@ -119,6 +126,7 @@ const templateSelect = [
   "detail_notice",
   "stage_copy",
   "image_url",
+  "course_steps",
   "mood_tags",
   "activity_type",
   "recommendation_copy",
@@ -227,6 +235,24 @@ function atmosphereForTicket(
     ageBandOverrideId: ageBandOverride,
     genderMoodOverride,
   };
+}
+
+function courseStepsForTicket(
+  template: TemplateRow,
+  includePlaceDetails = false,
+) {
+  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const courseSteps = ensureMinimumStoredTicketCourseSteps(
+    storedSteps.length
+      ? storedSteps
+      : legacyStoredTicketCourseSteps({
+          title: template.title,
+          activityType: template.activity_type,
+          imageUrl: template.image_url,
+        }),
+  );
+
+  return displayTicketCourseSteps(courseSteps, { includePlaceDetails });
 }
 
 function atmosphereInstanceId(
@@ -358,6 +384,9 @@ function toTicket(
     template.short_description ??
     template.recommendation_copy ??
     "교집합이 준비한 실제 운영 모임";
+  const courseSteps = courseStepsForTicket(template);
+  const mainCourseStep =
+    courseSteps.find((step) => step.isMainActivity) ?? courseSteps[0] ?? null;
 
   return {
     id: instance.id,
@@ -376,12 +405,13 @@ function toTicket(
     area,
     moodTags: template.mood_tags ?? [],
     activityType: inferTicketCategory({
-      activityType: template.activity_type,
+      activityType: mainCourseStep?.activityType ?? template.activity_type,
       title: instance.title || template.title,
       moodTags: template.mood_tags,
       shortDescription: subtitle,
     }),
-    imageUrl: template.image_url ?? undefined,
+    imageUrl: mainCourseStep?.imageUrl ?? template.image_url ?? undefined,
+    courseSteps,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     minimumParticipantCount:
       instance.minimum_participant_count ??

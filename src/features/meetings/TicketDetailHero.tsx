@@ -5,7 +5,12 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
+  RotatingTicketBackground,
 } from "@/components/IntersectionTicketCard";
+import {
+  ticketBackgroundImageUrls,
+  uniqueTicketImageUrls,
+} from "@/lib/ticketImages";
 import type { GatheringTicket } from "@/types/ticket";
 
 export const ticketFadeTransition = {
@@ -35,12 +40,14 @@ export function TicketDetailHero({
   statusExpanded,
   onToggleStatus,
   className,
+  backgroundImageUrls,
 }: {
   ticket: GatheringTicket;
   badgeLabel?: string;
   statusExpanded?: boolean;
   onToggleStatus?: () => void;
   className?: string;
+  backgroundImageUrls?: ReadonlyArray<string | null | undefined>;
 }) {
   const dateLabel = formatTicketDateLabel(ticket.date);
   const timeLabel = formatTicketTimeLabel(ticket.time);
@@ -48,6 +55,9 @@ export function TicketDetailHero({
     .filter(Boolean)
     .join(" · ");
   const tags = normalizeTags(ticket.moodTags);
+  const resolvedBackgroundImageUrls = uniqueTicketImageUrls(
+    backgroundImageUrls ?? ticketBackgroundImageUrls(ticket),
+  );
 
   return (
     <motion.div
@@ -56,13 +66,8 @@ export function TicketDetailHero({
         className,
       )}
     >
-      {ticket.imageUrl ? (
-        <img
-          src={ticket.imageUrl}
-          alt=""
-          draggable={false}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+      {resolvedBackgroundImageUrls.length > 0 ? (
+        <RotatingTicketBackground imageUrls={resolvedBackgroundImageUrls} />
       ) : (
         <div className="absolute inset-0 bg-black" />
       )}

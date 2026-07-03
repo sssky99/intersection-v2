@@ -1,4 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  displayTicketCourseSteps,
+  ensureMinimumStoredTicketCourseSteps,
+  legacyStoredTicketCourseSteps,
+  normalizeStoredTicketCourseSteps,
+} from "@/lib/ticketCourse";
 import { todayInKst } from "@/lib/ticketDate";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
@@ -24,6 +30,7 @@ type PublicTicketTemplateRow = {
   title: string;
   short_description: string | null;
   image_url: string | null;
+  course_steps: unknown;
   mood_tags: string[] | null;
   activity_type: string | null;
   recommendation_copy: string | null;
@@ -48,6 +55,7 @@ const publicTicketTemplateSelect = [
   "title",
   "short_description",
   "image_url",
+  "course_steps",
   "mood_tags",
   "activity_type",
   "recommendation_copy",
@@ -80,6 +88,21 @@ function toPublicPreviewTicket(
     template.default_time?.slice(0, 5) ??
     "시간 미정";
   const area = instance.region ?? template.default_region ?? "지역 미정";
+  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const courseSteps = displayTicketCourseSteps(
+    ensureMinimumStoredTicketCourseSteps(
+      storedSteps.length
+        ? storedSteps
+        : legacyStoredTicketCourseSteps({
+            title: template.title,
+            activityType: template.activity_type,
+            imageUrl: template.image_url,
+          }),
+    ),
+    { includePlaceDetails: false },
+  );
+  const mainCourseStep =
+    courseSteps.find((step) => step.isMainActivity) ?? courseSteps[0] ?? null;
 
   return {
     id: instance.id,
@@ -90,8 +113,9 @@ function toPublicPreviewTicket(
     time,
     area,
     moodTags: template.mood_tags ?? [],
-    activityType: template.activity_type,
-    imageUrl: template.image_url ?? undefined,
+    activityType: mainCourseStep?.activityType ?? template.activity_type,
+    imageUrl: mainCourseStep?.imageUrl ?? template.image_url ?? undefined,
+    courseSteps,
     remainingSeatCount: instance.remaining_seat_label_count ?? 0,
     minimumParticipantCount:
       instance.minimum_participant_count ?? MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,

@@ -11,6 +11,12 @@ import {
   normalizeMeetingPlace,
 } from "@/lib/placePayload";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  ensureMinimumStoredTicketCourseSteps,
+  legacyStoredTicketCourseSteps,
+  mainStoredTicketCourseStep,
+  normalizeStoredTicketCourseSteps,
+} from "@/lib/ticketCourse";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   normalizeAdminProfile,
@@ -122,6 +128,7 @@ const templateSelect = [
   "detail_notice",
   "stage_copy",
   "image_url",
+  "course_steps",
   "mood_tags",
   "activity_type",
   "recommendation_copy",
@@ -404,6 +411,22 @@ function operationalVisibility(value: unknown) {
   return isTicketVisibility(value) ? value : ("draft" as TicketVisibility);
 }
 
+function courseStepsFromBody(body: Record<string, unknown>) {
+  const normalized = normalizeStoredTicketCourseSteps(body.courseSteps);
+  return ensureMinimumStoredTicketCourseSteps(
+    normalized.length
+      ? normalized
+      : legacyStoredTicketCourseSteps({
+          title: text(body.title),
+          activityType: text(body.activityType),
+          imageUrl: text(body.imageUrl),
+          placeName: text(body.placeName),
+          address: text(body.address),
+          place: normalizeMeetingPlace(body.place),
+        }),
+  );
+}
+
 function templatePayload(body: Record<string, unknown>) {
   const visibility = operationalVisibility(body.visibility);
   const templateKind =
@@ -412,6 +435,8 @@ function templatePayload(body: Record<string, unknown>) {
       ? "question_sample"
       : "experience";
   const isQuestionSample = templateKind === "question_sample";
+  const courseSteps = courseStepsFromBody(body);
+  const mainCourseStep = mainStoredTicketCourseStep(courseSteps);
 
   return {
     title: text(body.title),
@@ -425,9 +450,12 @@ function templatePayload(body: Record<string, unknown>) {
     detail_good_for: textList(body.detailGoodFor),
     detail_notice: text(body.detailNotice),
     stage_copy: sanitizeTicketStageCopy(body.stageCopy),
-    image_url: text(body.imageUrl),
+    image_url: mainCourseStep?.imageUrl ?? text(body.imageUrl),
+    course_steps: courseSteps,
     mood_tags: tags(body.moodTags),
-    activity_type: normalizeTicketCategory(body.activityType),
+    activity_type: normalizeTicketCategory(
+      mainCourseStep?.activityType ?? body.activityType,
+    ),
     recommendation_copy: text(body.recommendationCopy),
     default_region: text(body.defaultRegion),
     default_time: timeText(body.defaultTime),
@@ -446,7 +474,8 @@ function templatePayload(body: Record<string, unknown>) {
 }
 
 function instancePayload(body: Record<string, unknown>) {
-  const place = normalizeMeetingPlace(body.place);
+  const mainCourseStep = mainStoredTicketCourseStep(courseStepsFromBody(body));
+  const place = normalizeMeetingPlace(body.place ?? mainCourseStep?.place);
   const placeAddress = meetingPlaceAddress(place);
 
   const minimumParticipantCount = participantLimit(
@@ -463,8 +492,8 @@ function instancePayload(body: Record<string, unknown>) {
     event_date: text(body.eventDate),
     event_time: timeText(body.eventTime),
     region: text(body.region),
-    place_name: place?.name ?? text(body.placeName),
-    address: placeAddress ?? text(body.address),
+    place_name: place?.name ?? text(body.placeName) ?? mainCourseStep?.placeName,
+    address: placeAddress ?? text(body.address) ?? mainCourseStep?.address,
     place_payload: place,
     operation_code: text(body.operationCode),
     operation_note: text(body.operationNote),
@@ -620,9 +649,25 @@ async function loadTicketData() {
       const atmosphereDefaults = primaryInstance
         ? atmosphereDefaultsByInstance.get(primaryInstance.id) ?? null
         : null;
+      const storedCourseSteps = normalizeStoredTicketCourseSteps(
+        template.course_steps,
+      );
+      const courseSteps = ensureMinimumStoredTicketCourseSteps(
+        storedCourseSteps.length
+          ? storedCourseSteps
+          : legacyStoredTicketCourseSteps({
+              title: template.title,
+              activityType: template.activity_type,
+              imageUrl: template.image_url,
+              placeName: primaryInstance?.place_name,
+              address: primaryInstance?.address,
+              place: primaryInstance?.place_payload,
+            }),
+      );
 
       return {
         ...template,
+        course_steps: courseSteps,
         detail_activities: dbTextList(template.detail_activities),
         detail_flow: dbTextList(template.detail_flow),
         detail_good_for: dbTextList(template.detail_good_for),
@@ -760,6 +805,16 @@ export async function POST(request: NextRequest) {
           detail_notice: sourceTemplate.detail_notice,
           stage_copy: sourceTemplate.stage_copy ?? {},
           image_url: sourceTemplate.image_url,
+          course_steps: ensureMinimumStoredTicketCourseSteps(
+            normalizeStoredTicketCourseSteps(sourceTemplate.course_steps)
+              .length
+              ? normalizeStoredTicketCourseSteps(sourceTemplate.course_steps)
+              : legacyStoredTicketCourseSteps({
+                  title: sourceTemplate.title,
+                  activityType: sourceTemplate.activity_type,
+                  imageUrl: sourceTemplate.image_url,
+                }),
+          ),
           mood_tags: sourceTemplate.mood_tags,
           activity_type: inferTicketCategory({
             activityType: sourceTemplate.activity_type,

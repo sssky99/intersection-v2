@@ -12,6 +12,7 @@ import {
 
 export type TicketDetailSectionKey =
   | "summary"
+  | "course"
   | "activities"
   | "vibe"
   | "place"
@@ -23,6 +24,7 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 const defaultSections: TicketDetailSectionKey[] = [
   "summary",
+  "course",
   "vibe",
   "place",
   "activities",
@@ -84,13 +86,19 @@ export function TicketDetailContent({
   );
   const noticeItems = [...defaultNotices, ...customNotices];
   const visibleSections = new Set(sections);
+  const courseSteps = cleanCourseSteps(ticket.courseSteps);
   const detailSummary = ticket.detailSummary?.trim();
   const hasSummary = Boolean(visibleSections.has("summary") && detailSummary);
+  const hasCourse = Boolean(
+    visibleSections.has("course") && courseSteps.length >= 2,
+  );
   const hasPlace = Boolean(
     ticket.place?.name?.trim() || ticket.place?.address?.trim(),
   );
   const firstSectionAfterSummary =
-    hasSummary && visibleSections.has("vibe")
+    hasSummary && hasCourse
+      ? "course"
+      : hasSummary && visibleSections.has("vibe")
       ? "vibe"
       : hasSummary && visibleSections.has("place") && hasPlace
         ? "place"
@@ -105,6 +113,16 @@ export function TicketDetailContent({
   return (
     <div className={cn("mt-5", className)}>
       {hasSummary && <TypingSummary text={detailSummary!} />}
+
+      {hasCourse && (
+        <TicketDetailSection
+          title="코스"
+          startWithBorder={startWithBorder}
+          hideTopBorder={firstSectionAfterSummary === "course"}
+        >
+          <TicketCoursePanel steps={courseSteps} />
+        </TicketDetailSection>
+      )}
 
       {visibleSections.has("vibe") && (
         <TicketDetailSection
@@ -151,6 +169,86 @@ export function TicketDetailContent({
 
       {footer}
     </div>
+  );
+}
+
+function cleanCourseSteps(steps: GatheringTicket["courseSteps"]) {
+  return (steps ?? []).filter((step) =>
+    Boolean(
+      step.title?.trim() ||
+        step.activityType?.trim() ||
+        step.imageUrl?.trim() ||
+        step.placeName?.trim() ||
+        step.address?.trim() ||
+        step.place,
+    ),
+  );
+}
+
+function TicketCoursePanel({
+  steps,
+}: {
+  steps: NonNullable<GatheringTicket["courseSteps"]>;
+}) {
+  return (
+    <ol className="space-y-3">
+      {steps.map((step, index) => {
+        const placeName = step.place?.name ?? step.placeName;
+        const address = step.place?.address ?? step.address;
+
+        return (
+          <li
+            key={step.id}
+            className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-3xl border border-black/8 bg-white p-3"
+          >
+            <div className="relative h-20 overflow-hidden rounded-2xl bg-black/[0.05]">
+              {step.imageUrl ? (
+                <img
+                  src={step.imageUrl}
+                  alt=""
+                  draggable={false}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-xs font-black text-black/25">
+                  {index + 1}차
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 py-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-black/[0.05] px-2 py-1 text-[10px] font-black text-black/45">
+                  {index + 1}차
+                </span>
+                {step.isMainActivity && (
+                  <span className="rounded-full bg-accent/14 px-2 py-1 text-[10px] font-black text-accent">
+                    메인
+                  </span>
+                )}
+                {step.activityType && (
+                  <span className="rounded-full bg-black/[0.04] px-2 py-1 text-[10px] font-bold text-black/42">
+                    {step.activityType}
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-sm font-black leading-5 text-black">
+                {step.title || step.activityType || `${index + 1}차 활동`}
+              </p>
+              {placeName && (
+                <p className="mt-1 text-xs font-bold leading-5 text-black/58">
+                  {placeName}
+                </p>
+              )}
+              {address && (
+                <p className="mt-0.5 text-[11px] font-semibold leading-5 text-black/40">
+                  {address}
+                </p>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

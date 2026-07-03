@@ -29,6 +29,7 @@ import {
 import { RecommendationCalendarSelector } from "@/features/meetings/RecommendationCalendarSelector";
 import { trackEvent } from "@/lib/analytics";
 import { isPastTicketDate } from "@/lib/ticketDate";
+import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import {
@@ -1433,6 +1434,7 @@ function TicketDrawingCard({
                 motionKey={ticket.id}
                 title={ticket.title}
                 imageUrl={ticket.imageUrl}
+                imageUrls={ticketBackgroundImageUrls(ticket)}
                 date={ticket.date}
                 time={ticket.time}
                 location={`서울\n${ticket.area}`}

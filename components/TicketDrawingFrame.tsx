@@ -7,6 +7,7 @@ import { TicketDrawingBorder } from "@/components/TicketDrawingBorder";
 type TicketDrawingFrameProps = {
   title: string;
   imageUrl?: string | null;
+  imageUrls?: ReadonlyArray<string | null | undefined> | null;
   date?: string | null;
   time?: string | null;
   location?: string | null;
@@ -28,6 +29,7 @@ function cn(...values: Array<string | false | null | undefined>) {
 export function TicketDrawingFrame({
   title,
   imageUrl,
+  imageUrls,
   date,
   time,
   location,
@@ -62,6 +64,7 @@ export function TicketDrawingFrame({
             <IntersectionTicketCard
               title={title}
               imageUrl={imageUrl}
+              imageUrls={imageUrls}
               date={date}
               time={time}
               location={location}

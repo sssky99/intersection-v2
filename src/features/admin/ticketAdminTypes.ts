@@ -6,6 +6,18 @@ import type {
 import type { MeetingPlace } from "@/types/place";
 import type { TicketStageCopy } from "@/types/ticket";
 
+export type AdminTicketCourseStep = {
+  id: string;
+  order: number;
+  title: string | null;
+  activityType: string | null;
+  imageUrl: string | null;
+  placeName: string | null;
+  address: string | null;
+  place: MeetingPlace | null;
+  isMainActivity: boolean;
+};
+
 export type TicketVisibility =
   | "draft"
   | "test_only"
@@ -82,6 +94,7 @@ export type AdminTicketTemplate = TicketTemplateScores & {
   detail_notice: string | null;
   stage_copy: TicketStageCopy | null;
   image_url: string | null;
+  course_steps: AdminTicketCourseStep[];
   mood_tags: string[];
   activity_type: string | null;
   recommendation_copy: string | null;

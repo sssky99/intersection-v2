@@ -16,6 +16,7 @@ import KakaoLoginButton from "@/components/KakaoLoginButton";
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 import { todayInKst } from "@/lib/ticketDate";
+import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 const steps = [
@@ -42,7 +43,7 @@ const detailSteps = [
     label: "3단계",
     title: "추천 받은 사람들과 함께하세요.",
     description:
-      "저희는 4~6명 사이 가장 잘 맞을 것 같은 분들을 모아드립니다. 최적의 조합을 위해 나이 차이는 5살 이내로, 성비도 최대한 맞춰드립니다.",
+      "저희는 4~6명 사이 가장 잘 맞을 것 같은 분들을 모아드립니다. 최적의 조합을 위해 나이 차이는 4살 이내로, 성비도 최대한 맞춰드립니다.",
   },
   {
     label: "4단계",
@@ -690,6 +691,7 @@ function PreviewTicketCard({
     <IntersectionTicketCard
       title={ticket.title}
       imageUrl={ticket.imageUrl}
+      imageUrls={ticketBackgroundImageUrls(ticket)}
       date={ticket.date}
       time={ticket.time}
       location={`서울\n${ticket.area}`}

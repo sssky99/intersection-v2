@@ -32,6 +32,7 @@ with categorized as (
   from (
     select
       id,
+      activity_type,
       concat_ws(
         ' ',
         activity_type,

@@ -21,6 +21,30 @@ export type TicketStageCopy = {
   feedbackBody?: string | null;
 };
 
+export type TicketPlace = {
+  name: string | null;
+  address: string | null;
+  category?: string | null;
+  roadAddress?: string | null;
+  jibunAddress?: string | null;
+  mapx?: number | null;
+  mapy?: number | null;
+  link?: string | null;
+  source?: MeetingPlace["source"] | null;
+};
+
+export type TicketCourseStep = {
+  id: string;
+  order: number;
+  title?: string | null;
+  activityType?: string | null;
+  imageUrl?: string | null;
+  placeName?: string | null;
+  address?: string | null;
+  place?: TicketPlace | null;
+  isMainActivity: boolean;
+};
+
 export type GatheringTicket = {
   id: string;
   templateId: string;
@@ -47,6 +71,7 @@ export type GatheringTicket = {
   detailFlow?: string[];
   detailGoodFor?: string[];
   detailNotice?: string;
+  courseSteps?: TicketCourseStep[];
   place?: TicketPlace | null;
   stageCopy?: TicketStageCopy | null;
   atmosphere?: {
@@ -111,18 +136,6 @@ export type TicketMemberIntro = {
   arrivalStatus: TicketArrivalStatus | null;
   arrivalStatusUpdatedAt: string | null;
   isSelf: boolean;
-};
-
-export type TicketPlace = {
-  name: string | null;
-  address: string | null;
-  category?: string | null;
-  roadAddress?: string | null;
-  jibunAddress?: string | null;
-  mapx?: number | null;
-  mapy?: number | null;
-  link?: string | null;
-  source?: MeetingPlace["source"] | null;
 };
 
 export type UserTicket = {

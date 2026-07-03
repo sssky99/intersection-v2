@@ -7,6 +7,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock3,
   ExternalLink,
@@ -22,7 +24,15 @@ import {
   Ticket as TicketIcon,
   UserRound,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import {
   formatTicketDateLabel,
@@ -73,12 +83,14 @@ import {
   ticketFeedbackBodyText,
   ticketStageText,
 } from "@/lib/ticketStageCopy";
+import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import type { QuestionAnswer } from "@/types/question";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
+  TicketPlace,
   TicketProgressStep,
   UserTicket,
   UserTicketStatus,
@@ -1638,6 +1650,7 @@ function StoredTicketCard({
       <IntersectionTicketCard
         title={ticket.title}
         imageUrl={ticket.imageUrl}
+        imageUrls={ticketBackgroundImageUrls(ticket)}
         date={ticket.date}
         time={ticket.time}
         location={`서울\n${ticket.area}`}
@@ -1661,22 +1674,27 @@ export function StoredTicketDetailView({
   userTicket: UserTicket;
   onClose: () => void;
   previewMode?: boolean;
-  selectedProgressStep?: TicketProgressStep;
-  onProgressStepChange?: (step: TicketProgressStep) => void;
+  selectedProgressStep?: TicketProgressViewStepKey;
+  onProgressStepChange?: (step: TicketProgressViewStepKey) => void;
 }) {
   const ticket = userTicket.ticket;
   const [statusOpen, setStatusOpen] = useState(true);
   const [internalProgressStep, setInternalProgressStep] =
-    useState<TicketProgressStep>(userTicket.progressStep);
+    useState<TicketProgressViewStepKey>(() =>
+      defaultProgressViewStepKey(ticket, userTicket.progressStep),
+    );
   const selectedProgressStep = controlledProgressStep ?? internalProgressStep;
+  const heroImageUrl = ticketProgressHeroImageUrl(ticket, selectedProgressStep);
 
   useEffect(() => {
     if (controlledProgressStep) return;
-    setInternalProgressStep(userTicket.progressStep);
-  }, [controlledProgressStep, userTicket.id, userTicket.progressStep]);
+    setInternalProgressStep(
+      defaultProgressViewStepKey(ticket, userTicket.progressStep),
+    );
+  }, [controlledProgressStep, ticket, userTicket.id, userTicket.progressStep]);
 
   const handleProgressStepChange = useCallback(
-    (step: TicketProgressStep) => {
+    (step: TicketProgressViewStepKey) => {
       if (!controlledProgressStep) setInternalProgressStep(step);
       onProgressStepChange?.(step);
     },
@@ -1711,6 +1729,7 @@ export function StoredTicketDetailView({
           badgeLabel={userTicket.statusLabel}
           statusExpanded={statusOpen}
           onToggleStatus={() => setStatusOpen((current) => !current)}
+          backgroundImageUrls={[heroImageUrl]}
         />
 
         <motion.div
@@ -1764,6 +1783,165 @@ const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
   { key: "in_progress", label: "진행 중" },
   { key: "feedback", label: "피드백 작성" },
 ];
+
+type TicketActivityCourseStep = NonNullable<GatheringTicket["courseSteps"]>[number];
+type TicketProgressViewStepKey = TicketProgressStep | `activity:${string}`;
+type TicketProgressViewStep = {
+  key: TicketProgressViewStepKey;
+  label: string;
+  baseStep: TicketProgressStep;
+  courseStep?: TicketActivityCourseStep;
+};
+
+const ticketBaseProgressSteps: Array<{
+  key: Exclude<TicketProgressStep, "in_progress">;
+  label: string;
+}> = [
+  { key: "applied", label: "신청 완료" },
+  { key: "approved", label: "참여 확정" },
+  { key: "pre_start", label: "시작 전 안내" },
+  { key: "feedback", label: "피드백 작성" },
+];
+
+const activityStepLabels = [
+  "첫 활동",
+  "두 번째 활동",
+  "세 번째 활동",
+  "네 번째 활동",
+  "다섯 번째 활동",
+] as const;
+
+function activityStepLabel(index: number) {
+  return activityStepLabels[index] ?? `${index + 1}번째 활동`;
+}
+
+function cleanActivityCourseSteps(ticket: GatheringTicket) {
+  return (ticket.courseSteps ?? []).filter((step) =>
+    Boolean(
+      step.title?.trim() ||
+        step.activityType?.trim() ||
+        step.imageUrl?.trim() ||
+        step.placeName?.trim() ||
+        step.address?.trim() ||
+        step.place,
+    ),
+  );
+}
+
+function ticketProgressViewSteps(ticket: GatheringTicket): TicketProgressViewStep[] {
+  const activitySteps = cleanActivityCourseSteps(ticket);
+  const activities =
+    activitySteps.length > 0
+      ? activitySteps
+      : [
+          {
+            id: "activity-1",
+            order: 1,
+            isMainActivity: true,
+          } as TicketActivityCourseStep,
+        ];
+
+  return [
+    {
+      key: "applied",
+      label: ticketBaseProgressSteps[0].label,
+      baseStep: "applied",
+    },
+    {
+      key: "approved",
+      label: ticketBaseProgressSteps[1].label,
+      baseStep: "approved",
+    },
+    {
+      key: "pre_start",
+      label: ticketBaseProgressSteps[2].label,
+      baseStep: "pre_start",
+    },
+    ...activities.map((courseStep, index) => ({
+      key: `activity:${courseStep.id || index + 1}` as TicketProgressViewStepKey,
+      label: activityStepLabel(index),
+      baseStep: "in_progress" as TicketProgressStep,
+      courseStep,
+    })),
+    {
+      key: "feedback",
+      label: ticketBaseProgressSteps[3].label,
+      baseStep: "feedback",
+    },
+  ];
+}
+
+function progressViewBaseStep(step: TicketProgressViewStepKey): TicketProgressStep {
+  return step.startsWith("activity:") ? "in_progress" : (step as TicketProgressStep);
+}
+
+function progressViewStepIndex(
+  steps: TicketProgressViewStep[],
+  stepKey: TicketProgressViewStepKey,
+) {
+  const directIndex = steps.findIndex((step) => step.key === stepKey);
+  if (directIndex >= 0) return directIndex;
+
+  const baseStep = progressViewBaseStep(stepKey);
+  return Math.max(
+    steps.findIndex((step) => step.baseStep === baseStep),
+    0,
+  );
+}
+
+function defaultProgressViewStepKey(
+  ticket: GatheringTicket,
+  progressStep: TicketProgressStep,
+): TicketProgressViewStepKey {
+  if (progressStep === "in_progress") {
+    return (
+      ticketProgressViewSteps(ticket).find(
+        (step) => step.baseStep === "in_progress",
+      )?.key ?? "in_progress"
+    );
+  }
+
+  return progressStep;
+}
+
+function reachedProgressViewStepIndex(
+  ticket: GatheringTicket,
+  progressStep: TicketProgressStep,
+) {
+  const steps = ticketProgressViewSteps(ticket);
+
+  if (progressStep === "in_progress") {
+    const activityIndexes = steps
+      .map((step, index) => (step.baseStep === "in_progress" ? index : -1))
+      .filter((index) => index >= 0);
+
+    return activityIndexes.at(-1) ?? progressViewStepIndex(steps, progressStep);
+  }
+
+  return progressViewStepIndex(
+    steps,
+    defaultProgressViewStepKey(ticket, progressStep),
+  );
+}
+
+function ticketProgressHeroImageUrl(
+  ticket: GatheringTicket,
+  stepKey: TicketProgressViewStepKey,
+) {
+  const steps = ticketProgressViewSteps(ticket);
+  const selectedIndex = progressViewStepIndex(steps, stepKey);
+  const activitySteps = steps.filter((step) => step.baseStep === "in_progress");
+  let selectedActivityStep = activitySteps[0];
+
+  for (const activityStep of activitySteps) {
+    const activityIndex = steps.findIndex((step) => step.key === activityStep.key);
+    if (activityIndex <= selectedIndex) {
+      selectedActivityStep = activityStep;
+    }
+  }
+
+  return selectedActivityStep?.courseStep?.imageUrl?.trim() || ticket.imageUrl;
+}
 
 const introDetailSections: TicketDetailSectionKey[] = [
   "summary",
@@ -1843,8 +2021,8 @@ function TicketStatusOverview({
 }: {
   userTicket: UserTicket;
   open: boolean;
-  selectedProgressStep: TicketProgressStep;
-  onSelectProgressStep: (step: TicketProgressStep) => void;
+  selectedProgressStep: TicketProgressViewStepKey;
+  onSelectProgressStep: (step: TicketProgressViewStepKey) => void;
 }) {
   const ticket = userTicket.ticket;
   const countdown = useTicketCountdown(userTicket);
@@ -1890,7 +2068,7 @@ function TicketStatusOverview({
             </div>
 
             <TicketProgressSteps
-              progressIndex={userTicket.progressIndex}
+              userTicket={userTicket}
               selectedProgressStep={selectedProgressStep}
               onSelectProgressStep={onSelectProgressStep}
             />
@@ -1921,27 +2099,81 @@ function TicketMetaLine({
 }
 
 function TicketProgressSteps({
-  progressIndex,
+  userTicket,
   selectedProgressStep,
   onSelectProgressStep,
 }: {
-  progressIndex: number;
-  selectedProgressStep: TicketProgressStep;
-  onSelectProgressStep: (step: TicketProgressStep) => void;
+  userTicket: UserTicket;
+  selectedProgressStep: TicketProgressViewStepKey;
+  onSelectProgressStep: (step: TicketProgressViewStepKey) => void;
 }) {
-  const selectedIndex = progressStepIndex(selectedProgressStep);
+  const steps = ticketProgressViewSteps(userTicket.ticket);
+  const visibleStepCount = Math.min(5, steps.length);
+  const maxWindowStart = Math.max(0, steps.length - visibleStepCount);
+  const [windowStart, setWindowStart] = useState(0);
+  const progressViewportRef = useRef<HTMLDivElement | null>(null);
+  const progressTrackRef = useRef<HTMLDivElement | null>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const selectedIndex = progressViewStepIndex(steps, selectedProgressStep);
+  const activeIndex = reachedProgressViewStepIndex(
+    userTicket.ticket,
+    userTicket.progressStep,
+  );
+  const visibleSteps = steps.slice(windowStart, windowStart + visibleStepCount);
+  const canMoveLeft = windowStart > 0;
+  const feedbackVisible = visibleSteps.some((step) => step.baseStep === "feedback");
+  const canMoveRight = windowStart < maxWindowStart && !feedbackVisible;
+  const progressGapRem = 0.375;
+  const visibleGapWidth = `${progressGapRem * Math.max(0, visibleStepCount - 1)}rem`;
+  const progressTrackStyle: CSSProperties = {
+    gridAutoColumns: `calc((100% - ${visibleGapWidth}) / ${visibleStepCount})`,
+  };
+
+  useEffect(() => {
+    setWindowStart((current) => Math.min(current, maxWindowStart));
+  }, [maxWindowStart, steps.length]);
+
+  useEffect(() => {
+    const viewport = progressViewportRef.current;
+    const track = progressTrackRef.current;
+    const firstStep = track?.firstElementChild as HTMLElement | null | undefined;
+    if (!viewport || !track || !firstStep) return;
+
+    const columnGap = Number.parseFloat(
+      window.getComputedStyle(track).columnGap || "0",
+    );
+    const stepWidth = firstStep.getBoundingClientRect().width + columnGap;
+
+    viewport.scrollTo({
+      left: Math.round(windowStart * stepWidth),
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+    });
+  }, [prefersReducedMotion, steps.length, visibleStepCount, windowStart]);
 
   return (
     <div className="mt-5">
-      <div className="grid grid-cols-5 gap-1.5">
-        {ticketProgressSteps.map((step, index) => {
-          const active = index <= progressIndex;
-          const current = index === progressIndex;
+      <div className="grid grid-cols-[26px_minmax(0,1fr)_26px] items-start gap-1.5">
+        <ProgressWindowButton
+          direction="left"
+          disabled={!canMoveLeft}
+          onClick={() => setWindowStart((current) => Math.max(0, current - 1))}
+        />
+        <div ref={progressViewportRef} className="overflow-hidden">
+          <div
+            ref={progressTrackRef}
+            className="grid grid-flow-col gap-1.5"
+            style={progressTrackStyle}
+          >
+          {steps.map((step, index) => {
+          const active = index <= activeIndex;
+          const current = index === activeIndex;
           const selected = index === selectedIndex;
-          const disabled = index > progressIndex;
+          const disabled = index > activeIndex;
+          const visible =
+            index >= windowStart && index < windowStart + visibleStepCount;
 
           return (
-            <div key={step.key} className="min-w-0">
+            <div key={step.key} className="min-w-0" aria-hidden={!visible}>
               <div
                 className={cn(
                   "h-1.5 rounded-full transition",
@@ -1955,6 +2187,7 @@ function TicketProgressSteps({
                   aria-label={`${step.label} 단계 보기`}
                   aria-pressed={selected}
                   aria-current={current ? "step" : undefined}
+                  tabIndex={visible ? undefined : -1}
                   onClick={() => onSelectProgressStep(step.key)}
                   className={cn(
                     "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black transition",
@@ -1988,9 +2221,49 @@ function TicketProgressSteps({
               </div>
             </div>
           );
-        })}
+          })}
+          </div>
+        </div>
+        <ProgressWindowButton
+          direction="right"
+          disabled={!canMoveRight}
+          onClick={() =>
+            setWindowStart((current) => Math.min(maxWindowStart, current + 1))
+          }
+        />
       </div>
     </div>
+  );
+}
+
+function ProgressWindowButton({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: "left" | "right";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const Icon = direction === "left" ? ChevronLeft : ChevronRight;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={
+        direction === "left" ? "이전 진행 단계 보기" : "다음 진행 단계 보기"
+      }
+      className={cn(
+        "mt-[14px] flex h-6 w-6 items-center justify-center rounded-full border text-black/48 transition",
+        disabled
+          ? "cursor-default border-black/5 bg-black/[0.025] text-black/15"
+          : "border-black/10 bg-white shadow-sm hover:-translate-y-0.5 hover:border-accent/40 hover:text-accent",
+      )}
+    >
+      <Icon size={14} aria-hidden />
+    </button>
   );
 }
 
@@ -1999,12 +2272,13 @@ function TicketStatusGuidance({
   selectedProgressStep,
 }: {
   userTicket: UserTicket;
-  selectedProgressStep: TicketProgressStep;
+  selectedProgressStep: TicketProgressViewStepKey;
 }) {
   const { stageCopy } = userTicket.ticket;
+  const baseProgressStep = progressViewBaseStep(selectedProgressStep);
 
   if (
-    selectedProgressStep === "applied" &&
+    baseProgressStep === "applied" &&
     userTicket.status === "payment_pending"
   ) {
     return (
@@ -2015,7 +2289,7 @@ function TicketStatusGuidance({
   }
 
   if (
-    selectedProgressStep === "applied" &&
+    baseProgressStep === "applied" &&
     userTicket.status === "waitlisted"
   ) {
     return (
@@ -2025,7 +2299,7 @@ function TicketStatusGuidance({
     );
   }
 
-  if (selectedProgressStep === "applied") {
+  if (baseProgressStep === "applied") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "applied")}
@@ -2033,7 +2307,7 @@ function TicketStatusGuidance({
     );
   }
 
-  if (selectedProgressStep === "pre_start") {
+  if (baseProgressStep === "pre_start") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "preStart")}
@@ -2041,7 +2315,7 @@ function TicketStatusGuidance({
     );
   }
 
-  if (selectedProgressStep === "in_progress") {
+  if (baseProgressStep === "in_progress") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "inProgress")}
@@ -2049,7 +2323,7 @@ function TicketStatusGuidance({
     );
   }
 
-  if (selectedProgressStep === "feedback") {
+  if (baseProgressStep === "feedback") {
     return (
       <p className={ticketGuidanceClass}>
         {ticketStageText(stageCopy, "feedbackOpen")}
@@ -2064,16 +2338,48 @@ function TicketStatusGuidance({
   );
 }
 
+function selectedActivityCourseStep(
+  ticket: GatheringTicket,
+  stepKey: TicketProgressViewStepKey,
+) {
+  if (!stepKey.startsWith("activity:")) return null;
+
+  return (
+    ticketProgressViewSteps(ticket).find((step) => step.key === stepKey)
+      ?.courseStep ?? null
+  );
+}
+
+function courseStepPlace(step: TicketActivityCourseStep | null): TicketPlace | null {
+  if (!step) return null;
+
+  const place = step.place ?? {
+    name: step.placeName ?? null,
+    address: step.address ?? null,
+  };
+  const hasPlaceDetails = Boolean(
+    place.name?.trim() ||
+      place.address?.trim() ||
+      typeof place.mapx === "number" ||
+      typeof place.mapy === "number",
+  );
+
+  return hasPlaceDetails ? place : null;
+}
+
 function TicketStageContent({
   userTicket,
   progressStep,
   previewMode = false,
 }: {
   userTicket: UserTicket;
-  progressStep: TicketProgressStep;
+  progressStep: TicketProgressViewStepKey;
   previewMode?: boolean;
 }) {
   const ticket = userTicket.ticket;
+  const baseProgressStep = progressViewBaseStep(progressStep);
+  const selectedCourseStep = selectedActivityCourseStep(ticket, progressStep);
+  const selectedPlace = courseStepPlace(selectedCourseStep) ?? userTicket.place;
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
     userTicket.arrivalStatus,
   );
@@ -2082,11 +2388,11 @@ function TicketStageContent({
     setArrivalStatus(userTicket.arrivalStatus);
   }, [userTicket.arrivalStatus, userTicket.waitlistId]);
 
-  if (progressStep === "feedback") {
+  if (baseProgressStep === "feedback") {
     return <TicketFeedbackForm userTicket={userTicket} previewMode={previewMode} />;
   }
 
-  if (progressStep === "in_progress") {
+  if (baseProgressStep === "in_progress") {
     return (
       <>
         <ArrivalStatusPanel
@@ -2100,7 +2406,11 @@ function TicketStageContent({
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
-            <PlaceSection userTicket={userTicket} revealDetails />
+            <PlaceSection
+              userTicket={userTicket}
+              place={selectedPlace}
+              revealDetails
+            />
           }
         />
         <FeedbackGuide userTicket={userTicket} />
@@ -2108,7 +2418,7 @@ function TicketStageContent({
     );
   }
 
-  if (progressStep === "pre_start") {
+  if (baseProgressStep === "pre_start") {
     return (
       <>
         <ArrivalStatusPanel
@@ -2130,7 +2440,7 @@ function TicketStageContent({
     );
   }
 
-  if (progressStep === "approved") {
+  if (baseProgressStep === "approved") {
     return (
       <>
         <TicketDetailContent
@@ -2157,20 +2467,22 @@ function TicketStageContent({
 
 function PlaceSection({
   userTicket,
+  place = userTicket.place,
   revealDetails = false,
 }: {
   userTicket: UserTicket;
+  place?: TicketPlace | null;
   revealDetails?: boolean;
 }) {
   const hasPlace = Boolean(
-    userTicket.place?.name?.trim() || userTicket.place?.address?.trim(),
+    place?.name?.trim() || place?.address?.trim(),
   );
   const hasDetailedPlace = revealDetails && hasPlace;
   const hasMap =
-    userTicket.place?.source === "naver" &&
-    typeof userTicket.place.mapx === "number" &&
-    typeof userTicket.place.mapy === "number" &&
-    Boolean(userTicket.place.name);
+    place?.source === "naver" &&
+    typeof place.mapx === "number" &&
+    typeof place.mapy === "number" &&
+    Boolean(place.name);
 
   return (
     <section className="border-t border-black/8 py-5">
@@ -2178,12 +2490,12 @@ function PlaceSection({
       <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4">
         {hasDetailedPlace ? (
           <div className="space-y-3">
-            {userTicket.place?.name && (
-              <TicketMetaLine Icon={MapPin}>{userTicket.place.name}</TicketMetaLine>
+            {place?.name && (
+              <TicketMetaLine Icon={MapPin}>{place.name}</TicketMetaLine>
             )}
-            {userTicket.place?.address && (
+            {place?.address && (
               <p className="text-sm font-semibold leading-6 text-black/62">
-                {userTicket.place.address}
+                {place.address}
               </p>
             )}
             <TicketMetaLine Icon={Clock3}>
@@ -2193,9 +2505,9 @@ function PlaceSection({
             {hasMap && (
               <NaverMapPreview
                 place={{
-                  name: userTicket.place!.name ?? "장소",
-                  mapx: userTicket.place!.mapx!,
-                  mapy: userTicket.place!.mapy!,
+                  name: place.name ?? "장소",
+                  mapx: place.mapx!,
+                  mapy: place.mapy!,
                 }}
                 className="mt-3"
                 heightClassName="h-[172px]"

@@ -17,6 +17,12 @@ import {
   ticketStageCopyKeys,
 } from "@/lib/ticketStageCopy";
 import {
+  displayTicketCourseSteps,
+  ensureMinimumStoredTicketCourseSteps,
+  legacyStoredTicketCourseSteps,
+  normalizeStoredTicketCourseSteps,
+} from "@/lib/ticketCourse";
+import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
   type GatheringTicket,
@@ -42,6 +48,7 @@ type TemplateRow = {
   detail_notice: string | null;
   stage_copy: unknown;
   image_url: string | null;
+  course_steps: unknown;
   mood_tags: string[] | null;
   activity_type: string | null;
   recommendation_copy: string | null;
@@ -145,6 +152,7 @@ const templateSelect = [
   "detail_notice",
   "stage_copy",
   "image_url",
+  "course_steps",
   "mood_tags",
   "activity_type",
   "recommendation_copy",
@@ -283,6 +291,28 @@ function textList(value: unknown) {
         .map((item) => item.trim())
         .filter(Boolean)
     : [];
+}
+
+function courseStepsForTicket(
+  template: TemplateRow,
+  snapshot: GatheringTicket | null | undefined,
+  includePlaceDetails: boolean,
+) {
+  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const courseSteps = displayTicketCourseSteps(
+    ensureMinimumStoredTicketCourseSteps(
+      storedSteps.length
+        ? storedSteps
+        : legacyStoredTicketCourseSteps({
+            title: template.title,
+            activityType: template.activity_type ?? snapshot?.activityType,
+            imageUrl: template.image_url ?? snapshot?.imageUrl,
+          }),
+    ),
+    { includePlaceDetails },
+  );
+
+  return courseSteps.length ? courseSteps : snapshot?.courseSteps;
 }
 
 function atmosphereForTicket(
@@ -499,6 +529,11 @@ function toTicket(
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
   const place = normalizeMeetingPlace(instance.place_payload);
+  const courseSteps = courseStepsForTicket(template, snapshot, placeVisible);
+  const mainCourseStep =
+    courseSteps?.find((step) => step.isMainActivity) ??
+    courseSteps?.[0] ??
+    null;
 
   return {
     id: instance.id,
@@ -511,13 +546,17 @@ function toTicket(
     moodTags: template.mood_tags ?? snapshot?.moodTags ?? [],
     activityType:
       inferTicketCategory({
-        activityType: template.activity_type ?? snapshot?.activityType,
+        activityType:
+          mainCourseStep?.activityType ??
+          template.activity_type ??
+          snapshot?.activityType,
         title: instance.title || template.title || snapshot?.title,
         moodTags: template.mood_tags ?? snapshot?.moodTags,
         shortDescription: subtitle,
       }) ??
       snapshot?.activityType,
-    imageUrl: template.image_url ?? snapshot?.imageUrl,
+    imageUrl: mainCourseStep?.imageUrl ?? template.image_url ?? snapshot?.imageUrl,
+    courseSteps,
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,
     minimumParticipantCount:
