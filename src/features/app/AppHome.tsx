@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Clock3,
   ExternalLink,
+  Gift,
   Info,
   LogOut,
   Loader2,
@@ -66,6 +67,7 @@ import {
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
 import {
+  MembershipFloatingButton,
   MembershipModal,
   type CurrentMembership,
 } from "@/features/membership/MembershipModal";
@@ -1000,6 +1002,14 @@ export function AppHome({
       ref={appShellRef}
       className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]"
     >
+      <MembershipFloatingButton
+        onClick={() => {
+          setProfilePanelOpen(false);
+          setMembershipTicket(null);
+          setMembershipModalOpen(true);
+        }}
+      />
+
       {activeBlindDateOfferCount > 0 && (
         <button
           type="button"
@@ -4218,10 +4228,12 @@ function ParticipationDiamondNode({
   step,
   current,
   reached,
+  showGift = false,
 }: {
   step: number;
   current: boolean;
   reached: boolean;
+  showGift?: boolean;
 }) {
   const fill = reached ? "var(--accent)" : "#FFFFFF";
   const stroke = reached || current ? "var(--accent)" : "rgba(0,0,0,0.16)";
@@ -4260,6 +4272,7 @@ function ParticipationDiamondNode({
           {step}
         </text>
       </svg>
+      {showGift && <ParticipationGiftButton />}
     </span>
   );
 }
@@ -4290,6 +4303,7 @@ function ParticipationMilestoneProgress({
               step={step}
               current={current}
               reached={reached}
+              showGift={step === 5}
             />
           );
         })}
@@ -4400,6 +4414,97 @@ function ParticipationRecordInfoButton() {
       참여와 피드백을 바탕으로 나의 대화결 점수를 정교하게 조정해요. 이를
       바탕으로 나에게 더 맞는 사람들과 장소가 추천돼요.
     </InfoTooltipButton>
+  );
+}
+
+function ParticipationGiftButton() {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const shouldReduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        containerRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span ref={containerRef} className="absolute -right-2.5 -top-3 z-10">
+      <motion.button
+        type="button"
+        aria-label="5번 참여 멤버십 혜택 보기"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        animate={
+          shouldReduceMotion
+            ? undefined
+            : {
+                scale: [1, 1.08, 1],
+                boxShadow: [
+                  "0 4px 10px rgba(126,179,199,0.24)",
+                  "0 0 0 7px rgba(126,179,199,0.16), 0 8px 18px rgba(126,179,199,0.32)",
+                  "0 4px 10px rgba(126,179,199,0.24)",
+                ],
+              }
+        }
+        transition={
+          shouldReduceMotion
+            ? undefined
+            : {
+                duration: 2.2,
+                ease: "easeInOut",
+                repeat: Infinity,
+                repeatDelay: 0.45,
+              }
+        }
+        whileTap={{ scale: 0.94 }}
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/55 bg-white text-accent shadow-[0_4px_10px_rgba(126,179,199,0.24)] transition hover:-translate-y-0.5 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 focus-visible:ring-offset-2"
+      >
+        <Gift size={16} strokeWidth={2.5} aria-hidden />
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="absolute right-0 top-[calc(100%+10px)] z-40 w-[224px] rounded-2xl border border-black/10 bg-white px-4 py-3 text-xs font-semibold leading-5 text-black/62 shadow-[0_14px_36px_rgba(0,0,0,0.14)]"
+          >
+            <span
+              aria-hidden
+              className="absolute -top-[6px] right-2 h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white"
+            />
+            <strong className="font-black text-black/78">
+              5번 참여 시 1개월 멤버십
+            </strong>
+            을
+            <br />
+            지급해드려요.
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </span>
   );
 }
 

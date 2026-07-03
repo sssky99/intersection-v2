@@ -1118,14 +1118,14 @@ function MembershipGiftCelebration({ active }: { active: boolean }) {
           animate={active ? { x: -3, y: -10, rotate: -14 } : { x: 0, y: 0, rotate: 0 }}
           transition={{ type: "spring", stiffness: 360, damping: 20 }}
         >
-          <span className="absolute left-[9px] top-0 h-4 w-4 rotate-[-34deg] rounded-full border-[3px] border-black" />
-          <span className="absolute right-[9px] top-0 h-4 w-4 rotate-[34deg] rounded-full border-[3px] border-black" />
-          <span className="absolute bottom-0 left-0 h-3 w-full rounded-md bg-black shadow-sm" />
-          <span className="absolute bottom-0 left-[23px] h-3 w-2.5 bg-emerald-300" />
+          <span className="absolute left-[9px] top-0 h-4 w-4 rotate-[-34deg] rounded-full border-[3px] border-rose-400" />
+          <span className="absolute right-[9px] top-0 h-4 w-4 rotate-[34deg] rounded-full border-[3px] border-rose-400" />
+          <span className="absolute bottom-0 left-0 h-3 w-full rounded-md border border-black/15 bg-rose-400 shadow-sm" />
+          <span className="absolute bottom-0 left-[23px] h-3 w-2.5 bg-amber-100" />
         </motion.div>
-        <div className="absolute bottom-1 left-2 h-9 w-12 overflow-hidden rounded-b-xl rounded-t-md bg-black shadow-[0_7px_14px_rgba(0,0,0,0.2)]">
-          <span className="absolute inset-y-0 left-[19px] w-2.5 bg-emerald-300" />
-          <span className="absolute inset-x-0 top-2.5 h-2 bg-emerald-300" />
+        <div className="absolute bottom-1 left-2 h-9 w-12 overflow-hidden rounded-b-xl rounded-t-md border border-black/15 bg-rose-400 shadow-[0_7px_14px_rgba(251,113,133,0.28)]">
+          <span className="absolute inset-y-0 left-[19px] w-2.5 bg-amber-100" />
+          <span className="absolute inset-x-0 top-2.5 h-2 bg-amber-100" />
         </div>
       </motion.div>
     </div>
@@ -1226,10 +1226,11 @@ function AnimatedRegistrationNumber({
           return (
             <span
               key={`${index}-${fromCharacter}-${toCharacter}`}
-              className="relative inline-block h-[1em] w-[1ch] translate-y-[0.12em] overflow-hidden align-[-0.08em]"
+              className="relative inline-block w-[1ch] overflow-hidden align-baseline"
             >
+              <span className="invisible block">{toCharacter}</span>
               <motion.span
-                className="absolute inset-0 block text-center leading-[1em]"
+                className="absolute inset-0 block text-center"
                 initial={{ y: "0%" }}
                 animate={{ y: rollsUp ? "-100%" : "100%" }}
                 transition={digitTransition}
@@ -1237,7 +1238,7 @@ function AnimatedRegistrationNumber({
                 {fromCharacter}
               </motion.span>
               <motion.span
-                className="absolute inset-0 block text-center leading-[1em]"
+                className="absolute inset-0 block text-center"
                 initial={{ y: rollsUp ? "100%" : "-100%" }}
                 animate={{ y: "0%" }}
                 transition={digitTransition}
@@ -1282,7 +1283,6 @@ function NoShowDepositBottomSheet({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
       role="presentation"
     >
       <motion.section
@@ -1301,12 +1301,9 @@ function NoShowDepositBottomSheet({
         <div className="mx-auto h-1.5 w-10 rounded-full bg-black/12" />
         <div className="mt-5 flex items-start justify-between gap-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-accent">
-              {step === "membership" ? "1 / 2 · membership" : "2 / 2 · deposit"}
-            </p>
-            <h2 className="mt-2 text-xl font-black leading-7 text-black">
+            <h2 className="text-xl font-black leading-7 text-black">
               {step === "membership"
-                ? "현재 멤버십은 무료예요."
+                ? "교집합은 베타테스트 중이에요."
                 : "예약금 2만원을 입금해주세요."}
             </h2>
           </div>
