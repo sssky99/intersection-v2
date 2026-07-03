@@ -45,6 +45,15 @@ type Screen =
   | "blindDate";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
 export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
+type DepositMessageRegistration = {
+  count: number;
+  registered: boolean;
+  limitCount: number;
+};
+type DepositMessageRegistrationSummary = Pick<
+  DepositMessageRegistration,
+  "count" | "limitCount"
+>;
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -55,8 +64,20 @@ const ticketDatesCacheTtlMs = 30_000;
 const noShowDepositBankName = "카카오뱅크";
 const noShowDepositAccountNumber = "7942-26-95406";
 const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
+const kakaoDepositMessageChatUrl = "http://pf.kakao.com/_xnweQn/chat";
+const fallbackDepositMessageBaseCount = 66;
+const fallbackDepositMessageLimitCount = 100;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
+const membershipBurstParticles = [
+  { x: -28, y: -24, color: "#38bdf8" },
+  { x: -18, y: -36, color: "#f59e0b" },
+  { x: 0, y: -40, color: "#f472b6" },
+  { x: 20, y: -34, color: "#34d399" },
+  { x: 30, y: -18, color: "#60a5fa" },
+  { x: -32, y: -8, color: "#a78bfa" },
+  { x: 32, y: 2, color: "#fb7185" },
+] as const;
 const ticketsByDateCache = new Map<
   string,
   { date: AvailableDate; expiresAt: number }
@@ -159,6 +180,14 @@ function wait(ms: number) {
   });
 }
 
+function isLocalTestHost() {
+  if (typeof window === "undefined") return false;
+
+  return ["localhost", "127.0.0.1", "::1"].includes(
+    window.location.hostname,
+  );
+}
+
 async function saveInvitationDecision(
   ticketInstanceId: string,
   action: "viewed",
@@ -188,6 +217,63 @@ async function copyTextToClipboard(value: string) {
   document.body.removeChild(textarea);
 
   if (!copied) throw new Error("copy-failed");
+}
+
+async function saveDepositMessageRegistration(ticketId: string) {
+  const response = await fetch("/api/meeting-waitlist/deposit-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ticketId }),
+  });
+
+  const data = (await response.json().catch(() => null)) as {
+    count?: number;
+    registered?: boolean;
+    limitCount?: number;
+  } | null;
+
+  if (!response.ok || typeof data?.count !== "number") {
+    throw new Error("deposit-message-registration-failed");
+  }
+
+  return {
+    count: data.count,
+    registered: Boolean(data.registered),
+    limitCount:
+      typeof data.limitCount === "number"
+        ? data.limitCount
+        : fallbackDepositMessageLimitCount,
+  };
+}
+
+function fallbackDepositMessageSummary(): DepositMessageRegistrationSummary {
+  return {
+    count: fallbackDepositMessageBaseCount,
+    limitCount: fallbackDepositMessageLimitCount,
+  };
+}
+
+async function fetchDepositMessageRegistrationSummary() {
+  const response = await fetch("/api/meeting-waitlist/deposit-message", {
+    cache: "no-store",
+  });
+
+  const data = (await response.json().catch(() => null)) as {
+    count?: number;
+    limitCount?: number;
+  } | null;
+
+  if (!response.ok || typeof data?.count !== "number") {
+    throw new Error("deposit-message-summary-load-failed");
+  }
+
+  return {
+    count: data.count,
+    limitCount:
+      typeof data.limitCount === "number"
+        ? data.limitCount
+        : fallbackDepositMessageLimitCount,
+  };
 }
 
 const ticketRejectionReasonEmojis: Record<TicketRejectionReasonId, string> = {
@@ -373,6 +459,8 @@ export function MeetingRecommendation({
   );
   const [depositAccountCopied, setDepositAccountCopied] = useState(false);
   const [depositCopyError, setDepositCopyError] = useState<string | null>(null);
+  const [depositMessageSummary, setDepositMessageSummary] =
+    useState<DepositMessageRegistrationSummary | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
@@ -595,7 +683,11 @@ export function MeetingRecommendation({
     setDepositTicket(ticket);
     setDepositAccountCopied(false);
     setDepositCopyError(null);
+    setDepositMessageSummary(null);
     setError(null);
+    void fetchDepositMessageRegistrationSummary()
+      .then(setDepositMessageSummary)
+      .catch(() => setDepositMessageSummary(fallbackDepositMessageSummary()));
     onCoachmarkProgress?.("decision");
   };
 
@@ -617,15 +709,39 @@ export function MeetingRecommendation({
   };
 
   const submitDepositPaymentPending = async () => {
-    if (!depositTicket || saving || !depositAccountCopied) return;
+    if (!depositTicket || saving) return;
 
+    const targetTicket = depositTicket;
+    if (isLocalTestHost()) {
+      const currentSummary =
+        depositMessageSummary ?? fallbackDepositMessageSummary();
+      const registration: DepositMessageRegistration = {
+        count: currentSummary.count + 1,
+        registered: true,
+        limitCount: currentSummary.limitCount,
+      };
+
+      setDepositMessageSummary({
+        count: registration.count,
+        limitCount: registration.limitCount,
+      });
+      setWaitlistedTicket(targetTicket);
+      setWaitlistStatus("payment_pending");
+      setDepositTicket(null);
+      setDepositAccountCopied(false);
+      setDepositCopyError(null);
+      setScreen("waitlisted");
+      return;
+    }
+
+    window.open(kakaoDepositMessageChatUrl, "_blank", "noopener,noreferrer");
     setSaving(true);
     setError(null);
 
     const response = await fetch("/api/meeting-waitlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticket: depositTicket }),
+      body: JSON.stringify({ ticket: targetTicket }),
     });
 
     const data = (await response.json().catch(() => null)) as {
@@ -642,15 +758,36 @@ export function MeetingRecommendation({
       return;
     }
 
-    setWaitlistedTicket(depositTicket);
+    let registration: DepositMessageRegistration;
+    try {
+      registration = await saveDepositMessageRegistration(targetTicket.id);
+    } catch {
+      setDepositCopyError(
+        "입금 완료 문자 등록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+      setSaving(false);
+      return;
+    }
+
+    setDepositMessageSummary({
+      count: registration.count,
+      limitCount: registration.limitCount,
+    });
+    setWaitlistedTicket(targetTicket);
     setWaitlistStatus(data?.status ?? "payment_pending");
     trackEvent("application_created", {
-      ...applicationEventPayload(depositTicket),
+      ...applicationEventPayload(targetTicket),
       status: data?.status ?? "payment_pending",
       duplicate: Boolean(data?.duplicate),
     });
+    trackEvent("no_show_deposit_message_click", {
+      ...applicationEventPayload(targetTicket),
+      registered: registration.registered,
+      count: registration.count,
+      limit_count: registration.limitCount,
+    });
     clearTicketCaches();
-    onWaitlisted?.(depositTicket);
+    onWaitlisted?.(targetTicket);
     setDepositTicket(null);
     setDepositAccountCopied(false);
     setDepositCopyError(null);
@@ -759,10 +896,7 @@ export function MeetingRecommendation({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
-              <Check size={20} aria-hidden />
-            </div>
-            <p className="mt-6 text-[10px] font-bold uppercase tracking-wider text-accent">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
               {waitlistStatus === "payment_pending"
                 ? "payment pending"
                 : "waitlisted"}
@@ -784,7 +918,7 @@ export function MeetingRecommendation({
             </h1>
             <p className="mt-3 text-sm leading-6 text-black/48">
               {waitlistStatus === "payment_pending"
-                ? "운영자가 예약금 입금을 확인한 뒤 자리 신청을 이어서 처리할게요."
+                ? "입금이 확인되면 안내 문자를 발송해드릴게요."
                 : "운영자가 자리 구성을 확인한 뒤 참여 승인 여부를 안내해드릴게요."}
             </p>
 
@@ -834,10 +968,11 @@ export function MeetingRecommendation({
                 setScreen("calendar");
                 setSelectedDate(null);
                 setWaitlistedTicket(null);
+                setDepositMessageSummary(null);
               }}
               className="mt-8 h-[52px] w-full rounded-full border border-black/12 py-3.5 text-sm font-semibold text-black/58"
             >
-              다른 날짜 보기
+              다른 티켓 더 신청하기
             </button>
             {onOpenList && (
               <button
@@ -881,6 +1016,7 @@ export function MeetingRecommendation({
           <NoShowDepositBottomSheet
             saving={saving}
             accountCopied={depositAccountCopied}
+            registrationSummary={depositMessageSummary}
             copyError={depositCopyError}
             onCopy={() => void copyDepositAccount()}
             onSubmit={() => void submitDepositPaymentPending()}
@@ -889,6 +1025,7 @@ export function MeetingRecommendation({
               setDepositTicket(null);
               setDepositAccountCopied(false);
               setDepositCopyError(null);
+              setDepositMessageSummary(null);
             }}
           />
         )}
@@ -897,9 +1034,228 @@ export function MeetingRecommendation({
   );
 }
 
+function MembershipGiftCelebration({ active }: { active: boolean }) {
+  const shouldReduceMotion = useReducedMotion();
+
+  return (
+    <div aria-hidden="true" className="relative h-16 w-16 shrink-0">
+      <AnimatePresence>
+        {active && !shouldReduceMotion &&
+          membershipBurstParticles.map((particle, index) => (
+            <motion.span
+              key={`${particle.x}-${particle.y}`}
+              className="absolute left-1/2 top-1/2 z-40 h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: particle.color }}
+              initial={{ x: -3, y: -3, opacity: 0, scale: 0.4 }}
+              animate={{
+                x: particle.x,
+                y: particle.y,
+                opacity: [0, 1, 0],
+                scale: [0.4, 1.25, 0.75],
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                delay: 0.12 + index * 0.025,
+                duration: 0.7,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
+          ))}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {active && (
+          <motion.img
+            key="membership-diamond"
+            src="/images/icons/membership-diamond-v2.png"
+            alt=""
+            draggable={false}
+            className="absolute left-[14px] top-4 z-20 h-9 w-9 object-contain drop-shadow-[0_7px_8px_rgba(14,116,144,0.28)]"
+            initial={
+              shouldReduceMotion
+                ? { opacity: 0, scale: 0.8 }
+                : { opacity: 0, y: 18, scale: 0.45, rotate: -8 }
+            }
+            animate={{ opacity: 1, y: -24, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, y: 10, scale: 0.55 }}
+            transition={{
+              delay: shouldReduceMotion ? 0 : 0.2,
+              type: "spring",
+              stiffness: 320,
+              damping: 18,
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        className="absolute inset-0 z-10 origin-bottom"
+        animate={
+          active
+            ? { rotate: 0, y: 0, scale: [1, 1.08, 1] }
+            : shouldReduceMotion
+              ? { rotate: 0, y: 0 }
+              : {
+                  rotate: [0, -6, 5, -4, 3, 0],
+                  y: [0, -1, 0, -1, 0, 0],
+                }
+        }
+        transition={
+          active
+            ? { duration: 0.45, ease: [0.16, 1, 0.3, 1] }
+            : shouldReduceMotion
+              ? { duration: 0 }
+              : {
+                  duration: 1.4,
+                  repeat: Infinity,
+                  repeatDelay: 0.65,
+                  ease: [0.4, 0, 0.2, 1],
+                }
+        }
+      >
+        <motion.div
+          className="absolute left-1 top-2 z-30 h-5 w-14 origin-bottom"
+          animate={active ? { x: -3, y: -10, rotate: -14 } : { x: 0, y: 0, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 360, damping: 20 }}
+        >
+          <span className="absolute left-[9px] top-0 h-4 w-4 rotate-[-34deg] rounded-full border-[3px] border-black" />
+          <span className="absolute right-[9px] top-0 h-4 w-4 rotate-[34deg] rounded-full border-[3px] border-black" />
+          <span className="absolute bottom-0 left-0 h-3 w-full rounded-md bg-black shadow-sm" />
+          <span className="absolute bottom-0 left-[23px] h-3 w-2.5 bg-emerald-300" />
+        </motion.div>
+        <div className="absolute bottom-1 left-2 h-9 w-12 overflow-hidden rounded-b-xl rounded-t-md bg-black shadow-[0_7px_14px_rgba(0,0,0,0.2)]">
+          <span className="absolute inset-y-0 left-[19px] w-2.5 bg-emerald-300" />
+          <span className="absolute inset-x-0 top-2.5 h-2 bg-emerald-300" />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function MembershipRegistrationNotice({
+  baseCount,
+  limitCount,
+  consented,
+  touched,
+}: {
+  baseCount: number;
+  limitCount: number;
+  consented: boolean;
+  touched: boolean;
+}) {
+  const count = baseCount + (consented ? 1 : 0);
+
+  return (
+    <motion.div
+      layout
+      className="mt-5 rounded-[22px] border border-emerald-200 bg-emerald-50 px-4 py-4 text-emerald-900"
+    >
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="whitespace-nowrap text-2xl font-black leading-8">
+            현재{" "}
+            {touched ? (
+              <AnimatedRegistrationNumber
+                from={consented ? baseCount : baseCount + 1}
+                to={count}
+              />
+            ) : (
+              <span className="tabular-nums">{count.toLocaleString("ko-KR")}</span>
+            )}
+            명이 신청했어요.
+          </p>
+          <p className="mt-1 text-sm font-semibold leading-6 text-emerald-800/75">
+            해당 서비스는 선착순 {limitCount.toLocaleString("ko-KR")}명까지만
+            <br />
+            무료로 진행해요.
+          </p>
+        </div>
+        <MembershipGiftCelebration active={consented} />
+      </div>
+    </motion.div>
+  );
+}
+
+function AnimatedRegistrationNumber({
+  from,
+  to,
+}: {
+  from: number;
+  to: number;
+}) {
+  const shouldReduceMotion = useReducedMotion();
+
+  if (shouldReduceMotion || from === to) {
+    return (
+      <span className="tabular-nums">
+        {to.toLocaleString("ko-KR")}
+      </span>
+    );
+  }
+
+  const fromLabel = from.toLocaleString("ko-KR");
+  const toLabel = to.toLocaleString("ko-KR");
+  const slotCount = Math.max(fromLabel.length, toLabel.length);
+  const fromCharacters = fromLabel.padStart(slotCount, " ").split("");
+  const toCharacters = toLabel.padStart(slotCount, " ").split("");
+  const rollsUp = to > from;
+  const digitTransition = {
+    duration: 0.7,
+    ease: [0.4, 0, 0.2, 1] as const,
+  };
+
+  return (
+    <span className="tabular-nums">
+      <span className="sr-only">{toLabel}</span>
+      <span aria-hidden="true" className="inline-flex items-baseline">
+        {toCharacters.map((toCharacter, index) => {
+          const fromCharacter = fromCharacters[index];
+          const shouldRoll =
+            fromCharacter !== toCharacter &&
+            /\d/.test(fromCharacter) &&
+            /\d/.test(toCharacter);
+
+          if (!shouldRoll) {
+            return (
+              <span key={`${index}-${toCharacter}`}>
+                {toCharacter === " " ? "\u00a0" : toCharacter}
+              </span>
+            );
+          }
+
+          return (
+            <span
+              key={`${index}-${fromCharacter}-${toCharacter}`}
+              className="relative inline-block h-[1em] w-[1ch] translate-y-[0.12em] overflow-hidden align-[-0.08em]"
+            >
+              <motion.span
+                className="absolute inset-0 block text-center leading-[1em]"
+                initial={{ y: "0%" }}
+                animate={{ y: rollsUp ? "-100%" : "100%" }}
+                transition={digitTransition}
+              >
+                {fromCharacter}
+              </motion.span>
+              <motion.span
+                className="absolute inset-0 block text-center leading-[1em]"
+                initial={{ y: rollsUp ? "100%" : "-100%" }}
+                animate={{ y: "0%" }}
+                transition={digitTransition}
+              >
+                {toCharacter}
+              </motion.span>
+            </span>
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
 function NoShowDepositBottomSheet({
   saving,
   accountCopied,
+  registrationSummary,
   copyError,
   onCopy,
   onSubmit,
@@ -907,11 +1263,18 @@ function NoShowDepositBottomSheet({
 }: {
   saving: boolean;
   accountCopied: boolean;
+  registrationSummary: DepositMessageRegistrationSummary | null;
   copyError: string | null;
   onCopy: () => void;
   onSubmit: () => void;
   onClose: () => void;
 }) {
+  const visibleRegistrationSummary =
+    registrationSummary ?? fallbackDepositMessageSummary();
+  const [step, setStep] = useState<"membership" | "deposit">("membership");
+  const [membershipConsented, setMembershipConsented] = useState(false);
+  const [consentTouched, setConsentTouched] = useState(false);
+
   return (
     <motion.div
       key="no-show-deposit-sheet"
@@ -925,7 +1288,9 @@ function NoShowDepositBottomSheet({
       <motion.section
         role="dialog"
         aria-modal="true"
-        aria-label="예약금 입금 안내"
+        aria-label={
+          step === "membership" ? "무료 멤버십 가입 안내" : "예약금 입금 안내"
+        }
         initial={{ y: 32, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 28, opacity: 0 }}
@@ -936,10 +1301,13 @@ function NoShowDepositBottomSheet({
         <div className="mx-auto h-1.5 w-10 rounded-full bg-black/12" />
         <div className="mt-5 flex items-start justify-between gap-4">
           <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-accent">
+              {step === "membership" ? "1 / 2 · membership" : "2 / 2 · deposit"}
+            </p>
             <h2 className="mt-2 text-xl font-black leading-7 text-black">
-              신청을 하려면
-              <br />
-              예약금이 필요해요.
+              {step === "membership"
+                ? "현재 멤버십은 무료예요."
+                : "예약금 2만원을 입금해주세요."}
             </h2>
           </div>
           <button
@@ -953,90 +1321,169 @@ function NoShowDepositBottomSheet({
           </button>
         </div>
 
-        <div className="mt-6 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
-          <div className="flex items-center gap-3">
-            <span
-              aria-hidden="true"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-[19px] font-black leading-none text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
-            >
-              ₩
-            </span>
-            <p className="text-sm font-black text-black">예약금 : 20000원</p>
-          </div>
-        </div>
+        {step === "membership" ? (
+          <motion.div
+            key="membership-step"
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <div className="mt-6 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-[19px] font-black leading-none text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                >
+                  ₩
+                </span>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-black/35">
+                    멤버십 참가비
+                  </p>
+                  <p className="mt-1 text-sm font-black text-black">
+                    <span className="text-black/35 line-through">20000원</span>{" "}
+                    <span className="text-emerald-600">0원</span>
+                  </p>
+                </div>
+              </div>
+            </div>
 
-        <p className="mt-3 flex items-start gap-2 text-[13px] font-semibold leading-5 text-black/58">
-          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
-            <Check size={13} strokeWidth={3} aria-hidden />
-          </span>
-          <span>
-            모임에 정상 참여하는 경우 예약금은{" "}
-            <span className="rounded-md bg-sky-100 px-1.5 py-0.5 font-black text-sky-700">
-              전액 환급
-            </span>
-            됩니다.
-          </span>
-        </p>
+            <MembershipRegistrationNotice
+              baseCount={visibleRegistrationSummary.count}
+              limitCount={visibleRegistrationSummary.limitCount}
+              consented={membershipConsented}
+              touched={consentTouched}
+            />
 
-        <div className="mt-5 rounded-[20px] border border-black/10 bg-gradient-to-br from-[#fbfbfa] to-white px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]">
-              <Landmark size={19} aria-hidden />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-wider text-black/35">
-                계좌번호
+            <div className="mt-5 rounded-[20px] border border-black/10 bg-white px-4 py-4">
+              <p className="text-sm font-semibold leading-6 text-black/58">
+                모임이 진행되는 경우 원활한 서비스를 위하여 운영 안내 메시지를
+                보내드리고 있습니다.
               </p>
-              <p className="mt-1 text-sm font-black text-black">
-                {noShowDepositBankName}
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl bg-black/[0.035] px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={membershipConsented}
+                  onChange={(event) => {
+                    setConsentTouched(true);
+                    setMembershipConsented(event.target.checked);
+                  }}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-500"
+                />
+                <span className="text-sm font-bold leading-6 text-black/72">
+                  운영 안내 메시지를 수신하는데 동의합니다.
+                </span>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              disabled={!membershipConsented}
+              onClick={() => setStep("deposit")}
+              className={cn(
+                "mt-5 h-[52px] w-full rounded-[16px] text-sm font-black transition",
+                membershipConsented
+                  ? "bg-black text-white hover:bg-black/85"
+                  : "cursor-not-allowed bg-black/10 text-black/28",
+              )}
+            >
+              다음으로
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="deposit-step"
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setStep("membership")}
+              className="mt-4 text-[12px] font-bold text-black/48 transition hover:text-black disabled:opacity-40"
+            >
+              ← 멤버십 안내로 돌아가기
+            </button>
+
+            <div className="mt-4 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]"
+                >
+                  <CalendarDays size={19} aria-hidden />
+                </span>
+                <p className="text-sm font-black text-black">예약금 : 20000원</p>
+              </div>
+              <p className="mt-2 pl-3 text-sm font-semibold leading-6 text-black/58">
+                여러분의 소중한 시간과 경험을 지켜드리기 위해서, 노쇼 방지용
+                예약금을 받고 있습니다.
+                <br />
+                모임에 정상 참여하는 경우 예약금은{" "}
+                <span className="rounded-md bg-sky-100 px-1.5 py-0.5 font-black text-sky-700">
+                  전액 환급
+                </span>
+                됩니다.
               </p>
             </div>
-          </div>
-          <div className="mt-4 rounded-2xl border border-black/[0.06] bg-black/[0.035] px-4 py-3">
-            <p className="text-[13px] font-black tabular-nums tracking-[0] text-black/78">
-              {noShowDepositAccountNumber}
+
+            <div className="mt-5 rounded-[20px] border border-black/10 bg-gradient-to-br from-[#fbfbfa] to-white px-4 py-4 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black text-white shadow-[0_8px_18px_rgba(0,0,0,0.16)]">
+                  <Landmark size={19} aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-black/35">
+                    계좌번호
+                  </p>
+                  <p className="mt-1 text-sm font-black text-black">
+                    {noShowDepositBankName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onCopy}
+                  aria-label="계좌 복사하기"
+                  className="ml-auto flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 text-[11px] font-black text-black transition hover:border-black/20 hover:bg-black/[0.03] disabled:opacity-45"
+                >
+                  {accountCopied ? (
+                    <Check size={14} aria-hidden />
+                  ) : (
+                    <Copy size={14} aria-hidden />
+                  )}
+                  {accountCopied ? "복사됨" : "복사하기"}
+                </button>
+              </div>
+              <div className="mt-4 rounded-2xl border border-black/[0.06] bg-black/[0.035] px-4 py-3">
+                <p className="text-[13px] font-black tabular-nums tracking-[0] text-black/78">
+                  {noShowDepositAccountNumber}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onSubmit}
+              className={cn(
+                "mt-5 h-[52px] w-full rounded-[16px] text-sm font-black transition",
+                !saving
+                  ? "bg-emerald-500 text-white shadow-[0_12px_26px_rgba(16,185,129,0.28)] hover:bg-emerald-600"
+                  : "cursor-not-allowed bg-black/10 text-black/28",
+              )}
+            >
+              {saving ? "저장 중..." : "입금 완료 문자 보내기"}
+            </button>
+
+            <p className="mt-3 text-center text-[11px] font-semibold leading-5 text-black/45">
+              성함과 함께 입금 완료 문자를 남겨주세요. | 예) 홍길동 - 입금완료
             </p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-2">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={onCopy}
-            className="flex h-[52px] items-center justify-center gap-2 rounded-[16px] border border-black/12 bg-white text-sm font-black text-black transition hover:border-black/20 hover:bg-black/[0.03] disabled:opacity-45"
-          >
-            {accountCopied ? (
-              <Check size={16} aria-hidden />
-            ) : (
-              <Copy size={16} aria-hidden />
+            {copyError && (
+              <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                {copyError}
+              </p>
             )}
-            {accountCopied ? "복사됐어요" : "계좌 복사하기"}
-          </button>
-          <button
-            type="button"
-            disabled={saving || !accountCopied}
-            onClick={onSubmit}
-            className={cn(
-              "h-[52px] rounded-[16px] text-sm font-black transition",
-              accountCopied && !saving
-                ? "bg-emerald-500 text-white shadow-[0_12px_26px_rgba(16,185,129,0.28)] hover:bg-emerald-600"
-                : "cursor-not-allowed bg-black/10 text-black/28",
-            )}
-          >
-            {saving ? "저장 중..." : "입금했어요"}
-          </button>
-        </div>
-
-        {!accountCopied && !copyError && (
-          <p className="mt-3 text-center text-[11px] font-semibold text-black/38">
-            계좌를 복사하면 입금 완료 버튼이 활성화돼요.
-          </p>
-        )}
-        {copyError && (
-          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-            {copyError}
-          </p>
+          </motion.div>
         )}
       </motion.section>
     </motion.div>
