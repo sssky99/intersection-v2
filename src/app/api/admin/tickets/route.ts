@@ -474,8 +474,7 @@ function templatePayload(body: Record<string, unknown>) {
 }
 
 function instancePayload(body: Record<string, unknown>) {
-  const mainCourseStep = mainStoredTicketCourseStep(courseStepsFromBody(body));
-  const place = normalizeMeetingPlace(body.place ?? mainCourseStep?.place);
+  const place = normalizeMeetingPlace(body.place);
   const placeAddress = meetingPlaceAddress(place);
 
   const minimumParticipantCount = participantLimit(
@@ -492,8 +491,8 @@ function instancePayload(body: Record<string, unknown>) {
     event_date: text(body.eventDate),
     event_time: timeText(body.eventTime),
     region: text(body.region),
-    place_name: place?.name ?? text(body.placeName) ?? mainCourseStep?.placeName,
-    address: placeAddress ?? text(body.address) ?? mainCourseStep?.address,
+    place_name: place?.name ?? text(body.placeName),
+    address: placeAddress ?? text(body.address),
     place_payload: place,
     operation_code: text(body.operationCode),
     operation_note: text(body.operationNote),
@@ -1036,7 +1035,7 @@ export async function PATCH(request: NextRequest) {
 
       if (payloads.template.template_kind === "experience") {
         if (!instanceId) {
-          throw new AdminTicketRequestError("수정할 회차를 선택해주세요.");
+          throw new AdminTicketRequestError("수정할 세부티켓을 선택해주세요.");
         }
         const { error: instanceError } = await supabase
           .from("ticket_instances")
@@ -1145,7 +1144,7 @@ export async function DELETE(request: NextRequest) {
     } catch (error) {
       console.error("[admin tickets]", error);
       return NextResponse.json(
-        { error: "회차를 삭제하지 못했습니다." },
+        { error: "세부티켓을 삭제하지 못했습니다." },
         { status: 500 },
       );
     }

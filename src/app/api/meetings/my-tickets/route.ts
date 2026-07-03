@@ -297,6 +297,7 @@ function courseStepsForTicket(
   template: TemplateRow,
   snapshot: GatheringTicket | null | undefined,
   includePlaceDetails: boolean,
+  detailTicketPlace?: GatheringTicket["place"],
 ) {
   const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
   const courseSteps = displayTicketCourseSteps(
@@ -312,7 +313,22 @@ function courseStepsForTicket(
     { includePlaceDetails },
   );
 
-  return courseSteps.length ? courseSteps : snapshot?.courseSteps;
+  const displaySteps = courseSteps.length ? courseSteps : snapshot?.courseSteps;
+
+  if (!includePlaceDetails || !detailTicketPlace || !displaySteps?.length) {
+    return displaySteps;
+  }
+
+  return displaySteps.map((step, index) =>
+    step.isMainActivity || index === 0
+      ? {
+          ...step,
+          placeName: detailTicketPlace.name,
+          address: detailTicketPlace.address,
+          place: detailTicketPlace,
+        }
+      : step,
+  );
 }
 
 function atmosphereForTicket(
@@ -529,7 +545,19 @@ function toTicket(
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
   const place = normalizeMeetingPlace(instance.place_payload);
-  const courseSteps = courseStepsForTicket(template, snapshot, placeVisible);
+  const detailTicketPlace = placeVisible
+    ? ticketPlaceFromLegacyFields({
+        placeName: instance.place_name,
+        address: instance.address,
+        place,
+      })
+    : null;
+  const courseSteps = courseStepsForTicket(
+    template,
+    snapshot,
+    placeVisible,
+    detailTicketPlace,
+  );
   const mainCourseStep =
     courseSteps?.find((step) => step.isMainActivity) ??
     courseSteps?.[0] ??
@@ -580,13 +608,7 @@ function toTicket(
       ? textList(template.detail_good_for)
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
-    place: placeVisible
-      ? ticketPlaceFromLegacyFields({
-          placeName: instance.place_name,
-          address: instance.address,
-          place,
-        })
-      : null,
+    place: detailTicketPlace,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
     vibeScores: {
@@ -982,10 +1004,40 @@ export async function GET(request: Request) {
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+    const userAssignedTemplateIds = new Set(
+      waitlistRows
+        .filter(
+          (participation) =>
+            participation.ticket_instance_id &&
+            confirmedStatuses.has(participation.status),
+        )
+        .map((participation) => {
+          const instanceId = participation.ticket_instance_id!;
+          return (
+            participation.ticket_template_id ??
+            instanceMap.get(instanceId)?.template_id ??
+            null
+          );
+        })
+        .filter((templateId): templateId is string => Boolean(templateId)),
+    );
     const ticketSourceRows: TicketSourceRow[] = waitlistRows.filter((row) => {
       const instanceId =
         row.ticket_instance_id ?? row.ticket_snapshot?.id ?? row.ticket_id;
       const instance = instanceId ? instanceMap.get(instanceId) : null;
+      const templateId = row.ticket_template_id ?? instance?.template_id ?? null;
+      const isAssignedRow = Boolean(
+        instanceId &&
+          userAssignedInstanceIds.has(instanceId) &&
+          confirmedStatuses.has(row.status),
+      );
+      if (
+        templateId &&
+        userAssignedTemplateIds.has(templateId) &&
+        !isAssignedRow
+      ) {
+        return false;
+      }
       return instance?.visibility !== "test_only" || canSeeTestTickets;
     });
 

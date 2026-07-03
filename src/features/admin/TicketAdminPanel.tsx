@@ -360,6 +360,13 @@ function primaryInstance(template: AdminTicketTemplate | null) {
     .at(0)!;
 }
 
+const detailTicketLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function detailTicketLabel(index: number) {
+  const letter = detailTicketLetters[index] ?? String(index + 1);
+  return `세부티켓 ${letter}`;
+}
+
 function scoreDraft(value: number | null) {
   return value == null ? "" : String(value);
 }
@@ -469,9 +476,6 @@ function syncDraftCourseFields(draft: TicketDraft): TicketDraft {
     courseSteps,
     imageUrl: mainStep.imageUrl,
     activityType: mainStep.activityType,
-    placeName: mainStep.placeName,
-    address: mainStep.address,
-    place: mainStep.place,
   };
 }
 
@@ -489,6 +493,13 @@ function courseStepDraftHasContent(step: TicketCourseStepDraft) {
 function ticketCourseStepsFromDraft(
   draft: TicketDraft,
 ): GatheringTicket["courseSteps"] {
+  const detailTicketPlace =
+    ticketPlaceFromMeetingPlace(draft.place) ??
+    ticketPlaceFromLegacyFields({
+      placeName: draft.placeName,
+      address: draft.address,
+    });
+
   return normalizeDraftCourseSteps(draft.courseSteps)
     .filter(courseStepDraftHasContent)
     .map((step, index) => ({
@@ -497,14 +508,22 @@ function ticketCourseStepsFromDraft(
       title: step.title.trim() || null,
       activityType: normalizeTicketCategory(step.activityType) ?? null,
       imageUrl: step.imageUrl.trim() || null,
-      placeName: step.placeName.trim() || null,
-      address: step.address.trim() || null,
+      placeName:
+        step.isMainActivity && detailTicketPlace
+          ? detailTicketPlace.name
+          : step.placeName.trim() || null,
+      address:
+        step.isMainActivity && detailTicketPlace
+          ? detailTicketPlace.address
+          : step.address.trim() || null,
       place:
-        ticketPlaceFromMeetingPlace(step.place) ??
-        ticketPlaceFromLegacyFields({
-          placeName: step.placeName,
-          address: step.address,
-        }),
+        step.isMainActivity && detailTicketPlace
+          ? detailTicketPlace
+          : ticketPlaceFromMeetingPlace(step.place) ??
+            ticketPlaceFromLegacyFields({
+              placeName: step.placeName,
+              address: step.address,
+            }),
       isMainActivity: step.isMainActivity,
     }));
 }
@@ -563,9 +582,9 @@ function draftFromTicket(
       template.default_time,
     ),
     region: instance?.region ?? template.default_region ?? "",
-    placeName: mainCourseStep.placeName || instance?.place_name || "",
-    address: mainCourseStep.address || instance?.address || "",
-    place: mainCourseStep.place ?? instance?.place_payload ?? null,
+    placeName: instance?.place_name || mainCourseStep.placeName || "",
+    address: instance?.address || mainCourseStep.address || "",
+    place: instance?.place_payload ?? mainCourseStep.place ?? null,
     atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
     atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
     operationCode: instance?.operation_code ?? "",
@@ -637,9 +656,9 @@ function ticketRequestBody(draft: TicketDraft) {
     eventDate: syncedDraft.eventDate,
     eventTime,
     region: syncedDraft.region,
-    placeName: mainCourseStep.placeName,
-    address: mainCourseStep.address,
-    place: mainCourseStep.place,
+    placeName: syncedDraft.placeName,
+    address: syncedDraft.address,
+    place: syncedDraft.place,
     atmosphereGenderMood: syncedDraft.atmosphereGenderMood || null,
     atmosphereAgeBandId: syncedDraft.atmosphereAgeBandId || null,
     operationCode: syncedDraft.operationCode,
@@ -742,10 +761,10 @@ function ticketPreview(
     detailGoodFor: lines(syncedDraft.detailGoodFor),
     detailNotice: syncedDraft.detailNotice.trim() || undefined,
     place:
-      ticketPlaceFromMeetingPlace(mainCourseStep.place) ??
+      ticketPlaceFromMeetingPlace(syncedDraft.place) ??
       ticketPlaceFromLegacyFields({
-        placeName: mainCourseStep.placeName,
-        address: mainCourseStep.address,
+        placeName: syncedDraft.placeName,
+        address: syncedDraft.address,
       }),
     stageCopy: stageCopyFromDraft(syncedDraft),
     atmosphere: ticketAtmospherePreview(syncedDraft, template),
@@ -973,8 +992,8 @@ export function TicketAdminPanel({
     if (!selectedTicket || !selectedInstance) return [];
 
     const assignedIds = new Set(
-      selectedInstance.participants.map(
-        (participation) => participation.user_id,
+      selectedTicket.instances.flatMap((instance) =>
+        instance.participants.map((participation) => participation.user_id),
       ),
     );
     const candidateIds = new Set<string>();
@@ -989,12 +1008,10 @@ export function TicketAdminPanel({
             ? instanceById.get(row.ticket_id)
             : null;
         const rowTemplateId = row.ticket_template_id ?? rowInstance?.template_id;
-        const rowDate = row.meeting_date ?? rowInstance?.event_date;
 
         if (
           row.user_id &&
-          rowTemplateId === selectedTicket.id &&
-          rowDate === selectedInstance.event_date
+          rowTemplateId === selectedTicket.id
         ) {
           candidateIds.add(row.user_id);
         }
@@ -1151,7 +1168,7 @@ export function TicketAdminPanel({
   const saveTicket = async () => {
     if (!selectedTicket || !draft) return;
     if (!isSampleTicket && !selectedInstance) {
-      setError("저장할 회차를 먼저 만들어주세요.");
+      setError("저장할 세부티켓을 먼저 만들어주세요.");
       return;
     }
     await runAction(
@@ -1166,8 +1183,10 @@ export function TicketAdminPanel({
     );
   };
 
-  const createOccurrence = async () => {
+  const createDetailTicket = async () => {
     if (!selectedTicket) return;
+    const baseInstance = selectedInstance ?? primaryInstance(selectedTicket);
+    const nextIndex = selectedTicket.instances.length;
     const previousIds = new Set(
       selectedTicket.instances.map((instance) => instance.id),
     );
@@ -1177,15 +1196,33 @@ export function TicketAdminPanel({
         action: "create_instance",
         templateId: selectedTicket.id,
         title: selectedTicket.title,
-        eventTime: selectedTicket.default_time ?? "19:00",
-        region: selectedTicket.default_region ?? "",
+        eventDate: baseInstance?.event_date ?? draft?.eventDate ?? null,
+        eventTime:
+          baseInstance?.event_time ??
+          normalizeTimeValue(draft?.eventTime ?? "") ??
+          selectedTicket.default_time ??
+          "19:00",
+        region:
+          baseInstance?.region ??
+          draft?.region ??
+          selectedTicket.default_region ??
+          "",
+        placeName: baseInstance?.place_name ?? draft?.placeName ?? "",
+        address: baseInstance?.address ?? draft?.address ?? "",
+        place: baseInstance?.place_payload ?? draft?.place ?? null,
+        operationCode: baseInstance?.operation_code ?? "",
+        operationNote: baseInstance?.operation_note ?? "",
         visibility: "draft",
-        placeVisibility: "confirmed_only",
+        placeVisibility: baseInstance?.place_visibility ?? "confirmed_only",
         remainingSeatLabelCount: 0,
-        minimumParticipantCount: MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
-        maxParticipantCount: 6,
+        minimumParticipantCount:
+          baseInstance?.minimum_participant_count ??
+          MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
+        maxParticipantCount:
+          baseInstance?.max_participant_count ??
+          MEETING_MAX_PARTICIPANT_COUNT,
       },
-      "새 회차를 만들었습니다.",
+      `${detailTicketLabel(nextIndex)}을 만들었습니다.`,
     );
     const nextTemplate = data?.templates.find(
       (template) => template.id === selectedTicket.id,
@@ -1204,7 +1241,7 @@ export function TicketAdminPanel({
     const data = await runAction(
       "POST",
       { action: "duplicate_instance", instanceId: selectedInstance.id },
-      "회차를 복제했습니다.",
+      "세부티켓을 복제했습니다.",
     );
     const nextTemplate = data?.templates.find(
       (template) => template.id === selectedTicket.id,
@@ -1217,13 +1254,13 @@ export function TicketAdminPanel({
 
   const deleteOccurrence = async () => {
     if (!selectedInstance) return;
-    if (!window.confirm("선택한 회차와 연결된 참여 정보를 삭제할까요?")) {
+    if (!window.confirm("선택한 세부티켓과 연결된 참여 정보를 삭제할까요?")) {
       return;
     }
     await runAction(
       "DELETE",
       null,
-      "회차를 삭제했습니다.",
+      "세부티켓을 삭제했습니다.",
       `?instanceId=${encodeURIComponent(selectedInstance.id)}`,
     );
     setSelectedInstanceId(null);
@@ -1232,7 +1269,7 @@ export function TicketAdminPanel({
   const deleteTicket = async () => {
     if (!selectedTicket) return;
     const confirmed = window.confirm(
-      `"${selectedTicket.title}" 초대장을 삭제할까요?\n연결된 운영 회차와 참여 정보도 함께 삭제됩니다.`,
+      `"${selectedTicket.title}" 초대장을 삭제할까요?\n연결된 세부티켓과 참여 정보도 함께 삭제됩니다.`,
     );
     if (!confirmed) return;
 
@@ -1407,7 +1444,7 @@ export function TicketAdminPanel({
                     selectedInstanceId={selectedInstance?.id ?? null}
                     saving={saving}
                     onSelect={setSelectedInstanceId}
-                    onCreate={() => void createOccurrence()}
+                    onCreate={() => void createDetailTicket()}
                     onDuplicate={() => void duplicateOccurrence()}
                     onDelete={() => void deleteOccurrence()}
                   />
@@ -1465,6 +1502,7 @@ export function TicketAdminPanel({
                 {!isSampleTicket && selectedInstance && (
                   <ParticipantPanel
                     instance={selectedInstance}
+                    ticketWaitlistCount={selectedTicket.waitlist_count}
                     assignedProfiles={assignedProfiles}
                     assignableProfiles={assignableProfiles}
                     memberQuery={memberQuery}
@@ -1579,7 +1617,7 @@ function TicketListCard({
           )}
           {template.instance_count > 1 && (
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
-              회차 {template.instance_count}
+              세부티켓 {template.instance_count}
             </span>
           )}
         </div>
@@ -1659,7 +1697,7 @@ function TicketEditorHeader({
           />
         ) : (
           <SelectField
-            label="선택 회차 공개 상태"
+            label="선택 세부티켓 공개 상태"
             value={draft.visibility}
             options={editableTicketVisibilities.map((value) => ({
               value,
@@ -1699,9 +1737,9 @@ function OccurrenceManager({
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="font-bold">운영 회차</h3>
+          <h3 className="font-bold">세부티켓</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            일정, 장소, 공개 범위와 참여자는 선택한 회차에만 적용됩니다.
+            한 티켓에 모인 신청자를 A/B/C 팀으로 나눕니다. 날짜와 시간은 공유하고, 장소와 참여자는 세부티켓별로 다르게 운영할 수 있어요.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1710,14 +1748,14 @@ function OccurrenceManager({
             onClick={onDuplicate}
             icon={Copy}
           >
-            회차 복제
+            세부티켓 복제
           </IconButton>
           <IconButton
             disabled={saving || !selectedInstanceId}
             onClick={onDelete}
             icon={Trash2}
           >
-            회차 삭제
+            세부티켓 삭제
           </IconButton>
           <IconButton
             primary
@@ -1725,7 +1763,7 @@ function OccurrenceManager({
             onClick={onCreate}
             icon={Plus}
           >
-            회차 추가
+            세부티켓 추가
           </IconButton>
         </div>
       </div>
@@ -1745,23 +1783,26 @@ function OccurrenceManager({
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black">회차 {index + 1}</span>
+                <span className="text-xs font-black">{detailTicketLabel(index)}</span>
                 <VisibilityBadge visibility={instance.visibility} />
               </div>
+              <p className="mt-2 truncate text-sm font-bold">
+                {instance.title || detailTicketLabel(index)}
+              </p>
               <p className="mt-2 truncate text-sm font-bold">
                 {[instance.event_date, instance.event_time]
                   .filter(Boolean)
                   .join(" ") || "일정 미정"}
               </p>
               <p className="mt-1 truncate text-xs font-semibold text-black/42">
-                {instance.region || instance.place_name || "지역 미정"} · 참여 {instance.participant_count}명
+                {instance.place_name || instance.region || "장소 미정"} · 참여 {instance.participant_count}명
               </p>
             </button>
           ))}
         </div>
       ) : (
         <p className="mt-4 rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-          운영 회차가 없습니다. 회차를 추가해 주세요.
+          세부티켓 A가 아직 없습니다. 세부티켓을 추가해 주세요.
         </p>
       )}
     </section>
@@ -1857,6 +1898,40 @@ function BasicEditor({
               value={draft.region}
               placeholder="성수, 을지로, 강남"
               onChange={(region) => onDraftChange({ ...draft, region })}
+            />
+            <NaverPlacePicker
+              className="col-span-2"
+              title="세부티켓 장소 검색"
+              value={draft.place}
+              onChange={(place) => {
+                const nextRegion = place
+                  ? meetingRegionFromPlace(place) ?? draft.region
+                  : draft.region;
+                onDraftChange({
+                  ...draft,
+                  place,
+                  placeName: place?.name ?? draft.placeName,
+                  address:
+                    place?.roadAddress ??
+                    place?.jibunAddress ??
+                    draft.address,
+                  region: nextRegion,
+                  placeVisibility:
+                    place && draft.placeVisibility === "hidden"
+                      ? "confirmed_only"
+                      : draft.placeVisibility,
+                });
+              }}
+            />
+            <FormField
+              label="세부티켓 상세 장소명"
+              value={draft.placeName}
+              onChange={(placeName) => onDraftChange({ ...draft, placeName })}
+            />
+            <FormField
+              label="세부티켓 상세 주소"
+              value={draft.address}
+              onChange={(address) => onDraftChange({ ...draft, address })}
             />
             <SelectField
               label="장소 공개"
@@ -2523,6 +2598,7 @@ function ScoreEditor({
 
 function ParticipantPanel({
   instance,
+  ticketWaitlistCount,
   assignedProfiles,
   assignableProfiles,
   memberQuery,
@@ -2532,6 +2608,7 @@ function ParticipantPanel({
   onRemoveMember,
 }: {
   instance: AdminTicketInstance;
+  ticketWaitlistCount: number;
   assignedProfiles: AdminProfile[];
   assignableProfiles: AdminProfile[];
   memberQuery: string;
@@ -2544,18 +2621,19 @@ function ParticipantPanel({
     <section className="space-y-5 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold">참여자</h3>
+          <h3 className="font-bold">세부티켓 배정</h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            참여 {instance.participant_count}명 · 신청 대기 {instance.waitlist_count}명
+            이 세부티켓 참여 {instance.participant_count}명 · 상위 티켓 신청 대기{" "}
+            {ticketWaitlistCount}명
           </p>
         </div>
         <Users size={20} className="text-black/30" aria-hidden />
       </div>
 
       <div>
-        <h4 className="text-sm font-bold">참여 상태</h4>
+        <h4 className="text-sm font-bold">배정된 멤버</h4>
         <p className="mt-1 text-xs font-semibold text-black/40">
-          확정 참여자를 관리합니다. 제거하면 참여 상태도 함께 취소됩니다.
+          상위 티켓 신청자 중 이 세부티켓에 함께할 멤버를 배정합니다. 제거하면 해당 멤버의 확정 상태도 함께 취소됩니다.
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -2589,7 +2667,7 @@ function ParticipantPanel({
             ))
           ) : (
             <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-              아직 확정된 참여자가 없습니다.
+              아직 이 세부티켓에 배정된 멤버가 없습니다.
             </p>
           )}
         </div>
@@ -2604,7 +2682,7 @@ function ParticipantPanel({
             <input
               value={memberQuery}
               onChange={(event) => onMemberQueryChange(event.target.value)}
-              placeholder="신청자 이름 또는 전화번호 검색"
+              placeholder="상위 티켓 신청자 검색"
               className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
             />
           </label>

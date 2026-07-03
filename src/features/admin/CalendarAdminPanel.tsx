@@ -2,10 +2,12 @@
 
 import {
   CalendarDays,
+  ChevronDown,
   Clock3,
   Image as ImageIcon,
   MapPin,
   RefreshCw,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,10 +30,11 @@ type CalendarTicketData = {
   error?: string;
 };
 
-type AdminCalendarTicket = {
+type AdminCalendarDetailTicket = {
   id: string;
   templateId: string;
   instanceId: string;
+  detailLabel: string;
   title: string;
   date: string;
   time: string | null;
@@ -42,15 +45,81 @@ type AdminCalendarTicket = {
   waitlistCount: number;
 };
 
-type AdminCalendarDate = RecommendationCalendarDate<AdminCalendarTicket> & {
+type AdminCalendarTemplateGroup = {
+  id: string;
+  templateId: string;
+  title: string;
+  date: string;
+  imageUrl: string | null;
+  detailTickets: AdminCalendarDetailTicket[];
+  timeSummary: string;
+  regionSummary: string;
+  visibilitySummary: string;
+  participantCount: number;
+  waitlistCount: number;
+};
+
+type AdminCalendarDate = RecommendationCalendarDate<AdminCalendarTemplateGroup> & {
   label: string;
+  detailTicketCount: number;
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-function ticketRowsFromTemplate(template: AdminTicketTemplate) {
+const detailTicketLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function detailTicketLabel(index: number) {
+  const letter = detailTicketLetters[index] ?? String(index + 1);
+  return `세부티켓 ${letter}`;
+}
+
+function uniqueFilledValues(values: Array<string | null | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+function summarizeTimes(tickets: AdminCalendarDetailTicket[]) {
+  const times = uniqueFilledValues(
+    tickets.map((ticket) => formatTicketTimeLabel(ticket.time)),
+  );
+
+  if (times.length === 0) return "시간 미정";
+  if (times.length === 1) return times[0];
+  return `${times.length}개 시간`;
+}
+
+function summarizeRegions(tickets: AdminCalendarDetailTicket[]) {
+  const regions = uniqueFilledValues(tickets.map((ticket) => ticket.region));
+
+  if (regions.length === 0) return "지역 미정";
+  if (regions.length === 1) return regions[0];
+  return `${regions.length}개 지역`;
+}
+
+function summarizeVisibility(tickets: AdminCalendarDetailTicket[]) {
+  const visibilities = uniqueFilledValues(
+    tickets.map((ticket) => ticket.visibility),
+  );
+
+  if (visibilities.length === 1) {
+    return ticketVisibilityLabels[visibilities[0] as TicketVisibility];
+  }
+
+  return "상태 혼합";
+}
+
+function sortDetailTickets(
+  left: AdminCalendarDetailTicket,
+  right: AdminCalendarDetailTicket,
+) {
+  return `${left.time ?? ""}${left.detailLabel}${left.title}`.localeCompare(
+    `${right.time ?? ""}${right.detailLabel}${right.title}`,
+    "ko",
+  );
+}
+
+function detailTicketsFromTemplate(template: AdminTicketTemplate) {
   if (template.template_kind === "question_sample") return [];
 
   const base = {
@@ -58,13 +127,15 @@ function ticketRowsFromTemplate(template: AdminTicketTemplate) {
     imageUrl: template.image_url,
   };
 
-  const instanceRows = template.instances
-    .filter((instance) => Boolean(instance.event_date))
+  return template.instances
+    .map((instance, index) => ({ instance, index }))
+    .filter(({ instance }) => Boolean(instance.event_date))
     .map(
-      (instance): AdminCalendarTicket => ({
+      ({ instance, index }): AdminCalendarDetailTicket => ({
         ...base,
         id: instance.id,
         instanceId: instance.id,
+        detailLabel: detailTicketLabel(index),
         title: instance.title || template.title,
         date: instance.event_date!,
         time: instance.event_time ?? template.default_time,
@@ -74,33 +145,68 @@ function ticketRowsFromTemplate(template: AdminTicketTemplate) {
         waitlistCount: instance.waitlist_count,
       }),
     );
-
-  return instanceRows;
 }
 
 function calendarDatesFromTemplates(templates: AdminTicketTemplate[]) {
-  const ticketsByDate = new Map<string, AdminCalendarTicket[]>();
+  const groupsByDate = new Map<string, AdminCalendarTemplateGroup[]>();
 
   for (const template of templates) {
-    for (const ticket of ticketRowsFromTemplate(template)) {
+    const ticketsByDate = new Map<string, AdminCalendarDetailTicket[]>();
+
+    for (const ticket of detailTicketsFromTemplate(template)) {
       const current = ticketsByDate.get(ticket.date) ?? [];
       current.push(ticket);
       ticketsByDate.set(ticket.date, current);
     }
+
+    for (const [date, tickets] of ticketsByDate.entries()) {
+      const detailTickets = [...tickets].sort(sortDetailTickets);
+      const current = groupsByDate.get(date) ?? [];
+      current.push({
+        id: `${template.id}:${date}`,
+        templateId: template.id,
+        title: template.title,
+        date,
+        imageUrl: template.image_url,
+        detailTickets,
+        timeSummary: summarizeTimes(detailTickets),
+        regionSummary: summarizeRegions(detailTickets),
+        visibilitySummary: summarizeVisibility(detailTickets),
+        participantCount: detailTickets.reduce(
+          (sum, ticket) => sum + ticket.participantCount,
+          0,
+        ),
+        waitlistCount: detailTickets.reduce(
+          (sum, ticket) => sum + ticket.waitlistCount,
+          0,
+        ),
+      });
+      groupsByDate.set(date, current);
+    }
   }
 
-  return [...ticketsByDate.entries()]
+  return [...groupsByDate.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, tickets]): AdminCalendarDate => ({
-      date,
-      label: formatTicketDateLabel(date),
-      tickets: tickets.sort((left, right) =>
-        `${left.time ?? ""}${left.title}`.localeCompare(
-          `${right.time ?? ""}${right.title}`,
+    .map(([date, groups]): AdminCalendarDate => {
+      const sortedGroups = groups.sort((left, right) =>
+        `${left.detailTickets[0]?.time ?? ""}${left.title}`.localeCompare(
+          `${right.detailTickets[0]?.time ?? ""}${right.title}`,
           "ko",
         ),
-      ),
-    }));
+      );
+      const detailTicketCount = sortedGroups.reduce(
+        (sum, group) => sum + group.detailTickets.length,
+        0,
+      );
+
+      return {
+        date,
+        label: formatTicketDateLabel(date),
+        tickets: sortedGroups,
+        ticketCount: sortedGroups.length,
+        detailTicketCount,
+      };
+    });
 }
 
 export function CalendarAdminPanel({
@@ -202,7 +308,7 @@ export function CalendarAdminPanel({
             onSelect={setSelectedDate}
             className="mt-0"
             loadingText="운영 티켓 날짜를 불러오고 있습니다."
-            helpText="* 숫자는 해당 날짜에 등록된 티켓 개수입니다."
+            helpText="* 숫자는 해당 날짜에 등록된 대표 템플릿 개수입니다."
             emptyText="날짜가 등록된 티켓이 없습니다."
           />
         </aside>
@@ -228,6 +334,26 @@ function SelectedDateTicketList({
   loading: boolean;
   onOpenTicket: (ticketId: string) => void;
 }) {
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    setExpandedGroupIds(new Set());
+  }, [selectedDate?.date]);
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
   if (!selectedDate) {
     return (
       <PanelMessage>
@@ -249,17 +375,20 @@ function SelectedDateTicketList({
             {selectedDate.label}
           </h3>
           <span className="rounded-full bg-[#7eb3c7]/15 px-3 py-1 text-xs font-black text-[#347f9b]">
-            티켓 {selectedDate.tickets.length}개
+            대표 템플릿 {selectedDate.tickets.length}개 · 세부티켓{" "}
+            {selectedDate.detailTicketCount}개
           </span>
         </div>
       </div>
 
       <div className="mt-4 space-y-3">
-        {selectedDate.tickets.map((ticket) => (
-          <AdminCalendarTicketCard
-            key={ticket.id}
-            ticket={ticket}
-            onOpen={() => onOpenTicket(ticket.templateId)}
+        {selectedDate.tickets.map((group) => (
+          <AdminCalendarTemplateCard
+            key={group.id}
+            group={group}
+            expanded={expandedGroupIds.has(group.id)}
+            onOpen={() => onOpenTicket(group.templateId)}
+            onToggle={() => toggleGroup(group.id)}
           />
         ))}
       </div>
@@ -267,53 +396,126 @@ function SelectedDateTicketList({
   );
 }
 
-function AdminCalendarTicketCard({
-  ticket,
+function AdminCalendarTemplateCard({
+  group,
+  expanded,
   onOpen,
+  onToggle,
 }: {
-  ticket: AdminCalendarTicket;
+  group: AdminCalendarTemplateGroup;
+  expanded: boolean;
   onOpen: () => void;
+  onToggle: () => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="block w-full overflow-hidden rounded-2xl border border-black/10 bg-white text-left shadow-sm transition hover:border-black/20 hover:shadow-md active:scale-[0.995]"
-    >
-      <div className="flex gap-4 p-4">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/[0.04]">
-          {ticket.imageUrl ? (
-            <img
-              src={ticket.imageUrl}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <ImageIcon size={24} className="text-black/25" aria-hidden />
-          )}
-        </div>
+    <article className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm transition hover:border-black/20 hover:shadow-md">
+      <div className="flex items-stretch gap-3 p-4">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex min-w-0 flex-1 gap-4 rounded-xl text-left outline-none transition hover:bg-black/[0.02] focus-visible:ring-4 focus-visible:ring-accent/15 active:scale-[0.995]"
+        >
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/[0.04]">
+            {group.imageUrl ? (
+              <img
+                src={group.imageUrl}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <ImageIcon size={24} className="text-black/25" aria-hidden />
+            )}
+          </div>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[10px] font-bold text-black/50">
-              {ticketVisibilityLabels[ticket.visibility]}
-            </span>
+          <div className="min-w-0 flex-1 py-0.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-black text-accent">
+                대표 템플릿
+              </span>
+              <span className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[10px] font-bold text-black/50">
+                {group.visibilitySummary}
+              </span>
+            </div>
+            <h4 className="mt-2 text-lg font-black leading-6 text-black">
+              {group.title}
+            </h4>
+            <div className="mt-3 grid gap-2 text-xs font-semibold text-black/50 sm:grid-cols-2">
+              <InfoLine icon={Clock3} value={group.timeSummary} />
+              <InfoLine icon={MapPin} value={group.regionSummary} />
+              <InfoLine
+                icon={CalendarDays}
+                value={formatTicketDateLabel(group.date)}
+              />
+              <InfoLine
+                icon={Users}
+                value={`세부티켓 ${group.detailTickets.length}개 · 참여 ${group.participantCount}명 · 대기 ${group.waitlistCount}명`}
+              />
+            </div>
           </div>
-          <h4 className="mt-2 text-lg font-black leading-6 text-black">
-            {ticket.title}
-          </h4>
-          <div className="mt-3 grid gap-2 text-xs font-semibold text-black/50 sm:grid-cols-2">
-            <InfoLine icon={Clock3} value={formatTicketTimeLabel(ticket.time) || "시간 미정"} />
-            <InfoLine icon={MapPin} value={ticket.region || "지역 미정"} />
-            <InfoLine icon={CalendarDays} value={formatTicketDateLabel(ticket.date)} />
-            <InfoLine
-              icon={RefreshCw}
-              value={`참여 ${ticket.participantCount}명 · 대기 ${ticket.waitlistCount}명`}
-            />
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-label={`${group.title} 세부티켓 ${expanded ? "접기" : "펼치기"}`}
+          className="flex w-11 shrink-0 items-center justify-center rounded-xl border border-black/10 text-black/45 transition hover:border-black/20 hover:bg-black/[0.03] hover:text-black focus-visible:ring-4 focus-visible:ring-accent/15"
+        >
+          <ChevronDown
+            size={18}
+            aria-hidden
+            className={cn("transition-transform", expanded && "rotate-180")}
+          />
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-black/8 bg-[#fbfbfa] px-4 pb-4 pt-3">
+          <div className="space-y-2">
+            {group.detailTickets.map((ticket) => (
+              <button
+                key={ticket.id}
+                type="button"
+                onClick={onOpen}
+                className="w-full rounded-xl border border-black/8 bg-white px-4 py-3 text-left transition hover:border-black/18 hover:bg-white"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-xs font-black text-black">
+                      {ticket.detailLabel}
+                    </span>
+                    <span className="rounded-full bg-black/[0.05] px-2 py-1 text-[10px] font-bold text-black/45">
+                      {ticketVisibilityLabels[ticket.visibility]}
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-2 truncate text-sm font-bold text-black">
+                  {ticket.title}
+                </p>
+                <div className="mt-2 grid gap-2 text-[11px] font-semibold text-black/48 sm:grid-cols-2">
+                  <InfoLine
+                    icon={Clock3}
+                    value={formatTicketTimeLabel(ticket.time) || "시간 미정"}
+                  />
+                  <InfoLine
+                    icon={MapPin}
+                    value={ticket.region || "지역 미정"}
+                  />
+                  <InfoLine
+                    icon={CalendarDays}
+                    value={formatTicketDateLabel(ticket.date)}
+                  />
+                  <InfoLine
+                    icon={RefreshCw}
+                    value={`참여 ${ticket.participantCount}명 · 대기 ${ticket.waitlistCount}명`}
+                  />
+                </div>
+              </button>
+            ))}
           </div>
         </div>
-      </div>
-    </button>
+      )}
+    </article>
   );
 }
 
