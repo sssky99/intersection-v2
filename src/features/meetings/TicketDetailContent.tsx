@@ -24,7 +24,6 @@ function cn(...values: Array<string | false | null | undefined>) {
 
 const defaultSections: TicketDetailSectionKey[] = [
   "summary",
-  "course",
   "vibe",
   "place",
   "activities",

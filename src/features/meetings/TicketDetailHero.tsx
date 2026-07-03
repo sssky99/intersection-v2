@@ -5,7 +5,6 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
-  RotatingTicketBackground,
 } from "@/components/IntersectionTicketCard";
 import {
   ticketBackgroundImageUrls,
@@ -58,6 +57,7 @@ export function TicketDetailHero({
   const resolvedBackgroundImageUrls = uniqueTicketImageUrls(
     backgroundImageUrls ?? ticketBackgroundImageUrls(ticket),
   );
+  const backgroundImageUrl = resolvedBackgroundImageUrls[0];
 
   return (
     <motion.div
@@ -66,8 +66,13 @@ export function TicketDetailHero({
         className,
       )}
     >
-      {resolvedBackgroundImageUrls.length > 0 ? (
-        <RotatingTicketBackground imageUrls={resolvedBackgroundImageUrls} />
+      {backgroundImageUrl ? (
+        <img
+          src={backgroundImageUrl}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
       ) : (
         <div className="absolute inset-0 bg-black" />
       )}

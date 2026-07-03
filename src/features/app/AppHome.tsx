@@ -1929,18 +1929,21 @@ function ticketProgressHeroImageUrl(
   stepKey: TicketProgressViewStepKey,
 ) {
   const steps = ticketProgressViewSteps(ticket);
-  const selectedIndex = progressViewStepIndex(steps, stepKey);
-  const activitySteps = steps.filter((step) => step.baseStep === "in_progress");
-  let selectedActivityStep = activitySteps[0];
+  const selectedStep = steps.find((step) => step.key === stepKey);
 
-  for (const activityStep of activitySteps) {
-    const activityIndex = steps.findIndex((step) => step.key === activityStep.key);
-    if (activityIndex <= selectedIndex) {
-      selectedActivityStep = activityStep;
-    }
+  if (selectedStep?.baseStep === "in_progress") {
+    return selectedStep.courseStep?.imageUrl?.trim() || ticket.imageUrl;
   }
 
-  return selectedActivityStep?.courseStep?.imageUrl?.trim() || ticket.imageUrl;
+  if (selectedStep?.baseStep === "feedback") {
+    const lastActivityImage = steps
+      .filter((step) => step.baseStep === "in_progress")
+      .at(-1)
+      ?.courseStep?.imageUrl?.trim();
+    return lastActivityImage || ticket.imageUrl;
+  }
+
+  return ticket.imageUrl;
 }
 
 const introDetailSections: TicketDetailSectionKey[] = [

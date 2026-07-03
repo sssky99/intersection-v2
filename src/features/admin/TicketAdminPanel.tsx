@@ -419,7 +419,29 @@ function draftCourseStepsFromTicket(
         }),
   );
 
-  return courseSteps.map(courseStepDraftFromStored);
+  const draftSteps = courseSteps.map(courseStepDraftFromStored);
+  const instancePlace = instance?.place_payload ?? null;
+  const instancePlaceName = instance?.place_name ?? instancePlace?.name ?? null;
+  const instanceAddress =
+    instance?.address ??
+    instancePlace?.roadAddress ??
+    instancePlace?.jibunAddress ??
+    null;
+
+  if (!instancePlace && !instancePlaceName && !instanceAddress) {
+    return draftSteps;
+  }
+
+  return draftSteps.map((step, index) =>
+    index === 0
+      ? {
+          ...step,
+          place: instancePlace ?? step.place,
+          placeName: instancePlaceName ?? step.placeName,
+          address: instanceAddress ?? step.address,
+        }
+      : step,
+  );
 }
 
 function normalizeDraftCourseSteps(steps: TicketCourseStepDraft[]) {
@@ -453,6 +475,10 @@ function mainDraftCourseStep(steps: TicketCourseStepDraft[]) {
   );
 }
 
+function firstDraftCourseStep(steps: TicketCourseStepDraft[]) {
+  return steps[0] ?? blankCourseStep(1);
+}
+
 function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
   return normalizeDraftCourseSteps(steps).map((step) => ({
     id: step.id,
@@ -470,12 +496,16 @@ function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
 function syncDraftCourseFields(draft: TicketDraft): TicketDraft {
   const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
   const mainStep = mainDraftCourseStep(courseSteps);
+  const firstStep = firstDraftCourseStep(courseSteps);
 
   return {
     ...draft,
     courseSteps,
     imageUrl: mainStep.imageUrl,
     activityType: mainStep.activityType,
+    placeName: firstStep.placeName,
+    address: firstStep.address,
+    place: firstStep.place,
   };
 }
 
@@ -493,13 +523,6 @@ function courseStepDraftHasContent(step: TicketCourseStepDraft) {
 function ticketCourseStepsFromDraft(
   draft: TicketDraft,
 ): GatheringTicket["courseSteps"] {
-  const detailTicketPlace =
-    ticketPlaceFromMeetingPlace(draft.place) ??
-    ticketPlaceFromLegacyFields({
-      placeName: draft.placeName,
-      address: draft.address,
-    });
-
   return normalizeDraftCourseSteps(draft.courseSteps)
     .filter(courseStepDraftHasContent)
     .map((step, index) => ({
@@ -508,22 +531,14 @@ function ticketCourseStepsFromDraft(
       title: step.title.trim() || null,
       activityType: normalizeTicketCategory(step.activityType) ?? null,
       imageUrl: step.imageUrl.trim() || null,
-      placeName:
-        step.isMainActivity && detailTicketPlace
-          ? detailTicketPlace.name
-          : step.placeName.trim() || null,
-      address:
-        step.isMainActivity && detailTicketPlace
-          ? detailTicketPlace.address
-          : step.address.trim() || null,
+      placeName: step.placeName.trim() || null,
+      address: step.address.trim() || null,
       place:
-        step.isMainActivity && detailTicketPlace
-          ? detailTicketPlace
-          : ticketPlaceFromMeetingPlace(step.place) ??
-            ticketPlaceFromLegacyFields({
-              placeName: step.placeName,
-              address: step.address,
-            }),
+        ticketPlaceFromMeetingPlace(step.place) ??
+        ticketPlaceFromLegacyFields({
+          placeName: step.placeName,
+          address: step.address,
+        }),
       isMainActivity: step.isMainActivity,
     }));
 }
@@ -541,6 +556,7 @@ function draftFromTicket(
 ): TicketDraft {
   const courseSteps = draftCourseStepsFromTicket(template, instance);
   const mainCourseStep = mainDraftCourseStep(courseSteps);
+  const firstCourseStep = firstDraftCourseStep(courseSteps);
 
   return {
     templateKind: template.template_kind,
@@ -582,9 +598,9 @@ function draftFromTicket(
       template.default_time,
     ),
     region: instance?.region ?? template.default_region ?? "",
-    placeName: instance?.place_name || mainCourseStep.placeName || "",
-    address: instance?.address || mainCourseStep.address || "",
-    place: instance?.place_payload ?? mainCourseStep.place ?? null,
+    placeName: instance?.place_name || firstCourseStep.placeName || "",
+    address: instance?.address || firstCourseStep.address || "",
+    place: instance?.place_payload ?? firstCourseStep.place ?? null,
     atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
     atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
     operationCode: instance?.operation_code ?? "",
@@ -849,6 +865,7 @@ function progressPreviewUserTicket({
   selectedInstance: AdminTicketInstance | null;
 }): UserTicket {
   const startAt = ticketStartIso(ticket);
+  const firstCourseStep = firstDraftCourseStep(draft.courseSteps);
   const members = assignedProfiles.map((profile, index) =>
     memberFromProfile({
       profile,
@@ -874,8 +891,11 @@ function progressPreviewUserTicket({
     arrivalStatus: "on_time",
     arrivalStatusUpdatedAt: new Date().toISOString(),
     place: {
-      name: selectedInstance?.place_name ?? (draft.placeName.trim() || null),
-      address: selectedInstance?.address ?? (draft.address.trim() || null),
+      name:
+        (selectedInstance?.place_name ?? firstCourseStep.placeName.trim()) ||
+        null,
+      address:
+        (selectedInstance?.address ?? firstCourseStep.address.trim()) || null,
     },
     members,
   };
@@ -1898,40 +1918,6 @@ function BasicEditor({
               value={draft.region}
               placeholder="성수, 을지로, 강남"
               onChange={(region) => onDraftChange({ ...draft, region })}
-            />
-            <NaverPlacePicker
-              className="col-span-2"
-              title="세부티켓 장소 검색"
-              value={draft.place}
-              onChange={(place) => {
-                const nextRegion = place
-                  ? meetingRegionFromPlace(place) ?? draft.region
-                  : draft.region;
-                onDraftChange({
-                  ...draft,
-                  place,
-                  placeName: place?.name ?? draft.placeName,
-                  address:
-                    place?.roadAddress ??
-                    place?.jibunAddress ??
-                    draft.address,
-                  region: nextRegion,
-                  placeVisibility:
-                    place && draft.placeVisibility === "hidden"
-                      ? "confirmed_only"
-                      : draft.placeVisibility,
-                });
-              }}
-            />
-            <FormField
-              label="세부티켓 상세 장소명"
-              value={draft.placeName}
-              onChange={(placeName) => onDraftChange({ ...draft, placeName })}
-            />
-            <FormField
-              label="세부티켓 상세 주소"
-              value={draft.address}
-              onChange={(address) => onDraftChange({ ...draft, address })}
             />
             <SelectField
               label="장소 공개"
