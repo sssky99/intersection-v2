@@ -414,6 +414,7 @@ function groupByDate(
   tickets: GatheringTicket[],
   profile: TicketRecommendationProfile | null,
   answers: TicketRecommendationAnswer[],
+  applyRecommendation = true,
 ) {
   const groups = new Map<string, GatheringTicket[]>();
 
@@ -428,7 +429,9 @@ function groupByDate(
         id: `date-${date}`,
         date,
         label: dateLabel(date),
-        tickets: recommendTickets(dateTickets, profile, answers),
+        tickets: applyRecommendation
+          ? recommendTickets(dateTickets, profile, answers)
+          : dateTickets,
         ticketCount: dateTickets.length,
       }),
     );
@@ -459,15 +462,17 @@ function groupTicketResponseDates({
   datesOnly,
   profile,
   answers,
+  applyRecommendation = true,
 }: {
   tickets: GatheringTicket[];
   datesOnly: boolean;
   profile: TicketRecommendationProfile | null;
   answers: TicketRecommendationAnswer[];
+  applyRecommendation?: boolean;
 }) {
   return datesOnly
     ? groupDateMetadata(tickets)
-    : groupByDate(tickets, profile, answers);
+    : groupByDate(tickets, profile, answers, applyRecommendation);
 }
 
 function searchDate(value: string | null) {
@@ -490,12 +495,13 @@ export async function GET(request: Request) {
     const requestUrl = new URL(request.url);
     const includeApplied = requestUrl.searchParams.get("includeApplied") === "1";
     const datesOnly = requestUrl.searchParams.get("mode") === "dates";
+    const publicOnly = requestUrl.searchParams.get("publicOnly") === "1";
     const selectedDate = searchDate(requestUrl.searchParams.get("date"));
     const supabase = createAdminClient();
-    const userSupabase = await createClient();
-    const {
-      data: { user },
-    } = await userSupabase.auth.getUser();
+    const userSupabase = publicOnly ? null : await createClient();
+    const user = userSupabase
+      ? (await userSupabase.auth.getUser()).data.user
+      : null;
 
     let publicInstancesQuery = supabase
       .from("ticket_instances")
@@ -522,7 +528,7 @@ export async function GET(request: Request) {
     let userRecommendationName: string | undefined;
     let canBypassAgeVisibility = false;
 
-    if (user) {
+    if (user && userSupabase) {
       const { data: invitationData, error: invitationsError } = await supabase
         .from("ticket_invitations")
         .select("id,ticket_instance_id,status,expires_at")
@@ -692,6 +698,7 @@ export async function GET(request: Request) {
             datesOnly,
             profile: recommendationProfile,
             answers: recommendationAnswers,
+            applyRecommendation: !publicOnly,
           }),
         );
       }
@@ -756,7 +763,7 @@ export async function GET(request: Request) {
     );
     const excludedTemplateDates = new Set<string>();
 
-    if (!includeApplied && user) {
+    if (!includeApplied && user && userSupabase) {
       const { data: waitlistRows, error: waitlistError } = await userSupabase
         .from("ticket_participations")
         .select(
@@ -829,6 +836,7 @@ export async function GET(request: Request) {
         datesOnly,
         profile: recommendationProfile,
         answers: recommendationAnswers,
+        applyRecommendation: !publicOnly,
       }),
     );
   } catch (error) {

@@ -1,11 +1,22 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ChevronDown } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type UIEvent,
+  type WheelEvent,
+} from "react";
+import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import KakaoLoginButton from "@/components/KakaoLoginButton";
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import { todayInKst } from "@/lib/ticketDate";
+import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 const steps = [
   "성향테스트를 진행해요.",
@@ -44,11 +55,105 @@ const detailSteps = [
 const stepIntervalMs = 2600;
 
 type LandingAuthState = "checking" | "authenticated" | "anonymous";
+type TicketPreviewStatus = "loading" | "ready" | "empty" | "error";
+
+const faqItems = [
+  {
+    id: "relationship",
+    question: "이건 친구를 사귀는 모임인가요, 연인을 사귀는 모임인가요?",
+    answer: [
+      "그건 여러분에게 달려 있어요.",
+      "저희는 여러분이 실제로 만나고 싶어 할 사람들을 오프라인에서 마주칠 수 있게 도와줍니다.",
+      "그다음에 어떤 일이 일어날지는 여러분의 선택이에요.",
+    ],
+  },
+  {
+    id: "age",
+    question: "제 나이대의 사람들이 있을까요?",
+    answer: [
+      "여러분이 만나는 사람들은 모두 4살 차이 이내이며, 어색하지 않게끔 남녀 비율도 최대한 맞춰드립니다.",
+    ],
+  },
+  {
+    id: "members",
+    question: "멤버는 어떻게 구성되나요?",
+    answer: [
+      "로그인하면, 여러분은 성향 테스트를 진행합니다.",
+      "저희는 그 결과를 바탕으로, 가장 잘 맞을 것 같은 분들을 모아드립니다.",
+      "모임이 끝나고 나면, 피드백을 통해 다시 만나고 싶은 분이 누구인지 여쭤봅니다. 서로 마음이 통했다면 저희가 다음 1:1 블라인드 데이트 자리를 준비해드립니다.",
+    ],
+  },
+  {
+    id: "count",
+    question: "모임은 몇 명으로 구성되나요?",
+    answer: [
+      "4~6명으로 구성됩니다. 활동 별로 조금씩 달라질 수는 있지만 기본적으로는 한 모임당 6명의 멤버를 지향합니다.",
+    ],
+  },
+  {
+    id: "deposit",
+    question: "예약금은 무엇인가요?",
+    answer: [
+      "노쇼가 발생하는 경우, 같이 참가하는 멤버에게 치명적인 악영향을 주게 됩니다. 이를 방지하기 위해 예약금을 받아 운영하고 있습니다. 해당 금액은 모임에 정상 참여하게 되는 경우 전액 환급됩니다.",
+    ],
+  },
+  {
+    id: "confirmation",
+    question: "예약금을 입금하면 바로 확정이 되는건가요?",
+    answer: [
+      "예약금을 입금하더라도 바로 확정이 되지는 않습니다. 예약금을 입금한 경우는 대기열 신청이며, 확정은 모임 시작 24시간 전에 이뤄집니다. 저희는 여러분께 좋은 경험을 선사하는 것을 최우선으로 삼고 있습니다. 아쉽지만 나이대가 맞지 않거나 성비가 불균형한 경우 모임 진행이 어려울 수 있습니다. 해당 경우 마찬가지로 예약금은 전액 환급됩니다.",
+    ],
+  },
+] as const;
+
+async function fetchPublicTicketDates() {
+  const response = await fetch("/api/meetings/tickets?mode=dates&publicOnly=1", {
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as
+    | { dates?: AvailableDate[]; error?: string }
+    | null;
+
+  if (!response.ok || !data) {
+    throw new Error(data?.error ?? "tickets-load-failed");
+  }
+
+  return data.dates ?? [];
+}
+
+async function fetchPublicTicketsForDate(date: string) {
+  const response = await fetch(
+    `/api/meetings/tickets?date=${encodeURIComponent(date)}&publicOnly=1`,
+    { cache: "no-store" },
+  );
+  const data = (await response.json().catch(() => null)) as
+    | { dates?: AvailableDate[]; error?: string }
+    | null;
+
+  if (!response.ok || !data) {
+    throw new Error(data?.error ?? "tickets-load-failed");
+  }
+
+  return data.dates?.find((item) => item.date === date) ?? null;
+}
+
+function nearestPublicDate(dates: AvailableDate[]) {
+  const sortedDates = [...dates].sort((left, right) =>
+    left.date.localeCompare(right.date),
+  );
+  const today = todayInKst();
+
+  return (
+    sortedDates.find((date) => date.date >= today) ?? sortedDates[0] ?? null
+  );
+}
 
 export function DetailsPreviewClient({
   asLandingPage = false,
+  initialPublicTicketDate = null,
 }: {
   asLandingPage?: boolean;
+  initialPublicTicketDate?: AvailableDate | null;
 } = {}) {
   const reduceMotion = useReducedMotion();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -318,6 +423,13 @@ export function DetailsPreviewClient({
               </video>
             </div>
           </motion.div>
+
+          <PublicTicketPreviewSection
+            initialDateEntry={initialPublicTicketDate}
+            reduceMotion={reduceMotion}
+          />
+
+          <LandingFaqSection reduceMotion={reduceMotion} />
         </section>
 
         <div className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
@@ -341,5 +453,352 @@ export function DetailsPreviewClient({
         </div>
       </section>
     </main>
+  );
+}
+
+function PublicTicketPreviewSection({
+  initialDateEntry,
+  reduceMotion,
+}: {
+  initialDateEntry: AvailableDate | null;
+  reduceMotion: boolean | null;
+}) {
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef({
+    active: false,
+    pointerId: -1,
+    startX: 0,
+    startLeft: 0,
+  });
+  const [status, setStatus] = useState<TicketPreviewStatus>(() =>
+    initialDateEntry?.tickets.length ? "ready" : "loading",
+  );
+  const [dateEntry, setDateEntry] = useState<AvailableDate | null>(
+    initialDateEntry,
+  );
+  const [activeIndex, setActiveIndex] = useState(0);
+  const tickets = dateEntry?.tickets ?? [];
+
+  useEffect(() => {
+    if (initialDateEntry?.tickets.length) return;
+
+    let mounted = true;
+
+    setStatus("loading");
+    void fetchPublicTicketDates()
+      .then(async (dates) => {
+        if (!mounted) return;
+
+        const nearestDate = nearestPublicDate(dates);
+        if (!nearestDate) {
+          setDateEntry(null);
+          setStatus("empty");
+          return;
+        }
+
+        const dateWithTickets = await fetchPublicTicketsForDate(nearestDate.date);
+        if (!mounted) return;
+
+        if (!dateWithTickets || dateWithTickets.tickets.length === 0) {
+          setDateEntry(null);
+          setStatus("empty");
+          return;
+        }
+
+        setDateEntry(dateWithTickets);
+        setActiveIndex(0);
+        carouselRef.current?.scrollTo({ left: 0, behavior: "auto" });
+        setStatus("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setDateEntry(null);
+        setStatus("error");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [initialDateEntry]);
+
+  const closestSlideIndex = (viewport: HTMLDivElement) => {
+    const slides = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-public-ticket-slide]"),
+    );
+    const viewportCenter = viewport.scrollLeft + viewport.clientWidth / 2;
+    let nextIndex = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    slides.forEach((slide, index) => {
+      const slideCenter = slide.offsetLeft + slide.offsetWidth / 2;
+      const distance = Math.abs(slideCenter - viewportCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        nextIndex = index;
+      }
+    });
+
+    return nextIndex;
+  };
+
+  const syncActiveSlide = (viewport: HTMLDivElement | null) => {
+    if (!viewport || tickets.length === 0) return;
+    setActiveIndex(closestSlideIndex(viewport));
+  };
+
+  const updateActiveSlide = (event: UIEvent<HTMLDivElement>) => {
+    syncActiveSlide(event.currentTarget);
+  };
+
+  const startCarouselDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+
+    dragState.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startLeft: event.currentTarget.scrollLeft,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveCarouselDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = dragState.current;
+    if (!state.active || state.pointerId !== event.pointerId) return;
+
+    event.preventDefault();
+    event.currentTarget.scrollLeft = state.startLeft - (event.clientX - state.startX);
+    syncActiveSlide(event.currentTarget);
+  };
+
+  const stopCarouselDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const state = dragState.current;
+    if (!state.active || state.pointerId !== event.pointerId) return;
+
+    dragState.current.active = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    syncActiveSlide(event.currentTarget);
+  };
+
+  const handleCarouselWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+
+    const viewport = event.currentTarget;
+    const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
+    const nextScrollLeft = Math.max(
+      0,
+      Math.min(maxScrollLeft, viewport.scrollLeft + event.deltaY),
+    );
+
+    if (nextScrollLeft === viewport.scrollLeft) return;
+    event.preventDefault();
+    viewport.scrollLeft = nextScrollLeft;
+    syncActiveSlide(viewport);
+  };
+
+  return (
+    <motion.section
+      initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.24 }}
+      transition={{
+        duration: reduceMotion ? 0.16 : 0.56,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className="-mx-6 mt-12 border-t border-black/[0.06] bg-[#f1f0eb] pb-14 pt-12 text-[#121212]"
+    >
+      <div className="px-6">
+        <p className="break-keep text-[15px] font-bold leading-6 text-black/48">
+          다양한 경험 중 일부를 미리 확인해보세요.
+        </p>
+        <h2 className="mt-3 break-keep text-[29px] font-black leading-[1.2] tracking-[-0.055em] text-black/86">
+          알고리즘을 바탕으로
+          <br />
+          당신에게 딱 맞는 경험을 추천드립니다.
+        </h2>
+      </div>
+
+      {status === "loading" ? (
+        <TicketPreviewSkeleton />
+      ) : status === "ready" ? (
+        <>
+          <div
+            ref={carouselRef}
+            onScroll={updateActiveSlide}
+            onPointerDown={startCarouselDrag}
+            onPointerMove={moveCarouselDrag}
+            onPointerUp={stopCarouselDrag}
+            onPointerCancel={stopCarouselDrag}
+            onWheel={handleCarouselWheel}
+            aria-label="공개 티켓 예시"
+            className="scrollbar-none mt-8 flex cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-6 pb-2 overscroll-x-contain active:cursor-grabbing"
+          >
+            {tickets.map((ticket, index) => (
+              <div
+                key={ticket.id}
+                data-public-ticket-slide
+                className="w-[min(76vw,316px)] shrink-0 snap-center snap-always"
+              >
+                <PreviewTicketCard ticket={ticket} priority={index === 0} />
+              </div>
+            ))}
+          </div>
+
+          {tickets.length > 1 && (
+            <div
+              className="mt-4 flex justify-center gap-1.5"
+              aria-label={`티켓 ${activeIndex + 1}/${tickets.length}`}
+            >
+              {tickets.map((ticket, index) => (
+                <span
+                  key={ticket.id}
+                  className={[
+                    "h-1.5 rounded-full transition-all",
+                    activeIndex === index
+                      ? "w-5 bg-black/70"
+                      : "w-1.5 bg-black/15",
+                  ].join(" ")}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="mx-6 mt-8 rounded-[24px] border border-black/[0.06] bg-white/58 px-5 py-6">
+          <p className="break-keep text-sm font-bold leading-6 text-black/50">
+            {status === "error"
+              ? "티켓을 불러오지 못했어요. 잠시 후 다시 확인해주세요."
+              : "곧 공개될 경험을 준비하고 있어요."}
+          </p>
+        </div>
+      )}
+    </motion.section>
+  );
+}
+
+function PreviewTicketCard({
+  ticket,
+  priority,
+}: {
+  ticket: GatheringTicket;
+  priority: boolean;
+}) {
+  return (
+    <IntersectionTicketCard
+      title={ticket.title}
+      imageUrl={ticket.imageUrl}
+      date={ticket.date}
+      time={ticket.time}
+      location={`서울\n${ticket.area}`}
+      tags={ticket.moodTags}
+      priority={priority}
+      className="rounded-[26px] shadow-[0_24px_50px_rgba(0,0,0,0.24)]"
+    />
+  );
+}
+
+function TicketPreviewSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="scrollbar-none mt-8 flex gap-4 overflow-hidden px-6 pb-2"
+    >
+      {[0, 1].map((item) => (
+        <div
+          key={item}
+          className="aspect-[1/1.62] w-[min(76vw,316px)] shrink-0 animate-pulse rounded-[26px] bg-black/[0.06]"
+        />
+      ))}
+    </div>
+  );
+}
+
+function LandingFaqSection({
+  reduceMotion,
+}: {
+  reduceMotion: boolean | null;
+}) {
+  const [openItemId, setOpenItemId] = useState<string>(faqItems[0].id);
+
+  return (
+    <motion.section
+      initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.18 }}
+      transition={{
+        duration: reduceMotion ? 0.16 : 0.56,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+      className="-mx-6 border-t border-black/[0.06] bg-[#f7f7f5] px-6 pb-20 pt-14 text-[#121212]"
+    >
+      <h2 className="text-[34px] font-black leading-none tracking-[-0.055em] text-black/86">
+        자주 묻는 질문
+      </h2>
+
+      <div className="mt-8 divide-y divide-black/[0.08] border-y border-black/[0.08]">
+        {faqItems.map((item) => {
+          const open = openItemId === item.id;
+          const answerId = `landing-faq-${item.id}`;
+
+          return (
+            <section key={item.id}>
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-controls={answerId}
+                onClick={() =>
+                  setOpenItemId((current) =>
+                    current === item.id ? "" : item.id,
+                  )
+                }
+                className="flex w-full items-start justify-between gap-4 py-6 text-left"
+              >
+                <span className="break-keep text-[18px] font-black leading-6 tracking-[-0.035em] text-black/82">
+                  {item.question}
+                </span>
+                <ChevronDown
+                  size={19}
+                  aria-hidden
+                  className={[
+                    "mt-0.5 shrink-0 text-black/38 transition-transform duration-200",
+                    open ? "rotate-180" : "rotate-0",
+                  ].join(" ")}
+                />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {open && (
+                  <motion.div
+                    id={answerId}
+                    initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+                    animate={
+                      reduceMotion
+                        ? undefined
+                        : { height: "auto", opacity: 1 }
+                    }
+                    exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
+                    transition={{ duration: 0.24, ease: "easeOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="space-y-3 pb-6 pr-7">
+                      {item.answer.map((paragraph) => (
+                        <p
+                          key={paragraph}
+                          className="break-keep text-[15px] font-semibold leading-7 tracking-[-0.025em] text-black/52"
+                        >
+                          {paragraph}
+                        </p>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </section>
+          );
+        })}
+      </div>
+    </motion.section>
   );
 }

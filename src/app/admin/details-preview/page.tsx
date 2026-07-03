@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import { getPublicTicketPreviewDate } from "@/lib/publicTicketPreview";
 import { DetailsPreviewClient } from "./DetailsPreviewClient";
 
 export const dynamic = "force-dynamic";
@@ -21,5 +22,7 @@ export default async function DetailsPreviewPage() {
     redirect("/admin");
   }
 
-  return <DetailsPreviewClient />;
+  const initialPublicTicketDate = await getPublicTicketPreviewDate();
+
+  return <DetailsPreviewClient initialPublicTicketDate={initialPublicTicketDate} />;
 }
