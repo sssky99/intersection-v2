@@ -343,7 +343,7 @@ export function DetailsPreviewClient({
               className="absolute -right-10 top-2 h-[222px] w-[166px] overflow-hidden rounded-[3px] border-[9px] border-white bg-white shadow-[0_22px_46px_rgba(18,18,18,0.18)]"
             >
               <Image
-                src="/images/details/safety-friends-booth.png"
+                src="/images/details/safety-friends-booth.webp"
                 alt=""
                 fill
                 priority
@@ -359,7 +359,7 @@ export function DetailsPreviewClient({
               className="absolute -bottom-12 right-1 h-[230px] w-[174px] overflow-hidden rounded-[3px] border-[9px] border-white bg-white shadow-[0_22px_52px_rgba(18,18,18,0.2)]"
             >
               <Image
-                src="/images/details/section-2-1.png"
+                src="/images/details/section-2-1.webp"
                 alt=""
                 fill
                 priority

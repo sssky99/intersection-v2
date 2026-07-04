@@ -1067,7 +1067,7 @@ function MembershipGiftCelebration({ active }: { active: boolean }) {
         {active && (
           <motion.img
             key="membership-diamond"
-            src="/images/icons/membership-diamond-v2.png"
+            src="/images/icons/membership-diamond-v2.webp"
             alt=""
             draggable={false}
             className="absolute left-[14px] top-4 z-20 h-9 w-9 object-contain drop-shadow-[0_7px_8px_rgba(14,116,144,0.28)]"

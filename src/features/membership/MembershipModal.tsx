@@ -117,7 +117,7 @@ export function MembershipFloatingButton({
       className="absolute right-[68px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
     >
       <img
-        src="/images/icons/membership-diamond-v2.png"
+        src="/images/icons/membership-diamond-v2.webp"
         alt=""
         draggable={false}
         className="h-5 w-5 object-contain"

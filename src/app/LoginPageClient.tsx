@@ -45,7 +45,7 @@ export default function LoginPageClient() {
       <main className="relative h-dvh min-h-dvh w-full max-w-[430px] overflow-hidden bg-background md:my-4 md:h-[calc(100dvh-32px)] md:min-h-0 md:rounded-[32px] md:shadow-frame">
         <section className="absolute inset-0 flex h-full min-h-full w-full flex-col overflow-hidden px-6 pb-7 pt-7 text-white">
           <Image
-            src="/images/landing-cinematic.png"
+            src="/images/landing-cinematic.webp"
             alt="교집합 시작 화면"
             fill
             priority
