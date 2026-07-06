@@ -212,6 +212,11 @@ export function DetailsPreviewClient({
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
+    video.autoplay = true;
+    video.setAttribute("muted", "");
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.setAttribute("autoplay", "");
 
     let shouldPlay = false;
 
@@ -220,6 +225,11 @@ export function DetailsPreviewClient({
       video.muted = true;
       video.defaultMuted = true;
       video.playsInline = true;
+      video.autoplay = true;
+      video.setAttribute("muted", "");
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      video.setAttribute("autoplay", "");
       void video.play().catch(() => undefined);
     };
 
