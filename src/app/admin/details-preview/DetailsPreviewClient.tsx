@@ -416,8 +416,10 @@ export function DetailsPreviewClient({
                 ref={videoRef}
                 src="/videos/details-preview.mp4"
                 controls
+                loop
                 muted
                 playsInline
+                poster="/videos/details-preview-poster.webp"
                 preload="metadata"
                 className="aspect-[9/16] w-full bg-black object-cover"
               >
