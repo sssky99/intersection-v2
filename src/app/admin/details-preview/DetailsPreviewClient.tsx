@@ -211,27 +211,69 @@ export function DetailsPreviewClient({
 
     video.muted = true;
     video.defaultMuted = true;
+    video.playsInline = true;
+
+    let shouldPlay = false;
+
+    const tryPlay = () => {
+      if (!shouldPlay || document.visibilityState !== "visible") return;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      void video.play().catch(() => undefined);
+    };
+
+    const syncVisibility = () => {
+      const rect = video.getBoundingClientRect();
+      const visibleHeight =
+        Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      const visibleRatio =
+        rect.height > 0 ? Math.max(0, visibleHeight) / rect.height : 0;
+      shouldPlay = visibleRatio >= 0.35;
+
+      if (shouldPlay) {
+        tryPlay();
+        return;
+      }
+
+      video.pause();
+    };
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
 
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.45) {
-          void video.play().catch(() => undefined);
+        shouldPlay = entry.isIntersecting && entry.intersectionRatio >= 0.35;
+
+        if (shouldPlay) {
+          tryPlay();
           return;
         }
 
         video.pause();
       },
       {
-        threshold: [0, 0.45, 0.7],
+        threshold: [0, 0.35, 0.7],
       },
     );
 
     observer.observe(video);
+    video.addEventListener("loadeddata", tryPlay);
+    video.addEventListener("canplay", tryPlay);
+    document.addEventListener("visibilitychange", tryPlay);
+    window.addEventListener("pageshow", syncVisibility);
+    window.addEventListener("scroll", syncVisibility, { passive: true });
+    window.addEventListener("resize", syncVisibility);
+    window.requestAnimationFrame(syncVisibility);
 
     return () => {
       observer.disconnect();
+      video.removeEventListener("loadeddata", tryPlay);
+      video.removeEventListener("canplay", tryPlay);
+      document.removeEventListener("visibilitychange", tryPlay);
+      window.removeEventListener("pageshow", syncVisibility);
+      window.removeEventListener("scroll", syncVisibility);
+      window.removeEventListener("resize", syncVisibility);
     };
   }, []);
 
@@ -415,12 +457,13 @@ export function DetailsPreviewClient({
               <video
                 ref={videoRef}
                 src="/videos/details-preview.mp4"
+                autoPlay
                 controls
                 loop
                 muted
                 playsInline
                 poster="/videos/details-preview-poster.webp"
-                preload="metadata"
+                preload="auto"
                 className="aspect-[9/16] w-full bg-black object-cover"
               >
                 브라우저가 영상을 지원하지 않습니다.
