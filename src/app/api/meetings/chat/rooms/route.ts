@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { chatOperatorMember } from "@/lib/chatOperator";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -166,8 +167,11 @@ export async function GET() {
               profile?.nickname?.trim() || fallbackNickname(profile?.name),
             emoji: profile?.public_emoji?.trim() || profileEmoji(memberId),
             isSelf: memberId === user.id,
+            role: "member",
           };
         });
+        const operatorMember = chatOperatorMember(false);
+        if (operatorMember) members.push(operatorMember);
 
         return {
           id: instance.id,

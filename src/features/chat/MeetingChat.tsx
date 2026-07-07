@@ -114,6 +114,14 @@ function latestMessageByRoom(messages: MeetingChatMessage[]) {
   return result;
 }
 
+function participantMembers(room: MeetingChatRoom) {
+  return room.members.filter((member) => member.role !== "operator");
+}
+
+function operatorMembers(room: MeetingChatRoom) {
+  return room.members.filter((member) => member.role === "operator");
+}
+
 function roomActivityMap(
   rooms: MeetingChatRoom[],
   messages: MeetingChatMessage[],
@@ -159,6 +167,7 @@ function unreadMemberCount(
   );
   return room.members.filter(
     (member) =>
+      member.role !== "operator" &&
       member.id !== message.sender_id &&
       (readAtByUser.get(member.id) ?? "") < message.created_at,
   ).length;
@@ -535,7 +544,13 @@ export function MeetingChat({
               <h1 className="truncate text-base font-black">{selectedRoom.title}</h1>
               <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-black/42">
                 <Users size={12} aria-hidden />
-                {selectedRoom.members.length}명
+                {participantMembers(selectedRoom).length}명
+                {operatorMembers(selectedRoom).length > 0 && (
+                  <>
+                    <span aria-hidden>·</span>
+                    {operatorMembers(selectedRoom)[0].nickname}
+                  </>
+                )}
                 <span aria-hidden>·</span>
                 {formatDateTime(
                   selectedRoom.eventDate,

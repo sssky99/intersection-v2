@@ -18,6 +18,7 @@ import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
+import { RoomChatAdminPanel } from "@/features/admin/RoomChatAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { TicketRejectionAdminPanel } from "@/features/admin/TicketRejectionAdminPanel";
 import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
@@ -760,9 +761,7 @@ export function AdminPageClient({
             </div>
           )}
           {activeTab === "rooms" && (
-            <div className="flex h-[calc(100dvh-190px)] items-center justify-center rounded-2xl border border-dashed border-black/15 bg-white text-sm font-semibold text-black/45">
-              준비 중입니다.
-            </div>
+            <RoomChatAdminPanel />
           )}
           {visitedTabs.feedback && (
             <div className={cn(activeTab === "feedback" ? "block" : "hidden")}>

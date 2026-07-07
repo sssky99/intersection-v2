@@ -3,6 +3,7 @@ export type MeetingChatMember = {
   nickname: string;
   emoji: string;
   isSelf: boolean;
+  role: "member" | "operator";
 };
 
 export type MeetingChatRoom = {
