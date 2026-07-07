@@ -683,11 +683,10 @@ export function MeetingRecommendation({
     setDepositTicket(ticket);
     setDepositAccountCopied(false);
     setDepositCopyError(null);
-    setDepositMessageSummary(null);
     setError(null);
     void fetchDepositMessageRegistrationSummary()
       .then(setDepositMessageSummary)
-      .catch(() => setDepositMessageSummary(fallbackDepositMessageSummary()));
+      .catch(() => setDepositMessageSummary(null));
     onCoachmarkProgress?.("decision");
   };
 
@@ -1138,12 +1137,13 @@ function MembershipRegistrationNotice({
   consented,
   touched,
 }: {
-  baseCount: number;
-  limitCount: number;
+  baseCount: number | null;
+  limitCount: number | null;
   consented: boolean;
   touched: boolean;
 }) {
-  const count = baseCount + (consented ? 1 : 0);
+  const count =
+    typeof baseCount === "number" ? baseCount + (consented ? 1 : 0) : null;
 
   return (
     <motion.div
@@ -1152,20 +1152,35 @@ function MembershipRegistrationNotice({
     >
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
-          <p className="whitespace-nowrap text-2xl font-black leading-8">
-            현재{" "}
-            {touched ? (
-              <AnimatedRegistrationNumber
-                from={consented ? baseCount : baseCount + 1}
-                to={count}
-              />
-            ) : (
-              <span className="tabular-nums">{count.toLocaleString("ko-KR")}</span>
+          <p
+            className={cn(
+              "whitespace-nowrap font-black",
+              count === null ? "text-xl leading-7" : "text-2xl leading-8",
             )}
-            명이 신청했어요.
+          >
+            {count === null ? (
+              "신청 인원 확인 중이에요."
+            ) : (
+              <>
+                현재{" "}
+                {touched ? (
+                  <AnimatedRegistrationNumber
+                    from={consented ? count - 1 : count + 1}
+                    to={count}
+                  />
+                ) : (
+                  <span className="tabular-nums">
+                    {count.toLocaleString("ko-KR")}
+                  </span>
+                )}
+                명이 신청했어요.
+              </>
+            )}
           </p>
           <p className="mt-1 text-sm font-semibold leading-6 text-emerald-800/75">
-            해당 서비스는 선착순 {limitCount.toLocaleString("ko-KR")}명까지만
+            해당 서비스는 선착순{" "}
+            {(limitCount ?? fallbackDepositMessageLimitCount).toLocaleString("ko-KR")}
+            명까지만
             <br />
             무료로 진행해요.
           </p>
@@ -1270,8 +1285,6 @@ function NoShowDepositBottomSheet({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const visibleRegistrationSummary =
-    registrationSummary ?? fallbackDepositMessageSummary();
   const [step, setStep] = useState<"membership" | "deposit">("membership");
   const [membershipConsented, setMembershipConsented] = useState(false);
   const [consentTouched, setConsentTouched] = useState(false);
@@ -1345,8 +1358,8 @@ function NoShowDepositBottomSheet({
             </div>
 
             <MembershipRegistrationNotice
-              baseCount={visibleRegistrationSummary.count}
-              limitCount={visibleRegistrationSummary.limitCount}
+              baseCount={registrationSummary?.count ?? null}
+              limitCount={registrationSummary?.limitCount ?? null}
               consented={membershipConsented}
               touched={consentTouched}
             />

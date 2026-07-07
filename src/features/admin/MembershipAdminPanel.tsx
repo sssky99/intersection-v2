@@ -70,7 +70,7 @@ function statusForDisplay(row: AdminMembership) {
 function periodText(row: AdminMembership) {
   if (row.has_payment_pending_ticket && statusForDisplay(row) === "pending") {
     const count = row.payment_pending_ticket_count ?? 1;
-    return `티켓 입금 확인 필요 ${count}건`;
+    return `티켓 결제/대기 확인 필요 ${count}건`;
   }
 
   if (row.membership_start_date && row.membership_end_date) {

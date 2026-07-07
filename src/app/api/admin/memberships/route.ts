@@ -25,7 +25,7 @@ type AdminMembershipRow = {
   membership_updated_at: string | null;
 };
 
-type PaymentPendingParticipationRow = {
+type PendingParticipationRow = {
   user_id: string;
 };
 
@@ -116,9 +116,9 @@ export async function GET(request: NextRequest) {
       supabase
         .from("ticket_participations")
         .select("user_id")
-        .eq("status", "payment_pending")
+        .in("status", ["payment_pending", "waitlisted"])
         .limit(1000)
-        .returns<PaymentPendingParticipationRow[]>(),
+        .returns<PendingParticipationRow[]>(),
     ]);
 
     const error = membershipProfilesResult.error ?? paymentPendingResult.error;
