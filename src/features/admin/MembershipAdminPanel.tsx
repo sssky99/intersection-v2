@@ -25,6 +25,8 @@ type AdminMembership = {
   membership_purchase_clicked_at: string | null;
   membership_updated_at: string | null;
   display_status: MembershipStatus | null;
+  has_payment_pending_ticket?: boolean;
+  payment_pending_ticket_count?: number;
 };
 
 let membershipCache: AdminMembership[] | null = null;
@@ -66,6 +68,11 @@ function statusForDisplay(row: AdminMembership) {
 }
 
 function periodText(row: AdminMembership) {
+  if (row.has_payment_pending_ticket && statusForDisplay(row) === "pending") {
+    const count = row.payment_pending_ticket_count ?? 1;
+    return `티켓 입금 확인 필요 ${count}건`;
+  }
+
   if (row.membership_start_date && row.membership_end_date) {
     return `${row.membership_start_date} ~ ${row.membership_end_date}`;
   }
