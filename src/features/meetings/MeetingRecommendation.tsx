@@ -65,10 +65,15 @@ const noShowDepositBankName = "카카오뱅크";
 const noShowDepositAccountNumber = "7942-26-95406";
 const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
 const kakaoDepositMessageChatUrl = "http://pf.kakao.com/_xnweQn/chat";
+const depositMessageSummaryStorageKey =
+  "intersection:deposit-message-summary";
 const fallbackDepositMessageBaseCount = 66;
 const fallbackDepositMessageLimitCount = 100;
 let ticketDatesCache: { dates: AvailableDate[]; expiresAt: number } | null = null;
 let ticketDatesRequest: Promise<AvailableDate[]> | null = null;
+let depositMessageSummaryCache: DepositMessageRegistrationSummary | null = null;
+let depositMessageSummaryRequest: Promise<DepositMessageRegistrationSummary> | null =
+  null;
 const membershipBurstParticles = [
   { x: -28, y: -24, color: "#38bdf8" },
   { x: -18, y: -36, color: "#f59e0b" },
@@ -236,13 +241,19 @@ async function saveDepositMessageRegistration(ticketId: string) {
     throw new Error("deposit-message-registration-failed");
   }
 
-  return {
+  const summary = {
     count: data.count,
-    registered: Boolean(data.registered),
     limitCount:
       typeof data.limitCount === "number"
         ? data.limitCount
         : fallbackDepositMessageLimitCount,
+  };
+
+  cacheDepositMessageSummary(summary);
+
+  return {
+    ...summary,
+    registered: Boolean(data.registered),
   };
 }
 
@@ -253,27 +264,80 @@ function fallbackDepositMessageSummary(): DepositMessageRegistrationSummary {
   };
 }
 
-async function fetchDepositMessageRegistrationSummary() {
-  const response = await fetch("/api/meeting-waitlist/deposit-message", {
-    cache: "no-store",
-  });
+function cacheDepositMessageSummary(summary: DepositMessageRegistrationSummary) {
+  depositMessageSummaryCache = summary;
 
-  const data = (await response.json().catch(() => null)) as {
-    count?: number;
-    limitCount?: number;
-  } | null;
+  if (typeof window === "undefined") return;
 
-  if (!response.ok || typeof data?.count !== "number") {
-    throw new Error("deposit-message-summary-load-failed");
+  try {
+    window.localStorage.setItem(
+      depositMessageSummaryStorageKey,
+      JSON.stringify(summary),
+    );
+  } catch {
+    // Keeping the in-memory value is enough when browser storage is unavailable.
   }
+}
 
-  return {
-    count: data.count,
-    limitCount:
-      typeof data.limitCount === "number"
-        ? data.limitCount
-        : fallbackDepositMessageLimitCount,
-  };
+function cachedDepositMessageSummary() {
+  if (depositMessageSummaryCache) return depositMessageSummaryCache;
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(depositMessageSummaryStorageKey);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<DepositMessageRegistrationSummary>;
+    if (typeof parsed.count !== "number") return null;
+
+    const summary = {
+      count: parsed.count,
+      limitCount:
+        typeof parsed.limitCount === "number"
+          ? parsed.limitCount
+          : fallbackDepositMessageLimitCount,
+    };
+    depositMessageSummaryCache = summary;
+    return summary;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDepositMessageRegistrationSummary() {
+  if (depositMessageSummaryRequest) return depositMessageSummaryRequest;
+
+  depositMessageSummaryRequest = (async () => {
+    const response = await fetch("/api/meeting-waitlist/deposit-message", {
+      cache: "no-store",
+    });
+
+    const data = (await response.json().catch(() => null)) as {
+      count?: number;
+      limitCount?: number;
+    } | null;
+
+    if (!response.ok || typeof data?.count !== "number") {
+      throw new Error("deposit-message-summary-load-failed");
+    }
+
+    const summary = {
+      count: data.count,
+      limitCount:
+        typeof data.limitCount === "number"
+          ? data.limitCount
+          : fallbackDepositMessageLimitCount,
+    };
+
+    cacheDepositMessageSummary(summary);
+    return summary;
+  })();
+
+  try {
+    return await depositMessageSummaryRequest;
+  } finally {
+    depositMessageSummaryRequest = null;
+  }
 }
 
 const ticketRejectionReasonEmojis: Record<TicketRejectionReasonId, string> = {
@@ -460,7 +524,9 @@ export function MeetingRecommendation({
   const [depositAccountCopied, setDepositAccountCopied] = useState(false);
   const [depositCopyError, setDepositCopyError] = useState<string | null>(null);
   const [depositMessageSummary, setDepositMessageSummary] =
-    useState<DepositMessageRegistrationSummary | null>(null);
+    useState<DepositMessageRegistrationSummary | null>(() =>
+      cachedDepositMessageSummary(),
+    );
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const viewedTicketIdsRef = useRef<Set<string>>(new Set());
@@ -517,6 +583,27 @@ export function MeetingRecommendation({
     blindDateOpenRequestPending,
     onBlindDateOpenRequestHandled,
   ]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let alive = true;
+    const refresh = () => {
+      void fetchDepositMessageRegistrationSummary()
+        .then((summary) => {
+          if (alive) setDepositMessageSummary(summary);
+        })
+        .catch(() => undefined);
+    };
+
+    refresh();
+    window.addEventListener("focus", refresh);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;
@@ -686,7 +773,7 @@ export function MeetingRecommendation({
     setError(null);
     void fetchDepositMessageRegistrationSummary()
       .then(setDepositMessageSummary)
-      .catch(() => setDepositMessageSummary(null));
+      .catch(() => undefined);
     onCoachmarkProgress?.("decision");
   };
 
@@ -967,7 +1054,6 @@ export function MeetingRecommendation({
                 setScreen("calendar");
                 setSelectedDate(null);
                 setWaitlistedTicket(null);
-                setDepositMessageSummary(null);
               }}
               className="mt-8 h-[52px] w-full rounded-full border border-black/12 py-3.5 text-sm font-semibold text-black/58"
             >
@@ -1024,7 +1110,6 @@ export function MeetingRecommendation({
               setDepositTicket(null);
               setDepositAccountCopied(false);
               setDepositCopyError(null);
-              setDepositMessageSummary(null);
             }}
           />
         )}
