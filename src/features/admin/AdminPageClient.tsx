@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Download,
   ExternalLink,
   Image as ImageIcon,
   LogOut,
@@ -106,10 +107,12 @@ function questionOrder(question: ProfileQuestion) {
   return question.order ?? question.id;
 }
 
+function questionForOrder(order: number) {
+  return profileQuestions.find((question) => questionOrder(question) === order);
+}
+
 function questionForAnswer(answer: AdminProfileAnswer) {
-  return profileQuestions.find(
-    (question) => questionOrder(question) === answer.question_order,
-  );
+  return questionForOrder(answer.question_order);
 }
 
 function optionMeta(option: string | QuestionOption) {
@@ -146,6 +149,141 @@ function answerText(answer: AdminProfileAnswer) {
     answer.answer_values?.join(", ") ||
     ""
   );
+}
+
+function answerDisplayForExport(answer: AdminProfileAnswer) {
+  const ticketRating = parseTicketRatingAnswer(answer.answer_text);
+  if (ticketRating) return `${ticketRating.title} (${ticketRating.rating}점)`;
+
+  const question = questionForAnswer(answer);
+  if (!question || question.type === "text") return answerText(answer);
+
+  const values = selectedValues(answer);
+  if (values.length === 0) return answerText(answer);
+
+  return values
+    .map((value, index) => {
+      const displayText = selectedOptionDisplay(
+        question,
+        value,
+        answer.other_text,
+      );
+
+      return question.category === "관심 분야"
+        ? `${index + 1}순위. ${displayText.replace(/^\d+번\.\s*/, "")}`
+        : displayText;
+    })
+    .join(" / ");
+}
+
+function tsvCell(value: string | number | boolean | null | undefined) {
+  return String(value ?? "")
+    .replace(/\t/g, " ")
+    .replace(/\r\n|\n|\r/g, " ");
+}
+
+function compactTsvLabel(value: string) {
+  return tsvCell(value).replace(/\s+/g, " ").trim();
+}
+
+function answerExportColumns(profiles: AdminProfile[]) {
+  const knownColumns = profileQuestions
+    .map((question) => ({ order: questionOrder(question), question }))
+    .sort((left, right) => left.order - right.order);
+  const knownOrders = new Set(knownColumns.map((column) => column.order));
+  const unknownOrders = Array.from(
+    new Set(
+      profiles.flatMap((profile) =>
+        (profile.answers ?? [])
+          .map((answer) => answer.question_order)
+          .filter((order) => !knownOrders.has(order)),
+      ),
+    ),
+  ).sort((left, right) => left - right);
+
+  return [
+    ...knownColumns,
+    ...unknownOrders.map((order) => ({
+      order,
+      question: questionForOrder(order),
+    })),
+  ];
+}
+
+function answerExportHeader(
+  column: ReturnType<typeof answerExportColumns>[number],
+) {
+  const question = column.question;
+  if (!question) return `Q${column.order}`;
+
+  return compactTsvLabel(
+    `Q${column.order}. ${question.category} - ${question.question}`,
+  );
+}
+
+function seoulDateStamp() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function downloadApplicantAnswersTsv(profiles: AdminProfile[]) {
+  const columns = answerExportColumns(profiles);
+  const headers = [
+    "user_id",
+    "신청일",
+    "이름",
+    "닉네임",
+    "전화번호",
+    "성별",
+    "출생연도",
+    "MBTI",
+    "프로필 완료",
+    "질문 완료",
+    "멤버십 상태",
+    ...columns.map(answerExportHeader),
+  ];
+  const rows = profiles.map((profile) => {
+    const answersByOrder = new Map(
+      (profile.answers ?? []).map((answer) => [answer.question_order, answer]),
+    );
+
+    return [
+      profile.user_id,
+      formatCreatedAt(profile.created_at),
+      profile.name,
+      profile.nickname,
+      profile.phone,
+      profile.gender,
+      profile.birth_year,
+      profile.mbti,
+      completionText(profile.profile_completed),
+      completionText(profile.questions_completed),
+      membershipStatusLabels[membershipStatusValue(profile)],
+      ...columns.map((column) => {
+        const answer = answersByOrder.get(column.order);
+        return answer ? answerDisplayForExport(answer) : "";
+      }),
+    ];
+  });
+  const tsv = [headers, ...rows]
+    .map((row) => row.map(tsvCell).join("\t"))
+    .join("\n");
+  const blob = new Blob(["\ufeff", tsv], {
+    type: "text/tab-separated-values;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `applicant-answers-${seoulDateStamp()}.tsv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formatCreatedAt(value: string | null) {
@@ -718,6 +856,7 @@ export function AdminPageClient({
                 onSelectProfile={setSelectedProfileId}
                 onCloseDetail={() => setSelectedProfileId(null)}
                 onReload={() => void loadProfiles(true)}
+                onAnswersDownload={() => downloadApplicantAnswersTsv(profiles)}
                 onMembershipStatusChange={changeMembershipStatus}
                 onProfileDetailSave={saveProfileDetails}
               />
@@ -811,6 +950,7 @@ function ApplicantsPanel({
   onSelectProfile,
   onCloseDetail,
   onReload,
+  onAnswersDownload,
   onMembershipStatusChange,
   onProfileDetailSave,
 }: {
@@ -840,6 +980,7 @@ function ApplicantsPanel({
   onSelectProfile: (profileId: string) => void;
   onCloseDetail: () => void;
   onReload: () => void;
+  onAnswersDownload: () => void;
   onMembershipStatusChange: (
     userId: string,
     status: MembershipStatus,
@@ -869,43 +1010,55 @@ function ApplicantsPanel({
               )}
             </div>
 
-            <div className="flex rounded-xl bg-[#f2f3f1] p-1">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => onViewModeChange("dropoffs")}
-                className={cn(
-                  "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                  viewMode === "dropoffs"
-                    ? "bg-white text-black shadow-sm"
-                    : "text-black/45 hover:text-black",
-                )}
+                onClick={onAnswersDownload}
+                disabled={totalCount === 0}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3.5 text-sm font-semibold text-black/60 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
               >
-                이탈자 보기
+                <Download size={15} aria-hidden />
+                답변 다운로드
               </button>
-              <button
-                type="button"
-                onClick={() => onViewModeChange("list")}
-                className={cn(
-                  "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                  viewMode === "list"
-                    ? "bg-white text-black shadow-sm"
-                    : "text-black/45 hover:text-black",
-                )}
-              >
-                리스트 보기
-              </button>
-              <button
-                type="button"
-                onClick={() => onViewModeChange("cards")}
-                className={cn(
-                  "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                  viewMode === "cards"
-                    ? "bg-white text-black shadow-sm"
-                    : "text-black/45 hover:text-black",
-                )}
-              >
-                카드 보기
-              </button>
+
+              <div className="flex rounded-xl bg-[#f2f3f1] p-1">
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("dropoffs")}
+                  className={cn(
+                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
+                    viewMode === "dropoffs"
+                      ? "bg-white text-black shadow-sm"
+                      : "text-black/45 hover:text-black",
+                  )}
+                >
+                  이탈자 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("list")}
+                  className={cn(
+                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
+                    viewMode === "list"
+                      ? "bg-white text-black shadow-sm"
+                      : "text-black/45 hover:text-black",
+                  )}
+                >
+                  리스트 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("cards")}
+                  className={cn(
+                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
+                    viewMode === "cards"
+                      ? "bg-white text-black shadow-sm"
+                      : "text-black/45 hover:text-black",
+                  )}
+                >
+                  카드 보기
+                </button>
+              </div>
             </div>
           </div>
 
