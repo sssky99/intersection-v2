@@ -14,6 +14,10 @@ import {
   type WaitlistTicketTemplate,
 } from "@/features/admin/waitlistAdminTypes";
 import type { GatheringTicket } from "@/types/ticket";
+import {
+  meetingDateDepositStatusLabels,
+  type MeetingDateDepositStatus,
+} from "@/lib/meetingDateApplications";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +33,22 @@ type WaitlistDbRow = {
   arrival_status_updated_at: string | null;
   admin_note: string | null;
   ticket_snapshot: GatheringTicket | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type DateApplicationDbRow = {
+  id: number | string;
+  user_id: string;
+  meeting_date: string;
+  meeting_time: string;
+  region: string;
+  status: string;
+  deposit_amount: number;
+  deposit_status: MeetingDateDepositStatus;
+  assigned_ticket_instance_id: string | null;
+  ticket_participation_id: number | string | null;
+  admin_note: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -74,23 +94,51 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isMeetingDateDepositStatus(
+  value: unknown,
+): value is MeetingDateDepositStatus {
+  return (
+    typeof value === "string" && value in meetingDateDepositStatusLabels
+  );
+}
+
 async function loadWaitlistData(): Promise<AdminWaitlistData> {
   const supabase = createAdminClient();
 
-  const { data: waitlistData, error: waitlistError } = await supabase
-    .from("ticket_participations")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(500);
-  if (waitlistError) throw waitlistError;
+  const [waitlistResult, dateApplicationsResult] = await Promise.all([
+    supabase
+      .from("ticket_participations")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("meeting_date_applications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
+  if (waitlistResult.error) throw waitlistResult.error;
+  if (
+    dateApplicationsResult.error &&
+    dateApplicationsResult.error.code !== "PGRST205"
+  ) {
+    throw dateApplicationsResult.error;
+  }
 
-  const waitlistRows = (waitlistData ?? []) as WaitlistDbRow[];
-  const userIds = uniqueText(waitlistRows.map((row) => row.user_id));
+  const waitlistRows = (waitlistResult.data ?? []) as WaitlistDbRow[];
+  const dateApplicationRows = (dateApplicationsResult.data ?? []) as DateApplicationDbRow[];
+  const userIds = uniqueText([
+    ...waitlistRows.map((row) => row.user_id),
+    ...dateApplicationRows.map((row) => row.user_id),
+  ]);
   const rowTemplateIds = uniqueText(
     waitlistRows.map((row) => row.ticket_template_id),
   );
   const rowInstanceIds = uniqueText(
-    waitlistRows.map((row) => row.ticket_instance_id),
+    [
+      ...waitlistRows.map((row) => row.ticket_instance_id),
+      ...dateApplicationRows.map((row) => row.assigned_ticket_instance_id),
+    ],
   );
 
   let profiles: AdminProfile[] = [];
@@ -144,8 +192,25 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
     templateInstances = (data ?? []) as WaitlistTicketInstance[];
   }
 
+  const applicationDates = uniqueText(
+    dateApplicationRows.map((row) => row.meeting_date),
+  );
+  let dateInstances: WaitlistTicketInstance[] = [];
+  if (applicationDates.length > 0) {
+    const { data, error } = await supabase
+      .from("ticket_instances")
+      .select(instanceSelect)
+      .in("event_date", applicationDates)
+      .order("event_date", { ascending: true, nullsFirst: false })
+      .order("event_time", { ascending: true, nullsFirst: false });
+    if (error) throw error;
+    dateInstances = (data ?? []) as WaitlistTicketInstance[];
+  }
+
   const profilesMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
-  const instances = sortInstances(dedupeInstances([...seedInstances, ...templateInstances]));
+  const instances = sortInstances(
+    dedupeInstances([...seedInstances, ...templateInstances, ...dateInstances]),
+  );
   const templateMap = new Map(templates.map((template) => [template.id, template]));
   const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
 
@@ -158,7 +223,11 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
       return {
         ...row,
+        source: "ticket_participation",
+        source_id: row.id,
         status: isWaitlistStatus(row.status) ? row.status : "waitlisted",
+        deposit_amount: null,
+        deposit_status: null,
         profile: profilesMap.get(row.user_id) ?? null,
         ticket_template: templateId ? templateMap.get(templateId) ?? null : null,
         ticket_instance: instance,
@@ -166,7 +235,45 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
     },
   );
 
-  return { waitlist, templates, instances };
+  const dateApplications = dateApplicationRows.map(
+    (row): AdminWaitlistRow => {
+      const instance = row.assigned_ticket_instance_id
+        ? instanceMap.get(row.assigned_ticket_instance_id) ?? null
+        : null;
+      const templateId = instance?.template_id ?? null;
+
+      return {
+        id: `date:${row.id}`,
+        source: "date_application",
+        source_id: row.id,
+        user_id: row.user_id,
+        ticket_id: `date:${row.meeting_date}`,
+        ticket_template_id: templateId,
+        ticket_instance_id: row.assigned_ticket_instance_id,
+        meeting_date: row.meeting_date,
+        status: isWaitlistStatus(row.status) ? row.status : "waitlisted",
+        arrival_status: null,
+        arrival_status_updated_at: null,
+        admin_note: row.admin_note,
+        ticket_snapshot: null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        deposit_amount: row.deposit_amount,
+        deposit_status: row.deposit_status,
+        profile: profilesMap.get(row.user_id) ?? null,
+        ticket_template: templateId ? templateMap.get(templateId) ?? null : null,
+        ticket_instance: instance,
+      };
+    },
+  );
+
+  return {
+    waitlist: [...dateApplications, ...waitlist].sort((left, right) =>
+      (right.created_at ?? "").localeCompare(left.created_at ?? ""),
+    ),
+    templates,
+    instances,
+  };
 }
 
 function uniqueText(values: Array<string | null | undefined>) {
@@ -221,6 +328,7 @@ export async function PATCH(request: NextRequest) {
   const id = body?.id;
   const status = body?.status;
   const adminNote = body?.adminNote;
+  const depositStatus = body?.depositStatus;
   const ticketInstanceId =
     body && "ticketInstanceId" in body ? body.ticketInstanceId : undefined;
 
@@ -231,6 +339,16 @@ export async function PATCH(request: NextRequest) {
   if (status !== undefined && !isWaitlistStatus(status)) {
     return NextResponse.json(
       { error: "대기열 상태가 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (
+    depositStatus !== undefined &&
+    !isMeetingDateDepositStatus(depositStatus)
+  ) {
+    return NextResponse.json(
+      { error: "참여 보증금 상태가 올바르지 않습니다." },
       { status: 400 },
     );
   }
@@ -248,6 +366,122 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
+    const dateApplicationId =
+      typeof id === "string" && /^date:\d+$/.test(id)
+        ? Number(id.slice("date:".length))
+        : null;
+
+    if (dateApplicationId !== null) {
+      const { data: current, error: currentError } = await supabase
+        .from("meeting_date_applications")
+        .select(
+          "id,user_id,meeting_date,status,deposit_status,assigned_ticket_instance_id,ticket_participation_id",
+        )
+        .eq("id", dateApplicationId)
+        .single<{
+          id: number | string;
+          user_id: string;
+          meeting_date: string;
+          status: string;
+          deposit_status: MeetingDateDepositStatus;
+          assigned_ticket_instance_id: string | null;
+          ticket_participation_id: number | string | null;
+        }>();
+      if (currentError) throw currentError;
+
+      let nextInstanceId = current.assigned_ticket_instance_id;
+      if (ticketInstanceId !== undefined) {
+        const instanceId = text(ticketInstanceId);
+        if (instanceId) {
+          const { data: instance, error: instanceError } = await supabase
+            .from("ticket_instances")
+            .select("id,event_date")
+            .eq("id", instanceId)
+            .single<{ id: string; event_date: string | null }>();
+          if (instanceError) throw instanceError;
+          if (instance.event_date !== current.meeting_date) {
+            return NextResponse.json(
+              { error: "신청 날짜와 같은 날짜의 티켓만 배정할 수 있습니다." },
+              { status: 400 },
+            );
+          }
+          nextInstanceId = instance.id;
+        } else {
+          nextInstanceId = null;
+        }
+      }
+
+      if (
+        current.ticket_participation_id !== null &&
+        nextInstanceId !== current.assigned_ticket_instance_id
+      ) {
+        return NextResponse.json(
+          { error: "참여 확정된 신청은 세부 티켓을 다시 배정할 수 없습니다." },
+          { status: 409 },
+        );
+      }
+
+      if (status === "approved" && !nextInstanceId) {
+        return NextResponse.json(
+          { error: "참여 확정 전에 세부 티켓을 배정해주세요." },
+          { status: 400 },
+        );
+      }
+
+      const now = new Date().toISOString();
+      const payload: Record<string, unknown> = { updated_at: now };
+      if (ticketInstanceId !== undefined) {
+        payload.assigned_ticket_instance_id = nextInstanceId;
+        payload.assigned_at = nextInstanceId ? now : null;
+      }
+      if (adminNote !== undefined) {
+        payload.admin_note =
+          typeof adminNote === "string" && adminNote.trim()
+            ? adminNote.trim()
+            : null;
+      }
+      if (status !== undefined) {
+        payload.status = status;
+        if (status === "waitlisted") {
+          payload.deposit_status = "confirmed";
+          payload.deposit_confirmed_at = now;
+        }
+        if (["not_selected", "completed", "feedback_done"].includes(status)) {
+          payload.deposit_status = "refund_pending";
+        }
+        if (status === "cancelled") payload.cancelled_at = now;
+      }
+      if (depositStatus !== undefined) {
+        payload.deposit_status = depositStatus;
+        if (depositStatus === "confirmed") payload.deposit_confirmed_at = now;
+        if (depositStatus === "refunded") payload.refund_completed_at = now;
+      }
+
+      if (status !== undefined && nextInstanceId) {
+        const shouldSyncParticipation =
+          status === "approved" || current.ticket_participation_id !== null;
+        if (shouldSyncParticipation) {
+          const { data: participationId, error: participationError } =
+            await supabase.rpc("set_ticket_participation_status", {
+              p_ticket_instance_id: nextInstanceId,
+              p_user_id: current.user_id,
+              p_status: status,
+            });
+          if (participationError) throw participationError;
+          payload.ticket_participation_id = participationId;
+          if (status === "approved") payload.confirmed_at = now;
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from("meeting_date_applications")
+        .update(payload)
+        .eq("id", dateApplicationId);
+      if (updateError) throw updateError;
+
+      return NextResponse.json(await loadWaitlistData());
+    }
+
     const { data: currentParticipation, error: currentParticipationError } =
       await supabase
         .from("ticket_participations")

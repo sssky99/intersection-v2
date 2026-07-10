@@ -432,8 +432,6 @@ export function ProfileTab({
   onOpenQuestionReview,
   onOpenProfileCompletionReplay,
   onRequestProfileRegeneration,
-  canReplayCoachmarks,
-  onReplayCoachmarks,
   onLogout,
 }: {
   profile: ProfileRow;
@@ -445,8 +443,6 @@ export function ProfileTab({
   onOpenQuestionReview: () => void;
   onOpenProfileCompletionReplay: () => void;
   onRequestProfileRegeneration: () => void;
-  canReplayCoachmarks: boolean;
-  onReplayCoachmarks: () => void;
   onLogout: () => Promise<void>;
 }) {
   const publicIntro = profile.public_intro?.trim();
@@ -540,17 +536,6 @@ export function ProfileTab({
           >
             <Sparkles size={15} aria-hidden />
             프로필 완성 다시보기
-          </button>
-        )}
-
-        {canReplayCoachmarks && (
-          <button
-            type="button"
-            onClick={onReplayCoachmarks}
-            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-accent/35 bg-accent/[0.08] text-xs font-bold text-black/62 transition hover:border-accent/55 hover:bg-accent/[0.12] hover:text-black/75"
-          >
-            <Sparkles size={15} aria-hidden />
-            코치마크 다시보기
           </button>
         )}
 

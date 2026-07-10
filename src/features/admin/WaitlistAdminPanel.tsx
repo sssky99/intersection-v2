@@ -27,6 +27,10 @@ import {
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
 import {
+  meetingDateDepositStatusLabels,
+  type MeetingDateDepositStatus,
+} from "@/lib/meetingDateApplications";
+import {
   arrivalStatusLabels,
   waitlistStatuses,
   waitlistStatusLabels,
@@ -41,6 +45,7 @@ type WaitlistPatch = {
   status?: WaitlistStatus;
   adminNote?: string | null;
   ticketInstanceId?: string | null;
+  depositStatus?: MeetingDateDepositStatus;
 };
 
 type StatusFilter = WaitlistStatus | "all";
@@ -174,6 +179,8 @@ function rowTemplateId(row: AdminWaitlistRow) {
 }
 
 function ticketTitle(row: AdminWaitlistRow) {
+  if (row.source === "date_application") return "날짜 대기 신청";
+
   return (
     row.ticket_template?.title ??
     row.ticket_snapshot?.title ??
@@ -926,11 +933,24 @@ function WaitlistDetailPanel({
 
         <section className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
           <div className="space-y-3">
-            <DetailItem label="선택한 초대장" value={ticketTitle(row)} />
+            <DetailItem
+              label={row.source === "date_application" ? "신청 방식" : "선택한 초대장"}
+              value={ticketTitle(row)}
+            />
             <DetailItem
               label="현재 세부 티켓"
               value={instanceText(row.ticket_instance)}
             />
+            {row.deposit_amount !== null && (
+              <DetailItem
+                label="참여 보증금"
+                value={`${row.deposit_amount.toLocaleString("ko-KR")}원 · ${
+                  row.deposit_status
+                    ? meetingDateDepositStatusLabels[row.deposit_status]
+                    : "-"
+                }`}
+              />
+            )}
             <DetailItem label="도착 상태" value={arrivalStatusText(row)} />
           </div>
         </section>
@@ -961,7 +981,7 @@ function WaitlistDetailPanel({
             </select>
             {instanceOptions.length === 0 && (
               <p className="mt-2 text-xs font-semibold text-black/40">
-                같은 날짜와 초대장에 연결된 세부 티켓이 없습니다.
+                같은 날짜에 연결된 세부 티켓이 없습니다.
               </p>
             )}
           </label>
@@ -989,6 +1009,36 @@ function WaitlistDetailPanel({
               ))}
             </select>
           </label>
+
+          {row.deposit_status && (
+            <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">
+                참여 보증금 상태
+              </span>
+              <select
+                value={row.deposit_status}
+                disabled={saving}
+                onChange={(event) =>
+                  onPatch(
+                    row,
+                    {
+                      depositStatus: event.target.value as MeetingDateDepositStatus,
+                    },
+                    "참여 보증금 상태를 저장했습니다.",
+                  )
+                }
+                className="mt-2 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+              >
+                {Object.entries(meetingDateDepositStatusLabels).map(
+                  ([status, label]) => (
+                    <option key={status} value={status}>
+                      {label}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+          )}
 
           <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
             <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">

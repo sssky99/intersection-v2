@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   Clock3,
   Copy,
   Landmark,
@@ -28,7 +29,17 @@ import {
 } from "@/features/meetings/TicketDetailHero";
 import { RecommendationCalendarSelector } from "@/features/meetings/RecommendationCalendarSelector";
 import { trackEvent } from "@/lib/analytics";
-import { isPastTicketDate } from "@/lib/ticketDate";
+import {
+  MEETING_DATE_DEPOSIT_AMOUNT,
+  MEETING_DATE_REGION,
+  meetingDateApplicationDates,
+  meetingDateApplicationStatusLabels,
+  meetingDateLabel,
+  meetingDateRelativeWeekLabel,
+  meetingDateSchedule,
+  type MeetingDateApplication,
+} from "@/lib/meetingDateApplications";
+import { isPastTicketDate, todayInKst } from "@/lib/ticketDate";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
@@ -44,7 +55,6 @@ type Screen =
   | "waitlisted"
   | "blindDate";
 type RecommendationWaitlistStatus = "waitlisted" | "payment_pending";
-export type RecommendationCoachmarkStep = "date" | "invitation" | "decision";
 type DepositMessageRegistration = {
   count: number;
   registered: boolean;
@@ -193,6 +203,69 @@ function isLocalTestHost() {
   );
 }
 
+const localDateApplicationsStoragePrefix =
+  "intersection:local-date-applications";
+
+function localDateApplicationsStorageKey(userId: string) {
+  return `${localDateApplicationsStoragePrefix}:${userId}`;
+}
+
+function mergeDateApplications(
+  ...applicationGroups: MeetingDateApplication[][]
+) {
+  const merged = new Map<string, MeetingDateApplication>();
+
+  applicationGroups.flat().forEach((application) => {
+    merged.set(application.meetingDate, application);
+  });
+
+  return Array.from(merged.values()).sort((left, right) =>
+    left.meetingDate.localeCompare(right.meetingDate),
+  );
+}
+
+function loadLocalDateApplications(userId: string) {
+  if (!isLocalTestHost()) return [];
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(localDateApplicationsStorageKey(userId)) ??
+        "[]",
+    ) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (application): application is MeetingDateApplication =>
+        Boolean(
+          application &&
+            typeof application === "object" &&
+            "meetingDate" in application &&
+            typeof application.meetingDate === "string" &&
+            "status" in application &&
+            typeof application.status === "string",
+        ),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalDateApplications(
+  userId: string,
+  applications: MeetingDateApplication[],
+) {
+  if (!isLocalTestHost()) return;
+
+  try {
+    window.localStorage.setItem(
+      localDateApplicationsStorageKey(userId),
+      JSON.stringify(applications),
+    );
+  } catch {
+    // Local preview persistence is best-effort only.
+  }
+}
+
 async function saveInvitationDecision(
   ticketInstanceId: string,
   action: "viewed",
@@ -224,11 +297,11 @@ async function copyTextToClipboard(value: string) {
   if (!copied) throw new Error("copy-failed");
 }
 
-async function saveDepositMessageRegistration(ticketId: string) {
+async function saveDepositMessageRegistration(ticketId?: string) {
   const response = await fetch("/api/meeting-waitlist/deposit-message", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ticketId }),
+    body: JSON.stringify(ticketId ? { ticketId } : {}),
   });
 
   const data = (await response.json().catch(() => null)) as {
@@ -469,7 +542,7 @@ async function saveTicketRejectionReason({
   if (!response.ok) throw new Error("ticket-rejection-save-failed");
 }
 
-export function MeetingRecommendation({
+function LegacyMeetingRecommendation({
   userId,
   recommendationName,
   embedded = false,
@@ -482,7 +555,6 @@ export function MeetingRecommendation({
   blindDateOpenRequestId = 0,
   blindDateOpenRequestPending = false,
   onBlindDateOpenRequestHandled,
-  onCoachmarkProgress,
 }: {
   userId: string;
   recommendationName?: string;
@@ -496,7 +568,7 @@ export function MeetingRecommendation({
   blindDateOpenRequestId?: number;
   blindDateOpenRequestPending?: boolean;
   onBlindDateOpenRequestHandled?: () => void;
-  onCoachmarkProgress?: (step: RecommendationCoachmarkStep) => void;
+  onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
 }) {
   const [screen, setScreen] = useState<Screen>("calendar");
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
@@ -670,7 +742,6 @@ export function MeetingRecommendation({
       setSelectedDate(dateWithTickets);
       setTicketIndex(0);
       setScreen("drawing");
-      onCoachmarkProgress?.("date");
     } catch {
       await loadingDelay;
       if (dateSelectionRunRef.current !== runId) return;
@@ -685,7 +756,6 @@ export function MeetingRecommendation({
 
   const openRejectionSheet = () => {
     if (!ticket || saving || rejectionSavingReason) return;
-    onCoachmarkProgress?.("decision");
     setRejectionTicket(ticket);
     setRejectionError(null);
   };
@@ -774,7 +844,6 @@ export function MeetingRecommendation({
     void fetchDepositMessageRegistrationSummary()
       .then(setDepositMessageSummary)
       .catch(() => undefined);
-    onCoachmarkProgress?.("decision");
   };
 
   const copyDepositAccount = async () => {
@@ -907,7 +976,7 @@ export function MeetingRecommendation({
               </h1>
             </header>
 
-            <div data-coachmark-target="recommend-date-picker">
+            <div>
               <RecommendationCalendarSelector
                 dates={ticketDates}
                 loading={loadingDates || Boolean(loadingTicketDate)}
@@ -965,7 +1034,6 @@ export function MeetingRecommendation({
             error={error}
             onNo={openRejectionSheet}
             onYes={openDepositSheet}
-            onOpenInvitation={() => onCoachmarkProgress?.("invitation")}
             onChangeDate={() => {
               setSelectedDate(null);
               setTicketIndex(0);
@@ -1115,6 +1183,1051 @@ export function MeetingRecommendation({
         )}
       </AnimatePresence>
     </section>
+  );
+}
+
+type MeetingRecommendationProps = Parameters<typeof LegacyMeetingRecommendation>[0];
+type DateApplicationScreen = "intro" | "dates" | "submitted" | "blindDate";
+
+type DateApplicationsResponse = {
+  applications?: MeetingDateApplication[];
+  totalDepositAmount?: number;
+  error?: string;
+};
+
+async function fetchDateApplications() {
+  const response = await fetch("/api/meeting-date-applications", {
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as
+    | DateApplicationsResponse
+    | null;
+
+  if (!response.ok || !data) {
+    throw new Error(data?.error ?? "date-applications-load-failed");
+  }
+
+  return data.applications ?? [];
+}
+
+function dateApplicationStatusClass(
+  status: MeetingDateApplication["status"],
+) {
+  if (status === "payment_pending") {
+    return "bg-amber-50 text-amber-700";
+  }
+  if (status === "approved") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+  return "bg-sky-50 text-sky-700";
+}
+
+function DateApplicationOption({
+  date,
+  selected,
+  application,
+  relativeWeekLabel,
+  closed,
+  disabled,
+  onToggle,
+}: {
+  date: AvailableDate;
+  selected: boolean;
+  application: MeetingDateApplication | null;
+  relativeWeekLabel: string;
+  closed: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const schedule = meetingDateSchedule(date.date)!;
+
+  return (
+    <motion.button
+      type="button"
+      data-testid={`meeting-date-${date.date}`}
+      aria-pressed={selected}
+      disabled={disabled || closed || Boolean(application)}
+      whileTap={!disabled && !closed && !application ? { scale: 0.98 } : undefined}
+      onClick={onToggle}
+      className={cn(
+        "relative min-h-[108px] min-w-0 border px-4 py-4 text-left transition",
+        closed
+          ? "border-black/5 bg-black/[0.035] text-black/32"
+          : application
+            ? "border-black/10 bg-white text-black"
+            : selected
+          ? "border-black bg-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
+          : "border-black/10 bg-white text-black hover:border-black/25",
+        (disabled || closed || application) && "cursor-default",
+      )}
+    >
+      <span
+        className={cn(
+          "absolute right-3 top-3 flex h-5 min-w-5 items-center justify-center rounded-full border px-1 font-black",
+          closed || application ? "text-[10px]" : "text-[9px]",
+          closed
+            ? "border-red-200 bg-red-50 text-red-600"
+            : application
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : selected
+            ? "border-white/30 bg-white text-black"
+            : "border-black/15 bg-white text-transparent",
+        )}
+      >
+        {closed
+          ? "마감"
+          : application
+            ? "신청 완료"
+            : selected
+              ? <Check size={12} aria-hidden />
+              : "-"}
+      </span>
+      <span className="block pr-9 text-base font-black leading-5">
+        {schedule.month}월 {schedule.day}일
+      </span>
+      <span className={cn("mt-0.5 block text-[13px] font-bold", selected ? "text-white/55" : "text-black/40")}>
+        {relativeWeekLabel}
+      </span>
+      <span className={cn("mt-3 flex items-center gap-1.5 text-[13px] font-bold", selected ? "text-white/78" : "text-black/62")}>
+        <Clock3 size={12} aria-hidden />
+        {schedule.timeLabel}
+        <span className={selected ? "text-white/25" : "text-black/20"}>·</span>
+        <MapPin size={12} aria-hidden />
+        {MEETING_DATE_REGION}
+      </span>
+      {application && (
+        <span className="mt-2 block text-[10px] font-black text-emerald-700">
+          {meetingDateApplicationStatusLabels[application.status]}
+        </span>
+      )}
+    </motion.button>
+  );
+}
+
+function RollingDepositAmount({ amount }: { amount: number }) {
+  const reduceMotion = useReducedMotion();
+  const previousAmount = useRef(amount);
+  const direction = amount >= previousAmount.current ? 1 : -1;
+  const leadingDigit = String(amount / 10_000);
+
+  useEffect(() => {
+    previousAmount.current = amount;
+  }, [amount]);
+
+  return (
+    <span aria-label={`${amount.toLocaleString("ko-KR")}원`}>
+      <span aria-hidden className="inline-flex items-baseline tabular-nums">
+        <span className="inline-grid min-w-[0.58em] overflow-hidden">
+          <AnimatePresence initial={false} custom={direction}>
+            <motion.span
+              key={leadingDigit}
+              custom={direction}
+              initial={reduceMotion ? { opacity: 0 } : { y: `${direction * 100}%` }}
+              animate={{ opacity: 1, y: "0%" }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { y: `${direction * -100}%` }
+              }
+              transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="col-start-1 row-start-1 text-center"
+            >
+              {leadingDigit}
+            </motion.span>
+          </AnimatePresence>
+        </span>
+        <span>0,000원</span>
+      </span>
+    </span>
+  );
+}
+
+function DateApplicationList({
+  applications,
+}: {
+  applications: MeetingDateApplication[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (applications.length === 0) return null;
+
+  return (
+    <section className="mt-7 border-t border-black/8 pt-5">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="date-application-list"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between py-1 text-left"
+      >
+        <h2 className="text-sm font-black text-black">신청한 날짜</h2>
+        <span className="flex items-center gap-1.5 text-[11px] font-bold text-black/35">
+          <span>{applications.length}개</span>
+          <motion.span
+            aria-hidden
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="inline-flex"
+          >
+            <ChevronDown size={15} strokeWidth={2.2} />
+          </motion.span>
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            id="date-application-list"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 divide-y divide-black/7 border-y border-black/8">
+              {applications.map((application) => {
+                const schedule = meetingDateSchedule(application.meetingDate);
+                return (
+                  <div
+                    key={application.id}
+                    className="flex min-h-16 items-center justify-between gap-3 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-black">
+                        {meetingDateLabel(application.meetingDate)}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-black/42">
+                        {schedule?.timeLabel ?? application.meetingTime} ·{" "}
+                        {application.region}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black",
+                        dateApplicationStatusClass(application.status),
+                      )}
+                    >
+                      {meetingDateApplicationStatusLabels[application.status]}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
+function DateApplicationIntro({
+  recommendationName,
+  onContinue,
+}: {
+  recommendationName?: string;
+  onContinue: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const displayName = recommendationName?.trim() || "회원";
+
+  return (
+    <motion.div
+      key="date-application-intro"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      className="relative isolate"
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 -top-16 -z-10 h-44 w-44 rounded-full bg-accent/15 blur-3xl"
+      />
+
+      <header className="pr-8">
+        <h1 className="text-[30px] font-black leading-[1.22] tracking-[-0.045em] text-black">
+          <span className="relative inline-block">
+            <span
+              aria-hidden
+              className="absolute inset-x-[-3px] bottom-1 h-2.5 -rotate-1 rounded-full bg-accent/25"
+            />
+            <span className="relative">날짜만</span>
+          </span>{" "}
+          고르면,
+          <br />
+          만남은 저희가 준비해요.
+        </h1>
+      </header>
+
+      <div className="mt-8 space-y-3">
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: reduceMotion ? 0 : 0.12, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
+            1
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <h2 className="text-[15px] font-black text-black">
+              가능한 날짜를 선택하세요.
+            </h2>
+            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
+              날짜만 선택하시면 {displayName}님과 잘 맞는 사람과 활동을
+              준비해드려요.
+            </p>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: reduceMotion ? 0 : 0.24, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
+            2
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <h2 className="text-[15px] font-black text-black">
+              장소와 활동은 시작 24시간 전에 공개돼요.
+            </h2>
+            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
+              최적의 구성을 위해서, 정확한 장소와 활동은 모임 시작 24시간
+              전에 공개 돼요.
+            </p>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: reduceMotion ? 0 : 0.36, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
+            3
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <h2 className="text-[15px] font-black text-black">
+              참여 보증금은 100% 환급돼요.
+            </h2>
+            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
+              참가하시는 분들의 소중한 시간과 경험을 보장하기 위해서 참여
+              보증금을 받고 있어요. 참여 보증금은 정상 참여시 전액
+              돌려드려요.
+            </p>
+          </div>
+        </motion.div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onContinue}
+        className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[18px] bg-black text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] transition active:scale-[0.985]"
+      >
+        날짜 선택하기
+      </button>
+    </motion.div>
+  );
+}
+
+export function MeetingRecommendation(props: MeetingRecommendationProps) {
+  return <MeetingDateApplicationFlow {...props} />;
+}
+
+function MeetingDateApplicationFlow({
+  userId,
+  recommendationName,
+  embedded = false,
+  active = true,
+  membershipStatus,
+  blindDateOffers = [],
+  onBlindDateOffersChange,
+  blindDateOpenRequestId = 0,
+  blindDateOpenRequestPending = false,
+  onBlindDateOpenRequestHandled,
+  onDateApplicationsChange,
+}: MeetingRecommendationProps) {
+  const [screen, setScreen] = useState<DateApplicationScreen>("intro");
+  const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [submittedDates, setSubmittedDates] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [depositSession, setDepositSession] = useState(0);
+  const [depositAccountCopied, setDepositAccountCopied] = useState(false);
+  const [depositCopyError, setDepositCopyError] = useState<string | null>(null);
+  const [depositMessageSummary, setDepositMessageSummary] =
+    useState<DepositMessageRegistrationSummary | null>(() =>
+      cachedDepositMessageSummary(),
+    );
+  const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
+    useState<string | null>(null);
+
+  const today = todayInKst();
+  const availableDates = meetingDateApplicationDates(today).map(
+    (date): AvailableDate => ({
+      id: `meeting-date-${date}`,
+      date,
+      label: date,
+      tickets: [],
+      ticketCount: 0,
+    }),
+  );
+  const applicationByDate = new Map(
+    applications.map((application) => [application.meetingDate, application]),
+  );
+  const selectedTotal = selectedDates.length * MEETING_DATE_DEPOSIT_AMOUNT;
+  const activeBlindDateOffers = blindDateOffers.filter(
+    (offer) =>
+      !offer.isExpired &&
+      ["offered", "waiting_response", "scheduled", "needs_reschedule"].includes(
+        offer.status,
+      ),
+  );
+  const answerableBlindDateOffers = blindDateOffers.filter(
+    (offer) =>
+      !offer.isExpired &&
+      offer.ownResponse === "pending" &&
+      ["offered", "waiting_response"].includes(offer.status),
+  );
+  const selectedBlindDateOffer =
+    blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
+    activeBlindDateOffers[0] ??
+    null;
+
+  useEffect(() => {
+    if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
+      return;
+    }
+
+    setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
+    setScreen("blindDate");
+    onBlindDateOpenRequestHandled?.();
+  }, [
+    activeBlindDateOffers,
+    blindDateOpenRequestId,
+    blindDateOpenRequestPending,
+    onBlindDateOpenRequestHandled,
+  ]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const localApplications = loadLocalDateApplications(userId);
+      const applicationsResult = await fetchDateApplications().catch(
+        () => null,
+      );
+
+      if (!alive) return;
+      if (applicationsResult || localApplications.length > 0) {
+        setApplications(
+          mergeDateApplications(
+            applicationsResult ?? [],
+            localApplications,
+          ),
+        );
+      }
+    };
+
+    void load();
+    if (active) window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", load);
+    };
+  }, [active, userId]);
+
+  useEffect(() => {
+    onDateApplicationsChange?.(applications);
+  }, [applications, onDateApplicationsChange]);
+
+  const toggleDate = (date: string) => {
+    if (date <= today || applicationByDate.has(date) || saving) return;
+    setSelectedDates((current) =>
+      current.includes(date)
+        ? current.filter((selected) => selected !== date)
+        : [...current, date].sort(),
+    );
+    setError(null);
+  };
+
+  const openDeposit = () => {
+    if (selectedDates.length === 0 || saving) return;
+    setDepositAccountCopied(false);
+    setDepositCopyError(null);
+    setDepositSession((current) => current + 1);
+    setDepositOpen(true);
+    trackEvent("application_submit_click", {
+      application_type: "meeting_date",
+      date_count: selectedDates.length,
+      deposit_amount: selectedTotal,
+      membership_status: membershipStatus,
+    });
+    void fetchDepositMessageRegistrationSummary()
+      .then(setDepositMessageSummary)
+      .catch(() => undefined);
+  };
+
+  const copyDepositAccount = async () => {
+    if (saving) return;
+    try {
+      await copyTextToClipboard(noShowDepositAccountText);
+      setDepositAccountCopied(true);
+      setDepositCopyError(null);
+    } catch {
+      setDepositCopyError(
+        "계좌번호를 복사하지 못했어요. 직접 선택해서 복사해주세요.",
+      );
+    }
+  };
+
+  const submitDateApplications = async () => {
+    if (selectedDates.length === 0 || saving) return;
+
+    const targetDates = [...selectedDates];
+    if (isLocalTestHost()) {
+      const now = new Date().toISOString();
+      const localApplications = targetDates.map(
+        (date, index): MeetingDateApplication => ({
+          id: `local:${date}:${index}`,
+          meetingDate: date,
+          meetingTime: meetingDateSchedule(date)?.time ?? "",
+          region: MEETING_DATE_REGION,
+          status: "payment_pending",
+          depositAmount: MEETING_DATE_DEPOSIT_AMOUNT,
+          depositStatus: "payment_pending",
+          assignedTicketInstanceId: null,
+          createdAt: now,
+        }),
+      );
+      setApplications((current) => {
+        const nextApplications = mergeDateApplications(
+          current,
+          localApplications,
+        );
+        saveLocalDateApplications(userId, nextApplications);
+        return nextApplications;
+      });
+      setSubmittedDates(targetDates);
+      setSelectedDates([]);
+      setDepositOpen(false);
+      setScreen("submitted");
+      return;
+    }
+
+    window.open(kakaoDepositMessageChatUrl, "_blank", "noopener,noreferrer");
+    setSaving(true);
+    setDepositCopyError(null);
+
+    try {
+      const response = await fetch("/api/meeting-date-applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dates: targetDates }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | DateApplicationsResponse
+        | null;
+      if (!response.ok || !data?.applications) {
+        throw new Error(data?.error ?? "date-applications-save-failed");
+      }
+
+      const registration = await saveDepositMessageRegistration();
+      setDepositMessageSummary({
+        count: registration.count,
+        limitCount: registration.limitCount,
+      });
+      setApplications((current) => {
+        const next = new Map(
+          [...current, ...(data.applications ?? [])].map((application) => [
+            application.meetingDate,
+            application,
+          ]),
+        );
+        return Array.from(next.values()).sort((left, right) =>
+          left.meetingDate.localeCompare(right.meetingDate),
+        );
+      });
+      setSubmittedDates(targetDates);
+      setSelectedDates([]);
+      setDepositOpen(false);
+      setScreen("submitted");
+      trackEvent("application_created", {
+        application_type: "meeting_date",
+        date_count: targetDates.length,
+        deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      });
+    } catch (submissionError) {
+      setDepositCopyError(
+        submissionError instanceof Error &&
+          submissionError.message !== "date-applications-save-failed"
+          ? submissionError.message
+          : "입금 확인 요청을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (screen === "blindDate" && selectedBlindDateOffer) {
+    return (
+      <section
+        className={cn(
+          "px-5 pb-6 pt-7",
+          embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+        )}
+      >
+        <BlindDateInvitationFlow
+          offer={selectedBlindDateOffer}
+          onClose={() => setScreen("dates")}
+          onOffersChange={onBlindDateOffersChange}
+        />
+      </section>
+    );
+  }
+
+  return (
+    <section
+      className={cn(
+        "px-5 pb-8 pt-7",
+        embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+      )}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {screen === "intro" ? (
+          <DateApplicationIntro
+            recommendationName={recommendationName}
+            onContinue={() => {
+              trackEvent("application_intro_continue_click");
+              setScreen("dates");
+            }}
+          />
+        ) : screen === "submitted" ? (
+          <motion.div
+            key="date-submitted"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+              payment pending
+            </p>
+            <h1 className="mt-2 text-[28px] font-bold leading-9 text-black">
+              입금 확인 요청이
+              <br />
+              기록됐어요.
+            </h1>
+            <div className="mt-7 divide-y divide-black/8 border-y border-black/10">
+              {submittedDates.map((date) => {
+                const schedule = meetingDateSchedule(date)!;
+                return (
+                  <div
+                    key={date}
+                    className="flex min-h-[76px] items-center justify-between gap-3 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-black text-black">
+                        {meetingDateLabel(date)}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-black/42">
+                        {schedule.timeLabel} · {MEETING_DATE_REGION}
+                      </p>
+                    </div>
+                    <p className="text-sm font-black tabular-nums text-black">
+                      {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setScreen("dates")}
+              className="mt-7 h-[52px] w-full bg-black text-sm font-black text-white"
+            >
+              다른 날짜 더 선택하기
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="date-options"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+          >
+            <header>
+              <h1 className="text-[27px] font-bold leading-9 text-black">
+                참여 가능한 날짜
+              </h1>
+              <p className="mt-2 text-sm font-semibold leading-6 text-black/48">
+                배정되면 참여가 확정되니, 가능한 날짜를 선택해주세요.
+              </p>
+            </header>
+
+            <div className="mt-6 grid grid-cols-2 gap-2.5 overflow-hidden">
+              {availableDates.map((date) => (
+                <DateApplicationOption
+                  key={date.date}
+                  date={date}
+                  selected={selectedDates.includes(date.date)}
+                  application={applicationByDate.get(date.date) ?? null}
+                  relativeWeekLabel={meetingDateRelativeWeekLabel(
+                    date.date,
+                    today,
+                  )}
+                  closed={date.date <= today}
+                  disabled={saving}
+                  onToggle={() => toggleDate(date.date)}
+                />
+              ))}
+            </div>
+
+            {error && (
+              <p className="mt-4 bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                {error}
+              </p>
+            )}
+
+            {selectedDates.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 border-t border-black/10 py-4"
+              >
+                <div>
+                  <p className="text-xs font-bold text-black/42">
+                    선택한 날짜 {selectedDates.length}개
+                  </p>
+                  <div className="mt-1 flex items-baseline justify-between gap-3">
+                    <p className="whitespace-nowrap text-xl font-black text-black">
+                      참여보증금 <RollingDepositAmount amount={selectedTotal} />
+                    </p>
+                    <span className="whitespace-nowrap text-right text-[13px] font-black leading-5 text-emerald-600">
+                      정상 참여 시 100% 환급
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openDeposit}
+                  className="mt-4 h-[52px] w-full bg-black text-sm font-black text-white"
+                >
+                  참여 보증금 입금하기
+                </button>
+              </motion.div>
+            )}
+
+            {activeBlindDateOffers.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
+                  setScreen("blindDate");
+                }}
+                className="mt-4 flex min-h-12 w-full items-center justify-between gap-3 border border-black/10 bg-white px-4 py-3 text-left text-sm font-bold text-black"
+              >
+                <span>
+                  {answerableBlindDateOffers.length > 0
+                    ? "나에게 온 블라인드 데이트 초대장 보기"
+                    : "블라인드 데이트 상태 확인하기"}
+                </span>
+                {answerableBlindDateOffers.length > 0 && (
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-black px-2 text-[11px] font-black text-white">
+                    {answerableBlindDateOffers.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            <DateApplicationList applications={applications} />
+
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => setScreen("intro")}
+                className="inline-flex items-center gap-1 py-2 text-[11px] font-bold text-[#92928e] transition hover:text-[#6f6f6b] active:opacity-70"
+              >
+                <span aria-hidden className="text-[13px] leading-none">
+                  ←
+                </span>
+                설명 다시보기
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {depositOpen && (
+        <DateDepositBottomSheet
+          key={`date-deposit-sheet-${depositSession}`}
+          dates={selectedDates}
+          saving={saving}
+          accountCopied={depositAccountCopied}
+          registrationSummary={depositMessageSummary}
+          copyError={depositCopyError}
+          onCopy={() => void copyDepositAccount()}
+          onSubmit={() => void submitDateApplications()}
+          onClose={() => {
+            if (saving) return;
+            setDepositOpen(false);
+            setDepositAccountCopied(false);
+            setDepositCopyError(null);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+function DateDepositBottomSheet({
+  dates,
+  saving,
+  accountCopied,
+  registrationSummary,
+  copyError,
+  onCopy,
+  onSubmit,
+  onClose,
+}: {
+  dates: string[];
+  saving: boolean;
+  accountCopied: boolean;
+  registrationSummary: DepositMessageRegistrationSummary | null;
+  copyError: string | null;
+  onCopy: () => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState<"membership" | "deposit">("membership");
+  const [membershipConsented, setMembershipConsented] = useState(false);
+  const [consentTouched, setConsentTouched] = useState(false);
+  const [depositBreakdownOpen, setDepositBreakdownOpen] = useState(false);
+  const total = dates.length * MEETING_DATE_DEPOSIT_AMOUNT;
+
+  return (
+    <motion.div
+      key="date-deposit-sheet"
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/25 px-4 pb-[calc(14px+env(safe-area-inset-bottom))]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      onPointerDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-label={step === "membership" ? "무료 멤버십 가입 안내" : "참여 보증금 입금 안내"}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+        initial={{ y: 32, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 360, damping: 32 }}
+        className="flex max-h-[calc(100dvh-28px)] w-full max-w-[390px] flex-col overflow-y-auto rounded-t-[28px] border border-black/10 bg-white px-5 pb-8 pt-4 shadow-[0_-24px_80px_rgba(0,0,0,0.18)]"
+      >
+        <div className="mx-auto h-1.5 w-10 shrink-0 rounded-full bg-black/12" />
+        <div className="mt-5 flex items-start justify-between gap-4">
+          <h2 className="text-xl font-black leading-7 text-black">
+            {step === "membership"
+              ? "교집합은 베타테스트 중이에요."
+              : `${dates.length}개 날짜 참여 보증금`}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="참여 보증금 입금 안내 닫기"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48"
+          >
+            <X size={17} aria-hidden />
+          </button>
+        </div>
+
+        {step === "membership" ? (
+          <motion.div key="date-membership-step" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}>
+            <div className="mt-6 border border-accent/25 bg-accent/[0.08] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center bg-black text-[19px] font-black text-white">₩</span>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-black/35">멤버십 참가비</p>
+                  <p className="mt-1 text-sm font-black text-black">
+                    <span className="text-black/35 line-through">20000원</span>{" "}
+                    <span className="text-emerald-600">0원</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <MembershipRegistrationNotice
+              baseCount={registrationSummary?.count ?? null}
+              limitCount={registrationSummary?.limitCount ?? null}
+              consented={membershipConsented}
+              touched={consentTouched}
+            />
+            <label className="mt-5 flex cursor-pointer items-start gap-3 border border-black/10 bg-white px-4 py-4">
+              <input
+                type="checkbox"
+                checked={membershipConsented}
+                onChange={(event) => {
+                  setConsentTouched(true);
+                  setMembershipConsented(event.target.checked);
+                }}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-500"
+              />
+              <span className="text-sm font-bold leading-6 text-black/72">
+                운영 안내 메시지 수신에 동의합니다.
+              </span>
+            </label>
+            <button
+              type="button"
+              disabled={!membershipConsented}
+              onClick={() => setStep("deposit")}
+              className={cn(
+                "mt-5 h-[52px] w-full text-sm font-black",
+                membershipConsented ? "bg-black text-white" : "bg-black/10 text-black/28",
+              )}
+            >
+              다음으로
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div key="date-deposit-step" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => setStep("membership")}
+              className="mt-4 text-[12px] font-bold text-black/48"
+            >
+              ← 멤버십 안내로 돌아가기
+            </button>
+
+            <div className="mt-4 border-y border-black/10">
+              <button
+                type="button"
+                aria-expanded={depositBreakdownOpen}
+                aria-controls="deposit-breakdown"
+                onClick={() => setDepositBreakdownOpen((open) => !open)}
+                className="flex min-h-[76px] w-full items-center justify-between gap-4 py-4 text-left"
+              >
+                <div>
+                  <p className="text-[11px] font-bold text-black/42">
+                    참여보증금
+                  </p>
+                  <p className="mt-1 text-xl font-black tabular-nums text-black">
+                    {total.toLocaleString("ko-KR")}원
+                  </p>
+                </div>
+                <span className="flex items-center gap-2 text-[11px] font-bold text-black/42">
+                  산정 내역
+                  <ChevronDown
+                    size={16}
+                    aria-hidden
+                    className={cn(
+                      "transition-transform",
+                      depositBreakdownOpen && "rotate-180",
+                    )}
+                  />
+                </span>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {depositBreakdownOpen && (
+                  <motion.div
+                    id="deposit-breakdown"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden border-t border-black/10"
+                  >
+                    <div className="py-2">
+                      {dates.map((date) => {
+                        const schedule = meetingDateSchedule(date)!;
+                        return (
+                          <div
+                            key={date}
+                            className="flex items-center justify-between gap-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-black text-black">
+                                {meetingDateLabel(date)}
+                              </p>
+                              <p className="mt-1 text-[11px] font-semibold text-black/42">
+                                {schedule.timeLabel} · {MEETING_DATE_REGION}
+                              </p>
+                            </div>
+                            <p className="text-sm font-black tabular-nums text-black">
+                              {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="border-t border-black/10 py-3">
+                <strong className="text-xs font-black text-emerald-600">
+                  정상 참여 시 100% 환급
+                </strong>
+              </div>
+            </div>
+
+            <div className="mt-5 border border-black/10 bg-[#fbfbfa] px-4 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center bg-black text-white">
+                  <Landmark size={19} aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-black/35">계좌번호</p>
+                  <p className="mt-1 text-sm font-black text-black">{noShowDepositBankName}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={onCopy}
+                  className="ml-auto flex h-9 items-center gap-1.5 border border-black/10 bg-white px-3 text-[11px] font-black text-black"
+                >
+                  {accountCopied ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                  {accountCopied ? "복사됨" : "복사하기"}
+                </button>
+              </div>
+              <p className="mt-4 border border-black/[0.06] bg-black/[0.035] px-4 py-3 text-[13px] font-black tabular-nums text-black/78">
+                {noShowDepositAccountNumber}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={onSubmit}
+              className="mt-5 h-[52px] w-full bg-emerald-500 text-sm font-black text-white disabled:bg-black/10 disabled:text-black/28"
+            >
+              {saving
+                ? "저장 중..."
+                : `${total / 10_000}만원 입금 완료 문자 보내기`}
+            </button>
+            <p className="mt-3 text-center text-[11px] font-semibold text-black/45">
+              성함과 함께 입금 완료 문자를 남겨주세요.
+            </p>
+            {copyError && (
+              <p className="mt-4 bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                {copyError}
+              </p>
+            )}
+          </motion.div>
+        )}
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -1387,7 +2500,7 @@ function NoShowDepositBottomSheet({
         role="dialog"
         aria-modal="true"
         aria-label={
-          step === "membership" ? "무료 멤버십 가입 안내" : "예약금 입금 안내"
+          step === "membership" ? "무료 멤버십 가입 안내" : "참여 보증금 입금 안내"
         }
         initial={{ y: 32, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -1402,14 +2515,14 @@ function NoShowDepositBottomSheet({
             <h2 className="text-xl font-black leading-7 text-black">
               {step === "membership"
                 ? "교집합은 베타테스트 중이에요."
-                : "예약금 2만원을 입금해주세요."}
+                : "참여 보증금 2만원을 입금해주세요."}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            aria-label="예약금 입금 안내 닫기"
+            aria-label="참여 보증금 입금 안내 닫기"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48 shadow-sm transition hover:text-black disabled:opacity-40"
           >
             <X size={17} aria-hidden />
@@ -1507,13 +2620,12 @@ function NoShowDepositBottomSheet({
                 >
                   <CalendarDays size={19} aria-hidden />
                 </span>
-                <p className="text-sm font-black text-black">예약금 : 20000원</p>
+                <p className="text-sm font-black text-black">참여 보증금 : 20,000원</p>
               </div>
               <p className="mt-2 pl-3 text-sm font-semibold leading-6 text-black/58">
-                여러분의 소중한 시간과 경험을 지켜드리기 위해서, 노쇼 방지용
-                예약금을 받고 있습니다.
+                노쇼 방지를 위한 참여 보증금입니다.
                 <br />
-                모임에 정상 참여하는 경우 예약금은{" "}
+                모임에 정상 참여하는 경우 참여 보증금은{" "}
                 <span className="rounded-md bg-sky-100 px-1.5 py-0.5 font-black text-sky-700">
                   전액 환급
                 </span>
@@ -1877,7 +2989,6 @@ function TicketDrawingCard({
   saving,
   error,
   onYes,
-  onOpenInvitation,
   onNo,
   onChangeDate,
 }: {
@@ -1886,7 +2997,6 @@ function TicketDrawingCard({
   saving: boolean;
   error: string | null;
   onYes: () => void;
-  onOpenInvitation: () => void;
   onNo: () => void;
   onChangeDate: () => void;
 }) {
@@ -1909,7 +3019,6 @@ function TicketDrawingCard({
 
   const openDetail = () => {
     if (!isDrawn || saving) return;
-    onOpenInvitation();
     setDetailOpen(true);
   };
 
@@ -1966,7 +3075,6 @@ function TicketDrawingCard({
                   openDetail();
                 }
               }}
-              data-coachmark-target={isDrawn ? "invitation-card" : undefined}
               className={cn(
                 "mx-auto mt-6 block w-[88%] max-w-[330px] rounded-[28px] text-left outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4",
                 isDrawn && !saving && "cursor-pointer active:scale-[0.99]",
@@ -2140,7 +3248,6 @@ function TicketInsideView({
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.12, duration: 0.2, ease: "easeOut" }}
-        data-coachmark-target="invitation-decision"
         className={cn(
           "mt-5",
           ended

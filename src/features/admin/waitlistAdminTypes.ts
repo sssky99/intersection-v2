@@ -1,5 +1,8 @@
 import type { AdminProfile } from "@/features/admin/adminProfile";
 import type { GatheringTicket } from "@/types/ticket";
+import type {
+  MeetingDateDepositStatus,
+} from "@/lib/meetingDateApplications";
 
 export type WaitlistStatus =
   | "waitlisted"
@@ -63,6 +66,8 @@ export type WaitlistTicketInstance = {
 
 export type AdminWaitlistRow = {
   id: number | string;
+  source: "ticket_participation" | "date_application";
+  source_id: number | string;
   user_id: string;
   ticket_id: string;
   ticket_template_id: string | null;
@@ -75,6 +80,8 @@ export type AdminWaitlistRow = {
   ticket_snapshot: GatheringTicket | null;
   created_at: string | null;
   updated_at: string | null;
+  deposit_amount: number | null;
+  deposit_status: MeetingDateDepositStatus | null;
   profile: AdminProfile | null;
   ticket_template: WaitlistTicketTemplate | null;
   ticket_instance: WaitlistTicketInstance | null;

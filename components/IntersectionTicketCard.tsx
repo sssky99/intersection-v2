@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { uniqueTicketImageUrls } from "@/lib/ticketImages";
 
 type IntersectionTicketCardProps = {
-  title: string;
+  title: ReactNode;
   imageUrl?: string | null;
   imageUrls?: ReadonlyArray<string | null | undefined> | null;
   date?: string | null;
@@ -296,16 +302,18 @@ export function IntersectionTicketCard({
               {metaLabel}
             </p>
           )}
-          <div className="scrollbar-none mt-3 flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5">
-            {tagItems.map((tag) => (
-              <span
-                key={tag}
-                className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
+          {tagItems.length > 0 && (
+            <div className="scrollbar-none mt-3 flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden pb-0.5">
+              {tagItems.map((tag) => (
+                <span
+                  key={tag}
+                  className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.22] bg-white/[0.14] px-3 py-1.5 text-[11px] font-extrabold leading-none text-white backdrop-blur-[2px]"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </article>

@@ -47,10 +47,6 @@ import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
-import {
-  CoachmarkLayer,
-  type CoachmarkStep,
-} from "@/features/app/CoachmarkLayer";
 import { useDragScroll } from "@/features/app/useDragScroll";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
@@ -75,6 +71,11 @@ import {
   trackEvent,
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
+import {
+  meetingDateApplicationStatusLabels,
+  meetingDateSchedule,
+  type MeetingDateApplication,
+} from "@/lib/meetingDateApplications";
 import { createClient } from "@/lib/supabase/client";
 import {
   ticketFeedbackBodyText,
@@ -181,46 +182,10 @@ type NegativeMemberFeedbackDraft = {
 };
 
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
-  { id: "recommend", label: "추천", Icon: Sparkles },
+  { id: "recommend", label: "신청", Icon: Sparkles },
   { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "chat", label: "채팅", Icon: MessageCircle },
   { id: "profile", label: "프로필", Icon: UserRound },
-];
-
-type MeetingCoachmarkStepId =
-  | "date"
-  | "invitation"
-  | "decision";
-
-const meetingCoachmarkStorageVersion = 1;
-const meetingCoachmarkSteps: Array<
-  CoachmarkStep & { id: MeetingCoachmarkStepId }
-> = [
-  {
-    id: "date",
-    target: "recommend-date-picker",
-    eyebrow: "step 1",
-    title: "먼저 가능한 날짜를 골라보세요.",
-    body: "그날 어울리는 초대장을 준비해드릴게요.",
-    placement: "top",
-  },
-  {
-    id: "invitation",
-    target: "invitation-card",
-    eyebrow: "step 2",
-    title: "초대장을 눌러 자세히 볼 수 있어요.",
-    body: "분위기, 장소, 함께할 사람의 단서를 확인해보세요.",
-    placement: "top",
-  },
-  {
-    id: "decision",
-    target: "invitation-decision",
-    eyebrow: "step 3",
-    title: "마음에 들면 Yes를 눌러주세요.",
-    body: "아니라면 No로 다음 초대장을 받아볼 수 있어요.",
-    placement: "top",
-    activation: "scroll-end",
-  },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -499,11 +464,13 @@ export function AppHome({
   operatorAccountSwitcher?: OperatorAccountSwitcher;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
-  const appShellRef = useRef<HTMLElement | null>(null);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [waitlistedTicketCount, setWaitlistedTicketCount] = useState<
     number | null
   >(null);
+  const [dateApplications, setDateApplications] = useState<
+    MeetingDateApplication[]
+  >([]);
   const [loadingRemainingTickets, setLoadingRemainingTickets] = useState(false);
   const [participationCount, setParticipationCount] = useState(0);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
@@ -539,10 +506,6 @@ export function AppHome({
   );
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
-  const [coachmarkReady, setCoachmarkReady] = useState(false);
-  const [coachmarkCompleted, setCoachmarkCompleted] = useState(false);
-  const [coachmarkStepIndex, setCoachmarkStepIndex] = useState(0);
-  const [coachmarkLayerActive, setCoachmarkLayerActive] = useState(false);
   const recommendTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const currentMembership = useMemo(
@@ -578,81 +541,9 @@ export function AppHome({
       ).length,
     [blindDateOffers],
   );
-  const canReplayCoachmarks = operatorAccountSwitcher?.mode === "operator";
-  const coachmarkStorageKey = useMemo(
-    () =>
-      `intersection:meetings-coachmark:v${meetingCoachmarkStorageVersion}:${userId}`,
-    [userId],
-  );
-  const activeCoachmarkStep = meetingCoachmarkSteps[coachmarkStepIndex] ?? null;
-  const coachmarkSuppressed =
-    profileCompletionOpen ||
-    profileRegenerationConfirmOpen ||
-    questionReviewOpen ||
-    membershipModalOpen ||
-    profilePanelOpen ||
-    chatRoomOpen;
-  const visibleCoachmarkStep =
-    coachmarkReady &&
-    !coachmarkCompleted &&
-    !coachmarkSuppressed &&
-    activeCoachmarkStep &&
-    activeTab === "recommend"
-      ? activeCoachmarkStep
-      : null;
-
   useDragScroll(scrollAreaRef, {
-    disabled: activeTab === "chat" || coachmarkLayerActive,
+    disabled: activeTab === "chat",
   });
-
-  useEffect(() => {
-    if (!visibleCoachmarkStep) setCoachmarkLayerActive(false);
-  }, [visibleCoachmarkStep]);
-
-  const completeCoachmarkTour = useCallback(() => {
-    setCoachmarkCompleted(true);
-    try {
-      window.localStorage.setItem(coachmarkStorageKey, "1");
-    } catch {
-      // The tour should stay dismissible even when storage is unavailable.
-    }
-  }, [coachmarkStorageKey]);
-
-  const advanceCoachmark = useCallback(
-    (stepId: MeetingCoachmarkStepId) => {
-      if (coachmarkCompleted) return;
-
-      const step = meetingCoachmarkSteps[coachmarkStepIndex];
-      if (!step || step.id !== stepId) return;
-
-      if (coachmarkStepIndex >= meetingCoachmarkSteps.length - 1) {
-        completeCoachmarkTour();
-        return;
-      }
-
-      setCoachmarkStepIndex(coachmarkStepIndex + 1);
-    },
-    [coachmarkCompleted, coachmarkStepIndex, completeCoachmarkTour],
-  );
-
-  const replayCoachmarkTour = useCallback(() => {
-    setMembershipModalOpen(false);
-    setMembershipTicket(null);
-    setProfilePanelOpen(false);
-    setQuestionReviewOpen(false);
-    setProfileCompletionOpen(false);
-    setProfileRegenerationConfirmOpen(false);
-    setActiveTab("recommend");
-    setTabUrl("recommend");
-    setCoachmarkReady(true);
-    setCoachmarkCompleted(false);
-    setCoachmarkStepIndex(0);
-    try {
-      window.localStorage.removeItem(coachmarkStorageKey);
-    } catch {
-      // Replaying should still work even when local storage is unavailable.
-    }
-  }, [coachmarkStorageKey]);
 
   const applyUserTicketsResponse = useCallback(
     (response: UserTicketsResponse, mode: "replace" | "append") => {
@@ -712,18 +603,6 @@ export function AppHome({
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
-
-  useEffect(() => {
-    try {
-      setCoachmarkCompleted(
-        window.localStorage.getItem(coachmarkStorageKey) === "1",
-      );
-    } catch {
-      setCoachmarkCompleted(false);
-    }
-    setCoachmarkReady(true);
-    setCoachmarkStepIndex(0);
-  }, [coachmarkStorageKey]);
 
   useEffect(() => {
     trackLoginSuccessFromUrl("existing");
@@ -997,7 +876,6 @@ export function AppHome({
 
   return (
     <section
-      ref={appShellRef}
       className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]"
     >
       <MembershipFloatingButton
@@ -1094,9 +972,7 @@ export function AppHome({
           chatRoomOpen
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
-          activeTab === "chat" || coachmarkLayerActive
-            ? "overflow-hidden"
-            : "overflow-y-auto",
+          activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
         <div
@@ -1105,6 +981,7 @@ export function AppHome({
         >
           <TicketListTab
             tickets={waitlistedTickets}
+            dateApplications={dateApplications}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
             onGoRecommend={() => switchTab("recommend")}
@@ -1126,10 +1003,10 @@ export function AppHome({
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}
             blindDateOpenRequestPending={blindDateOpenRequestPending}
+            onDateApplicationsChange={setDateApplications}
             onBlindDateOpenRequestHandled={() =>
               setBlindDateOpenRequestPending(false)
             }
-            onCoachmarkProgress={advanceCoachmark}
           />
         </div>
         <div
@@ -1160,8 +1037,6 @@ export function AppHome({
               onOpenQuestionReview={() => setQuestionReviewOpen(true)}
               onOpenProfileCompletionReplay={openProfileCompletionReplay}
               onRequestProfileRegeneration={openProfileRegenerationConfirm}
-              canReplayCoachmarks={canReplayCoachmarks}
-              onReplayCoachmarks={replayCoachmarkTour}
               onLogout={logout}
             />
           )}
@@ -1269,12 +1144,6 @@ export function AppHome({
           </motion.div>
         )}
       </AnimatePresence>
-      <CoachmarkLayer
-        containerRef={appShellRef}
-        step={visibleCoachmarkStep}
-        onActiveChange={setCoachmarkLayerActive}
-        onDismiss={completeCoachmarkTour}
-      />
     </section>
   );
 }
@@ -1313,13 +1182,32 @@ function ProfileTabLoading() {
   );
 }
 
+type TicketListItem =
+  | {
+      kind: "date-application";
+      id: string;
+      application: MeetingDateApplication;
+    }
+  | { kind: "stored-ticket"; id: string; userTicket: UserTicket };
+
+function isVisibleMysteryApplication(application: MeetingDateApplication) {
+  return (
+    !application.assignedTicketInstanceId &&
+    !["cancelled", "not_selected", "feedback_done", "completed"].includes(
+      application.status,
+    )
+  );
+}
+
 function TicketListTab({
   tickets,
+  dateApplications,
   totalTicketCount,
   loadingMore,
   onGoRecommend,
 }: {
   tickets: UserTicket[];
+  dateApplications: MeetingDateApplication[];
   totalTicketCount: number;
   loadingMore: boolean;
   onGoRecommend: () => void;
@@ -1336,10 +1224,33 @@ function TicketListTab({
   });
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const snapTimerRef = useRef<number | null>(null);
+  const mysteryApplications = useMemo(
+    () =>
+      dateApplications
+        .filter(isVisibleMysteryApplication)
+        .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
+    [dateApplications],
+  );
+  const ticketItems = useMemo<TicketListItem[]>(
+    () => [
+      ...mysteryApplications.map((application) => ({
+        kind: "date-application" as const,
+        id: `date-application:${application.id}`,
+        application,
+      })),
+      ...tickets.map((userTicket) => ({
+        kind: "stored-ticket" as const,
+        id: `stored-ticket:${userTicket.id}`,
+        userTicket,
+      })),
+    ],
+    [mysteryApplications, tickets],
+  );
+  const itemCount = ticketItems.length;
 
   useEffect(() => {
     setActiveIndex((current) =>
-      Math.min(current, Math.max(tickets.length - 1, 0)),
+      Math.min(current, Math.max(itemCount - 1, 0)),
     );
     carouselRef.current?.scrollTo({ left: 0, behavior: "auto" });
 
@@ -1348,7 +1259,7 @@ function TicketListTab({
         window.clearTimeout(snapTimerRef.current);
       }
     };
-  }, [tickets.length]);
+  }, [itemCount]);
 
   const closestSlide = (viewport: HTMLDivElement) => {
     const viewportCenter = viewport.scrollLeft + viewport.clientWidth / 2;
@@ -1381,7 +1292,7 @@ function TicketListTab({
     viewport = carouselRef.current,
     behavior: ScrollBehavior = "smooth",
   ) => {
-    if (!viewport || tickets.length === 0) return;
+    if (!viewport || itemCount === 0) return;
 
     const closest = closestSlide(viewport);
     if (!closest) return;
@@ -1400,7 +1311,7 @@ function TicketListTab({
     viewport = carouselRef.current,
     behavior: ScrollBehavior = "smooth",
   ) => {
-    if (!viewport || tickets.length === 0) return;
+    if (!viewport || itemCount === 0) return;
 
     const slides = Array.from(
       viewport.querySelectorAll<HTMLElement>("[data-ticket-slide]"),
@@ -1417,7 +1328,7 @@ function TicketListTab({
   };
 
   const updateActiveSlide = (event: React.UIEvent<HTMLDivElement>) => {
-    if (tickets.length === 0) return;
+    if (itemCount === 0) return;
 
     const viewport = event.currentTarget;
     const closest = closestSlide(viewport);
@@ -1478,8 +1389,8 @@ function TicketListTab({
       tappedSlide?.dataset.ticketSlideIndex !== undefined
         ? Number(tappedSlide.dataset.ticketSlideIndex)
         : Number.NaN;
-    const tappedTicket = Number.isInteger(tappedIndex)
-      ? tickets[tappedIndex]
+    const tappedItem = Number.isInteger(tappedIndex)
+      ? ticketItems[tappedIndex]
       : null;
     dragState.current.active = false;
     dragState.current.interacting = false;
@@ -1487,8 +1398,12 @@ function TicketListTab({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    if (!dragState.current.moved && Math.abs(dragDistance) <= 8 && tappedTicket) {
-      setSelectedTicket(tappedTicket);
+    if (
+      !dragState.current.moved &&
+      Math.abs(dragDistance) <= 8 &&
+      tappedItem?.kind === "stored-ticket"
+    ) {
+      setSelectedTicket(tappedItem.userTicket);
       return;
     }
 
@@ -1587,11 +1502,11 @@ function TicketListTab({
           >
             <header className="shrink-0 px-5 pr-28">
               <p className="text-[13px] font-bold uppercase italic tracking-wide text-black">
-                tickets {totalTicketCount}
+                tickets {totalTicketCount + mysteryApplications.length}
               </p>
             </header>
 
-            {tickets.length === 0 ? (
+            {itemCount === 0 ? (
               <div className="mx-5 mt-16 rounded-[28px] border border-black/10 bg-white p-6 text-center shadow-[0_16px_44px_rgba(0,0,0,0.04)]">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
                   <CalendarDays size={20} aria-hidden />
@@ -1600,14 +1515,14 @@ function TicketListTab({
                   아직 보관된 티켓이 없어요
                 </h2>
                 <p className="mt-2 text-xs leading-5 text-black/45">
-                  추천 탭에서 날짜를 고르고 마음에 드는 모임에 Yes를 눌러보세요.
+                  신청 탭에서 참여 가능한 날짜를 선택해보세요.
                 </p>
                 <button
                   type="button"
                   onClick={onGoRecommend}
                   className="mt-6 h-12 w-full rounded-full bg-black text-sm font-semibold text-white"
                 >
-                  추천 받으러 가기
+                  날짜 신청하기
                 </button>
               </div>
             ) : (
@@ -1629,29 +1544,35 @@ function TicketListTab({
                   }}
                   className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
                 >
-                  {tickets.map((userTicket, index) => (
+                  {ticketItems.map((item, index) => (
                     <div
-                      key={userTicket.id}
+                      key={item.id}
                       data-ticket-slide
                       data-ticket-slide-index={index}
                       className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
                     >
-                      <StoredTicketCard
-                        userTicket={userTicket}
-                        onOpen={() => openStoredTicket(userTicket)}
-                      />
+                      {item.kind === "stored-ticket" ? (
+                        <StoredTicketCard
+                          userTicket={item.userTicket}
+                          onOpen={() => openStoredTicket(item.userTicket)}
+                        />
+                      ) : (
+                        <MysteryApplicationTicketCard
+                          application={item.application}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
 
-                {tickets.length > 1 && (
+                {itemCount > 1 && (
                   <div
                     className="mt-1.5 flex shrink-0 justify-center gap-1.5"
-                    aria-label={`티켓 ${activeIndex + 1}/${tickets.length}`}
+                    aria-label={`티켓 ${activeIndex + 1}/${itemCount}`}
                   >
-                    {tickets.map((userTicket, index) => (
+                    {ticketItems.map((item, index) => (
                       <span
-                        key={userTicket.id}
+                        key={item.id}
                         className={cn(
                           "h-1.5 w-1.5 rounded-full transition",
                           activeIndex === index ? "bg-black/70" : "bg-black/15",
@@ -1706,6 +1627,166 @@ function StoredTicketCard({
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />
+    </motion.div>
+  );
+}
+
+function dateApplicationBadgeClass(application: MeetingDateApplication) {
+  if (application.status === "payment_pending") {
+    return "border-amber-200 bg-amber-50 text-amber-700 shadow-none";
+  }
+
+  if (application.status === "approved") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none";
+  }
+
+  return "border-white/25 bg-white/[0.18] text-white";
+}
+
+function dateApplicationConfirmationAt(application: MeetingDateApplication) {
+  const dateMatch = application.meetingDate.match(
+    /^(\d{4})-(\d{2})-(\d{2})$/,
+  );
+  const meetingTime =
+    meetingDateSchedule(application.meetingDate)?.time ??
+    application.meetingTime;
+  const timeMatch = meetingTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!dateMatch || !timeMatch) return null;
+
+  const meetingAt = new Date(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]),
+    Number(timeMatch[2]),
+  ).getTime();
+
+  return Number.isFinite(meetingAt) ? meetingAt - 24 * 60 * 60 * 1000 : null;
+}
+
+function formatConfirmationCountdown(remainingMs: number) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const clock = [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+
+  return days > 0 ? `${days}일 ${clock}` : clock;
+}
+
+function MysteryConfirmationCountdown({
+  application,
+}: {
+  application: MeetingDateApplication;
+}) {
+  const confirmationAt = dateApplicationConfirmationAt(application);
+  const [nowMs, setNowMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [confirmationAt]);
+
+  if (confirmationAt === null) {
+    return <span className="block">확정 시간을 확인 중이에요</span>;
+  }
+
+  const remainingMs = nowMs === null ? null : confirmationAt - nowMs;
+
+  if (remainingMs !== null && remainingMs <= 0) {
+    return (
+      <span className="block">
+        확정 안내를
+        <br />
+        준비 중이에요
+      </span>
+    );
+  }
+
+  return (
+    <span className="block">
+      <span className="block text-[17px] font-extrabold leading-6 text-white/75">
+        공개까지 남은 시간
+      </span>
+      <span className="mt-0.5 block text-[38px] font-black leading-none tracking-[-0.03em] text-white tabular-nums">
+        {remainingMs === null
+          ? "--:--:--"
+          : formatConfirmationCountdown(remainingMs)}
+      </span>
+    </span>
+  );
+}
+
+function MysteryApplicationTicketCard({
+  application,
+}: {
+  application: MeetingDateApplication;
+}) {
+  const schedule = meetingDateSchedule(application.meetingDate);
+  const prefersReducedMotion = useReducedMotion();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      aria-label={`${meetingDateApplicationStatusLabels[application.status]} 미정 티켓`}
+      className="relative"
+    >
+      <IntersectionTicketCard
+        title={
+          application.status === "approved" ? (
+            "참여가\n확정됐어요"
+          ) : (
+            <MysteryConfirmationCountdown application={application} />
+          )
+        }
+        date={application.meetingDate}
+        time={schedule?.time ?? application.meetingTime}
+        location={application.region}
+        badgeLabel={meetingDateApplicationStatusLabels[application.status]}
+        badgeClassName={dateApplicationBadgeClass(application)}
+        className="shadow-none"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-[10%] flex h-[62%] items-center justify-center [perspective:700px]"
+      >
+        <motion.div
+          animate={
+            prefersReducedMotion
+              ? { rotateX: 0, rotateY: 0 }
+              : { rotateX: -3, rotateY: 360 }
+          }
+          transition={
+            prefersReducedMotion
+              ? { duration: 0 }
+              : {
+                  duration: 3.6,
+                  ease: "linear",
+                  repeat: Infinity,
+                }
+          }
+          className="flex h-[250px] w-[200px] origin-center items-center justify-center"
+          style={{
+            transformStyle: "preserve-3d",
+          }}
+        >
+          <span
+            className="inline-block bg-gradient-to-r from-white/55 via-white to-white/70 bg-clip-text text-[208px] font-black leading-none text-transparent drop-shadow-[8px_12px_14px_rgba(0,0,0,0.42)]"
+            style={{
+              fontFamily: '"Arial Black", "Arial Narrow", Arial, sans-serif',
+              transform: "scaleX(0.8) scaleY(1.22)",
+            }}
+          >
+            ?
+          </span>
+        </motion.div>
+      </div>
     </motion.div>
   );
 }

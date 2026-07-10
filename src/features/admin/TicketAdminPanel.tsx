@@ -169,7 +169,7 @@ const ticketCategorySelectOptions = [
 
 const fixedDetailNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
-  "노쇼 방지비 입금 확인 후 대기열 등록이 완료돼요.",
+  "참여 보증금 입금 확인 후 배정 대기 등록이 완료돼요.",
 ];
 
 const scoreFields: Array<{
