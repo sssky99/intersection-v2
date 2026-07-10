@@ -127,9 +127,9 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as DateApplicationRequest;
   const dates = requestedDates(body.dates);
-  if (dates.length === 0 || dates.length > 12) {
+  if (dates.length !== 1) {
     return NextResponse.json(
-      { error: "신청할 금요일 또는 토요일을 선택해주세요." },
+      { error: "신청할 날짜를 하나만 선택해주세요." },
       { status: 400 },
     );
   }

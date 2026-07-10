@@ -4,7 +4,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   CalendarDays,
   Check,
-  ChevronDown,
   Clock3,
   Copy,
   Landmark,
@@ -33,7 +32,6 @@ import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
   meetingDateApplicationDates,
-  meetingDateApplicationStatusLabels,
   meetingDateLabel,
   meetingDateRelativeWeekLabel,
   meetingDateSchedule,
@@ -1210,18 +1208,6 @@ async function fetchDateApplications() {
   return data.applications ?? [];
 }
 
-function dateApplicationStatusClass(
-  status: MeetingDateApplication["status"],
-) {
-  if (status === "payment_pending") {
-    return "bg-amber-50 text-amber-700";
-  }
-  if (status === "approved") {
-    return "bg-emerald-50 text-emerald-700";
-  }
-  return "bg-sky-50 text-sky-700";
-}
-
 function DateApplicationOption({
   date,
   selected,
@@ -1268,7 +1254,7 @@ function DateApplicationOption({
           closed
             ? "border-red-200 bg-red-50 text-red-600"
             : application
-              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              ? "border-blue-200 bg-blue-50 text-blue-700"
               : selected
             ? "border-white/30 bg-white text-black"
             : "border-black/15 bg-white text-transparent",
@@ -1295,127 +1281,7 @@ function DateApplicationOption({
         <MapPin size={12} aria-hidden />
         {MEETING_DATE_REGION}
       </span>
-      {application && (
-        <span className="mt-2 block text-[10px] font-black text-emerald-700">
-          {meetingDateApplicationStatusLabels[application.status]}
-        </span>
-      )}
     </motion.button>
-  );
-}
-
-function RollingDepositAmount({ amount }: { amount: number }) {
-  const reduceMotion = useReducedMotion();
-  const previousAmount = useRef(amount);
-  const direction = amount >= previousAmount.current ? 1 : -1;
-  const leadingDigit = String(amount / 10_000);
-
-  useEffect(() => {
-    previousAmount.current = amount;
-  }, [amount]);
-
-  return (
-    <span aria-label={`${amount.toLocaleString("ko-KR")}원`}>
-      <span aria-hidden className="inline-flex items-baseline tabular-nums">
-        <span className="inline-grid min-w-[0.58em] overflow-hidden">
-          <AnimatePresence initial={false} custom={direction}>
-            <motion.span
-              key={leadingDigit}
-              custom={direction}
-              initial={reduceMotion ? { opacity: 0 } : { y: `${direction * 100}%` }}
-              animate={{ opacity: 1, y: "0%" }}
-              exit={
-                reduceMotion
-                  ? { opacity: 0 }
-                  : { y: `${direction * -100}%` }
-              }
-              transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-              className="col-start-1 row-start-1 text-center"
-            >
-              {leadingDigit}
-            </motion.span>
-          </AnimatePresence>
-        </span>
-        <span>0,000원</span>
-      </span>
-    </span>
-  );
-}
-
-function DateApplicationList({
-  applications,
-}: {
-  applications: MeetingDateApplication[];
-}) {
-  const [open, setOpen] = useState(false);
-
-  if (applications.length === 0) return null;
-
-  return (
-    <section className="mt-7 border-t border-black/8 pt-5">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls="date-application-list"
-        onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between py-1 text-left"
-      >
-        <h2 className="text-sm font-black text-black">신청한 날짜</h2>
-        <span className="flex items-center gap-1.5 text-[11px] font-bold text-black/35">
-          <span>{applications.length}개</span>
-          <motion.span
-            aria-hidden
-            animate={{ rotate: open ? 180 : 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="inline-flex"
-          >
-            <ChevronDown size={15} strokeWidth={2.2} />
-          </motion.span>
-        </span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            id="date-application-list"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 divide-y divide-black/7 border-y border-black/8">
-              {applications.map((application) => {
-                const schedule = meetingDateSchedule(application.meetingDate);
-                return (
-                  <div
-                    key={application.id}
-                    className="flex min-h-16 items-center justify-between gap-3 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-black text-black">
-                        {meetingDateLabel(application.meetingDate)}
-                      </p>
-                      <p className="mt-1 text-[11px] font-semibold text-black/42">
-                        {schedule?.timeLabel ?? application.meetingTime} ·{" "}
-                        {application.region}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black",
-                        dateApplicationStatusClass(application.status),
-                      )}
-                    >
-                      {meetingDateApplicationStatusLabels[application.status]}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </section>
   );
 }
 
@@ -1578,7 +1444,6 @@ function MeetingDateApplicationFlow({
   const applicationByDate = new Map(
     applications.map((application) => [application.meetingDate, application]),
   );
-  const selectedTotal = selectedDates.length * MEETING_DATE_DEPOSIT_AMOUNT;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -1645,24 +1510,20 @@ function MeetingDateApplicationFlow({
 
   const toggleDate = (date: string) => {
     if (date <= today || applicationByDate.has(date) || saving) return;
-    setSelectedDates((current) =>
-      current.includes(date)
-        ? current.filter((selected) => selected !== date)
-        : [...current, date].sort(),
-    );
+    setSelectedDates((current) => (current.includes(date) ? [] : [date]));
     setError(null);
   };
 
   const openDeposit = () => {
-    if (selectedDates.length === 0 || saving) return;
+    if (selectedDates.length !== 1 || saving) return;
     setDepositAccountCopied(false);
     setDepositCopyError(null);
     setDepositSession((current) => current + 1);
     setDepositOpen(true);
     trackEvent("application_submit_click", {
       application_type: "meeting_date",
-      date_count: selectedDates.length,
-      deposit_amount: selectedTotal,
+      date_count: 1,
+      deposit_amount: MEETING_DATE_DEPOSIT_AMOUNT,
       membership_status: membershipStatus,
     });
     void fetchDepositMessageRegistrationSummary()
@@ -1684,7 +1545,7 @@ function MeetingDateApplicationFlow({
   };
 
   const submitDateApplications = async () => {
-    if (selectedDates.length === 0 || saving) return;
+    if (selectedDates.length !== 1 || saving) return;
 
     const targetDates = [...selectedDates];
     if (isLocalTestHost()) {
@@ -1898,11 +1759,11 @@ function MeetingDateApplicationFlow({
               >
                 <div>
                   <p className="text-xs font-bold text-black/42">
-                    선택한 날짜 {selectedDates.length}개
+                    선택한 날짜
                   </p>
                   <div className="mt-1 flex items-baseline justify-between gap-3">
                     <p className="whitespace-nowrap text-xl font-black text-black">
-                      참여보증금 <RollingDepositAmount amount={selectedTotal} />
+                      참여보증금 {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
                     </p>
                     <span className="whitespace-nowrap text-right text-[13px] font-black leading-5 text-emerald-600">
                       정상 참여 시 100% 환급
@@ -1941,8 +1802,6 @@ function MeetingDateApplicationFlow({
               </button>
             )}
 
-            <DateApplicationList applications={applications} />
-
             <div className="mt-1">
               <button
                 type="button"
@@ -1962,7 +1821,6 @@ function MeetingDateApplicationFlow({
       {depositOpen && (
         <DateDepositBottomSheet
           key={`date-deposit-sheet-${depositSession}`}
-          dates={selectedDates}
           saving={saving}
           accountCopied={depositAccountCopied}
           registrationSummary={depositMessageSummary}
@@ -1982,7 +1840,6 @@ function MeetingDateApplicationFlow({
 }
 
 function DateDepositBottomSheet({
-  dates,
   saving,
   accountCopied,
   registrationSummary,
@@ -1991,7 +1848,6 @@ function DateDepositBottomSheet({
   onSubmit,
   onClose,
 }: {
-  dates: string[];
   saving: boolean;
   accountCopied: boolean;
   registrationSummary: DepositMessageRegistrationSummary | null;
@@ -2003,8 +1859,6 @@ function DateDepositBottomSheet({
   const [step, setStep] = useState<"membership" | "deposit">("membership");
   const [membershipConsented, setMembershipConsented] = useState(false);
   const [consentTouched, setConsentTouched] = useState(false);
-  const [depositBreakdownOpen, setDepositBreakdownOpen] = useState(false);
-  const total = dates.length * MEETING_DATE_DEPOSIT_AMOUNT;
 
   return (
     <motion.div
@@ -2040,7 +1894,7 @@ function DateDepositBottomSheet({
           <h2 className="text-xl font-black leading-7 text-black">
             {step === "membership"
               ? "교집합은 베타테스트 중이에요."
-              : `${dates.length}개 날짜 참여 보증금`}
+              : "참여 보증금 입금"}
           </h2>
           <button
             type="button"
@@ -2110,73 +1964,17 @@ function DateDepositBottomSheet({
               ← 멤버십 안내로 돌아가기
             </button>
 
-            <div className="mt-4 border-y border-black/10">
-              <button
-                type="button"
-                aria-expanded={depositBreakdownOpen}
-                aria-controls="deposit-breakdown"
-                onClick={() => setDepositBreakdownOpen((open) => !open)}
-                className="flex min-h-[76px] w-full items-center justify-between gap-4 py-4 text-left"
-              >
+            <div className="mt-4 border-y border-black/10 py-4">
+              <div className="flex min-h-[54px] items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-bold text-black/42">
                     참여보증금
                   </p>
                   <p className="mt-1 text-xl font-black tabular-nums text-black">
-                    {total.toLocaleString("ko-KR")}원
+                    {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
                   </p>
                 </div>
-                <span className="flex items-center gap-2 text-[11px] font-bold text-black/42">
-                  산정 내역
-                  <ChevronDown
-                    size={16}
-                    aria-hidden
-                    className={cn(
-                      "transition-transform",
-                      depositBreakdownOpen && "rotate-180",
-                    )}
-                  />
-                </span>
-              </button>
-
-              <AnimatePresence initial={false}>
-                {depositBreakdownOpen && (
-                  <motion.div
-                    id="deposit-breakdown"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="overflow-hidden border-t border-black/10"
-                  >
-                    <div className="py-2">
-                      {dates.map((date) => {
-                        const schedule = meetingDateSchedule(date)!;
-                        return (
-                          <div
-                            key={date}
-                            className="flex items-center justify-between gap-3 py-2"
-                          >
-                            <div>
-                              <p className="text-sm font-black text-black">
-                                {meetingDateLabel(date)}
-                              </p>
-                              <p className="mt-1 text-[11px] font-semibold text-black/42">
-                                {schedule.timeLabel} · {MEETING_DATE_REGION}
-                              </p>
-                            </div>
-                            <p className="text-sm font-black tabular-nums text-black">
-                              {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="border-t border-black/10 py-3">
-                <strong className="text-xs font-black text-emerald-600">
+                <strong className="text-right text-xs font-black text-emerald-600">
                   정상 참여 시 100% 환급
                 </strong>
               </div>
@@ -2214,7 +2012,7 @@ function DateDepositBottomSheet({
             >
               {saving
                 ? "저장 중..."
-                : `${total / 10_000}만원 입금 완료 문자 보내기`}
+                : `${MEETING_DATE_DEPOSIT_AMOUNT / 10_000}만원 입금 완료 문자 보내기`}
             </button>
             <p className="mt-3 text-center text-[11px] font-semibold text-black/45">
               성함과 함께 입금 완료 문자를 남겨주세요.
