@@ -2565,7 +2565,6 @@ function TicketStageContent({
             <PlaceSection userTicket={userTicket} revealDetails />
           }
         />
-        <MemberIntroCarousel members={userTicket.members} />
       </>
     );
   }
@@ -2580,7 +2579,6 @@ function TicketStageContent({
             <PlaceSection userTicket={userTicket} revealDetails />
           }
         />
-        <MemberIntroCarousel members={userTicket.members} />
       </>
     );
   }
@@ -2657,86 +2655,6 @@ function PlaceSection({
   );
 }
 
-
-function MemberIntroCarousel({
-  members,
-}: {
-  members: UserTicket["members"];
-}) {
-  const [index, setIndex] = useState(0);
-  const [progressCycle, setProgressCycle] = useState(0);
-  const displayIndex = members.length ? index % members.length : 0;
-  const current = members[displayIndex];
-  const profileRotationMs = 4200;
-
-  useEffect(() => {
-    setIndex(0);
-    setProgressCycle((currentCycle) => currentCycle + 1);
-  }, [members.length]);
-
-  const advanceMember = () => {
-    if (!members.length) return;
-    setIndex((currentIndex) => (currentIndex + 1) % members.length);
-    setProgressCycle((currentCycle) => currentCycle + 1);
-  };
-
-  if (!members.length || !current) {
-    return (
-      <section className="border-t border-black/8 py-5">
-        <h2 className="text-[15px] font-black text-black">함께할 멤버들</h2>
-        <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-          멤버 소개가 곧 준비될 예정이에요.
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="border-t border-black/8 py-5">
-      <div>
-        <h2 className="text-[15px] font-black text-black">함께할 멤버들</h2>
-        <div className="mt-4 h-1 overflow-hidden rounded-full bg-black/8" aria-hidden>
-          <motion.div
-            key={`${current.id}-${progressCycle}`}
-            initial={{ width: "0%" }}
-            animate={{ width: "100%" }}
-            transition={{
-              duration: profileRotationMs / 1000,
-              ease: "linear",
-            }}
-            onAnimationComplete={advanceMember}
-            className="h-full bg-black"
-          />
-        </div>
-      </div>
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={current.id}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={ticketFadeTransition}
-          className="mt-4 flex h-[428px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white px-4 py-4"
-        >
-          <div className="mb-4 shrink-0">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-accent">
-              {current.isSelf ? "내 프로필" : "멤버 프로필"}
-            </p>
-            <h3 className="mt-1 flex items-center gap-2 text-lg font-black text-black">
-              <span>{current.nickname?.trim() || "닉네임 미정"}</span>
-              <span aria-hidden className="text-base leading-none">
-                {current.emoji}
-              </span>
-            </h3>
-          </div>
-          <p className="min-h-0 flex-1 overflow-y-auto whitespace-pre-line pr-1 text-sm font-semibold leading-6 text-black/65 scrollbar-none">
-            {current.publicIntro?.trim() || "아직 소개가 준비 중인 멤버예요."}
-          </p>
-        </motion.div>
-      </AnimatePresence>
-    </section>
-  );
-}
 
 const arrivalOptions: Array<{
   value: TicketArrivalStatus;
