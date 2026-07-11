@@ -2984,10 +2984,13 @@ function TicketFeedbackForm({
     expectationMatch: null,
   });
   const [dateUnknown, setDateUnknown] = useState(false);
-  const [dateMemberId, setDateMemberId] = useState("");
+  const [dateMemberIds, setDateMemberIds] = useState<string[]>([]);
   const [vibeUnknown, setVibeUnknown] = useState(false);
-  const [vibeMemberId, setVibeMemberId] = useState("");
+  const [vibeMemberIds, setVibeMemberIds] = useState<string[]>([]);
   const [negativeMemberIds, setNegativeMemberIds] = useState<string[]>([]);
+  const [expandedNegativeMemberId, setExpandedNegativeMemberId] = useState<
+    string | null
+  >(null);
   const [negativeFeedback, setNegativeFeedback] = useState<
     Record<string, NegativeMemberFeedbackDraft>
   >({});
@@ -2998,25 +3001,22 @@ function TicketFeedbackForm({
   useEffect(() => {
     setMeetingRatings({ overall: null, expectationMatch: null });
     setDateUnknown(false);
-    setDateMemberId("");
+    setDateMemberIds([]);
     setVibeUnknown(false);
-    setVibeMemberId("");
+    setVibeMemberIds([]);
     setNegativeMemberIds([]);
+    setExpandedNegativeMemberId(null);
     setNegativeFeedback({});
     setSubmitting(false);
     setSubmitted(false);
     setSubmitError(null);
   }, [otherMembers, userTicket.waitlistId]);
 
-  const dateMember = dateCandidateMembers.find(
-    (member) => member.id === dateMemberId,
-  );
-  const vibeMember = otherMembers.find((member) => member.id === vibeMemberId);
   const meetingRatingsComplete = Object.values(meetingRatings).every(
     (value) => typeof value === "number",
   );
   const vibeSelectionComplete =
-    otherMembers.length === 0 || vibeUnknown || Boolean(vibeMember);
+    otherMembers.length === 0 || vibeUnknown || vibeMemberIds.length > 0;
   const negativeFeedbackComplete = negativeMemberIds.every((memberId) => {
     const draft = negativeFeedback[memberId];
     if (!draft || draft.reasons.length === 0) return false;
@@ -3027,37 +3027,52 @@ function TicketFeedbackForm({
   const canSubmit =
     meetingRatingsComplete &&
     vibeSelectionComplete && negativeFeedbackComplete;
-  const selectedPositiveMemberIds = dateMember ? [dateMember.id] : [];
+  const selectedPositiveMemberIds = dateMemberIds;
   const negativeMembers = negativeMemberIds
     .map((memberId) => otherMembers.find((member) => member.id === memberId))
     .filter((member): member is UserTicket["members"][number] => Boolean(member));
 
   const selectDateMember = (memberId: string) => {
     setDateUnknown(false);
-    setDateMemberId(memberId);
+    setDateMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
   };
 
   const selectDateUnknown = () => {
-    setDateMemberId("");
+    setDateMemberIds([]);
     setDateUnknown(true);
   };
 
   const selectVibeMember = (memberId: string) => {
     setVibeUnknown(false);
-    setVibeMemberId(memberId);
+    setVibeMemberIds((current) =>
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId],
+    );
   };
 
   const selectVibeUnknown = () => {
-    setVibeMemberId("");
+    setVibeMemberIds([]);
     setVibeUnknown(true);
   };
 
   const toggleNegativeMember = (memberId: string) => {
+    const isSelected = negativeMemberIds.includes(memberId);
+    if (isSelected && expandedNegativeMemberId !== memberId) {
+      setExpandedNegativeMemberId(memberId);
+      return;
+    }
+
     setNegativeMemberIds((current) =>
       current.includes(memberId)
         ? current.filter((id) => id !== memberId)
         : [...current, memberId],
     );
+    setExpandedNegativeMemberId(isSelected ? null : memberId);
     setNegativeFeedback((current) => ({
       ...current,
       [memberId]: current[memberId] ?? { reasons: [], otherText: "" },
@@ -3108,17 +3123,18 @@ function TicketFeedbackForm({
   })();
 
   const payloadMemberFeedback = () => {
-    if (!vibeMember) return {};
-
-    return {
-      [vibeMember.id]: {
-        status: "done",
-        temperature: null,
-        texture: null,
-        tone: null,
-        rhythm: null,
-      },
-    };
+    return Object.fromEntries(
+      vibeMemberIds.map((memberId) => [
+        memberId,
+        {
+          status: "done",
+          temperature: null,
+          texture: null,
+          tone: null,
+          rhythm: null,
+        },
+      ]),
+    );
   };
 
   const payloadMeetingFeedback = () => ({
@@ -3239,6 +3255,7 @@ function TicketFeedbackForm({
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           단둘이 만나고 싶어요.
+          <span className="ml-1 font-medium text-black/35">(중복 선택 가능)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
           서로 선택한 경우 1:1 만남 자리를 준비해드려요.
@@ -3246,7 +3263,7 @@ function TicketFeedbackForm({
         {dateCandidateMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {dateCandidateMembers.map((member) => {
-              const selected = dateMemberId === member.id;
+              const selected = dateMemberIds.includes(member.id);
 
               return (
                 <button
@@ -3287,6 +3304,7 @@ function TicketFeedbackForm({
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           이런 결의 사람을 만나고 싶어요.
+          <span className="ml-1 font-medium text-black/35">(중복 선택 가능)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
           다음 만남에서 비슷한 분들로 추천해드려요.
@@ -3294,7 +3312,7 @@ function TicketFeedbackForm({
         {otherMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
             {otherMembers.map((member) => {
-              const selected = vibeMemberId === member.id;
+              const selected = vibeMemberIds.includes(member.id);
 
               return (
                 <button
@@ -3351,6 +3369,9 @@ function TicketFeedbackForm({
                     key={member.id}
                     type="button"
                     onClick={() => toggleNegativeMember(member.id)}
+                    aria-expanded={
+                      selected && expandedNegativeMemberId === member.id
+                    }
                     className={cn(
                       "min-h-10 rounded-full border px-4 text-sm font-bold transition",
                       selected
@@ -3367,6 +3388,8 @@ function TicketFeedbackForm({
             {negativeMembers.length > 0 && (
               <div className="mt-5 space-y-4">
                 {negativeMembers.map((member) => {
+                  if (member.id !== expandedNegativeMemberId) return null;
+
                   const draft = negativeFeedback[member.id] ?? {
                     reasons: [],
                     otherText: "",
