@@ -459,10 +459,7 @@ export function ProfileTab({
     <TabMotion>
       <section className="px-5 pb-7 pt-7">
         <header className="pr-16">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-            profile
-          </p>
-          <h1 className="mt-2 text-[27px] font-bold leading-9 tracking-tight text-black">
+          <h1 className="text-[27px] font-bold leading-9 tracking-tight text-black">
             {profileInitial(profile)}님의 프로필
           </h1>
         </header>

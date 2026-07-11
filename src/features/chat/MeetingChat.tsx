@@ -758,10 +758,7 @@ export function MeetingChat({
   return (
     <section className="h-full overflow-y-auto bg-white px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black scrollbar-none">
       <header className="pr-16">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          chat
-        </p>
-        <h1 className="mt-2 text-[27px] font-bold leading-9">채팅</h1>
+        <h1 className="text-[27px] font-bold leading-9">채팅</h1>
       </header>
 
       {loading ? (
