@@ -83,6 +83,27 @@ type TicketData = {
   waitlist: AdminTicketWaitlistEntry[];
 };
 
+type TestTimeMode =
+  | "applied"
+  | "approved"
+  | "pre_start"
+  | "in_progress"
+  | "feedback"
+  | "closed";
+
+const testTimeOptions: Array<{
+  mode: TestTimeMode;
+  label: string;
+  description: string;
+}> = [
+  { mode: "applied", label: "신청", description: "시작 24시간 전" },
+  { mode: "approved", label: "확정", description: "시작 12시간 전" },
+  { mode: "pre_start", label: "시작 전", description: "시작 1시간 전" },
+  { mode: "in_progress", label: "진행 중", description: "시작 5분 후" },
+  { mode: "feedback", label: "피드백", description: "시작 3시간 후" },
+  { mode: "closed", label: "종료", description: "채팅 종료 후" },
+];
+
 type TicketCourseStepDraft = {
   id: string;
   order: number;
@@ -1286,6 +1307,20 @@ export function TicketAdminPanel({
     setSelectedInstanceId(null);
   };
 
+  const moveTestTime = async (mode: TestTimeMode) => {
+    if (!selectedInstance || selectedInstance.visibility !== "test_only") return;
+    const option = testTimeOptions.find((item) => item.mode === mode);
+    await runAction(
+      "POST",
+      {
+        action: "set_instance_test_time",
+        instanceId: selectedInstance.id,
+        mode,
+      },
+      `테스트 시간을 ${option?.label ?? "선택한"} 상태로 이동했습니다.`,
+    );
+  };
+
   const deleteTicket = async () => {
     if (!selectedTicket) return;
     const confirmed = window.confirm(
@@ -1467,6 +1502,14 @@ export function TicketAdminPanel({
                     onCreate={() => void createDetailTicket()}
                     onDuplicate={() => void duplicateOccurrence()}
                     onDelete={() => void deleteOccurrence()}
+                  />
+                )}
+
+                {selectedInstance?.visibility === "test_only" && (
+                  <TestTimeControl
+                    instance={selectedInstance}
+                    saving={saving}
+                    onMove={(mode) => void moveTestTime(mode)}
                   />
                 )}
 
@@ -1825,6 +1868,54 @@ function OccurrenceManager({
           세부티켓 A가 아직 없습니다. 세부티켓을 추가해 주세요.
         </p>
       )}
+    </section>
+  );
+}
+
+function TestTimeControl({
+  instance,
+  saving,
+  onMove,
+}: {
+  instance: AdminTicketInstance;
+  saving: boolean;
+  onMove: (mode: TestTimeMode) => void;
+}) {
+  return (
+    <section className="rounded-2xl border border-dashed border-accent/40 bg-accent/5 p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+          <Clock3 size={18} aria-hidden />
+        </div>
+        <div>
+          <h3 className="font-bold">테스트 시간 이동</h3>
+          <p className="mt-1 text-xs font-semibold leading-5 text-black/52">
+            운영자 전용 테스트 티켓에서만 사용할 수 있습니다. 단계를 선택하면
+            참여자 화면의 채팅, 도착 확인, 피드백 상태를 바로 점검할 수 있습니다.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {testTimeOptions.map((option) => (
+          <button
+            key={option.mode}
+            type="button"
+            disabled={saving}
+            onClick={() => onMove(option.mode)}
+            className="rounded-xl border border-black/10 bg-white px-3 py-3 text-left transition hover:border-accent hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <span className="block text-sm font-bold text-black">{option.label}</span>
+            <span className="mt-1 block text-[11px] font-semibold text-black/42">
+              {option.description}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] font-semibold text-black/42">
+        현재 설정: {[instance.event_date, instance.event_time].filter(Boolean).join(" ") || "일정 미정"}
+      </p>
     </section>
   );
 }

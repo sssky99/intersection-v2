@@ -384,6 +384,9 @@ function testTimeTarget(mode: unknown) {
   if (mode === "feedback") {
     return new Date(now.getTime() - (3 * 60 + 5) * 60 * 1000);
   }
+  if (mode === "closed") {
+    return new Date(now.getTime() - (27 * 60 + 5) * 60 * 1000);
+  }
   return null;
 }
 
