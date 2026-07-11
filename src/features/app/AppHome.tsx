@@ -2162,6 +2162,28 @@ function countdownText(targetIso: string | null, label: string, now: Date) {
   return `${label} ${timeText} 남았어요`;
 }
 
+function ticketActivityOpensAt(
+  ticket: GatheringTicket,
+  meetingStartAt: string | null,
+  activityIndex: number,
+) {
+  const startAt = meetingStartAt ? new Date(meetingStartAt) : null;
+  if (!startAt || !Number.isFinite(startAt.getTime())) return null;
+
+  const activity = ticketProgressViewSteps(ticket).filter(
+    (step) => step.baseStep === "in_progress",
+  )[activityIndex];
+  if (!activity) return null;
+
+  const openOffsetMinutes = courseStepOpenOffsetMinutes(
+    activity.courseStep?.openOffsetMinutes,
+    activityIndex,
+  );
+  return new Date(
+    startAt.getTime() + openOffsetMinutes * 60 * 1000,
+  ).toISOString();
+}
+
 function useTicketCountdown(userTicket: UserTicket) {
   const [now, setNow] = useState(() => new Date());
 
@@ -2180,14 +2202,40 @@ function useTicketCountdown(userTicket: UserTicket) {
   }
 
   if (userTicket.progressStep === "pre_start") {
-    const text = countdownText(userTicket.meetingStartAt, "진행 중까지", now);
+    const text = countdownText(
+      ticketActivityOpensAt(userTicket.ticket, userTicket.meetingStartAt, 0) ??
+        userTicket.meetingStartAt,
+      "첫 활동까지",
+      now,
+    );
     return text ? { text } : null;
   }
 
   if (userTicket.progressStep === "in_progress") {
+    const activitySteps = ticketProgressViewSteps(userTicket.ticket).filter(
+      (step) => step.baseStep === "in_progress",
+    );
+    const activeActivityKey = currentActivityProgressViewStepKey(
+      userTicket.ticket,
+      userTicket.meetingStartAt,
+      now,
+    );
+    const activeActivityIndex = Math.max(
+      activitySteps.findIndex((step) => step.key === activeActivityKey),
+      0,
+    );
+    const nextActivity = activitySteps[activeActivityIndex + 1];
+    const targetIso = nextActivity
+      ? ticketActivityOpensAt(
+          userTicket.ticket,
+          userTicket.meetingStartAt,
+          activeActivityIndex + 1,
+        )
+      : userTicket.feedbackOpensAt;
+    const label = nextActivity ? `${nextActivity.label}까지` : "피드백 작성까지";
     const text = countdownText(
-      userTicket.feedbackOpensAt,
-      "피드백 작성까지",
+      targetIso,
+      label,
       now,
     );
     return text ? { text } : null;
