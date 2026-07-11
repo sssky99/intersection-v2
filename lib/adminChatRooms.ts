@@ -194,7 +194,7 @@ export async function loadAdminChatRooms({
 
       const status = now >= opensAt ? "active" : "upcoming";
       const memberIds = unique(memberIdsByInstance.get(instance.id) ?? []);
-      if (status === "upcoming" && memberIds.length === 0) return null;
+      if (memberIds.length === 0) return null;
 
       const members: MeetingChatMember[] = memberIds.map((memberId) => {
         const profile = profileMap.get(memberId);
