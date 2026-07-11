@@ -12,10 +12,12 @@ import {
 } from "@/lib/placePayload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  courseStepOpenOffsetMinutes,
   ensureMinimumStoredTicketCourseSteps,
   legacyStoredTicketCourseSteps,
   mainStoredTicketCourseStep,
   normalizeStoredTicketCourseSteps,
+  TICKET_FEEDBACK_OPEN_OFFSET_MINUTES,
 } from "@/lib/ticketCourse";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
@@ -373,7 +375,7 @@ function buildAtmosphereDefaultsByInstance({
   );
 }
 
-function testTimeTarget(mode: unknown) {
+function testTimeTarget(mode: unknown, courseSteps: unknown = []) {
   const now = new Date();
   if (mode === "applied") {
     return new Date(now.getTime() + (24 * 60 + 5) * 60 * 1000);
@@ -387,6 +389,36 @@ function testTimeTarget(mode: unknown) {
   if (mode === "closed") {
     return new Date(now.getTime() - (27 * 60 + 5) * 60 * 1000);
   }
+
+  const activityMatch =
+    typeof mode === "string" ? mode.match(/^activity:(\d+)$/) : null;
+  if (activityMatch) {
+    const activityIndex = Number.parseInt(activityMatch[1], 10) - 1;
+    const steps = ensureMinimumStoredTicketCourseSteps(
+      normalizeStoredTicketCourseSteps(courseSteps),
+    );
+    const selected = steps[activityIndex];
+    if (!selected) return null;
+
+    const selectedOffset = courseStepOpenOffsetMinutes(
+      selected.openOffsetMinutes,
+      activityIndex,
+    );
+    const next = steps[activityIndex + 1];
+    const nextOffset = next
+      ? courseStepOpenOffsetMinutes(next.openOffsetMinutes, activityIndex + 1)
+      : null;
+    const elapsedMinutes =
+      nextOffset != null && nextOffset > selectedOffset
+        ? Math.floor((selectedOffset + nextOffset) / 2)
+        : Math.min(
+            selectedOffset + 5,
+            TICKET_FEEDBACK_OPEN_OFFSET_MINUTES - 1,
+          );
+
+    return new Date(now.getTime() - elapsedMinutes * 60 * 1000);
+  }
+
   return null;
 }
 
@@ -922,8 +954,7 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
     } else if (action === "set_instance_test_time") {
       const instanceId = text(body?.instanceId);
-      const target = testTimeTarget(body?.mode);
-      if (!instanceId || !target) {
+      if (!instanceId) {
         return NextResponse.json(
           { error: "잘못된 운영자 시간 이동 요청입니다." },
           { status: 400 },
@@ -932,7 +963,7 @@ export async function POST(request: NextRequest) {
 
       const { data: instance, error: instanceError } = await supabase
         .from("ticket_instances")
-        .select("id,visibility")
+        .select("id,template_id,visibility")
         .eq("id", instanceId)
         .single();
       if (instanceError) throw instanceError;
@@ -941,6 +972,21 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "운영자 전용 티켓에서만 시간을 이동할 수 있습니다." },
           { status: 403 },
+        );
+      }
+
+      const { data: template, error: templateError } = await supabase
+        .from("ticket_templates")
+        .select("course_steps")
+        .eq("id", instance.template_id)
+        .single();
+      if (templateError) throw templateError;
+
+      const target = testTimeTarget(body?.mode, template.course_steps);
+      if (!target) {
+        return NextResponse.json(
+          { error: "Invalid test time transition." },
+          { status: 400 },
         );
       }
 

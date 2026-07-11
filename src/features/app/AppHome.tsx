@@ -82,6 +82,7 @@ import {
   ticketStageText,
 } from "@/lib/ticketStageCopy";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
+import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import type { QuestionAnswer } from "@/types/question";
@@ -149,15 +150,12 @@ const basicInfoBirthYearOptions = Array.from(
   (_, index) => String(1992 + index),
 );
 
-const feedbackPersonAxes = [
+const profileVibeAxes = [
   "temperature",
   "texture",
   "tone",
   "rhythm",
 ] as const satisfies readonly VibeAxis[];
-const profileVibeAxes = feedbackPersonAxes;
-
-type FeedbackPersonAxis = (typeof feedbackPersonAxes)[number];
 type ProfileVibeAxis = (typeof profileVibeAxes)[number];
 type MeetingRatingKey = "overall" | "expectationMatch";
 type MeetingRatings = Record<MeetingRatingKey, number | null>;
@@ -169,12 +167,6 @@ type NegativeFeedbackReason =
   | "romantic_pressure"
   | "religion_or_sales"
   | "other";
-
-type MemberFeedbackDraft = {
-  status: "pending" | "done" | "skipped";
-  values: Record<FeedbackPersonAxis, number>;
-  touchedAxes: FeedbackPersonAxis[];
-};
 
 type NegativeMemberFeedbackDraft = {
   reasons: NegativeFeedbackReason[];
@@ -1805,20 +1797,49 @@ export function StoredTicketDetailView({
   onProgressStepChange?: (step: TicketProgressViewStepKey) => void;
 }) {
   const ticket = userTicket.ticket;
+  const [progressNow, setProgressNow] = useState(() => new Date());
   const [statusOpen, setStatusOpen] = useState(true);
   const [internalProgressStep, setInternalProgressStep] =
     useState<TicketProgressViewStepKey>(() =>
-      defaultProgressViewStepKey(ticket, userTicket.progressStep),
+      defaultProgressViewStepKey(
+        ticket,
+        userTicket.progressStep,
+        userTicket.meetingStartAt,
+      ),
     );
   const selectedProgressStep = controlledProgressStep ?? internalProgressStep;
   const heroImageUrl = ticketProgressHeroImageUrl(ticket, selectedProgressStep);
+  const activeProgressStep = defaultProgressViewStepKey(
+    ticket,
+    userTicket.progressStep,
+    userTicket.meetingStartAt,
+    progressNow,
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setProgressNow(new Date()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (controlledProgressStep) return;
-    setInternalProgressStep(
-      defaultProgressViewStepKey(ticket, userTicket.progressStep),
-    );
-  }, [controlledProgressStep, ticket, userTicket.id, userTicket.progressStep]);
+    setInternalProgressStep(activeProgressStep);
+  }, [activeProgressStep, controlledProgressStep, userTicket.id, userTicket.progressStep]);
+
+  useEffect(() => {
+    if (controlledProgressStep) return;
+    setInternalProgressStep((current) => {
+      const currentIndex = progressViewStepIndex(
+        ticketProgressViewSteps(ticket),
+        current,
+      );
+      const activeIndex = progressViewStepIndex(
+        ticketProgressViewSteps(ticket),
+        activeProgressStep,
+      );
+      return currentIndex < activeIndex ? activeProgressStep : current;
+    });
+  }, [activeProgressStep, controlledProgressStep, ticket]);
 
   const handleProgressStepChange = useCallback(
     (step: TicketProgressViewStepKey) => {
@@ -1867,6 +1888,7 @@ export function StoredTicketDetailView({
         >
           <TicketStatusOverview
             userTicket={userTicket}
+            now={progressNow}
             open={statusOpen}
             selectedProgressStep={selectedProgressStep}
             onSelectProgressStep={handleProgressStepChange}
@@ -2019,35 +2041,66 @@ function progressViewStepIndex(
 function defaultProgressViewStepKey(
   ticket: GatheringTicket,
   progressStep: TicketProgressStep,
+  meetingStartAt: string | null = null,
+  now = new Date(),
 ): TicketProgressViewStepKey {
   if (progressStep === "in_progress") {
-    return (
-      ticketProgressViewSteps(ticket).find(
-        (step) => step.baseStep === "in_progress",
-      )?.key ?? "in_progress"
-    );
+    return currentActivityProgressViewStepKey(ticket, meetingStartAt, now);
   }
 
   return progressStep;
 }
 
+function currentActivityProgressViewStepKey(
+  ticket: GatheringTicket,
+  meetingStartAt: string | null,
+  now: Date,
+) {
+  const activitySteps = ticketProgressViewSteps(ticket).filter(
+    (step) => step.baseStep === "in_progress",
+  );
+  const firstActivity = activitySteps[0];
+  if (!firstActivity) return "in_progress" as TicketProgressViewStepKey;
+
+  const startAt = meetingStartAt ? new Date(meetingStartAt) : null;
+  if (!startAt || !Number.isFinite(startAt.getTime())) return firstActivity.key;
+
+  const elapsedMinutes = Math.max(
+    0,
+    Math.floor((now.getTime() - startAt.getTime()) / (60 * 1000)),
+  );
+  let activeActivity = firstActivity;
+
+  for (const [index, activity] of activitySteps.entries()) {
+    if (
+      courseStepOpenOffsetMinutes(activity.courseStep?.openOffsetMinutes, index) <=
+      elapsedMinutes
+    ) {
+      activeActivity = activity;
+    }
+  }
+
+  return activeActivity.key;
+}
+
 function reachedProgressViewStepIndex(
   ticket: GatheringTicket,
   progressStep: TicketProgressStep,
+  meetingStartAt: string | null = null,
+  now = new Date(),
 ) {
   const steps = ticketProgressViewSteps(ticket);
 
   if (progressStep === "in_progress") {
-    const activityIndexes = steps
-      .map((step, index) => (step.baseStep === "in_progress" ? index : -1))
-      .filter((index) => index >= 0);
-
-    return activityIndexes.at(-1) ?? progressViewStepIndex(steps, progressStep);
+    return progressViewStepIndex(
+      steps,
+      currentActivityProgressViewStepKey(ticket, meetingStartAt, now),
+    );
   }
 
   return progressViewStepIndex(
     steps,
-    defaultProgressViewStepKey(ticket, progressStep),
+    defaultProgressViewStepKey(ticket, progressStep, meetingStartAt, now),
   );
 }
 
@@ -2145,11 +2198,13 @@ function useTicketCountdown(userTicket: UserTicket) {
 
 function TicketStatusOverview({
   userTicket,
+  now,
   open,
   selectedProgressStep,
   onSelectProgressStep,
 }: {
   userTicket: UserTicket;
+  now: Date;
   open: boolean;
   selectedProgressStep: TicketProgressViewStepKey;
   onSelectProgressStep: (step: TicketProgressViewStepKey) => void;
@@ -2199,6 +2254,7 @@ function TicketStatusOverview({
 
             <TicketProgressSteps
               userTicket={userTicket}
+              now={now}
               selectedProgressStep={selectedProgressStep}
               onSelectProgressStep={onSelectProgressStep}
             />
@@ -2230,10 +2286,12 @@ function TicketMetaLine({
 
 function TicketProgressSteps({
   userTicket,
+  now,
   selectedProgressStep,
   onSelectProgressStep,
 }: {
   userTicket: UserTicket;
+  now: Date;
   selectedProgressStep: TicketProgressViewStepKey;
   onSelectProgressStep: (step: TicketProgressViewStepKey) => void;
 }) {
@@ -2248,6 +2306,8 @@ function TicketProgressSteps({
   const activeIndex = reachedProgressViewStepIndex(
     userTicket.ticket,
     userTicket.progressStep,
+    userTicket.meetingStartAt,
+    now,
   );
   const visibleSteps = steps.slice(windowStart, windowStart + visibleStepCount);
   const canMoveLeft = windowStart > 0;
@@ -2886,30 +2946,6 @@ function FeedbackGuide({ userTicket }: { userTicket: UserTicket }) {
   );
 }
 
-function createMemberFeedbackDrafts(
-  members: UserTicket["members"],
-): Record<string, MemberFeedbackDraft> {
-  return Object.fromEntries(
-    members.map((member) => [
-      member.id,
-      {
-        status: "pending",
-        values: {
-          temperature: 3,
-          texture: 3,
-          tone: 3,
-          rhythm: 3,
-        },
-        touchedAxes: [],
-      },
-    ]),
-  );
-}
-
-function scoreToInternal(score: number) {
-  return (score - 3) * 50;
-}
-
 function memberRealName(member: UserTicket["members"][number]) {
   return member.name?.trim() || member.nickname?.trim() || "멤버";
 }
@@ -2951,9 +2987,6 @@ function TicketFeedbackForm({
   const [dateMemberId, setDateMemberId] = useState("");
   const [vibeUnknown, setVibeUnknown] = useState(false);
   const [vibeMemberId, setVibeMemberId] = useState("");
-  const [memberFeedback, setMemberFeedback] = useState<
-    Record<string, MemberFeedbackDraft>
-  >(() => createMemberFeedbackDrafts(otherMembers));
   const [negativeMemberIds, setNegativeMemberIds] = useState<string[]>([]);
   const [negativeFeedback, setNegativeFeedback] = useState<
     Record<string, NegativeMemberFeedbackDraft>
@@ -2968,7 +3001,6 @@ function TicketFeedbackForm({
     setDateMemberId("");
     setVibeUnknown(false);
     setVibeMemberId("");
-    setMemberFeedback(createMemberFeedbackDrafts(otherMembers));
     setNegativeMemberIds([]);
     setNegativeFeedback({});
     setSubmitting(false);
@@ -2980,14 +3012,11 @@ function TicketFeedbackForm({
     (member) => member.id === dateMemberId,
   );
   const vibeMember = otherMembers.find((member) => member.id === vibeMemberId);
-  const vibeDraft = vibeMember ? memberFeedback[vibeMember.id] : null;
   const meetingRatingsComplete = Object.values(meetingRatings).every(
     (value) => typeof value === "number",
   );
   const vibeSelectionComplete =
     otherMembers.length === 0 || vibeUnknown || Boolean(vibeMember);
-  const vibeAxisComplete =
-    !vibeMember || Boolean(vibeDraft?.touchedAxes.length);
   const negativeFeedbackComplete = negativeMemberIds.every((memberId) => {
     const draft = negativeFeedback[memberId];
     if (!draft || draft.reasons.length === 0) return false;
@@ -2997,9 +3026,7 @@ function TicketFeedbackForm({
   });
   const canSubmit =
     meetingRatingsComplete &&
-    vibeSelectionComplete &&
-    vibeAxisComplete &&
-    negativeFeedbackComplete;
+    vibeSelectionComplete && negativeFeedbackComplete;
   const selectedPositiveMemberIds = dateMember ? [dateMember.id] : [];
   const negativeMembers = negativeMemberIds
     .map((memberId) => otherMembers.find((member) => member.id === memberId))
@@ -3023,25 +3050,6 @@ function TicketFeedbackForm({
   const selectVibeUnknown = () => {
     setVibeMemberId("");
     setVibeUnknown(true);
-  };
-
-  const updateMemberAxis = (axis: FeedbackPersonAxis, value: number) => {
-    if (!vibeMember) return;
-    setMemberFeedback((current) => {
-      const draft = current[vibeMember.id];
-      if (!draft) return current;
-      return {
-        ...current,
-        [vibeMember.id]: {
-          ...draft,
-          status: "done",
-          values: { ...draft.values, [axis]: value },
-          touchedAxes: draft.touchedAxes.includes(axis)
-            ? draft.touchedAxes
-            : [...draft.touchedAxes, axis],
-        },
-      };
-    });
   };
 
   const toggleNegativeMember = (memberId: string) => {
@@ -3095,27 +3103,20 @@ function TicketFeedbackForm({
     if (submitting) return "저장 중이에요";
     if (!meetingRatingsComplete) return "모임 별점을 남겨주세요";
     if (!vibeSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
-    if (!vibeAxisComplete) return "선택한 사람의 분위기를 알려주세요";
     if (!negativeFeedbackComplete) return "부정 피드백 사유를 선택해주세요";
     return "피드백 제출하기";
   })();
 
   const payloadMemberFeedback = () => {
-    if (!vibeMember || !vibeDraft) return {};
-
-    const values = Object.fromEntries(
-      feedbackPersonAxes.map((axis) => [
-        axis,
-        vibeDraft.touchedAxes.includes(axis)
-          ? scoreToInternal(vibeDraft.values[axis])
-          : null,
-      ]),
-    );
+    if (!vibeMember) return {};
 
     return {
       [vibeMember.id]: {
         status: "done",
-        ...values,
+        temperature: null,
+        texture: null,
+        tone: null,
+        rhythm: null,
       },
     };
   };
@@ -3223,7 +3224,7 @@ function TicketFeedbackForm({
             }
           />
           <MeetingStarRating
-            label="추천 받기 전 기대한 분위기와 실제 분위기가 비슷했나요?"
+            label="친구한테 교집합을 추천해주실 의향이 있나요?"
             value={meetingRatings.expectationMatch}
             onChange={(rating) =>
               setMeetingRatings((current) => ({
@@ -3240,7 +3241,7 @@ function TicketFeedbackForm({
           단둘이 만나고 싶어요.
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          함께한 멤버 중 다시 만나보고 싶은 사람을 참고해요.
+          서로 선택한 경우 1:1 만남 자리를 준비해드려요.
         </p>
         {dateCandidateMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -3255,8 +3256,8 @@ function TicketFeedbackForm({
                   className={cn(
                     "min-h-10 rounded-full border px-4 text-sm font-bold transition",
                     selected
-                      ? "border-accent bg-accent text-white"
-                      : "border-black/10 bg-white text-black/62 hover:border-accent/45",
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white text-black/62 hover:border-black/25",
                   )}
                 >
                   {memberRealName(member)}
@@ -3286,10 +3287,9 @@ function TicketFeedbackForm({
       <section className="border-t border-black/8 py-5">
         <h3 className="text-[15px] font-black leading-6 text-black">
           이런 결의 사람을 만나고 싶어요.
-          <span className="ml-1 font-medium text-black/35">(필수)</span>
         </h3>
         <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          잘 모르겠다면 답변을 건너뛸 수 있어요.
+          다음 만남에서 비슷한 분들로 추천해드려요.
         </p>
         {otherMembers.length > 0 ? (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -3304,8 +3304,8 @@ function TicketFeedbackForm({
                   className={cn(
                     "min-h-10 rounded-full border px-4 text-sm font-bold transition",
                     selected
-                      ? "border-accent bg-accent text-white"
-                      : "border-black/10 bg-white text-black/62 hover:border-accent/45",
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white text-black/62 hover:border-black/25",
                   )}
                 >
                   {memberRealName(member)}
@@ -3331,22 +3331,6 @@ function TicketFeedbackForm({
           </p>
         )}
 
-        {vibeMember && vibeDraft && (
-          <div className="mt-6">
-            <h4 className="text-[15px] font-black text-black">
-              이 사람은 어떤 사람이었나요?
-            </h4>
-            <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-              {memberRealName(vibeMember)}님과 비슷한 결의 사람을 추천할 때 참고해요.
-            </p>
-            <SharedFeedbackVibeGraphControl
-              className="border-t-0 pt-4"
-              axes={feedbackPersonAxes}
-              values={vibeDraft.values}
-              onChange={updateMemberAxis}
-            />
-          </div>
-        )}
       </section>
 
       <section className="border-t border-black/8 py-5">
@@ -3453,7 +3437,7 @@ function TicketFeedbackForm({
         type="button"
         disabled={submitting || !canSubmit}
         onClick={() => void submitFeedback()}
-        className="h-12 w-full rounded-full bg-accent text-sm font-black text-white shadow-[0_10px_24px_rgba(126,179,199,0.28)] transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+        className="h-12 w-full rounded-full bg-black text-sm font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.2)] transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
       >
         {submitLabel}
       </button>
@@ -3552,66 +3536,6 @@ function MeetingStarRating({
         })}
       </div>
     </div>
-  );
-}
-
-const feedbackAxisLabelOverrides: Partial<
-  Record<VibeAxis, { leftLabel: string; rightLabel: string }>
-> = {
-  alcohol: {
-    leftLabel: "술이 없는",
-    rightLabel: "술이 있는",
-  },
-  romance: {
-    leftLabel: "편한",
-    rightLabel: "설레는",
-  },
-};
-
-function SharedFeedbackVibeGraphControl<TAxis extends VibeAxis>({
-  title,
-  description,
-  axes,
-  values,
-  onChange,
-  className,
-}: {
-  title?: string;
-  description?: string;
-  axes: readonly TAxis[];
-  values: Record<TAxis, number>;
-  onChange: (axis: TAxis, value: number) => void;
-  className?: string;
-}) {
-  return (
-    <section className={cn("border-t border-black/8 py-5", className)}>
-      {title && <h2 className="text-[15px] font-black text-black">{title}</h2>}
-      {description && (
-        <p className="mt-2 text-xs font-semibold leading-5 text-black/40">
-          {description}
-        </p>
-      )}
-      <div className="mt-5 space-y-5">
-        {axes.map((axis) => (
-          <VibeAxisBar
-            key={axis}
-            axis={axis}
-            score={values[axis]}
-            scoreScale="legacy"
-            axisLabelOverrides={feedbackAxisLabelOverrides[axis]}
-            showAxisHeader={false}
-            animateBar={false}
-            input={{
-              value: values[axis],
-              min: 1,
-              max: 5,
-              step: 1,
-              onChange: (value) => onChange(axis, value),
-            }}
-          />
-        ))}
-      </div>
-    </section>
   );
 }
 

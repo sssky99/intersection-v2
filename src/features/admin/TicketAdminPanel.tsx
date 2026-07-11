@@ -32,6 +32,7 @@ import {
 import { meetingRegionFromPlace } from "@/lib/seoulRegion";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import {
+  courseStepOpenOffsetMinutes,
   TICKET_COURSE_MAX_STEPS,
   ensureMinimumStoredTicketCourseSteps,
   legacyStoredTicketCourseSteps,
@@ -54,6 +55,7 @@ import {
   ticketVisibilities,
   ticketVisibilityLabels,
   type AdminTicketInstance,
+  type AdminTicketCourseStep,
   type AdminTicketTemplate,
   type AdminTicketWaitlistEntry,
   type PlaceVisibility,
@@ -89,20 +91,44 @@ type TestTimeMode =
   | "pre_start"
   | "in_progress"
   | "feedback"
-  | "closed";
+  | "closed"
+  | `activity:${number}`;
 
-const testTimeOptions: Array<{
+type TestTimeOption = {
   mode: TestTimeMode;
   label: string;
   description: string;
-}> = [
+};
+
+const testTimeBaseOptions: TestTimeOption[] = [
   { mode: "applied", label: "신청", description: "시작 24시간 전" },
   { mode: "approved", label: "확정", description: "시작 12시간 전" },
   { mode: "pre_start", label: "시작 전", description: "시작 1시간 전" },
-  { mode: "in_progress", label: "진행 중", description: "시작 5분 후" },
   { mode: "feedback", label: "피드백", description: "시작 3시간 후" },
   { mode: "closed", label: "종료", description: "채팅 종료 후" },
 ];
+
+function testTimeOptions(courseSteps: AdminTicketCourseStep[]) {
+  const activityOptions = courseSteps.length
+    ? courseSteps.slice(0, TICKET_COURSE_MAX_STEPS).map((step, index) => ({
+        mode: `activity:${index + 1}` as TestTimeMode,
+        label: `${index + 1}차 활동`,
+        description: `시작 ${courseStepOpenOffsetMinutes(step.openOffsetMinutes, index)}분 후`,
+      }))
+    : [
+        {
+          mode: "in_progress" as const,
+          label: "진행 중",
+          description: "시작 5분 후",
+        },
+      ];
+
+  return [
+    ...testTimeBaseOptions.slice(0, 3),
+    ...activityOptions,
+    ...testTimeBaseOptions.slice(3),
+  ];
+}
 
 type TicketCourseStepDraft = {
   id: string;
@@ -113,6 +139,7 @@ type TicketCourseStepDraft = {
   placeName: string;
   address: string;
   place: MeetingPlace | null;
+  openOffsetMinutes: string;
   isMainActivity: boolean;
 };
 
@@ -402,6 +429,7 @@ function blankCourseStep(order: number): TicketCourseStepDraft {
     placeName: "",
     address: "",
     place: null,
+    openOffsetMinutes: String(courseStepOpenOffsetMinutes(null, order - 1)),
     isMainActivity: order === 1,
   };
 }
@@ -418,6 +446,7 @@ function courseStepDraftFromStored(
     placeName: step.placeName ?? "",
     address: step.address ?? "",
     place: step.place,
+    openOffsetMinutes: String(step.openOffsetMinutes),
     isMainActivity: step.isMainActivity,
   };
 }
@@ -481,11 +510,21 @@ function normalizeDraftCourseSteps(steps: TicketCourseStepDraft[]) {
     next.findIndex((step) => step.isMainActivity),
   );
 
-  return next.map((step, index) => ({
-    ...step,
-    order: index + 1,
-    isMainActivity: index === mainIndex,
-  }));
+  let previousOpenOffset = 0;
+  return next.map((step, index) => {
+    const openOffsetMinutes = Math.max(
+      previousOpenOffset,
+      courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
+    );
+    previousOpenOffset = openOffsetMinutes;
+
+    return {
+      ...step,
+      order: index + 1,
+      openOffsetMinutes: String(openOffsetMinutes),
+      isMainActivity: index === mainIndex,
+    };
+  });
 }
 
 function mainDraftCourseStep(steps: TicketCourseStepDraft[]) {
@@ -501,7 +540,7 @@ function firstDraftCourseStep(steps: TicketCourseStepDraft[]) {
 }
 
 function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
-  return normalizeDraftCourseSteps(steps).map((step) => ({
+  return normalizeDraftCourseSteps(steps).map((step, index) => ({
     id: step.id,
     order: step.order,
     title: step.title.trim() || null,
@@ -510,6 +549,7 @@ function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
     placeName: step.placeName.trim() || null,
     address: step.address.trim() || null,
     place: step.place,
+    openOffsetMinutes: courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
     isMainActivity: step.isMainActivity,
   }));
 }
@@ -560,6 +600,7 @@ function ticketCourseStepsFromDraft(
           placeName: step.placeName,
           address: step.address,
         }),
+      openOffsetMinutes: courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
       isMainActivity: step.isMainActivity,
     }));
 }
@@ -1309,7 +1350,9 @@ export function TicketAdminPanel({
 
   const moveTestTime = async (mode: TestTimeMode) => {
     if (!selectedInstance || selectedInstance.visibility !== "test_only") return;
-    const option = testTimeOptions.find((item) => item.mode === mode);
+    const option = testTimeOptions(selectedTicket?.course_steps ?? []).find(
+      (item) => item.mode === mode,
+    );
     await runAction(
       "POST",
       {
@@ -1508,6 +1551,7 @@ export function TicketAdminPanel({
                 {selectedInstance?.visibility === "test_only" && (
                   <TestTimeControl
                     instance={selectedInstance}
+                    courseSteps={selectedTicket.course_steps}
                     saving={saving}
                     onMove={(mode) => void moveTestTime(mode)}
                   />
@@ -1874,13 +1918,17 @@ function OccurrenceManager({
 
 function TestTimeControl({
   instance,
+  courseSteps,
   saving,
   onMove,
 }: {
   instance: AdminTicketInstance;
+  courseSteps: AdminTicketCourseStep[];
   saving: boolean;
   onMove: (mode: TestTimeMode) => void;
 }) {
+  const options = testTimeOptions(courseSteps);
+
   return (
     <section className="rounded-2xl border border-dashed border-accent/40 bg-accent/5 p-5 shadow-sm">
       <div className="flex items-start gap-3">
@@ -1897,7 +1945,7 @@ function TestTimeControl({
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {testTimeOptions.map((option) => (
+        {options.map((option) => (
           <button
             key={option.mode}
             type="button"
@@ -2122,6 +2170,10 @@ function CourseStepsEditor({
         </button>
       </div>
 
+      <p className="text-[11px] font-semibold leading-5 text-black/42">
+        활동 공개 시점은 모임 시작 기준이며, 피드백은 시작 3시간 후에 고정됩니다.
+      </p>
+
       {courseSteps.map((step, index) => {
         const canRemove = courseSteps.length > 2 && index >= 2;
         const stepLabel = `${index + 1}차`;
@@ -2184,6 +2236,18 @@ function CourseStepsEditor({
                   updateStep(step.id, (current) => ({
                     ...current,
                     activityType,
+                  }))
+                }
+              />
+              <FormField
+                label={`${stepLabel} 공개 시점 (모임 시작 후 분)`}
+                type="number"
+                value={step.openOffsetMinutes}
+                placeholder="0~179"
+                onChange={(openOffsetMinutes) =>
+                  updateStep(step.id, (current) => ({
+                    ...current,
+                    openOffsetMinutes,
                   }))
                 }
               />

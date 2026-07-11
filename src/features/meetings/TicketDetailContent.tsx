@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
 import { MeetingAtmospherePanel } from "@/features/meetings/MeetingAtmospherePanel";
+import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
@@ -194,6 +195,10 @@ function TicketCoursePanel({
       {steps.map((step, index) => {
         const placeName = step.place?.name ?? step.placeName;
         const address = step.place?.address ?? step.address;
+        const openOffsetMinutes = courseStepOpenOffsetMinutes(
+          step.openOffsetMinutes,
+          index,
+        );
 
         return (
           <li
@@ -218,6 +223,9 @@ function TicketCoursePanel({
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full bg-black/[0.05] px-2 py-1 text-[10px] font-black text-black/45">
                   {index + 1}차
+                </span>
+                <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700">
+                  시작 +{openOffsetMinutes}분
                 </span>
                 {step.isMainActivity && (
                   <span className="rounded-full bg-accent/14 px-2 py-1 text-[10px] font-black text-accent">

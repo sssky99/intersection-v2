@@ -13,6 +13,10 @@ import {
 
 export const TICKET_COURSE_MIN_STEPS = 2;
 export const TICKET_COURSE_MAX_STEPS = 3;
+export const TICKET_FEEDBACK_OPEN_OFFSET_MINUTES = 180;
+export const TICKET_COURSE_DEFAULT_OPEN_OFFSETS_MINUTES = [0, 60, 120] as const;
+export const TICKET_COURSE_MAX_OPEN_OFFSET_MINUTES =
+  TICKET_FEEDBACK_OPEN_OFFSET_MINUTES - 1;
 
 export type StoredTicketCourseStep = {
   id: string;
@@ -23,6 +27,7 @@ export type StoredTicketCourseStep = {
   placeName: string | null;
   address: string | null;
   place: MeetingPlace | null;
+  openOffsetMinutes: number;
   isMainActivity: boolean;
 };
 
@@ -56,17 +61,45 @@ function orderValue(value: unknown, fallback: number) {
   return Math.max(1, Math.min(TICKET_COURSE_MAX_STEPS, Math.trunc(number)));
 }
 
+export function courseStepOpenOffsetMinutes(value: unknown, index: number) {
+  const fallback =
+    TICKET_COURSE_DEFAULT_OPEN_OFFSETS_MINUTES[index] ??
+    TICKET_COURSE_MAX_OPEN_OFFSET_MINUTES;
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value, 10)
+        : fallback;
+
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(
+    0,
+    Math.min(TICKET_COURSE_MAX_OPEN_OFFSET_MINUTES, Math.trunc(parsed)),
+  );
+}
+
 function withSingleMainActivity(steps: StoredTicketCourseStep[]) {
   const mainIndex = Math.max(
     0,
     steps.findIndex((step) => step.isMainActivity),
   );
 
-  return steps.map((step, index) => ({
-    ...step,
-    order: index + 1,
-    isMainActivity: index === mainIndex,
-  }));
+  let previousOpenOffset = 0;
+  return steps.map((step, index) => {
+    const openOffsetMinutes = Math.max(
+      previousOpenOffset,
+      courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
+    );
+    previousOpenOffset = openOffsetMinutes;
+
+    return {
+      ...step,
+      order: index + 1,
+      openOffsetMinutes,
+      isMainActivity: index === mainIndex,
+    };
+  });
 }
 
 function normalizeStep(value: unknown, index: number): StoredTicketCourseStep {
@@ -86,6 +119,10 @@ function normalizeStep(value: unknown, index: number): StoredTicketCourseStep {
     placeName,
     address,
     place,
+    openOffsetMinutes: courseStepOpenOffsetMinutes(
+      source.openOffsetMinutes,
+      index,
+    ),
     isMainActivity: source.isMainActivity === true,
   };
 }
@@ -122,6 +159,7 @@ export function legacyStoredTicketCourseSteps(
       placeName: place?.name ?? text(source.placeName),
       address: meetingPlaceAddress(place) ?? text(source.address),
       place,
+      openOffsetMinutes: courseStepOpenOffsetMinutes(null, 0),
       isMainActivity: true,
     },
   ]);
@@ -142,6 +180,7 @@ export function ensureMinimumStoredTicketCourseSteps(
       placeName: null,
       address: null,
       place: null,
+      openOffsetMinutes: courseStepOpenOffsetMinutes(null, order - 1),
       isMainActivity: false,
     });
   }
@@ -196,6 +235,7 @@ export function displayTicketCourseSteps(
             address: step.address,
           })
         : null,
+      openOffsetMinutes: step.openOffsetMinutes,
       isMainActivity: step.isMainActivity,
     }));
 }

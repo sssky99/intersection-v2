@@ -42,6 +42,7 @@ export type TicketCourseStep = {
   placeName?: string | null;
   address?: string | null;
   place?: TicketPlace | null;
+  openOffsetMinutes?: number | null;
   isMainActivity: boolean;
 };
 

@@ -15,6 +15,7 @@ export type AdminTicketCourseStep = {
   placeName: string | null;
   address: string | null;
   place: MeetingPlace | null;
+  openOffsetMinutes: number;
   isMainActivity: boolean;
 };
 
