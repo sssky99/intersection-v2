@@ -997,7 +997,7 @@ function MeetingFeedbackSummary({
                   className="rounded-xl border border-red-100 bg-red-50/50 px-3 py-3"
                 >
                   <p className="text-sm font-black text-black">
-                    {memberName(profileMap.get(memberId), memberId)}
+                    {memberName(profileMap.get(memberId), "알 수 없는 멤버")}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {reasons.map((reason) => (
