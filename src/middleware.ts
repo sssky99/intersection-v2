@@ -63,7 +63,12 @@ export function middleware(request: NextRequest) {
     nextUrl.searchParams.has('error_code') ||
     nextUrl.searchParams.has('error_description');
 
-  if (isNetlifyBranchDeploy(origin)) {
+  const isAdminPreviewPath =
+    nextUrl.pathname === '/admin' ||
+    nextUrl.pathname.startsWith('/admin/') ||
+    nextUrl.pathname.startsWith('/api/admin/');
+
+  if (isNetlifyBranchDeploy(origin) && !isAdminPreviewPath) {
     const productionUrl = new URL(
       `${nextUrl.pathname}${nextUrl.search}`,
       productionOAuthOrigin(),
