@@ -73,6 +73,12 @@ function unique(values: Array<string | null | undefined>) {
   );
 }
 
+function negativeMemberIds(placeFeedback: Record<string, unknown> | null) {
+  const value = placeFeedback?.negative_member_feedback;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value);
+}
+
 function scoreColumn(axis: PersonAxis) {
   return `score_${axis}` as const;
 }
@@ -149,6 +155,7 @@ export async function GET(request: NextRequest) {
         row.user_id,
         ...(Array.isArray(row.selected_member_ids) ? row.selected_member_ids : []),
         ...Object.keys(row.member_feedback ?? {}),
+        ...negativeMemberIds(row.place_feedback),
       ]),
     );
 
