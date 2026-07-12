@@ -572,6 +572,14 @@ export function ProfileTab({
           문의하기
         </a>
 
+        <a
+          href="/privacy"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+        >
+          <Info size={15} aria-hidden />
+          개인정보 처리방침
+        </a>
+
         {logoutError && (
           <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-center text-xs font-semibold leading-5 text-red-600">
             {logoutError}

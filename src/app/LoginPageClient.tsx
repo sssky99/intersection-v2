@@ -85,6 +85,13 @@ export default function LoginPageClient() {
             ) : (
               <KakaoLoginButton />
             )}
+            <p className="mt-3 text-center text-[11px] font-medium leading-5 text-white/50">
+              교집합의 {" "}
+              <a href="/privacy" className="underline underline-offset-2 hover:text-white/75">
+                개인정보 처리방침
+              </a>
+              을 확인해 주세요.
+            </p>
           </div>
         </section>
       </main>

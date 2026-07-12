@@ -507,6 +507,13 @@ export function DetailsPreviewClient({
               {(loading) => (loading ? "카카오로 이동 중..." : "카카오로 시작하기")}
             </KakaoLoginButton>
           )}
+          <p className="mt-2 text-center text-[10px] font-semibold text-black/40">
+            교집합의 {" "}
+            <a href="/privacy" className="underline underline-offset-2 hover:text-black/65">
+              개인정보 처리방침
+            </a>
+            을 확인해 주세요.
+          </p>
         </div>
       </section>
     </main>
