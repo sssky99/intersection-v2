@@ -63,11 +63,11 @@ export function meetingDateApplicationDates(today: string) {
 
   const dayMs = 24 * 60 * 60 * 1000;
   const currentDateMs = Date.UTC(current.year, current.month - 1, current.day);
-  const currentMondayMs =
-    currentDateMs - ((current.weekday + 6) % 7) * dayMs;
+  const daysUntilNextFriday = ((5 - current.weekday + 7) % 7) || 7;
+  const nextFridayMs = currentDateMs + daysUntilNextFriday * dayMs;
 
-  return [4, 5, 11, 12].map((offset) =>
-    formatUtcDate(currentMondayMs + offset * dayMs),
+  return [0, 1, 7, 8].map((offset) =>
+    formatUtcDate(nextFridayMs + offset * dayMs),
   );
 }
 
