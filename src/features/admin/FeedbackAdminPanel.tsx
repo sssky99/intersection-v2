@@ -975,7 +975,7 @@ function MeetingFeedbackSummary({
       {hasRatings ? (
         <div className="mt-3 space-y-2">
           <RatingRow label="전반적인 만족도" value={ratings?.overall} />
-          <RatingRow label="기대와 실제 분위기" value={ratings?.expectation_match} />
+          <RatingRow label="친구에게 추천할 의향" value={ratings?.expectation_match} />
         </div>
       ) : legacyScores.length === 0 ? (
         <p className="mt-3 text-xs font-semibold text-black/35">모임 평가가 없습니다.</p>
