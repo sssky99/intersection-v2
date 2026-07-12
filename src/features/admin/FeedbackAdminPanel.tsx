@@ -756,22 +756,15 @@ export function FeedbackAdminPanel() {
                       key={feedback.id}
                       className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h4 className="text-sm font-black">
-                            {memberName(writer, "작성자")}
-                          </h4>
-                          <p className="mt-1 text-xs font-semibold text-black/40">
-                            {savedAt(feedback.created_at)}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-black/45">
-                          다시 만나고 싶은 분 {selectedNames.length}명
-                        </span>
+                      <div>
+                        <h4 className="text-sm font-black">
+                          {memberName(writer, "작성자")}
+                        </h4>
+                        <p className="mt-1 text-xs font-semibold text-black/40">
+                          {savedAt(feedback.created_at)}
+                        </p>
                       </div>
-                      <p className="mt-3 text-xs font-semibold text-black/55">
-                        {selectedNames.length ? selectedNames.join(", ") : "잘 모르겠어요"}
-                      </p>
+                      <SelectedMembersSummary selectedNames={selectedNames} />
                       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
                         <PersonFeedbackSummary
                           memberFeedback={feedback.member_feedback}
@@ -827,6 +820,34 @@ function feedbackOtherText(entry: NegativeMemberFeedbackEntry) {
 
 function feedbackScore(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function SelectedMembersSummary({ selectedNames }: { selectedNames: string[] }) {
+  return (
+    <div className="mt-3 min-w-0 rounded-xl bg-white px-4 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold text-black/35">다시 만나고 싶은 분</p>
+        <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
+          {selectedNames.length}명
+        </span>
+      </div>
+
+      {selectedNames.length === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-black/35">선택한 사람이 없습니다.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {selectedNames.map((name, index) => (
+            <div
+              key={`${name}-${index}`}
+              className="rounded-xl border border-black/[0.07] bg-[#fbfbfa] px-3 py-3"
+            >
+              <p className="text-sm font-black text-black">{name}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PersonFeedbackSummary({
