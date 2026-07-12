@@ -33,9 +33,6 @@ export default function PrivacyPage() {
             관계 법령을 준수합니다. 이 처리방침은 교집합 서비스에서 개인정보를
             어떤 목적으로 수집·이용하고 안전하게 관리하는지 안내합니다.
           </p>
-          <div className="mt-5 rounded-2xl bg-black/[0.035] px-4 py-3 text-xs font-bold leading-6 text-black/50">
-            시행일: 2026년 7월 12일 · 운영 주체: 교집합 · 대표자: 박동훈
-          </div>
         </header>
 
         <div className="mt-10 space-y-10">
@@ -245,6 +242,10 @@ export default function PrivacyPage() {
               필요한 고지와 동의 절차를 진행합니다.
             </p>
           </section>
+
+          <p className="text-xs font-bold leading-6 text-black/40">
+            본 개인정보 처리방침은 2026년 7월 12일부터 시행됩니다.
+          </p>
         </div>
       </article>
     </main>
