@@ -15,7 +15,7 @@ type MeetingFeedback = {
   ticket_snapshot: Record<string, unknown> | null;
   selected_member_ids: string[] | null;
   member_feedback: Record<string, MemberFeedbackEntry> | null;
-  place_feedback: Partial<Record<PlaceAxis, number>> | null;
+  place_feedback: StructuredPlaceFeedback | null;
   created_at: string;
   updated_at: string;
 };
@@ -23,6 +23,22 @@ type MeetingFeedback = {
 type MemberFeedbackEntry = {
   status?: "done" | "skipped";
 } & Partial<Record<PersonAxis, number | null>>;
+
+type MeetingRatingsFeedback = {
+  overall?: number | null;
+  expectation_match?: number | null;
+};
+
+type NegativeMemberFeedbackEntry = {
+  reasons?: unknown;
+  otherText?: unknown;
+  other_text?: unknown;
+};
+
+type StructuredPlaceFeedback = Partial<Record<PlaceAxis, number>> & {
+  meeting_ratings?: MeetingRatingsFeedback;
+  negative_member_feedback?: Record<string, NegativeMemberFeedbackEntry>;
+};
 
 type FeedbackProfile = {
   user_id: string;
@@ -756,9 +772,15 @@ export function FeedbackAdminPanel() {
                       <p className="mt-3 text-xs font-semibold text-black/55">
                         {selectedNames.length ? selectedNames.join(", ") : "잘 모르겠어요"}
                       </p>
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs font-semibold text-black/55">
-                        <RawJson title="사람 피드백" value={feedback.member_feedback ?? {}} />
-                        <RawJson title="장소 피드백" value={feedback.place_feedback ?? {}} />
+                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        <PersonFeedbackSummary
+                          memberFeedback={feedback.member_feedback}
+                          profileMap={profileMap}
+                        />
+                        <MeetingFeedbackSummary
+                          placeFeedback={feedback.place_feedback}
+                          profileMap={profileMap}
+                        />
                       </div>
                     </article>
                   );
@@ -783,13 +805,221 @@ function SummaryBox({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RawJson({ title, value }: { title: string; value: unknown }) {
+const negativeFeedbackReasonLabels: Record<string, string> = {
+  no_show: "노쇼했어요",
+  not_my_vibe: "결이 맞지 않았어요",
+  uncomfortable_conversation: "대화가 불편했어요",
+  rude_or_aggressive: "무례하거나 공격적인 표현이 있었어요",
+  romantic_pressure: "노골적인 이성 목적이 느껴졌어요",
+  religion_or_sales: "종교 포교 또는 영업처럼 느껴졌어요",
+  other: "기타",
+};
+
+function feedbackReasons(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function feedbackOtherText(entry: NegativeMemberFeedbackEntry) {
+  const value = entry.otherText ?? entry.other_text;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function feedbackScore(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function PersonFeedbackSummary({
+  memberFeedback,
+  profileMap,
+}: {
+  memberFeedback: Record<string, MemberFeedbackEntry> | null;
+  profileMap: Map<string, FeedbackProfile>;
+}) {
+  const entries = Object.entries(memberFeedback ?? {});
+
   return (
-    <div className="min-w-0 rounded-xl bg-white px-3 py-3">
-      <p className="text-[11px] font-bold text-black/35">{title}</p>
-      <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-black/55">
-        {JSON.stringify(value, null, 2)}
-      </pre>
+    <div className="min-w-0 rounded-xl bg-white px-4 py-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold text-black/35">비슷한 결로 추천한 사람</p>
+        <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
+          {entries.length}명
+        </span>
+      </div>
+
+      {entries.length === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-black/35">선택한 사람이 없습니다.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {entries.map(([memberId, entry]) => {
+            const scores = personAxes
+              .map((axis) => ({ axis, value: feedbackScore(entry?.[axis]) }))
+              .filter(
+                (item): item is { axis: PersonAxis; value: number } =>
+                  item.value !== null,
+              );
+
+            return (
+              <div
+                key={memberId}
+                className="rounded-xl border border-black/[0.07] bg-[#fbfbfa] px-3 py-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-black text-black">
+                    {memberName(profileMap.get(memberId), memberId)}
+                  </p>
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
+                    {entry?.status === "skipped" ? "건너뜀" : "추천 참고"}
+                  </span>
+                </div>
+                {scores.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {scores.map(({ axis, value }) => (
+                      <span
+                        key={axis}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-black/55"
+                      >
+                        {axisLabels[axis]} {scoreDisplay(value)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RatingRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null | undefined;
+}) {
+  const rating = feedbackScore(value);
+  const filled = rating === null ? 0 : clamp(Math.round(rating), 0, 5);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#fbfbfa] px-3 py-2.5">
+      <span className="text-xs font-bold text-black/55">{label}</span>
+      {rating === null ? (
+        <span className="text-xs font-bold text-black/30">응답 없음</span>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="flex gap-0.5" aria-label={`${label} ${rating}점`}>
+            {[1, 2, 3, 4, 5].map((score) => (
+              <span
+                key={score}
+                className={score <= filled ? "text-amber-400" : "text-black/10"}
+              >
+                ★
+              </span>
+            ))}
+          </span>
+          <span className="text-xs font-black text-black">{scoreDisplay(rating)}/5</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MeetingFeedbackSummary({
+  placeFeedback,
+  profileMap,
+}: {
+  placeFeedback: StructuredPlaceFeedback | null;
+  profileMap: Map<string, FeedbackProfile>;
+}) {
+  const ratings = placeFeedback?.meeting_ratings;
+  const negativeEntries = Object.entries(
+    placeFeedback?.negative_member_feedback ?? {},
+  );
+  const legacyScores = placeAxes
+    .map((axis) => ({ axis, value: feedbackScore(placeFeedback?.[axis]) }))
+    .filter(
+      (item): item is { axis: PlaceAxis; value: number } => item.value !== null,
+    );
+  const hasRatings =
+    feedbackScore(ratings?.overall) !== null ||
+    feedbackScore(ratings?.expectation_match) !== null;
+
+  return (
+    <div className="min-w-0 rounded-xl bg-white px-4 py-4">
+      <p className="text-[11px] font-bold text-black/35">모임 평가</p>
+
+      {hasRatings ? (
+        <div className="mt-3 space-y-2">
+          <RatingRow label="전반적인 만족도" value={ratings?.overall} />
+          <RatingRow label="기대와 실제 분위기" value={ratings?.expectation_match} />
+        </div>
+      ) : legacyScores.length === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-black/35">모임 평가가 없습니다.</p>
+      ) : null}
+
+      {legacyScores.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {legacyScores.map(({ axis, value }) => (
+            <span
+              key={axis}
+              className="rounded-full bg-[#f7f7f5] px-2.5 py-1 text-[10px] font-bold text-black/55"
+            >
+              {axisLabels[axis]} {scoreDisplay(value)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 border-t border-black/[0.06] pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-bold text-black/35">
+            다시 같은 자리에 있고 싶지 않은 사람
+          </p>
+          <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
+            {negativeEntries.length}명
+          </span>
+        </div>
+
+        {negativeEntries.length === 0 ? (
+          <p className="mt-2 text-xs font-semibold text-black/35">선택한 사람이 없습니다.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {negativeEntries.map(([memberId, entry]) => {
+              const reasons = feedbackReasons(entry?.reasons);
+              const otherText = feedbackOtherText(entry);
+
+              return (
+                <div
+                  key={memberId}
+                  className="rounded-xl border border-red-100 bg-red-50/50 px-3 py-3"
+                >
+                  <p className="text-sm font-black text-black">
+                    {memberName(profileMap.get(memberId), memberId)}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {reasons.map((reason) => (
+                      <span
+                        key={reason}
+                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-red-700"
+                      >
+                        {negativeFeedbackReasonLabels[reason] ?? reason}
+                      </span>
+                    ))}
+                  </div>
+                  {otherText && (
+                    <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold leading-5 text-black/60">
+                      {otherText}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
