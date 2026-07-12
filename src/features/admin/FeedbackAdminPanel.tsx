@@ -764,8 +764,8 @@ export function FeedbackAdminPanel() {
                           {savedAt(feedback.created_at)}
                         </p>
                       </div>
-                      <SelectedMembersSummary selectedNames={selectedNames} />
-                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                        <SelectedMembersSummary selectedNames={selectedNames} />
                         <PersonFeedbackSummary
                           memberFeedback={feedback.member_feedback}
                           profileMap={profileMap}
@@ -824,7 +824,7 @@ function feedbackScore(value: unknown) {
 
 function SelectedMembersSummary({ selectedNames }: { selectedNames: string[] }) {
   return (
-    <div className="mt-3 min-w-0 rounded-xl bg-white px-4 py-4">
+    <div className="min-w-0 rounded-xl bg-white px-4 py-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-bold text-black/35">다시 만나고 싶은 분</p>
         <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
