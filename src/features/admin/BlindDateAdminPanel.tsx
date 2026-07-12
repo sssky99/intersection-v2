@@ -506,6 +506,29 @@ export function BlindDateAdminPanel() {
     }
   };
 
+  const resetOfferResponse = async (
+    offer: BlindDateAdminOffer,
+    participant: "a" | "b",
+  ) => {
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      applyLoadedData(
+        await requestAdminData("PATCH", {
+          entity: "offer",
+          id: offer.id,
+          resetParticipant: participant,
+        }),
+      );
+      setNotice("참가자 응답을 대기 상태로 초기화했습니다.");
+    } catch {
+      setError("참가자 응답을 초기화하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const duplicateTemplate = async (template: BlindDateTemplate) => {
     if (saving) return;
     setSaving(true);
@@ -710,6 +733,9 @@ export function BlindDateAdminPanel() {
               onStatusChange={(offer, status) => void updateOfferStatus(offer, status)}
               onPlaceSave={(offer, actualPlaceName, actualPlaceAddress) =>
                 void updateOfferPlace(offer, actualPlaceName, actualPlaceAddress)
+              }
+              onResponseReset={(offer, participant) =>
+                void resetOfferResponse(offer, participant)
               }
             />
 
@@ -1251,6 +1277,7 @@ function OfferList({
   saving,
   onStatusChange,
   onPlaceSave,
+  onResponseReset,
 }: {
   offers: BlindDateAdminOffer[];
   saving: boolean;
@@ -1262,6 +1289,10 @@ function OfferList({
     offer: BlindDateAdminOffer,
     actualPlaceName: string,
     actualPlaceAddress: string,
+  ) => void;
+  onResponseReset: (
+    offer: BlindDateAdminOffer,
+    participant: "a" | "b",
   ) => void;
 }) {
   return (
@@ -1334,8 +1365,20 @@ function OfferList({
                     />
                   </Td>
                   <Td>{formatDateRangeLabel(offer.candidate_dates)}</Td>
-                  <Td>{responseLabel(offer.a_response)}</Td>
-                  <Td>{responseLabel(offer.b_response)}</Td>
+                  <Td>
+                    <ResponseCell
+                      value={offer.a_response}
+                      disabled={saving}
+                      onReset={() => onResponseReset(offer, "a")}
+                    />
+                  </Td>
+                  <Td>
+                    <ResponseCell
+                      value={offer.b_response}
+                      disabled={saving}
+                      onReset={() => onResponseReset(offer, "b")}
+                    />
+                  </Td>
                   <Td>
                     {offer.a_available_dates.length
                       ? offer.a_available_dates.map(formatDateLabel).join(", ")
@@ -1367,6 +1410,30 @@ function OfferList({
         </div>
       )}
     </section>
+  );
+}
+
+function ResponseCell({
+  value,
+  disabled,
+  onReset,
+}: {
+  value: string;
+  disabled: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <div className="flex min-w-[88px] flex-col items-start gap-1.5">
+      <span>{responseLabel(value)}</span>
+      <button
+        type="button"
+        disabled={disabled || value === "pending"}
+        onClick={onReset}
+        className="rounded-lg border border-black/10 bg-white px-2 py-1 text-[10px] font-bold text-black/45 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        응답 초기화
+      </button>
+    </div>
   );
 }
 

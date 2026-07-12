@@ -742,6 +742,10 @@ export async function PATCH(request: NextRequest) {
       if (error) throw error;
     } else if (entity === "offer") {
       const status = text(body?.status);
+      const resetParticipant =
+        body?.resetParticipant === "a" || body?.resetParticipant === "b"
+          ? body.resetParticipant
+          : null;
       const hasPlaceUpdate =
         Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceName") ||
         Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress");
@@ -754,7 +758,7 @@ export async function PATCH(request: NextRequest) {
           { status: 400 },
         );
       }
-      if (!status && !hasPlaceUpdate) {
+      if (!status && !hasPlaceUpdate && !resetParticipant) {
         return NextResponse.json(
           { error: "변경할 제안 정보가 없습니다." },
           { status: 400 },
@@ -770,6 +774,12 @@ export async function PATCH(request: NextRequest) {
         if (status === "cancelled") updates.cancelled_at = now;
         if (status === "completed") updates.completed_at = now;
         if (status === "expired") updates.expired_at = now;
+      }
+      if (resetParticipant) {
+        updates.status = "waiting_response";
+        updates[`${resetParticipant}_response`] = "pending";
+        updates[`${resetParticipant}_available_dates`] = [];
+        updates.scheduled_date = null;
       }
       if (Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceName")) {
         updates.actual_place_name = text(body?.actualPlaceName);
