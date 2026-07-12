@@ -888,7 +888,7 @@ export function AppHome({
               ? `메시지 ${pendingBlindDateOfferCount}개`
               : "블라인드 데이트 상태 확인"
           }
-          className="absolute right-[172px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+          className="absolute right-[120px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
         >
           <span className="text-lg leading-none" aria-hidden>
             ✉️

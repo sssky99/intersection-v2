@@ -256,6 +256,10 @@ export function BlindDateAdminPanel() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateDeleteTarget, setTemplateDeleteTarget] =
     useState<BlindDateTemplate | null>(null);
+  const [responseResetTarget, setResponseResetTarget] = useState<{
+    offer: BlindDateAdminOffer;
+    participant: "a" | "b";
+  } | null>(null);
   const [templateDraft, setTemplateDraft] =
     useState<TemplateDraft>(emptyTemplateDraft);
   const [selectedCandidate, setSelectedCandidate] =
@@ -526,6 +530,7 @@ export function BlindDateAdminPanel() {
       setError("참가자 응답을 초기화하지 못했습니다.");
     } finally {
       setSaving(false);
+      setResponseResetTarget(null);
     }
   };
 
@@ -735,7 +740,7 @@ export function BlindDateAdminPanel() {
                 void updateOfferPlace(offer, actualPlaceName, actualPlaceAddress)
               }
               onResponseReset={(offer, participant) =>
-                void resetOfferResponse(offer, participant)
+                setResponseResetTarget({ offer, participant })
               }
             />
 
@@ -784,6 +789,55 @@ export function BlindDateAdminPanel() {
               >
                 <Trash2 size={14} aria-hidden />
                 삭제 처리
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {responseResetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="response-reset-title"
+            aria-describedby="response-reset-description"
+            className="w-full max-w-[420px] rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <h3 id="response-reset-title" className="text-base font-black">
+              정말 초기화하시겠습니까?
+            </h3>
+            <p
+              id="response-reset-description"
+              className="mt-2 text-sm font-semibold leading-6 text-black/55"
+            >
+              {profileName(
+                responseResetTarget.participant === "a"
+                  ? responseResetTarget.offer.participantA
+                  : responseResetTarget.offer.participantB,
+              )}
+              님의 응답과 선택한 날짜가 모두 초기화됩니다.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setResponseResetTarget(null)}
+                className="h-10 rounded-xl border border-black/10 px-4 text-xs font-bold text-black/55 disabled:opacity-40"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  void resetOfferResponse(
+                    responseResetTarget.offer,
+                    responseResetTarget.participant,
+                  )
+                }
+                className="h-10 rounded-xl bg-red-600 px-4 text-xs font-bold text-white disabled:bg-red-300"
+              >
+                {saving ? "초기화 중..." : "응답 초기화"}
               </button>
             </div>
           </div>

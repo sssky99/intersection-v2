@@ -3286,7 +3286,8 @@ function BlindDateInvitationFlow({
             골라주세요.
           </h1>
           <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
-            상대방과 가능한 날짜가 겹치면 가장 빠른 날짜로 확정돼요.
+            가능한 날짜는 여러 개 선택할 수 있어요. 상대방과 가능한 날짜가
+            겹치면 가장 빠른 날짜로 확정돼요.
           </p>
 
           <BlindDateDateCalendar
