@@ -21,7 +21,7 @@ import type { AvailableDate, GatheringTicket } from "@/types/ticket";
 
 const steps = [
   "성향테스트를 진행해요.",
-  "경험을 선택하세요",
+  "날짜를 선택하세요.",
   "추천 받은 사람들과 함께하세요.",
   "더 나은 추천을 받아보세요.",
 ] as const;
@@ -35,9 +35,9 @@ const detailSteps = [
   },
   {
     label: "2단계",
-    title: "경험을 선택하세요",
+    title: "날짜를 선택하세요.",
     description:
-      "저녁 식사부터, LP바, 동묘 구경, 독서모임, 볼링, 보드게임, 서울 숲 컬러헌팅까지. 원하는 경험을 고르시면, 저희가 주말 약속을 만들어드립니다.",
+      "원하는 날짜를 고르시면 저희가 주말 약속을 만들어드립니다.",
   },
   {
     label: "3단계",
