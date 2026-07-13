@@ -75,7 +75,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = body?.ticket ? createAdminClient() : null;
+  const admin = createAdminClient();
   let ticketInstance: TicketInstanceRow | null = null;
   let ticketInvitation: TicketInvitationRow | null = null;
 
@@ -132,7 +132,7 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const { error } = await admin
     .from("profiles")
     .update({
       membership_status: "pending",

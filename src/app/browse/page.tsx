@@ -5,6 +5,7 @@ import {
   getAuthenticatedProfile,
   nextOnboardingPath,
 } from "@/lib/onboarding";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 
 type BrowseProfileRow = {
@@ -18,7 +19,7 @@ function displayName(row: BrowseProfileRow) {
 }
 
 export default async function BrowsePage() {
-  const { supabase, user, profile } = await getAuthenticatedProfile();
+  const { user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) {
     redirect("/");
@@ -34,7 +35,7 @@ export default async function BrowsePage() {
     redirect(nextPath);
   }
 
-  const { data } = await supabase
+  const { data } = await createAdminClient()
     .from("profiles")
     .select("user_id,name,public_intro")
     .neq("user_id", user.id)

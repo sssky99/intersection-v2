@@ -351,19 +351,17 @@ export async function POST(request: Request) {
     const allowedTargetIds = new Set(
       assignedMemberIds.filter((memberId) => memberId !== user.id),
     );
-    if (allowedTargetIds.size > 0) {
-      const allSubmittedMemberIds = new Set([
-        ...selectedMemberIds,
-        ...Object.keys(memberFeedback),
-        ...negativeFeedbackTargetIds(placeFeedback),
-      ]);
-      for (const memberId of allSubmittedMemberIds) {
-        if (!allowedTargetIds.has(memberId)) {
-          return NextResponse.json(
-            { error: "Feedback target is not part of this meeting." },
-            { status: 400 },
-          );
-        }
+    const allSubmittedMemberIds = new Set([
+      ...selectedMemberIds,
+      ...Object.keys(memberFeedback),
+      ...negativeFeedbackTargetIds(placeFeedback),
+    ]);
+    for (const memberId of allSubmittedMemberIds) {
+      if (!allowedTargetIds.has(memberId)) {
+        return NextResponse.json(
+          { error: "Feedback target is not part of this meeting." },
+          { status: 400 },
+        );
       }
     }
 

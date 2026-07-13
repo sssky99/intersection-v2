@@ -24,3 +24,5 @@ Thumbs.db
 
 # codex temp
 codex-dev/
+.codex-dev/
+.next-dev*.log

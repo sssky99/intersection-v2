@@ -212,31 +212,6 @@ function initialIndexFromSearch(value: string | null, questionCount: number) {
   return parsed - 1;
 }
 
-function clampInternalScore(value: number) {
-  return Math.min(100, Math.max(-100, value));
-}
-
-function answerScoreToInternalScore(value: QuestionAnswer["value"] | undefined) {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseInt(value, 10)
-        : Number.NaN;
-
-  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) return 0;
-  return clampInternalScore((parsed - 3) * 50);
-}
-
-function profileScoresFromAnswers(answers: AnswerMap) {
-  return {
-    score_temperature: answerScoreToInternalScore(answers[1]?.value),
-    score_texture: answerScoreToInternalScore(answers[2]?.value),
-    score_tone: answerScoreToInternalScore(answers[3]?.value),
-    score_rhythm: answerScoreToInternalScore(answers[4]?.value),
-  };
-}
-
 export function QuestionFlow({
   userId,
   initialRows,
@@ -452,21 +427,15 @@ export function QuestionFlow({
       throw new Error("QuestionFlow requires userId in onboarding mode.");
     }
 
-    const { error: profileError } = await createClient()
-      .from("profiles")
-      .update(
-        isRegeneration
-          ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
-          : {
-              questions_completed: true,
-              ...profileScoresFromAnswers(nextAnswers),
-            },
-      )
-      .eq("user_id", userId);
+    const response = await fetch("/api/profile/questions/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: isRegeneration ? "regeneration" : "onboarding" }),
+    }).catch(() => null);
 
-    if (profileError) {
+    if (!response?.ok) {
       completionSubmittedRef.current = false;
-      throw new Error(profileError.message);
+      throw new Error("Profile question completion failed.");
     }
 
     if (!isRegeneration) {

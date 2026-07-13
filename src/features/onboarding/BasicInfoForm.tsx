@@ -231,21 +231,20 @@ export function BasicInfoForm({
       return;
     }
 
-    const { error: saveError } = await createClient()
-      .from("profiles")
-      .update({
+    const response = await fetch("/api/profile/onboarding/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         name: draft.name.trim(),
         phone: draft.phone.trim(),
-        phone_normalized: normalizePhone(draft.phone),
         gender: draft.gender,
-        birth_year: draft.birthYear,
+        birthYear: draft.birthYear,
         mbti: draft.mbti.toUpperCase(),
-        photo_url: draft.photoUrl,
-        profile_completed: true,
-      })
-      .eq("user_id", userId);
+        photoUrl: draft.photoUrl,
+      }),
+    }).catch(() => null);
 
-    if (saveError) {
+    if (!response?.ok) {
       setError("기본정보 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       setSaving(false);
       return;

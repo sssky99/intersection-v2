@@ -6,6 +6,8 @@
     "dev": "next dev",
     "dev:clean": "npm run clean:next && next dev",
     "clean:next": "node scripts/clean-next-cache.mjs",
+    "typecheck": "tsc --noEmit --incremental false",
+    "check": "npm run typecheck && npm run build",
     "build": "next build",
     "start": "next start"
   },

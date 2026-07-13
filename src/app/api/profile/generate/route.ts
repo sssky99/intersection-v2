@@ -9,6 +9,7 @@ import {
   generatePublicProfile,
   isFallbackPublicProfileModel,
 } from "@/lib/profileGeneration";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasUsablePublicIntro } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
@@ -70,10 +71,11 @@ export async function POST(request: Request) {
   const fallbackIntro = buildFallbackIntro(profile, promptAnswers);
   const generation = await generatePublicProfile(profile, promptAnswers);
   const generatedAt = new Date().toISOString();
+  const admin = createAdminClient();
 
   if (generation.kind === "fallback") {
     const fallbackModel = fallbackPublicProfileModel(generation.reason);
-    const { error } = await supabase
+    const { error } = await admin
       .from("profiles")
       .update({
         public_intro: fallbackIntro,
@@ -110,7 +112,7 @@ export async function POST(request: Request) {
     });
   }
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("profiles")
     .update({
       public_intro: generation.intro,
