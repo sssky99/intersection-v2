@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { postLoginPath } from '@/lib/authRedirect';
-import { getPublicTicketPreviewDate } from '@/lib/publicTicketPreview';
 import { DetailsPreviewClient } from './admin/details-preview/DetailsPreviewClient';
 
 type HomeSearchParams = Record<string, string | string[] | undefined>;
@@ -49,12 +48,5 @@ export default async function Home({
     redirect(`/auth/callback?${callbackQuery(resolvedSearchParams)}`);
   }
 
-  const initialPublicTicketDate = await getPublicTicketPreviewDate();
-
-  return (
-    <DetailsPreviewClient
-      asLandingPage
-      initialPublicTicketDate={initialPublicTicketDate}
-    />
-  );
+  return <DetailsPreviewClient asLandingPage />;
 }

@@ -111,10 +111,12 @@ function usePrefersReducedMotion() {
 export function RotatingTicketBackground({
   imageUrls,
   visible = true,
+  priority = false,
   className,
 }: {
   imageUrls: ReadonlyArray<string | null | undefined>;
   visible?: boolean;
+  priority?: boolean;
   className?: string;
 }) {
   const normalizedImageUrls = uniqueTicketImageUrls(imageUrls);
@@ -193,6 +195,9 @@ export function RotatingTicketBackground({
         src={activeImageUrl}
         alt=""
         draggable={false}
+        loading={priority ? "eager" : "lazy"}
+        fetchPriority={priority ? "high" : "auto"}
+        decoding="async"
         className="absolute inset-0 h-full w-full object-cover"
       />
       {incomingImage && incomingImageUrl && (
@@ -201,6 +206,8 @@ export function RotatingTicketBackground({
           src={incomingImageUrl}
           alt=""
           draggable={false}
+          loading="lazy"
+          decoding="async"
           className="ticket-clock-wipe absolute inset-0 h-full w-full object-cover"
         />
       )}
@@ -222,6 +229,7 @@ export function IntersectionTicketCard({
   contentVisible = true,
   imageVisible = true,
   overlayVisible = true,
+  priority = false,
 }: IntersectionTicketCardProps) {
   const dateLabel = formatTicketDateLabel(date);
   const timeLabel = formatTicketTimeLabel(time);
@@ -248,6 +256,7 @@ export function IntersectionTicketCard({
         <RotatingTicketBackground
           imageUrls={backgroundImageUrls}
           visible={imageVisible}
+          priority={priority}
         />
       ) : (
         <div className="absolute inset-0 bg-black" />

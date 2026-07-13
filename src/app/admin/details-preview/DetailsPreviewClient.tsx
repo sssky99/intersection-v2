@@ -37,7 +37,7 @@ const detailSteps = [
     label: "2단계",
     title: "날짜를 선택하세요.",
     description:
-      "원하는 날짜를 고르시면 저희가 주말 약속을 만들어드립니다.",
+      "원하는 날짜를 고르시면, 결이 맞는 사람들과 식사부터 간단한 활동까지 즐길 수 있는 주말 약속을 만들어 드립니다.",
   },
   {
     label: "3단계",
@@ -212,11 +212,9 @@ export function DetailsPreviewClient({
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
-    video.autoplay = true;
     video.setAttribute("muted", "");
     video.setAttribute("playsinline", "");
     video.setAttribute("webkit-playsinline", "");
-    video.setAttribute("autoplay", "");
 
     let shouldPlay = false;
 
@@ -225,11 +223,9 @@ export function DetailsPreviewClient({
       video.muted = true;
       video.defaultMuted = true;
       video.playsInline = true;
-      video.autoplay = true;
       video.setAttribute("muted", "");
       video.setAttribute("playsinline", "");
       video.setAttribute("webkit-playsinline", "");
-      video.setAttribute("autoplay", "");
       void video.play().catch(() => undefined);
     };
 
@@ -467,13 +463,12 @@ export function DetailsPreviewClient({
               <video
                 ref={videoRef}
                 src="/videos/details-preview.mp4"
-                autoPlay
                 controls
                 loop
                 muted
                 playsInline
                 poster="/videos/details-preview-poster.webp"
-                preload="auto"
+                preload="none"
                 className="aspect-[9/16] w-full bg-black object-cover"
               >
                 브라우저가 영상을 지원하지 않습니다.
@@ -527,6 +522,7 @@ function PublicTicketPreviewSection({
   initialDateEntry: AvailableDate | null;
   reduceMotion: boolean | null;
 }) {
+  const sectionRef = useRef<HTMLElement | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef({
     active: false,
@@ -540,11 +536,36 @@ function PublicTicketPreviewSection({
   const [dateEntry, setDateEntry] = useState<AvailableDate | null>(
     initialDateEntry,
   );
+  const [shouldLoad, setShouldLoad] = useState(
+    Boolean(initialDateEntry?.tickets.length),
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const tickets = dateEntry?.tickets ?? [];
 
   useEffect(() => {
-    if (initialDateEntry?.tickets.length) return;
+    if (shouldLoad || initialDateEntry?.tickets.length) return;
+
+    const section = sectionRef.current;
+    if (!section || typeof IntersectionObserver === "undefined") {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setShouldLoad(true);
+        observer.disconnect();
+      },
+      { rootMargin: "700px 0px" },
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [initialDateEntry, shouldLoad]);
+
+  useEffect(() => {
+    if (initialDateEntry?.tickets.length || !shouldLoad) return;
 
     let mounted = true;
 
@@ -583,7 +604,7 @@ function PublicTicketPreviewSection({
     return () => {
       mounted = false;
     };
-  }, [initialDateEntry]);
+  }, [initialDateEntry, shouldLoad]);
 
   const closestSlideIndex = (viewport: HTMLDivElement) => {
     const slides = Array.from(
@@ -664,6 +685,7 @@ function PublicTicketPreviewSection({
 
   return (
     <motion.section
+      ref={sectionRef}
       initial={reduceMotion ? false : { opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.24 }}
