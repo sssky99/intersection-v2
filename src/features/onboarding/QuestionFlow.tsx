@@ -15,18 +15,11 @@ import type {
   ProfileQuestion,
   QuestionAnswer,
   QuestionOption,
+  StoredAnswerRow,
 } from "@/types/question";
 
-export type StoredAnswerRow = {
-  question_order: number;
-  answer_value: string | null;
-  answer_values: string[] | null;
-  answer_text: string | null;
-  other_text: string | null;
-};
-
 type AnswerMap = Record<number, QuestionAnswer>;
-type QuestionFlowMode = "onboarding" | "preview" | "regeneration";
+type QuestionFlowMode = "guest" | "onboarding" | "preview" | "regeneration";
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const AGE_RANGE_DEFAULT_YEARS = 4;
@@ -205,6 +198,23 @@ function toAnswerPayload(question: ProfileQuestion, answer: QuestionAnswer) {
   };
 }
 
+function answersToStoredRows(
+  answers: AnswerMap,
+  questions: ProfileQuestion[],
+): StoredAnswerRow[] {
+  return questions.flatMap((question) => {
+    const answer = answers[question.id];
+    if (!answer || !isComplete(question, answer)) return [];
+    return [
+      {
+        question_order: question.order ?? question.id,
+        ...toAnswerPayload(question, answer),
+        other_text: answer.otherText?.trim() || null,
+      },
+    ];
+  });
+}
+
 function initialIndexFromSearch(value: string | null, questionCount: number) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return null;
@@ -217,15 +227,20 @@ export function QuestionFlow({
   initialRows,
   mode = "onboarding",
   onPreviewComplete,
+  onGuestDraftChange,
+  onGuestComplete,
 }: {
   userId?: string;
   initialRows: StoredAnswerRow[];
   mode?: QuestionFlowMode;
   onPreviewComplete?: () => void;
+  onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
+  onGuestComplete?: (rows: StoredAnswerRow[]) => void;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isPreview = mode === "preview";
+  const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
   const questions = profileQuestions;
   const initialAnswers = useMemo(
@@ -301,14 +316,14 @@ export function QuestionFlow({
   const hideNumericScaleValues = false;
 
   useEffect(() => {
-    if (isPreview || isRegeneration) return;
+    if (isPreview || isGuest || isRegeneration) return;
     trackLoginSuccessFromUrl("new");
-  }, [isPreview, isRegeneration]);
+  }, [isGuest, isPreview, isRegeneration]);
 
   useEffect(() => {
-    if (isPreview || !userId) return;
+    if (isPreview || isGuest || !userId) return;
     identifyAnalyticsUser(userId);
-  }, [isPreview, userId]);
+  }, [isGuest, isPreview, userId]);
 
   useEffect(() => {
     if (isPreview || isRegeneration || questionStartTrackedRef.current) return;
@@ -422,6 +437,11 @@ export function QuestionFlow({
     if (completionSubmittedRef.current) return;
     completionSubmittedRef.current = true;
 
+    if (isGuest) {
+      onGuestComplete?.(answersToStoredRows(nextAnswers, questions));
+      return;
+    }
+
     if (!userId) {
       completionSubmittedRef.current = false;
       throw new Error("QuestionFlow requires userId in onboarding mode.");
@@ -472,10 +492,12 @@ export function QuestionFlow({
   };
 
   const updateLocalAnswer = (nextAnswer: QuestionAnswer) => {
-    setAnswers((current) => ({
-      ...current,
-      [nextAnswer.questionId]: nextAnswer,
-    }));
+    const nextAnswers = answerMapWith(nextAnswer);
+    setAnswers(nextAnswers);
+    if (isGuest) {
+      onGuestDraftChange?.(answersToStoredRows(nextAnswers, questions));
+    }
+    return nextAnswers;
   };
 
   const scheduleAutoAdvance = (nextAnswers: AnswerMap, delayMs: number) => {
@@ -510,6 +532,13 @@ export function QuestionFlow({
     setError(null);
 
     if (isPreview) {
+      scheduleAutoAdvance(nextAnswers, nextDelay);
+      return;
+    }
+
+    if (isGuest) {
+      trackQuestionAnswered(question);
+      trackQuestionMilestones(nextAnswers);
       scheduleAutoAdvance(nextAnswers, nextDelay);
       return;
     }
@@ -593,7 +622,17 @@ export function QuestionFlow({
       ...answers,
       [answerToContinue.questionId]: answerToContinue,
     };
+    updateLocalAnswer(answerToContinue);
     setError(null);
+
+    if (isGuest) {
+      trackQuestionAnswered(question);
+      trackQuestionMilestones(nextAnswers);
+      await moveToNext(nextAnswers);
+      endSaving();
+      return;
+    }
+
     try {
       await saveAnswer(question, answerToContinue);
       trackQuestionAnswered(question);

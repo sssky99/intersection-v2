@@ -2,9 +2,9 @@ import { redirect } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
 import {
   QuestionFlow,
-  type StoredAnswerRow,
 } from "@/features/onboarding/QuestionFlow";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
+import type { StoredAnswerRow } from "@/types/question";
 
 type QuestionsPageProps = {
   searchParams?: Promise<{

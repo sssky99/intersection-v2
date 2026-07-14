@@ -10,7 +10,7 @@ import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import { createClient } from "@/lib/supabase/client";
 import type { Gender } from "@/types/user";
 
-type BasicInfoValues = {
+export type BasicInfoValues = {
   name: string;
   phone: string;
   gender: Gender;
@@ -80,13 +80,20 @@ export function BasicInfoForm({
   initialValues,
   mode = "onboarding",
   returnPath = "/meetings?tab=recommend&profileComplete=1",
+  onGuestDraftChange,
+  onGuestPhotoChange,
+  onGuestComplete,
 }: {
-  userId: string;
+  userId?: string;
   initialValues: BasicInfoValues;
-  mode?: "onboarding" | "regeneration";
+  mode?: "guest" | "onboarding" | "regeneration";
   returnPath?: string;
+  onGuestDraftChange?: (values: BasicInfoValues) => void;
+  onGuestPhotoChange?: (file: File) => Promise<void>;
+  onGuestComplete?: (values: BasicInfoValues) => Promise<void>;
 }) {
   const router = useRouter();
+  const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
   const [draft, setDraft] = useState(initialValues);
   const [visibleStepCount, setVisibleStepCount] = useState(1);
@@ -114,25 +121,36 @@ export function BasicInfoForm({
       : "입력 정보를 확인해주세요";
   const finalButtonVisible = allStepsVisible;
   const ctaLabel = saving
-    ? isRegeneration
+    ? isGuest
+      ? "카카오로 이동 중..."
+      : isRegeneration
       ? "프로필 새로 만드는 중..."
       : "저장 중..."
     : photoUploading
       ? "사진 업로드 중..."
       : canSave
-        ? isRegeneration
+        ? isGuest
+          ? "카카오로 계속하기"
+          : isRegeneration
           ? "새 프로필 완성하기"
           : "프로필 완성하기"
         : finalIncompleteLabel;
 
   useEffect(() => {
+    if (isGuest) return;
     setDraft(initialValues);
     setVisibleStepCount(1);
-  }, [initialValues]);
+  }, [initialValues, isGuest]);
 
   useEffect(() => {
+    if (!userId) return;
     identifyAnalyticsUser(userId);
   }, [userId]);
+
+  useEffect(() => {
+    if (!isGuest) return;
+    onGuestDraftChange?.(draft);
+  }, [draft, isGuest, onGuestDraftChange]);
 
   useEffect(() => {
     if (isRegeneration || startTrackedRef.current) return;
@@ -169,6 +187,19 @@ export function BasicInfoForm({
     setPhotoUploading(true);
     setError(null);
     try {
+      if (isGuest) {
+        await onGuestPhotoChange?.(file);
+        const previewUrl = URL.createObjectURL(file);
+        setDraft((current) => {
+          if (current.photoUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(current.photoUrl);
+          }
+          return { ...current, photoUrl: previewUrl };
+        });
+        return;
+      }
+
+      if (!userId) throw new Error("Authenticated photo upload requires userId.");
       const photoUrl = await uploadProfilePhoto(userId, file);
       if (!isRegeneration) {
         const { error: profileError } = await createClient()
@@ -182,7 +213,9 @@ export function BasicInfoForm({
       setDraft((current) => ({ ...current, photoUrl }));
     } catch {
       setError(
-        "사진 업로드에 실패했어요. 파일과 profile-photos 버킷 설정을 확인해주세요.",
+        isGuest
+          ? "사진을 임시 저장하지 못했어요. 잠시 후 다시 선택해주세요."
+          : "사진 업로드에 실패했어요. 파일과 profile-photos 버킷 설정을 확인해주세요.",
       );
     } finally {
       setPhotoUploading(false);
@@ -194,6 +227,17 @@ export function BasicInfoForm({
 
     setSaving(true);
     setError(null);
+    if (isGuest) {
+      try {
+        await onGuestComplete?.(draft);
+        trackEvent("basic_info_complete", { mode: "guest" });
+      } catch {
+        setError("카카오 로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+        setSaving(false);
+      }
+      return;
+    }
+
     if (isRegeneration) {
       const response = await fetch("/api/profile/regeneration/complete", {
         method: "POST",
@@ -270,7 +314,7 @@ export function BasicInfoForm({
         <Field
           label="이름"
           value={draft.name}
-          placeholder="문하늘"
+          placeholder="교집합"
           actionLabel={visibleStepCount === 1 ? "완료" : undefined}
           actionDisabled={!isStepComplete("name", draft) || saving || photoUploading}
           onAction={visibleStepCount === 1 ? handleNameComplete : undefined}
@@ -461,20 +505,29 @@ export function BasicInfoForm({
       )}
 
       {finalButtonVisible ? (
-        <motion.button
-          type="button"
-          whileTap={canSave && !saving ? { scale: 0.98 } : undefined}
-          disabled={!canSave || saving || photoUploading}
-          onClick={() => void save()}
-          className={`mt-auto flex h-14 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
-            canSave && !saving
-              ? "bg-black text-white"
-              : "bg-black/[0.06] text-black/30"
-          }`}
-        >
-          <Check size={16} aria-hidden />
-          {ctaLabel}
-        </motion.button>
+        <div className="mt-auto">
+          {isGuest && (
+            <p className="mb-3 text-center text-[13px] font-semibold text-black/50">
+              답변 저장 후 바로 추천을 확인할 수 있어요.
+            </p>
+          )}
+          <motion.button
+            type="button"
+            whileTap={canSave && !saving ? { scale: 0.98 } : undefined}
+            disabled={!canSave || saving || photoUploading}
+            onClick={() => void save()}
+            className={`flex h-14 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
+              canSave && !saving
+                ? isGuest
+                  ? "bg-[#fee500] text-black"
+                  : "bg-black text-white"
+                : "bg-black/[0.06] text-black/30"
+            }`}
+          >
+            <Check size={16} aria-hidden />
+            {ctaLabel}
+          </motion.button>
+        </div>
       ) : (
         <div className="mt-auto h-14" aria-hidden />
       )}
@@ -510,7 +563,7 @@ function BirthYearSelect({
       >
         <option value="">출생연도 선택</option>
         {birthYearOptions.map((year) => (
-          <option key={year} value={year}>
+          <option key={year} value={year} style={{ color: "#111111" }}>
             {year}년생
           </option>
         ))}

@@ -10,11 +10,13 @@ export default function KakaoLoginButton({
   className,
   nextPath = postLoginPath,
   loadingLabel = '카카오로 이동 중...',
+  variant = 'primary',
   children,
 }: {
   className?: string;
   nextPath?: string;
   loadingLabel?: string;
+  variant?: 'primary' | 'text';
   children?: ReactNode | ((loading: boolean) => ReactNode);
 }) {
   const [loading, setLoading] = useState(false);
@@ -53,9 +55,11 @@ export default function KakaoLoginButton({
       type="button"
       onClick={handleLogin}
       disabled={loading}
-      style={{ backgroundColor: '#fee500' }}
+      style={variant === 'primary' ? { backgroundColor: '#fee500' } : undefined}
       className={[
-        'flex h-14 w-full items-center justify-center rounded-full bg-[#fee500] px-5 text-[16px] font-extrabold text-black shadow-[0_12px_36px_rgba(0,0,0,0.18)] transition active:scale-[0.98] disabled:opacity-60',
+        variant === 'primary'
+          ? 'flex h-14 w-full items-center justify-center rounded-full bg-[#fee500] px-5 text-[16px] font-extrabold text-black shadow-[0_12px_36px_rgba(0,0,0,0.18)] transition active:scale-[0.98] disabled:opacity-60'
+          : 'inline-flex items-center justify-center bg-transparent text-inherit underline underline-offset-2 transition hover:opacity-70 disabled:opacity-40',
         className,
       ]
         .filter(Boolean)

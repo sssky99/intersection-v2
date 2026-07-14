@@ -55,3 +55,11 @@ export type QuestionAnswer = {
 export type ProfileAnswerValue = string | string[] | number;
 
 export type ProfileAnswers = Record<number, QuestionAnswer>;
+
+export type StoredAnswerRow = {
+  question_order: number;
+  answer_value: string | null;
+  answer_values: string[] | null;
+  answer_text: string | null;
+  other_text: string | null;
+};

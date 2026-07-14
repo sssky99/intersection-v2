@@ -139,18 +139,30 @@ export async function GET(request: Request) {
     }
   }
 
+  const shouldImportGuestDraft = Boolean(
+    profile &&
+      redirectPath === '/onboarding/import' &&
+      !profile.questions_completed &&
+      !profile.profile_completed,
+  );
   const finalPath = profile
-    ? isNewProfile
+    ? shouldImportGuestDraft
       ? withLoginSuccessParams(
-          '/onboarding/questions?start=1',
-          'new',
+          '/onboarding/import',
+          isNewProfile ? 'new' : 'existing',
           cleanOrigin,
         )
-      : withLoginSuccessParams(
-          '/meetings?tab=recommend',
-          'existing',
-          cleanOrigin,
-        )
+      : isNewProfile
+        ? withLoginSuccessParams(
+            '/onboarding/questions?start=1',
+            'new',
+            cleanOrigin,
+          )
+        : withLoginSuccessParams(
+            '/meetings?tab=recommend',
+            'existing',
+            cleanOrigin,
+          )
     : redirectPath;
 
   if (user && !isLocalHostname(requestUrl.hostname)) {

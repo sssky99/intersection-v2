@@ -177,6 +177,7 @@ export function DetailsPreviewClient({
 
         if (data.user) {
           setLandingAuthState("authenticated");
+          window.location.replace("/meetings?tab=recommend");
           return;
         }
 
@@ -482,6 +483,15 @@ export function DetailsPreviewClient({
           />
 
           <LandingFaqSection reduceMotion={reduceMotion} />
+
+          <footer className="mt-10 text-center">
+            <a
+              href="/privacy"
+              className="text-[11px] font-semibold text-black/45 underline underline-offset-2 transition hover:text-black/70"
+            >
+              개인정보 처리방침
+            </a>
+          </footer>
         </section>
 
         <div className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
@@ -498,17 +508,21 @@ export function DetailsPreviewClient({
               내 추천 보러가기
             </a>
           ) : (
-            <KakaoLoginButton className="h-14 shadow-[0_16px_42px_rgba(18,18,18,0.16)]">
-              {(loading) => (loading ? "카카오로 이동 중..." : "카카오로 시작하기")}
-            </KakaoLoginButton>
-          )}
-          <p className="mt-2 text-center text-[10px] font-semibold text-black/40">
-            교집합의 {" "}
-            <a href="/privacy" className="underline underline-offset-2 hover:text-black/65">
-              개인정보 처리방침
+            <a
+              href="/onboarding/start"
+              className="flex h-14 w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98]"
+            >
+              내 교집합 찾기
             </a>
-            을 확인해 주세요.
-          </p>
+          )}
+          {landingAuthState === "anonymous" && (
+            <p className="mt-2.5 text-center text-[14px] font-semibold leading-5 text-black/50">
+              이미 교집합을 이용 중인가요?{" "}
+              <KakaoLoginButton variant="text" className="font-extrabold text-black/75">
+                {(loading) => (loading ? "카카오로 이동 중..." : "카카오로 로그인")}
+              </KakaoLoginButton>
+            </p>
+          )}
         </div>
       </section>
     </main>
