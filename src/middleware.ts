@@ -87,6 +87,10 @@ export function middleware(request: NextRequest) {
 
   if (hasOAuthParams(request)) {
     if (nextUrl.pathname === '/') {
+      if (nextUrl.searchParams.has('code')) {
+        return redirectToAuthCallback(request);
+      }
+
       return redirectWithoutOAuthParams(request);
     }
 
