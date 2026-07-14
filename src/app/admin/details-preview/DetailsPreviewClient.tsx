@@ -152,10 +152,8 @@ function nearestPublicDate(dates: AvailableDate[]) {
 
 export function DetailsPreviewClient({
   asLandingPage = false,
-  initialPublicTicketDate = null,
 }: {
   asLandingPage?: boolean;
-  initialPublicTicketDate?: AvailableDate | null;
 } = {}) {
   const reduceMotion = useReducedMotion();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -166,33 +164,44 @@ export function DetailsPreviewClient({
 
   useEffect(() => {
     if (!asLandingPage) return;
+    if (
+      process.env.NODE_ENV === "development" &&
+      new URLSearchParams(window.location.search).get("preview") === "loading"
+    ) {
+      return;
+    }
 
     let mounted = true;
+    let finished = false;
     const supabase = createClient();
+    const revealLanding = () => {
+      if (!mounted || finished) return;
+      finished = true;
+      window.clearTimeout(fallbackTimer);
+      trackEvent("landing_view");
+      setLandingAuthState("anonymous");
+    };
+    const fallbackTimer = window.setTimeout(revealLanding, 2000);
 
     supabase.auth
       .getUser()
       .then(({ data }) => {
-        if (!mounted) return;
+        if (!mounted || finished) return;
 
         if (data.user) {
-          setLandingAuthState("authenticated");
+          finished = true;
+          window.clearTimeout(fallbackTimer);
           window.location.replace("/meetings?tab=recommend");
           return;
         }
 
-        trackEvent("landing_view");
-        setLandingAuthState("anonymous");
+        revealLanding();
       })
-      .catch(() => {
-        if (!mounted) return;
-
-        trackEvent("landing_view");
-        setLandingAuthState("anonymous");
-      });
+      .catch(revealLanding);
 
     return () => {
       mounted = false;
+      window.clearTimeout(fallbackTimer);
     };
   }, [asLandingPage]);
 
@@ -292,7 +301,54 @@ export function DetailsPreviewClient({
   };
 
   return (
-    <main className="flex min-h-dvh justify-center bg-[#e9e9e5] text-[#121212] md:px-4">
+    <>
+      <AnimatePresence>
+        {asLandingPage && landingAuthState === "checking" && (
+          <motion.div
+            key="landing-auth-loading"
+            role="status"
+            aria-live="polite"
+            aria-label="교집합을 준비하고 있어요."
+            initial={false}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.22, ease: "easeOut" }}
+            className="fixed inset-0 z-[100] flex justify-center bg-[#e9e9e5] text-[#121212] md:px-4"
+          >
+            <div className="flex min-h-dvh w-full max-w-[430px] flex-col items-center justify-center bg-[#f7f7f5] px-8 md:my-4 md:min-h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame">
+              <div className="relative h-12 w-20 overflow-hidden" aria-hidden="true">
+                <Image
+                  src="/images/intersection-mark.png"
+                  alt=""
+                  width={1024}
+                  height={1024}
+                  priority
+                  sizes="116px"
+                  className="absolute left-1/2 top-1/2 w-[116px] max-w-none -translate-x-1/2 -translate-y-1/2 mix-blend-multiply"
+                />
+              </div>
+              <p className="mt-3 break-keep text-center text-[22px] font-black tracking-[-0.045em] text-black/85">
+                교집합을 준비하고 있어요.
+              </p>
+              <div className="mt-6 h-1 w-28 overflow-hidden rounded-full bg-black/10">
+                <motion.div
+                  className="h-full w-1/2 rounded-full bg-black/65"
+                  animate={reduceMotion ? { opacity: [0.4, 0.8, 0.4] } : { x: ["-110%", "210%"] }}
+                  transition={{ duration: 1.15, ease: "easeInOut", repeat: Infinity }}
+                />
+              </div>
+              <p className="mt-4 text-[13px] font-semibold text-black/40">
+                잠시만 기다려주세요.
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <main
+        aria-hidden={asLandingPage && landingAuthState === "checking"}
+        className="flex min-h-dvh justify-center bg-[#e9e9e5] text-[#121212] md:px-4"
+      >
       <section
         data-testid="details-preview"
         className="relative min-h-[100svh] w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] md:my-4 md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
@@ -477,11 +533,6 @@ export function DetailsPreviewClient({
             </div>
           </motion.div>
 
-          <PublicTicketPreviewSection
-            initialDateEntry={initialPublicTicketDate}
-            reduceMotion={reduceMotion}
-          />
-
           <LandingFaqSection reduceMotion={reduceMotion} />
 
           <footer className="mt-10 text-center">
@@ -525,7 +576,8 @@ export function DetailsPreviewClient({
           )}
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }
 
