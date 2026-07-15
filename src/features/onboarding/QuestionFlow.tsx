@@ -2,9 +2,11 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  conversationResultImageSrc,
   conversationResultOverview,
   conversationResults,
   type ConversationResultCode,
@@ -875,13 +877,6 @@ export function QuestionFlow({
   if (resultAnswers) {
     const resultCode = conversationResultCode(resultAnswers);
     const result = conversationResults[resultCode];
-    const resultAxes = [
-      resultCode[0] === "O" ? "천천히 살피는 시작" : "먼저 여는 시작",
-      resultCode[1] === "L" ? "들으며 잇는 대화" : "질문으로 여는 대화",
-      resultCode[2] === "H" ? "조화를 찾는 관점" : "차이를 탐색하는 관점",
-      resultCode[3] === "C" ? "편안한 만남" : "새로운 발견이 있는 만남",
-    ];
-
     return (
       <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-[calc(120px+env(safe-area-inset-bottom))] pt-[calc(54px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
         <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
@@ -892,31 +887,36 @@ export function QuestionFlow({
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="relative z-10 flex flex-1 flex-col"
         >
-          <div className="flex justify-center">
-            <StarProgress completedParts={5} currentPart={-1} large />
-          </div>
-          <p className="mt-8 text-center text-[12px] font-bold tracking-[-0.01em] text-black/38">
-            나의 대화 결과 · {resultCode}
-          </p>
-          <h1 className="mt-3 text-center text-[30px] font-black tracking-[-0.055em] text-black/88">
-            {result.title}
-          </h1>
-          <p className="mx-auto mt-3 max-w-[300px] break-keep text-center text-[15px] font-semibold leading-6 tracking-[-0.025em] text-black/48">
-            {result.subtitle}
-          </p>
-
-          <div className="mt-9 rounded-[26px] border border-black/[0.08] bg-white/70 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.06)] backdrop-blur-sm">
-            <div className="flex flex-wrap gap-2">
-              {resultAxes.map((axis) => (
-                <span
-                  key={axis}
-                  className="rounded-full border border-black/[0.07] bg-[#f7f7f5] px-3 py-2 text-[11px] font-bold tracking-[-0.02em] text-black/52"
-                >
-                  {axis}
-                </span>
-              ))}
-            </div>
-            <p className="mt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
+          <div className="rounded-[26px] border border-black/[0.08] bg-white/70 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.06)] backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12, duration: 0.45, ease: "easeOut" }}
+              className="grid grid-cols-[168px_minmax(0,1fr)] items-center gap-2"
+            >
+              <div className="flex h-[298px] items-center justify-center overflow-hidden">
+                <Image
+                  src={conversationResultImageSrc[resultCode]}
+                  alt={`${result.title} 일러스트`}
+                  width={941}
+                  height={1671}
+                  priority
+                  className="h-full w-auto object-contain mix-blend-multiply"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold tracking-[-0.01em] text-black/38">
+                  나의 대화 결과 · {resultCode}
+                </p>
+                <h1 className="mt-3 break-keep text-[26px] font-black leading-[1.15] tracking-[-0.055em] text-black/88">
+                  {result.title}
+                </h1>
+                <p className="mt-3 break-keep text-[14px] font-semibold leading-[1.65] tracking-[-0.025em] text-black/48">
+                  {result.subtitle}
+                </p>
+              </div>
+            </motion.div>
+            <p className="mt-4 border-t border-black/[0.07] pt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
               {conversationResultOverview(result.body)}
             </p>
           </div>

@@ -11,6 +11,7 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
+import Image from "next/image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
 import {
@@ -18,6 +19,7 @@ import {
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 import {
+  conversationResultImageSrc,
   conversationResultOverview,
   conversationResults,
   type ConversationResultCode,
@@ -172,15 +174,6 @@ function resolvedConversationResultCode(
           : null,
     })),
   );
-}
-
-function conversationResultTags(code: ConversationResultCode) {
-  return [
-    code[0] === "O" ? "천천히 살피는 시작" : "먼저 여는 시작",
-    code[1] === "L" ? "들으며 잇는 대화" : "질문으로 여는 대화",
-    code[2] === "H" ? "조화를 찾는 관점" : "차이를 탐색하는 관점",
-    code[3] === "C" ? "편안한 만남" : "새로운 발견이 있는 만남",
-  ];
 }
 
 function participationPrecisionLevel(count: number) {
@@ -573,13 +566,10 @@ export function ProfileTab({
     (profile.conversation_result_version === "v1" &&
       Boolean(storedConversationCode));
   const conversationCode =
-    storedConversationCode ?? (operatorConversationPreview ? "OQHC" : null);
+    storedConversationCode ?? (operatorConversationPreview ? "OLHC" : null);
   const conversationResult = conversationCode
     ? conversationResults[conversationCode]
     : null;
-  const conversationTags = conversationCode
-    ? conversationResultTags(conversationCode)
-    : [];
   const matchingPrecisionCount = profileMatchingPrecisionCount(
     profile,
     participationCount,
@@ -603,29 +593,32 @@ export function ProfileTab({
 
         {usesNewConversationProfile && conversationResult && conversationCode ? (
           <section className="mt-7 rounded-[24px] border border-black/[0.08] bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
-            <p className="text-[11px] font-bold tracking-[-0.01em] text-black/38">
-              {operatorConversationPreview && !storedConversationCode
-                ? "운영자 미리보기"
-                : "나의 대화 결과"}{" "}
-              · {conversationCode}
-            </p>
-            <h2 className="mt-2 text-[24px] font-black tracking-[-0.05em] text-black/88">
-              {conversationResult.title}
-            </h2>
-            <p className="mt-2 break-keep text-[13px] font-semibold leading-5 tracking-[-0.02em] text-black/45">
-              {conversationResult.subtitle}
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {conversationTags.map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full border border-black/[0.07] bg-[#f7f7f5] px-3 py-2 text-[11px] font-bold tracking-[-0.02em] text-black/52"
-                >
-                  {tag}
-                </span>
-              ))}
+            <div className="grid grid-cols-[168px_minmax(0,1fr)] items-center gap-2">
+              <div className="flex h-[298px] items-center justify-center overflow-hidden">
+                <Image
+                  src={conversationResultImageSrc[conversationCode]}
+                  alt={`${conversationResult.title} 일러스트`}
+                  width={941}
+                  height={1671}
+                  className="h-full w-auto object-contain mix-blend-multiply"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold tracking-[-0.01em] text-black/38">
+                  {operatorConversationPreview && !storedConversationCode
+                    ? "운영자 미리보기"
+                    : "나의 대화 결과"}{" "}
+                  · {conversationCode}
+                </p>
+                <h2 className="mt-3 break-keep text-[26px] font-black leading-[1.15] tracking-[-0.055em] text-black/88">
+                  {conversationResult.title}
+                </h2>
+                <p className="mt-3 break-keep text-[14px] font-semibold leading-[1.65] tracking-[-0.025em] text-black/48">
+                  {conversationResult.subtitle}
+                </p>
+              </div>
             </div>
-            <p className="mt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
+            <p className="mt-4 border-t border-black/[0.07] pt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
               {conversationResultOverview(conversationResult.body)}
             </p>
           </section>

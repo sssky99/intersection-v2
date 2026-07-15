@@ -106,6 +106,25 @@ export const conversationResults = {
 
 export type ConversationResultCode = keyof typeof conversationResults;
 
+export const conversationResultImageSrc: Record<ConversationResultCode, string> = {
+  OLHC: "/images/conversation-types/olhc-comfortable-connector.png",
+  OLHE: "/images/conversation-types/olhe-gentle-companion.png",
+  OLWC: "/images/conversation-types/olwc-deep-listener.png",
+  OLWE: "/images/conversation-types/olwe-quiet-explorer.png",
+  OQHC: "/images/conversation-types/oqhc-considerate-questioner.png",
+  OQHE: "/images/conversation-types/oqhe-gentle-explorer.png",
+  OQWC: "/images/conversation-types/oqwc-reflective-inquirer.png",
+  OQWE: "/images/conversation-types/oqwe-subtle-discoverer.png",
+  ILHC: "/images/conversation-types/ilhc-thoughtful-host.png",
+  ILHE: "/images/conversation-types/ilhe-warm-guide.png",
+  ILWC: "/images/conversation-types/ilwc-open-listener.png",
+  ILWE: "/images/conversation-types/ilwe-kind-adventurer.png",
+  IQHC: "/images/conversation-types/iqhc-attentive-facilitator.png",
+  IQHE: "/images/conversation-types/iqhe-friendly-pathfinder.png",
+  IQWC: "/images/conversation-types/iqwc-witty-conversationalist.png",
+  IQWE: "/images/conversation-types/iqwe-sparkling-pioneer.png",
+};
+
 export function conversationResultOverview(body: string) {
   return body
     .split("## 결과 해설")[0]
