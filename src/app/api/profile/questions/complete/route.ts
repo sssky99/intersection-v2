@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { profileQuestions } from "@/data/profileQuestions";
+import {
+  calculateConversationResultCode,
+  conversationResultVersion,
+} from "@/lib/conversationResult";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -32,9 +36,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Answers are incomplete." }, { status: 409 });
   }
 
+  const resultCode = isRegeneration
+    ? null
+    : calculateConversationResultCode(answers);
+  if (!isRegeneration && !resultCode) {
+    return NextResponse.json(
+      { error: "Conversation result could not be calculated." },
+      { status: 409 },
+    );
+  }
+
   const update = isRegeneration
     ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
-    : { questions_completed: true };
+    : {
+        questions_completed: true,
+        conversation_result_code: resultCode,
+        conversation_result_version: conversationResultVersion,
+        conversation_result_calculated_at: new Date().toISOString(),
+      };
   const { error: updateError } = await admin.from("profiles").update(update).eq("user_id", user.id);
 
   if (updateError) {

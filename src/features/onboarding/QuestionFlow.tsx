@@ -5,6 +5,7 @@ import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  conversationResultOverview,
   conversationResults,
   type ConversationResultCode,
 } from "@/data/conversationResults";
@@ -52,16 +53,6 @@ function resultExplanation(body: string) {
     body.match(/## 결과 해설\s*([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ??
     body
   );
-}
-
-function resultOverviewSummary(body: string) {
-  return body
-    .split("## 결과 해설")[0]
-    .replace("## 어떤 대화를 하는 사람인가?", "")
-    .trim()
-    .split(/\n\s*\n/)
-    .slice(0, 4)
-    .join(" ");
 }
 
 function FixedResultExplanation({ body }: { body: string }) {
@@ -926,7 +917,7 @@ export function QuestionFlow({
               ))}
             </div>
             <p className="mt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
-              {resultOverviewSummary(result.body)}
+              {conversationResultOverview(result.body)}
             </p>
           </div>
 

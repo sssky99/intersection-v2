@@ -52,6 +52,7 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
   animationKey = 0,
   animateBar = true,
   transitionDelay = 0,
+  monochrome = false,
   valueLabel,
   input,
 }: {
@@ -63,6 +64,7 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
   animationKey?: string | number;
   animateBar?: boolean;
   transitionDelay?: number;
+  monochrome?: boolean;
   valueLabel?: string;
   input?: {
     value: number;
@@ -127,7 +129,10 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
               width: `${fillWidth}%`,
             }}
             transition={transition}
-            className="absolute top-0 h-full rounded-full bg-accent"
+            className={cn(
+              "absolute top-0 h-full rounded-full",
+              monochrome ? "bg-black/75" : "bg-accent",
+            )}
           />
           <span className="absolute left-1/2 top-1/2 z-10 h-7 w-px -translate-y-1/2 bg-black/28" />
           <motion.span
@@ -135,7 +140,10 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
             initial={shouldAnimate ? { left: "50%" } : false}
             animate={{ left: `${targetPercent}%` }}
             transition={transition}
-            className="absolute top-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-accent shadow-[0_5px_14px_rgba(0,0,0,0.18)]"
+            className={cn(
+              "absolute top-1/2 z-20 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white shadow-[0_5px_14px_rgba(0,0,0,0.18)]",
+              monochrome ? "bg-black/80" : "bg-accent",
+            )}
           />
           {input && (
             <input
@@ -171,6 +179,7 @@ export function VibeGraph({
   scoreScale = "legacy",
   animationKey = 0,
   animateBars = true,
+  monochrome = false,
 }: {
   title: string;
   titleInlineAccessory?: ReactNode;
@@ -185,6 +194,7 @@ export function VibeGraph({
   scoreScale?: VibeScoreScale;
   animationKey?: string | number;
   animateBars?: boolean;
+  monochrome?: boolean;
 }) {
   const axes = visibleAxes.filter(
     (axis) => normalizeScore(scores?.[axis], scoreScale) !== null,
@@ -232,6 +242,7 @@ export function VibeGraph({
             animationKey={animationKey}
             animateBar={animateBars}
             transitionDelay={index * 0.05}
+            monochrome={monochrome}
           />
         ))}
       </div>

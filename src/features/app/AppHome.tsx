@@ -1030,6 +1030,9 @@ export function AppHome({
               onOpenProfileCompletionReplay={openProfileCompletionReplay}
               onRequestProfileRegeneration={openProfileRegenerationConfirm}
               onLogout={logout}
+              operatorConversationPreview={
+                operatorAccountSwitcher?.mode === "operator"
+              }
             />
           )}
         </div>

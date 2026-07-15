@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { profileQuestions } from "@/data/profileQuestions";
+import {
+  calculateConversationResultCode,
+  conversationResultVersion,
+} from "@/lib/conversationResult";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
@@ -139,6 +143,13 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
   });
+  const resultCode = calculateConversationResultCode(answerRows);
+  if (!resultCode) {
+    return NextResponse.json(
+      { error: "Conversation result could not be calculated." },
+      { status: 400 },
+    );
+  }
 
   const { error: answersError } = await admin
     .from("user_answers")
@@ -160,6 +171,9 @@ export async function POST(request: Request) {
       photo_url: photoUrl,
       questions_completed: true,
       profile_completed: true,
+      conversation_result_code: resultCode,
+      conversation_result_version: conversationResultVersion,
+      conversation_result_calculated_at: new Date().toISOString(),
     })
     .eq("user_id", user.id);
 

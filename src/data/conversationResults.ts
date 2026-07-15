@@ -106,3 +106,12 @@ export const conversationResults = {
 
 export type ConversationResultCode = keyof typeof conversationResults;
 
+export function conversationResultOverview(body: string) {
+  return body
+    .split("## 결과 해설")[0]
+    .replace("## 어떤 대화를 하는 사람인가?", "")
+    .trim()
+    .split(/\n\s*\n/)
+    .slice(0, 4)
+    .join(" ");
+}

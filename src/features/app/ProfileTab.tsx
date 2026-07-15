@@ -17,6 +17,12 @@ import {
   type VibeAxis,
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
+import {
+  conversationResultOverview,
+  conversationResults,
+  type ConversationResultCode,
+} from "@/data/conversationResults";
+import { calculateConversationResultCode } from "@/lib/conversationResult";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
 
@@ -37,6 +43,29 @@ const profileScoreColumns = {
   tone: "score_tone",
   rhythm: "score_rhythm",
 } as const satisfies Record<ProfileVibeAxis, keyof ProfileRow>;
+
+const conversationAxisLabelOverrides = {
+  temperature: {
+    label: "낯선 자리의 시작",
+    leftLabel: "천천히 살피는",
+    rightLabel: "먼저 여는",
+  },
+  texture: {
+    label: "대화를 여는 방식",
+    leftLabel: "들으며 잇는",
+    rightLabel: "질문으로 여는",
+  },
+  tone: {
+    label: "차이를 다루는 방식",
+    leftLabel: "조화를 찾는",
+    rightLabel: "차이를 탐색하는",
+  },
+  rhythm: {
+    label: "만남의 분위기",
+    leftLabel: "편안한",
+    rightLabel: "새로운 발견",
+  },
+} as const;
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -89,6 +118,65 @@ function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores 
     tone: profileAxisScore(profile, answers, "tone", 3),
     rhythm: profileAxisScore(profile, answers, "rhythm", 4),
   };
+}
+
+function conversationAxisScore(
+  answers: AnswerMap,
+  orders: number[],
+  left: string,
+  right: string,
+  fallback: string | undefined,
+) {
+  const values = orders.map((order) => answers[order]?.value);
+  if (values.every((value) => value === left || value === right)) {
+    const rightCount = values.filter((value) => value === right).length;
+    const leftCount = values.length - rightCount;
+    return ((rightCount - leftCount) / values.length) * 100;
+  }
+  if (fallback === left) return -65;
+  if (fallback === right) return 65;
+  return 0;
+}
+
+function conversationVibeScores(
+  answers: AnswerMap,
+  code: ConversationResultCode,
+): VibeScores {
+  return {
+    temperature: conversationAxisScore(answers, [1, 2, 3, 4], "O", "I", code[0]),
+    texture: conversationAxisScore(answers, [5, 6, 7, 8], "L", "Q", code[1]),
+    tone: conversationAxisScore(answers, [9, 10, 11, 12], "H", "W", code[2]),
+    rhythm: conversationAxisScore(answers, [13, 14, 15, 16], "C", "E", code[3]),
+  };
+}
+
+function resolvedConversationResultCode(
+  profile: ProfileRow,
+  answers: AnswerMap,
+): ConversationResultCode | null {
+  const storedCode = profile.conversation_result_code;
+  if (storedCode && storedCode in conversationResults) {
+    return storedCode as ConversationResultCode;
+  }
+
+  return calculateConversationResultCode(
+    Array.from({ length: 16 }, (_, index) => ({
+      question_order: index + 1,
+      answer_value:
+        typeof answers[index + 1]?.value === "string"
+          ? String(answers[index + 1].value)
+          : null,
+    })),
+  );
+}
+
+function conversationResultTags(code: ConversationResultCode) {
+  return [
+    code[0] === "O" ? "천천히 살피는 시작" : "먼저 여는 시작",
+    code[1] === "L" ? "들으며 잇는 대화" : "질문으로 여는 대화",
+    code[2] === "H" ? "조화를 찾는 관점" : "차이를 탐색하는 관점",
+    code[3] === "C" ? "편안한 만남" : "새로운 발견이 있는 만남",
+  ];
 }
 
 function participationPrecisionLevel(count: number) {
@@ -433,6 +521,7 @@ export function ProfileTab({
   onOpenProfileCompletionReplay,
   onRequestProfileRegeneration,
   onLogout,
+  operatorConversationPreview = false,
 }: {
   profile: ProfileRow;
   answers: AnswerMap;
@@ -444,15 +533,35 @@ export function ProfileTab({
   onOpenProfileCompletionReplay: () => void;
   onRequestProfileRegeneration: () => void;
   onLogout: () => Promise<void>;
+  operatorConversationPreview?: boolean;
 }) {
   const publicIntro = profile.public_intro?.trim();
+  const storedConversationCode = useMemo(
+    () => resolvedConversationResultCode(profile, answers),
+    [answers, profile],
+  );
+  const usesNewConversationProfile =
+    operatorConversationPreview ||
+    (profile.conversation_result_version === "v1" &&
+      Boolean(storedConversationCode));
+  const conversationCode =
+    storedConversationCode ?? (operatorConversationPreview ? "OQHC" : null);
+  const conversationResult = conversationCode
+    ? conversationResults[conversationCode]
+    : null;
+  const conversationTags = conversationCode
+    ? conversationResultTags(conversationCode)
+    : [];
   const matchingPrecisionCount = profileMatchingPrecisionCount(
     profile,
     participationCount,
   );
   const vibeScores = useMemo(
-    () => profileVibeScores(profile, answers),
-    [answers, profile],
+    () =>
+      usesNewConversationProfile && conversationCode
+        ? conversationVibeScores(answers, conversationCode)
+        : profileVibeScores(profile, answers),
+    [answers, conversationCode, profile, usesNewConversationProfile],
   );
 
   return (
@@ -464,20 +573,50 @@ export function ProfileTab({
           </h1>
         </header>
 
-        <section className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-            about me
-          </p>
-          <h2 className="mt-2 flex items-center gap-2 text-xl font-bold leading-7 text-black">
-            <span>{profileNickname(profile)}</span>
-            <span aria-hidden className="text-base leading-none">
-              {profileEmoji(profile)}
-            </span>
-          </h2>
-          <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">
-            {publicIntro ?? "아직 소개가 준비 중이에요."}
-          </p>
-        </section>
+        {usesNewConversationProfile && conversationResult && conversationCode ? (
+          <section className="mt-7 rounded-[24px] border border-black/[0.08] bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+            <p className="text-[11px] font-bold tracking-[-0.01em] text-black/38">
+              {operatorConversationPreview && !storedConversationCode
+                ? "운영자 미리보기"
+                : "나의 대화 결과"}{" "}
+              · {conversationCode}
+            </p>
+            <h2 className="mt-2 text-[24px] font-black tracking-[-0.05em] text-black/88">
+              {conversationResult.title}
+            </h2>
+            <p className="mt-2 break-keep text-[13px] font-semibold leading-5 tracking-[-0.02em] text-black/45">
+              {conversationResult.subtitle}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {conversationTags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-black/[0.07] bg-[#f7f7f5] px-3 py-2 text-[11px] font-bold tracking-[-0.02em] text-black/52"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+            <p className="mt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
+              {conversationResultOverview(conversationResult.body)}
+            </p>
+          </section>
+        ) : (
+          <section className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+              about me
+            </p>
+            <h2 className="mt-2 flex items-center gap-2 text-xl font-bold leading-7 text-black">
+              <span>{profileNickname(profile)}</span>
+              <span aria-hidden className="text-base leading-none">
+                {profileEmoji(profile)}
+              </span>
+            </h2>
+            <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">
+              {publicIntro ?? "아직 소개가 준비 중이에요."}
+            </p>
+          </section>
+        )}
 
         <VibeGraph
           title="나의 대화결"
@@ -488,9 +627,15 @@ export function ProfileTab({
           description="교집합이 자리를 제안할 때 참고하는 분위기예요."
           scores={vibeScores}
           visibleAxes={profileVibeAxes}
-          showAxisHeader={false}
+          showAxisHeader={usesNewConversationProfile}
+          axisLabelOverrides={
+            usesNewConversationProfile
+              ? conversationAxisLabelOverrides
+              : undefined
+          }
           scoreScale="internal"
           animationKey={vibeAnimationKey}
+          monochrome={usesNewConversationProfile}
           className="mt-5"
         />
 
