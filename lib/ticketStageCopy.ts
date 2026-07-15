@@ -16,7 +16,7 @@ export type TicketStageCopyKey = (typeof ticketStageCopyKeys)[number];
 
 export const defaultTicketStageCopy: Record<TicketStageCopyKey, string> = {
   paymentPending:
-    "참여 보증금 입금 확인이 완료되면 배정 대기 상태로 전환돼요. 운영자가 확인한 뒤 참여 확정 여부를 안내합니다.",
+    "참가비 입금 확인이 완료되면 배정 대기 상태로 전환돼요. 운영자가 확인한 뒤 참여 확정 여부를 안내합니다.",
   waitlisted:
     "신청이 완료됐어요. 참여 확정 안내는 모임 시작 24시간 전부터 확인할 수 있어요.",
   applied:

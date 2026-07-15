@@ -1,4 +1,4 @@
-export const MEETING_DATE_DEPOSIT_AMOUNT = 20_000;
+export const MEETING_DATE_DEPOSIT_AMOUNT = 10_000;
 export const MEETING_DATE_REGION = "서울";
 export type MeetingDateApplicationStatus =
   | "payment_pending"

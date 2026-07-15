@@ -72,6 +72,8 @@ const ticketDatesCacheTtlMs = 30_000;
 const noShowDepositBankName = "카카오뱅크";
 const noShowDepositAccountNumber = "7942-26-95406";
 const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
+const meetingApplicationStoreUrl =
+  "https://smartstore.naver.com/intersection_blinddate/products/13622643532";
 const kakaoDepositMessageChatUrl = "http://pf.kakao.com/_xnweQn/chat";
 const depositMessageSummaryStorageKey =
   "intersection:deposit-message-summary";
@@ -1375,12 +1377,12 @@ function DateApplicationIntro({
           </span>
           <div className="min-w-0 pt-0.5">
             <h2 className="text-[15px] font-black text-black">
-              참여 보증금은 100% 환급돼요.
+              다시 만나고 싶은 사람을 선택해요.
             </h2>
             <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
-              참가하시는 분들의 소중한 시간과 경험을 보장하기 위해서 참여
-              보증금을 받고 있어요. 참여 보증금은 정상 참여시 전액
-              돌려드려요.
+              모임이 끝나면 피드백을 통해서 다시 만나고 싶은 사람을 선택할 수
+              있어요. 서로 선택한 경우 1대1로 만날 수 있는 자리를
+              준비해드려요.
             </p>
           </div>
         </motion.div>
@@ -1514,23 +1516,6 @@ function MeetingDateApplicationFlow({
     setError(null);
   };
 
-  const openDeposit = () => {
-    if (selectedDates.length !== 1 || saving) return;
-    setDepositAccountCopied(false);
-    setDepositCopyError(null);
-    setDepositSession((current) => current + 1);
-    setDepositOpen(true);
-    trackEvent("application_submit_click", {
-      application_type: "meeting_date",
-      date_count: 1,
-      deposit_amount: MEETING_DATE_DEPOSIT_AMOUNT,
-      membership_status: membershipStatus,
-    });
-    void fetchDepositMessageRegistrationSummary()
-      .then(setDepositMessageSummary)
-      .catch(() => undefined);
-  };
-
   const copyDepositAccount = async () => {
     if (saving) return;
     try {
@@ -1544,10 +1529,20 @@ function MeetingDateApplicationFlow({
     }
   };
 
-  const submitDateApplications = async () => {
+  const submitDateApplications = async (openStoreAfterSave = false) => {
     if (selectedDates.length !== 1 || saving) return;
 
     const targetDates = [...selectedDates];
+    setSaving(true);
+    setError(null);
+    setDepositCopyError(null);
+    trackEvent("application_submit_click", {
+      application_type: "meeting_date",
+      date_count: targetDates.length,
+      deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      membership_status: membershipStatus,
+    });
+
     if (isLocalTestHost()) {
       const now = new Date().toISOString();
       const localApplications = targetDates.map(
@@ -1571,16 +1566,21 @@ function MeetingDateApplicationFlow({
         saveLocalDateApplications(userId, nextApplications);
         return nextApplications;
       });
+      if (openStoreAfterSave) {
+        window.location.assign(meetingApplicationStoreUrl);
+        return;
+      }
       setSubmittedDates(targetDates);
       setSelectedDates([]);
       setDepositOpen(false);
       setScreen("submitted");
+      setSaving(false);
       return;
     }
 
-    window.open(kakaoDepositMessageChatUrl, "_blank", "noopener,noreferrer");
-    setSaving(true);
-    setDepositCopyError(null);
+    if (!openStoreAfterSave) {
+      window.open(kakaoDepositMessageChatUrl, "_blank", "noopener,noreferrer");
+    }
 
     try {
       const response = await fetch("/api/meeting-date-applications", {
@@ -1595,11 +1595,13 @@ function MeetingDateApplicationFlow({
         throw new Error(data?.error ?? "date-applications-save-failed");
       }
 
-      const registration = await saveDepositMessageRegistration();
-      setDepositMessageSummary({
-        count: registration.count,
-        limitCount: registration.limitCount,
-      });
+      if (!openStoreAfterSave) {
+        const registration = await saveDepositMessageRegistration();
+        setDepositMessageSummary({
+          count: registration.count,
+          limitCount: registration.limitCount,
+        });
+      }
       setApplications((current) => {
         const next = new Map(
           [...current, ...(data.applications ?? [])].map((application) => [
@@ -1611,22 +1613,27 @@ function MeetingDateApplicationFlow({
           left.meetingDate.localeCompare(right.meetingDate),
         );
       });
-      setSubmittedDates(targetDates);
-      setSelectedDates([]);
-      setDepositOpen(false);
-      setScreen("submitted");
       trackEvent("application_created", {
         application_type: "meeting_date",
         date_count: targetDates.length,
         deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       });
+      if (openStoreAfterSave) {
+        window.location.assign(meetingApplicationStoreUrl);
+        return;
+      }
+      setSubmittedDates(targetDates);
+      setSelectedDates([]);
+      setDepositOpen(false);
+      setScreen("submitted");
     } catch (submissionError) {
-      setDepositCopyError(
+      const message =
         submissionError instanceof Error &&
           submissionError.message !== "date-applications-save-failed"
           ? submissionError.message
-          : "입금 확인 요청을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
-      );
+          : "신청 정보를 저장하지 못했어요. 잠시 후 다시 시도해주세요.";
+      setError(message);
+      setDepositCopyError(message);
     } finally {
       setSaving(false);
     }
@@ -1763,19 +1770,17 @@ function MeetingDateApplicationFlow({
                   </p>
                   <div className="mt-1 flex items-baseline justify-between gap-3">
                     <p className="whitespace-nowrap text-xl font-black text-black">
-                      참여보증금 {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
+                      참가비 {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
                     </p>
-                    <span className="whitespace-nowrap text-right text-[13px] font-black leading-5 text-emerald-600">
-                      정상 참여 시 100% 환급
-                    </span>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={openDeposit}
-                  className="mt-4 h-[52px] w-full bg-black text-sm font-black text-white"
+                  disabled={saving}
+                  onClick={() => void submitDateApplications(true)}
+                  className="mt-4 h-[52px] w-full bg-black text-sm font-black text-white disabled:bg-black/15 disabled:text-black/35"
                 >
-                  참여 보증금 입금하기
+                  {saving ? "신청 정보를 저장하는 중..." : "신청하기"}
                 </button>
               </motion.div>
             )}
@@ -1856,7 +1861,7 @@ function DateDepositBottomSheet({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<"membership" | "deposit">("membership");
+  const [step, setStep] = useState<"membership" | "deposit">("deposit");
   const [membershipConsented, setMembershipConsented] = useState(false);
   const [consentTouched, setConsentTouched] = useState(false);
 
@@ -1881,7 +1886,7 @@ function DateDepositBottomSheet({
       <motion.section
         role="dialog"
         aria-modal="true"
-        aria-label={step === "membership" ? "무료 멤버십 가입 안내" : "참여 보증금 입금 안내"}
+        aria-label={step === "membership" ? "무료 멤버십 가입 안내" : "참가비 입금 안내"}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
         initial={{ y: 32, opacity: 0 }}
@@ -1894,13 +1899,13 @@ function DateDepositBottomSheet({
           <h2 className="text-xl font-black leading-7 text-black">
             {step === "membership"
               ? "교집합은 베타테스트 중이에요."
-              : "참여 보증금 입금"}
+              : "참가비 입금"}
           </h2>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            aria-label="참여 보증금 입금 안내 닫기"
+            aria-label="참가비 입금 안내 닫기"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48"
           >
             <X size={17} aria-hidden />
@@ -1955,28 +1960,16 @@ function DateDepositBottomSheet({
           </motion.div>
         ) : (
           <motion.div key="date-deposit-step" initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => setStep("membership")}
-              className="mt-4 text-[12px] font-bold text-black/48"
-            >
-              ← 멤버십 안내로 돌아가기
-            </button>
-
             <div className="mt-4 border-y border-black/10 py-4">
               <div className="flex min-h-[54px] items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-bold text-black/42">
-                    참여보증금
+                    참가비
                   </p>
                   <p className="mt-1 text-xl font-black tabular-nums text-black">
                     {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
                   </p>
                 </div>
-                <strong className="text-right text-xs font-black text-emerald-600">
-                  정상 참여 시 100% 환급
-                </strong>
               </div>
             </div>
 
@@ -2012,7 +2005,7 @@ function DateDepositBottomSheet({
             >
               {saving
                 ? "저장 중..."
-                : `${MEETING_DATE_DEPOSIT_AMOUNT / 10_000}만원 입금 완료 문자 보내기`}
+                : "참가비 입금 완료 문자 보내기"}
             </button>
             <p className="mt-3 text-center text-[11px] font-semibold text-black/45">
               성함과 함께 입금 완료 문자를 남겨주세요.
@@ -2281,7 +2274,7 @@ function NoShowDepositBottomSheet({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<"membership" | "deposit">("membership");
+  const [step, setStep] = useState<"membership" | "deposit">("deposit");
   const [membershipConsented, setMembershipConsented] = useState(false);
   const [consentTouched, setConsentTouched] = useState(false);
 
@@ -2298,7 +2291,7 @@ function NoShowDepositBottomSheet({
         role="dialog"
         aria-modal="true"
         aria-label={
-          step === "membership" ? "무료 멤버십 가입 안내" : "참여 보증금 입금 안내"
+          step === "membership" ? "무료 멤버십 가입 안내" : "참가비 입금 안내"
         }
         initial={{ y: 32, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -2313,14 +2306,14 @@ function NoShowDepositBottomSheet({
             <h2 className="text-xl font-black leading-7 text-black">
               {step === "membership"
                 ? "교집합은 베타테스트 중이에요."
-                : "참여 보증금 2만원을 입금해주세요."}
+                : "참가비 10,000원을 입금해주세요."}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            aria-label="참여 보증금 입금 안내 닫기"
+            aria-label="참가비 입금 안내 닫기"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/48 shadow-sm transition hover:text-black disabled:opacity-40"
           >
             <X size={17} aria-hidden />
@@ -2401,15 +2394,6 @@ function NoShowDepositBottomSheet({
             initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
           >
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => setStep("membership")}
-              className="mt-4 text-[12px] font-bold text-black/48 transition hover:text-black disabled:opacity-40"
-            >
-              ← 멤버십 안내로 돌아가기
-            </button>
-
             <div className="mt-4 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
               <div className="flex items-center gap-3">
                 <span
@@ -2418,16 +2402,12 @@ function NoShowDepositBottomSheet({
                 >
                   <CalendarDays size={19} aria-hidden />
                 </span>
-                <p className="text-sm font-black text-black">참여 보증금 : 20,000원</p>
+                <p className="text-sm font-black text-black">
+                  참가비 : {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
+                </p>
               </div>
               <p className="mt-2 pl-3 text-sm font-semibold leading-6 text-black/58">
-                노쇼 방지를 위한 참여 보증금입니다.
-                <br />
-                모임에 정상 참여하는 경우 참여 보증금은{" "}
-                <span className="rounded-md bg-sky-100 px-1.5 py-0.5 font-black text-sky-700">
-                  전액 환급
-                </span>
-                됩니다.
+                모임 참여를 위한 참가비입니다.
               </p>
             </div>
 

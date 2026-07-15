@@ -42,10 +42,9 @@ function participantNotice(ticket: GatheringTicket) {
   ];
 }
 
-const commonNotices = [
-  "상세 장소는 참여 확정 후 안내돼요.",
-  "참여 보증금 입금 확인 후 배정 대기 등록이 완료돼요.",
-];
+const commonNotices = ["상세 장소는 참여 확정 후 안내돼요."];
+
+const legacyDepositNoticePattern = /(?:참여\s*보증금|참가\s*보증금|보증금|환급)/;
 
 function cleanList(items: string[] | undefined) {
   return (items ?? []).map((item) => item.trim()).filter(Boolean);
@@ -82,7 +81,9 @@ export function TicketDetailContent({
   const activities = cleanList(ticket.detailActivities);
   const defaultNotices = [...participantNotice(ticket), ...commonNotices];
   const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
-    (notice) => !defaultNotices.includes(notice),
+    (notice) =>
+      !defaultNotices.includes(notice) &&
+      !legacyDepositNoticePattern.test(notice),
   );
   const noticeItems = [...defaultNotices, ...customNotices];
   const visibleSections = new Set(sections);

@@ -47,23 +47,27 @@ const profileScoreColumns = {
 const conversationAxisLabelOverrides = {
   temperature: {
     label: "낯선 자리의 시작",
-    leftLabel: "천천히 살피는",
-    rightLabel: "먼저 여는",
+    leftLabel: "Observe",
+    rightLabel: "Initiate",
+    summaryLabel: "관찰 · 주도",
   },
   texture: {
     label: "대화를 여는 방식",
-    leftLabel: "들으며 잇는",
-    rightLabel: "질문으로 여는",
+    leftLabel: "Listening",
+    rightLabel: "Questioning",
+    summaryLabel: "경청 · 질문",
   },
   tone: {
     label: "차이를 다루는 방식",
-    leftLabel: "조화를 찾는",
-    rightLabel: "차이를 탐색하는",
+    leftLabel: "Harmony",
+    rightLabel: "Wonder",
+    summaryLabel: "조화 · 탐구",
   },
   rhythm: {
     label: "만남의 분위기",
-    leftLabel: "편안한",
-    rightLabel: "새로운 발견",
+    leftLabel: "Conversation",
+    rightLabel: "Experience",
+    summaryLabel: "대화 · 경험",
   },
 } as const;
 
@@ -217,18 +221,21 @@ function ParticipationDiamondNode({
   current,
   reached,
   showGift = false,
+  monochrome = false,
 }: {
   step: number;
   current: boolean;
   reached: boolean;
   showGift?: boolean;
+  monochrome?: boolean;
 }) {
-  const fill = reached ? "var(--accent)" : "#FFFFFF";
-  const stroke = reached || current ? "var(--accent)" : "rgba(0,0,0,0.16)";
+  const activeColor = monochrome ? "#121212" : "var(--accent)";
+  const fill = reached ? activeColor : "#FFFFFF";
+  const stroke = reached || current ? activeColor : "rgba(0,0,0,0.16)";
   const textFill = reached
     ? "#FFFFFF"
     : current
-      ? "var(--accent)"
+      ? activeColor
       : "rgba(0,0,0,0.34)";
 
   return (
@@ -237,7 +244,10 @@ function ParticipationDiamondNode({
         viewBox="0 0 32 42"
         className={cn(
           "h-10 w-8 shrink-0 overflow-visible transition",
-          current && "drop-shadow-[0_5px_10px_rgba(126,179,199,0.24)]",
+          current &&
+            (monochrome
+              ? "drop-shadow-[0_5px_10px_rgba(18,18,18,0.18)]"
+              : "drop-shadow-[0_5px_10px_rgba(126,179,199,0.24)]"),
         )}
         aria-hidden
       >
@@ -260,15 +270,17 @@ function ParticipationDiamondNode({
           {step}
         </text>
       </svg>
-      {showGift && <ParticipationGiftButton />}
+      {showGift && <ParticipationGiftButton monochrome={monochrome} />}
     </span>
   );
 }
 
 function ParticipationMilestoneProgress({
   precisionCount,
+  monochrome = false,
 }: {
   precisionCount: number;
+  monochrome?: boolean;
 }) {
   const level = participationPrecisionLevel(precisionCount);
   const currentStep = level < 5 ? level + 1 : null;
@@ -291,7 +303,7 @@ function ParticipationMilestoneProgress({
               step={step}
               current={current}
               reached={reached}
-              showGift={step === 5}
+              monochrome={monochrome}
             />
           );
         })}
@@ -302,8 +314,10 @@ function ParticipationMilestoneProgress({
 
 function ParticipationRecord({
   precisionCount,
+  monochrome = false,
 }: {
   precisionCount: number;
+  monochrome?: boolean;
 }) {
   return (
     <div>
@@ -314,7 +328,10 @@ function ParticipationRecord({
       <p className="mt-1 text-xs font-semibold leading-5 text-black/40">
         참여할수록 나의 대화결이 정교해져요.
       </p>
-      <ParticipationMilestoneProgress precisionCount={precisionCount} />
+      <ParticipationMilestoneProgress
+        precisionCount={precisionCount}
+        monochrome={monochrome}
+      />
     </div>
   );
 }
@@ -405,7 +422,7 @@ function ParticipationRecordInfoButton() {
   );
 }
 
-function ParticipationGiftButton() {
+function ParticipationGiftButton({ monochrome = false }: { monochrome?: boolean }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
   const shouldReduceMotion = useReducedMotion();
@@ -448,9 +465,15 @@ function ParticipationGiftButton() {
             : {
                 scale: [1, 1.08, 1],
                 boxShadow: [
-                  "0 4px 10px rgba(126,179,199,0.24)",
-                  "0 0 0 7px rgba(126,179,199,0.16), 0 8px 18px rgba(126,179,199,0.32)",
-                  "0 4px 10px rgba(126,179,199,0.24)",
+                  monochrome
+                    ? "0 4px 10px rgba(18,18,18,0.14)"
+                    : "0 4px 10px rgba(126,179,199,0.24)",
+                  monochrome
+                    ? "0 0 0 7px rgba(18,18,18,0.08), 0 8px 18px rgba(18,18,18,0.18)"
+                    : "0 0 0 7px rgba(126,179,199,0.16), 0 8px 18px rgba(126,179,199,0.32)",
+                  monochrome
+                    ? "0 4px 10px rgba(18,18,18,0.14)"
+                    : "0 4px 10px rgba(126,179,199,0.24)",
                 ],
               }
         }
@@ -465,7 +488,12 @@ function ParticipationGiftButton() {
               }
         }
         whileTap={{ scale: 0.94 }}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-accent/55 bg-white text-accent shadow-[0_4px_10px_rgba(126,179,199,0.24)] transition hover:-translate-y-0.5 hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 focus-visible:ring-offset-2"
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-full bg-white transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+          monochrome
+            ? "border border-black/35 text-black/65 shadow-[0_4px_10px_rgba(18,18,18,0.14)] hover:border-black/60 hover:text-black focus-visible:ring-black/25"
+            : "border border-accent/55 text-accent shadow-[0_4px_10px_rgba(126,179,199,0.24)] hover:border-accent hover:text-accent focus-visible:ring-accent/45",
+        )}
       >
         <Gift size={16} strokeWidth={2.5} aria-hidden />
       </motion.button>
@@ -622,12 +650,16 @@ export function ProfileTab({
           title="나의 대화결"
           titleInlineAccessory={<VibeGraphInfoButton />}
           footer={
-            <ParticipationRecord precisionCount={matchingPrecisionCount} />
+            <ParticipationRecord
+              precisionCount={matchingPrecisionCount}
+              monochrome={usesNewConversationProfile}
+            />
           }
           description="교집합이 자리를 제안할 때 참고하는 분위기예요."
           scores={vibeScores}
           visibleAxes={profileVibeAxes}
           showAxisHeader={usesNewConversationProfile}
+          showAxisSummary
           axisLabelOverrides={
             usesNewConversationProfile
               ? conversationAxisLabelOverrides

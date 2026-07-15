@@ -13,6 +13,7 @@ type VibeAxisLabelOverride = Partial<{
   label: string;
   leftLabel: string;
   rightLabel: string;
+  summaryLabel: string;
 }>;
 
 export type VibeScoreScale = "legacy" | "internal";
@@ -49,6 +50,7 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
   scoreScale = "legacy",
   axisLabelOverrides,
   showAxisHeader = true,
+  showAxisSummary = true,
   animationKey = 0,
   animateBar = true,
   transitionDelay = 0,
@@ -61,6 +63,7 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
   scoreScale?: VibeScoreScale;
   axisLabelOverrides?: VibeAxisLabelOverride;
   showAxisHeader?: boolean;
+  showAxisSummary?: boolean;
   animationKey?: string | number;
   animateBar?: boolean;
   transitionDelay?: number;
@@ -98,14 +101,18 @@ export function VibeAxisBar<TAxis extends VibeAxis>({
           <span className="text-xs font-black text-black/72">
             {config.label}
           </span>
-          <span
-            className={cn(
-              "text-[11px] font-semibold text-black/35",
-              valueLabel && "text-black/60",
-            )}
-          >
-            {valueLabel ?? `${config.leftLabel} · ${config.rightLabel}`}
-          </span>
+          {showAxisSummary && (
+            <span
+              className={cn(
+                "text-[11px] font-semibold text-black/35",
+                valueLabel && "text-black/60",
+              )}
+            >
+              {valueLabel ??
+                axisLabelOverrides?.summaryLabel ??
+                `${config.leftLabel} · ${config.rightLabel}`}
+            </span>
+          )}
         </div>
       )}
       <div className="space-y-2">
@@ -175,6 +182,7 @@ export function VibeGraph({
   visibleAxes = vibeAxes,
   className,
   showAxisHeader = true,
+  showAxisSummary = true,
   axisLabelOverrides,
   scoreScale = "legacy",
   animationKey = 0,
@@ -190,6 +198,7 @@ export function VibeGraph({
   visibleAxes?: readonly VibeAxis[];
   className?: string;
   showAxisHeader?: boolean;
+  showAxisSummary?: boolean;
   axisLabelOverrides?: Partial<Record<VibeAxis, VibeAxisLabelOverride>>;
   scoreScale?: VibeScoreScale;
   animationKey?: string | number;
@@ -239,6 +248,7 @@ export function VibeGraph({
             scoreScale={scoreScale}
             axisLabelOverrides={axisLabelOverrides?.[axis]}
             showAxisHeader={showAxisHeader}
+            showAxisSummary={showAxisSummary}
             animationKey={animationKey}
             animateBar={animateBars}
             transitionDelay={index * 0.05}

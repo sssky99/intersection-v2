@@ -58,13 +58,7 @@ import {
   ticketFadeTransition,
 } from "@/features/meetings/TicketDetailHero";
 import {
-  MembershipFloatingButton,
-  MembershipModal,
-  type CurrentMembership,
-} from "@/features/membership/MembershipModal";
-import {
   displayMembershipStatus,
-  isMembershipPlan,
 } from "@/features/membership/membershipTypes";
 import {
   identifyAnalyticsUser,
@@ -424,24 +418,6 @@ async function fetchBlindDateOffers() {
   return response.ok ? data?.offers ?? [] : null;
 }
 
-function currentMembershipFromProfile(profile: ProfileRow): CurrentMembership {
-  if (
-    displayMembershipStatus({
-      status: profile.membership_status,
-      endDate: profile.membership_end_date,
-    }) !== "active" ||
-    !isMembershipPlan(profile.membership_plan)
-  ) {
-    return null;
-  }
-
-  return {
-    planId: profile.membership_plan,
-    startedAt: profile.membership_start_date,
-    expiresAt: profile.membership_end_date,
-  };
-}
-
 export function AppHome({
   userId,
   profile,
@@ -479,9 +455,6 @@ export function AppHome({
     initialProfileCompletionOpen,
   );
   const [profileCompletionReplayKey, setProfileCompletionReplayKey] = useState(0);
-  const [membershipModalOpen, setMembershipModalOpen] = useState(false);
-  const [membershipTicket, setMembershipTicket] =
-    useState<GatheringTicket | null>(null);
   const [profileRegenerationConfirmOpen, setProfileRegenerationConfirmOpen] =
     useState(false);
   const [profileRegenerating, setProfileRegenerating] = useState(false);
@@ -500,10 +473,6 @@ export function AppHome({
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const recommendTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-  const currentMembership = useMemo(
-    () => currentMembershipFromProfile(currentProfile),
-    [currentProfile],
-  );
   const recommendationMembershipStatus = useMemo(
     () =>
       displayMembershipStatus({
@@ -679,7 +648,6 @@ export function AppHome({
     setActiveTab(tab);
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
-    setMembershipModalOpen(false);
     setTabUrl(tab);
   };
 
@@ -687,14 +655,12 @@ export function AppHome({
     setActiveTab("recommend");
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
-    setMembershipModalOpen(false);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
   };
 
   const openProfileCompletionReplay = () => {
-    setMembershipModalOpen(false);
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setProfileCompletionReplayKey((current) => current + 1);
@@ -702,7 +668,6 @@ export function AppHome({
   };
 
   const openProfileRegenerationConfirm = () => {
-    setMembershipModalOpen(false);
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setProfileRegenerationError(null);
@@ -870,14 +835,6 @@ export function AppHome({
     <section
       className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]"
     >
-      <MembershipFloatingButton
-        onClick={() => {
-          setProfilePanelOpen(false);
-          setMembershipTicket(null);
-          setMembershipModalOpen(true);
-        }}
-      />
-
       {activeBlindDateOfferCount > 0 && (
         <button
           type="button"
@@ -904,7 +861,6 @@ export function AppHome({
       <button
         type="button"
         onClick={() => {
-          setMembershipModalOpen(false);
           setProfilePanelOpen((open) => !open);
         }}
         aria-label="기본정보 카드 열기"
@@ -945,17 +901,6 @@ export function AppHome({
           </>
         )}
       </AnimatePresence>
-
-      <MembershipModal
-        open={membershipModalOpen}
-        userId={userId}
-        currentMembership={currentMembership}
-        pendingTicket={membershipTicket}
-        onClose={() => {
-          setMembershipModalOpen(false);
-          setMembershipTicket(null);
-        }}
-      />
 
       <div
         ref={scrollAreaRef}
