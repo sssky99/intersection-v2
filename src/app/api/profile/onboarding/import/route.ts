@@ -148,9 +148,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Answers could not be saved." }, { status: 500 });
   }
 
-  const answerByOrder = new Map(
-    answerRows.map((row) => [row.question_order, row.answer_value]),
-  );
   const { error: profileError } = await admin
     .from("profiles")
     .update({
@@ -163,10 +160,6 @@ export async function POST(request: Request) {
       photo_url: photoUrl,
       questions_completed: true,
       profile_completed: true,
-      score_temperature: answerScore(answerByOrder.get(1)),
-      score_texture: answerScore(answerByOrder.get(2)),
-      score_tone: answerScore(answerByOrder.get(3)),
-      score_rhythm: answerScore(answerByOrder.get(4)),
     })
     .eq("user_id", user.id);
 

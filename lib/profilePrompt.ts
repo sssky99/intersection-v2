@@ -216,7 +216,7 @@ export function buildProfileInput(
   const resolvedAnswers = answers
     .filter(
       (answer) =>
-        answer.question_order <= 16,
+        answer.question_order <= 20,
     )
     .flatMap((answer) => {
       const question = getQuestionByOrder(answer.question_order);

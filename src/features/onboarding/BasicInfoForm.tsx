@@ -462,7 +462,7 @@ export function BasicInfoForm({
     <section className="flex min-h-dvh flex-col px-5 pb-6 pt-7 md:min-h-[calc(100dvh-32px)]">
       <header>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-black/35">
             final profile info
           </p>
           <span className="text-[10px] font-semibold text-black/35">
@@ -518,9 +518,7 @@ export function BasicInfoForm({
             onClick={() => void save()}
             className={`flex h-14 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
               canSave && !saving
-                ? isGuest
-                  ? "bg-[#fee500] text-black"
-                  : "bg-black text-white"
+                ? "bg-black text-white"
                 : "bg-black/[0.06] text-black/30"
             }`}
           >
@@ -557,7 +555,7 @@ function BirthYearSelect({
         aria-label={label}
         value={selectedValue}
         onChange={(event) => onChange(event.target.value)}
-        className={`mt-1.5 h-12 w-full appearance-none rounded-2xl border bg-white px-4 text-sm font-semibold outline-none focus:border-accent ${
+        className={`mt-1.5 h-12 w-full appearance-none rounded-2xl border bg-white px-4 text-sm font-semibold outline-none focus:border-black/40 ${
           helperTone === "error" ? "border-red-300" : "border-black/10"
         } ${selectedValue ? "text-black" : "text-black/30"}`}
       >
@@ -617,7 +615,7 @@ function Field({
           inputMode={inputMode}
           maxLength={maxLength}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-12 w-full rounded-2xl border bg-white px-4 text-sm outline-none placeholder:text-black/25 focus:border-accent ${
+          className={`h-12 w-full rounded-2xl border bg-white px-4 text-sm outline-none placeholder:text-black/25 focus:border-black/40 ${
             actionLabel ? "pr-[76px]" : ""
           } ${helperTone === "error" ? "border-red-300" : "border-black/10"}`}
         />

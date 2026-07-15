@@ -4,6 +4,12 @@ export type QuestionType =
   | "text";
 
 export type QuestionCategory =
+  | "낯선 자리 적응"
+  | "대화를 여는 방식"
+  | "차이를 다루는 방식"
+  | "만남의 분위기"
+  | "하고 싶은 활동"
+  | "피하고 싶은 활동"
   | "온도"
   | "결"
   | "톤"
@@ -42,6 +48,7 @@ export type ProfileQuestion = {
   options?: Array<string | QuestionOption>;
   maxSelections?: number;
   scaleLabel?: string;
+  prompt?: string;
   allowPrivate?: boolean;
   allowOther?: boolean;
 };

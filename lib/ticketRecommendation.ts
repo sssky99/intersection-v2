@@ -21,9 +21,8 @@ export type TicketRecommendationProfile = {
 
 type UserPreferences = {
   answers: Map<number, TicketRecommendationAnswer>;
-  roles: string[];
   ticketCategories: TicketCategory[];
-  romancePreference: number | null;
+  avoidedTicketCategories: TicketCategory[];
 };
 
 type RankedTicket = {
@@ -34,14 +33,9 @@ type RankedTicket = {
 };
 
 const MAX_RECOMMENDATIONS_PER_DATE = 5;
-const TICKET_CATEGORY_QUESTION_ORDER = 10;
+const TICKET_CATEGORY_QUESTION_ORDER = 17;
+const AVOIDED_TICKET_CATEGORY_QUESTION_ORDER = 18;
 const ticketCategoryPreferenceScores = [42, 30, 20] as const;
-
-const roleSignalKeywords: Record<string, string[]> = {
-  opener: ["대화", "아이스", "가벼", "친해", "활기"],
-  connector: ["대화", "공감", "편안", "질문"],
-  listener: ["차분", "편안", "소규모"],
-};
 
 function normalize(value: string) {
   return value
@@ -73,11 +67,6 @@ function answerValues(
   if (!answer) return [];
   if (answer.answer_values?.length) return answer.answer_values;
   return answer.answer_value ? [answer.answer_value] : [];
-}
-
-function ratingValue(value: string | undefined) {
-  const parsed = Number.parseInt(value ?? "", 10);
-  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 5 ? parsed : null;
 }
 
 function ticketScoreToInternal(value: number | null | undefined) {
@@ -123,10 +112,15 @@ function buildPreferences(
   rows: TicketRecommendationAnswer[],
 ): UserPreferences {
   const answers = new Map(rows.map((row) => [row.question_order, row]));
-  const roles = [5, 6, 7]
-    .flatMap((order) => answerValues(answers, order))
-    .filter((role, index, values) => values.indexOf(role) === index);
   const ticketCategories = answerValues(answers, TICKET_CATEGORY_QUESTION_ORDER)
+    .map(normalizeTicketCategory)
+    .filter((category): category is TicketCategory => Boolean(category))
+    .filter((category, index, values) => values.indexOf(category) === index)
+    .slice(0, 3);
+  const avoidedTicketCategories = answerValues(
+    answers,
+    AVOIDED_TICKET_CATEGORY_QUESTION_ORDER,
+  )
     .map(normalizeTicketCategory)
     .filter((category): category is TicketCategory => Boolean(category))
     .filter((category, index, values) => values.indexOf(category) === index)
@@ -134,9 +128,8 @@ function buildPreferences(
 
   return {
     answers,
-    roles,
     ticketCategories,
-    romancePreference: ratingValue(answerValues(answers, 8)[0]),
+    avoidedTicketCategories,
   };
 }
 
@@ -193,39 +186,35 @@ function vibeScore(
 function conditionScore(
   ticket: GatheringTicket,
   preferences: UserPreferences,
-  text: string,
 ) {
-  let score = 0;
-  const reasons: Array<{ text: string; weight: number }> = [];
+  const mainCategory = inferTicketCategory({
+    activityType: mainActivityType(ticket),
+    title: ticket.title,
+    moodTags: ticket.moodTags,
+    shortDescription: ticket.subtitle,
+  });
+  if (
+    mainCategory &&
+    preferences.avoidedTicketCategories.includes(mainCategory)
+  ) {
+    return { score: -120, reasons: [] };
+  }
 
-  const romance = ticket.vibeScores?.romance ?? null;
-  if (preferences.romancePreference != null && romance != null) {
-    const fit = 1 - Math.abs(preferences.romancePreference - romance) / 4;
-    score += fit * 11;
-    if (fit >= 0.75) {
-      reasons.push({
-        text: "기대하는 만남의 분위기와 잘 맞아요.",
-        weight: fit * 11,
+  const hasAvoidedAuxiliaryActivity = auxiliaryActivityTypes(ticket).some(
+    (activityType) => {
+      const category = inferTicketCategory({
+        activityType,
+        title: ticket.title,
+        moodTags: ticket.moodTags,
+        shortDescription: ticket.subtitle,
       });
-    }
-  }
-
-  const preferenceSignals = preferences.roles.flatMap(
-    (role) => roleSignalKeywords[role] ?? [],
+      return Boolean(
+        category && preferences.avoidedTicketCategories.includes(category),
+      );
+    },
   );
-  const matchedSignals = preferenceSignals.filter((keyword) =>
-    text.includes(normalize(keyword)),
-  );
-  if (matchedSignals.length > 0) {
-    const matchScore = Math.min(12, matchedSignals.length * 3);
-    score += matchScore;
-    reasons.push({
-      text: "편하게 느끼는 대화 분위기를 반영했어요.",
-      weight: matchScore,
-    });
-  }
 
-  return { score, reasons };
+  return { score: hasAvoidedAuxiliaryActivity ? -24 : 0, reasons: [] };
 }
 
 function categoryPreferenceScore(
@@ -280,7 +269,6 @@ function rankTicket(
   profile: TicketRecommendationProfile | null,
   preferences: UserPreferences,
 ): RankedTicket {
-  const text = normalize(ticketText(ticket));
   const signals = signalSet([
     mainActivityType(ticket),
     ticket.title,
@@ -293,7 +281,7 @@ function rankTicket(
   ]);
   const category = categoryPreferenceScore(ticket, preferences);
   const vibe = vibeScore(ticket, profile);
-  const conditions = conditionScore(ticket, preferences, text);
+  const conditions = conditionScore(ticket, preferences);
   const reasons = [
     category.reason ? { text: category.reason, weight: category.score } : null,
     vibe.reason ? { text: vibe.reason, weight: vibe.score } : null,

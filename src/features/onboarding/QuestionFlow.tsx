@@ -4,7 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { profileQuestions, questionCategories } from "@/data/profileQuestions";
+import {
+  conversationResults,
+  type ConversationResultCode,
+} from "@/data/conversationResults";
+import { profileQuestions } from "@/data/profileQuestions";
 import {
   identifyAnalyticsUser,
   trackEvent,
@@ -20,6 +24,86 @@ import type {
 
 type AnswerMap = Record<number, QuestionAnswer>;
 type QuestionFlowMode = "guest" | "onboarding" | "preview" | "regeneration";
+
+function conversationResultCode(answers: AnswerMap): ConversationResultCode {
+  const axes = [
+    { ids: [1, 2, 3, 4], left: "O", right: "I", tieBreaker: 2 },
+    { ids: [5, 6, 7, 8], left: "L", right: "Q", tieBreaker: 5 },
+    { ids: [9, 10, 11, 12], left: "H", right: "W", tieBreaker: 9 },
+    { ids: [13, 14, 15, 16], left: "C", right: "E", tieBreaker: 13 },
+  ] as const;
+
+  if (axes.some(({ ids }) => ids.some((id) => !answers[id]))) return "OQHC";
+
+  return axes
+    .map(({ ids, left, right, tieBreaker }) => {
+      const leftCount = ids.filter((id) => answers[id]?.value === left).length;
+      const rightCount = ids.length - leftCount;
+      if (leftCount === rightCount) {
+        return answers[tieBreaker]?.value === left ? left : right;
+      }
+      return leftCount > rightCount ? left : right;
+    })
+    .join("") as ConversationResultCode;
+}
+
+function resultExplanation(body: string) {
+  return (
+    body.match(/## 결과 해설\s*([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ??
+    body
+  );
+}
+
+function resultOverviewSummary(body: string) {
+  return body
+    .split("## 결과 해설")[0]
+    .replace("## 어떤 대화를 하는 사람인가?", "")
+    .trim()
+    .split(/\n\s*\n/)
+    .slice(0, 4)
+    .join(" ");
+}
+
+function FixedResultExplanation({ body }: { body: string }) {
+  return (
+    <div className="space-y-3">
+      {body.split(/\n\s*\n/).map((block, index) => {
+        const text = block.trim();
+        if (!text) return null;
+        if (text.startsWith("## ")) {
+          return (
+            <h2
+              key={`${index}-${text}`}
+              className="pb-1 pt-5 text-[19px] font-black tracking-[-0.04em] text-black/82 first:pt-0"
+            >
+              {text.slice(3)}
+            </h2>
+          );
+        }
+        if (text.startsWith("> ")) {
+          return (
+            <div
+              key={`${index}-${text}`}
+              className="rounded-[20px] border border-black/[0.07] bg-[#f7f7f5] px-4 py-4 text-[14px] font-semibold leading-6 tracking-[-0.02em] text-black/62"
+            >
+              {text.split("\n").map((line) => (
+                <p key={line}>{line.replace(/^>\s?/, "")}</p>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <p
+            key={`${index}-${text}`}
+            className="break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/58"
+          >
+            {text}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const AGE_RANGE_DEFAULT_YEARS = 4;
@@ -222,6 +306,84 @@ function initialIndexFromSearch(value: string | null, questionCount: number) {
   return parsed - 1;
 }
 
+function StarProgress({
+  completedParts,
+  currentPart,
+  large = false,
+  celebratePart,
+}: {
+  completedParts: number;
+  currentPart: number;
+  large?: boolean;
+  celebratePart?: number;
+}) {
+  const parts = [
+    "20,20 15.59,13.93 20,2 24.41,13.93",
+    "20,20 24.41,13.93 37.12,14.44 27.13,22.32",
+    "20,20 27.13,22.32 30.58,34.56 20,27.5",
+    "20,20 20,27.5 9.42,34.56 12.87,22.32",
+    "20,20 12.87,22.32 2.88,14.44 15.59,13.93",
+  ];
+  const outline =
+    "20,2 24.41,13.93 37.12,14.44 27.13,22.32 30.58,34.56 20,27.5 9.42,34.56 12.87,22.32 2.88,14.44 15.59,13.93";
+
+  return (
+    <motion.svg
+      viewBox="0 0 40 38"
+      className={large ? "h-28 w-28" : "h-8 w-9"}
+      aria-hidden
+      initial={large ? { opacity: 0, scale: 0.78, rotate: -5 } : false}
+      animate={
+        large
+          ? { opacity: 1, scale: [0.78, 1.08, 1], rotate: 0 }
+          : { scale: completedParts > 0 ? [1, 1.04, 1] : 1 }
+      }
+      transition={{ duration: large ? 0.7 : 0.35, ease: "easeOut" }}
+    >
+      {parts.map((points, index) => (
+        <motion.polygon
+          key={points}
+          points={points}
+          initial={
+            celebratePart === index
+              ? { fill: "#d5d5d0", stroke: "#d5d5d0" }
+              : false
+          }
+          animate={{
+            fill:
+              index < completedParts
+                ? "#121212"
+                : index === currentPart
+                  ? "#d5d5d0"
+                  : "#ecece8",
+            stroke:
+              index < completedParts
+                ? "#121212"
+                : index === currentPart
+                  ? "#d5d5d0"
+                  : "#ecece8",
+          }}
+          transition={{
+            duration: celebratePart === index ? 0.65 : 0.28,
+            delay: celebratePart === index ? 0.28 : 0,
+            ease: "easeOut",
+          }}
+          strokeWidth="0.7"
+          strokeLinejoin="round"
+        />
+      ))}
+      <polygon
+        points={outline}
+        fill="none"
+        stroke="#121212"
+        strokeOpacity="0.28"
+        strokeWidth="1.15"
+        strokeLinejoin="round"
+      />
+    </motion.svg>
+  );
+}
+
 export function QuestionFlow({
   userId,
   initialRows,
@@ -267,16 +429,43 @@ export function QuestionFlow({
     searchParams.get("start"),
     questions.length,
   );
+  const requestedResultCode = searchParams.get("result")?.toUpperCase();
+  const previewResultCode =
+    isPreview &&
+    requestedResultCode &&
+    requestedResultCode in conversationResults
+      ? (requestedResultCode as ConversationResultCode)
+      : null;
+  const previewResultAnswers = previewResultCode
+    ? (Object.fromEntries(
+        Array.from({ length: 16 }, (_, index) => {
+          const questionId = index + 1;
+          const axisIndex = Math.floor(index / 4);
+          return [
+            questionId,
+            { questionId, value: previewResultCode[axisIndex] },
+          ];
+        }),
+      ) as AnswerMap)
+    : null;
   const [questionIndex, setQuestionIndex] = useState(
-    isPreview
-      ? 0
-      : requestedStartIndex ??
-          (firstIncomplete === -1 ? questions.length - 1 : firstIncomplete),
+    requestedStartIndex ??
+      (isPreview
+        ? 0
+        : firstIncomplete === -1
+          ? questions.length - 1
+          : firstIncomplete),
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [milestone, setMilestone] = useState<number | null>(null);
+  const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(
+    previewResultAnswers,
+  );
+  const [showResultDetails, setShowResultDetails] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const milestoneAnswersRef = useRef<AnswerMap | null>(null);
   const savingRef = useRef(false);
   const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
@@ -473,22 +662,24 @@ export function QuestionFlow({
   };
 
   const moveToNext = async (nextAnswers: AnswerMap) => {
-    if (isPreview) {
-      if (questionIndex >= questions.length - 1) {
-        onPreviewComplete?.();
-        return;
-      }
-
-      setQuestionIndex((current) => Math.min(questions.length - 1, current + 1));
-      return;
-    }
-
     if (questionIndex >= questions.length - 1) {
-      await completeOrMoveNext(nextAnswers);
+      setResultAnswers(nextAnswers);
+      if (isPreview) onPreviewComplete?.();
       return;
     }
 
     setQuestionIndex((current) => Math.min(questions.length - 1, current + 1));
+  };
+
+  const showMilestoneOrMoveNext = async (nextAnswers: AnswerMap) => {
+    const completedQuestionCount = questionIndex + 1;
+    if (completedQuestionCount % 4 === 0) {
+      milestoneAnswersRef.current = nextAnswers;
+      setMilestone(completedQuestionCount / 4);
+      return;
+    }
+
+    await moveToNext(nextAnswers);
   };
 
   const updateLocalAnswer = (nextAnswer: QuestionAnswer) => {
@@ -507,7 +698,7 @@ export function QuestionFlow({
 
     autoAdvanceTimerRef.current = window.setTimeout(() => {
       autoAdvanceTimerRef.current = null;
-      void moveToNext(nextAnswers).finally(() => {
+      void showMilestoneOrMoveNext(nextAnswers).finally(() => {
         if (!completionSubmittedRef.current) endSaving();
       });
     }, delayMs);
@@ -577,6 +768,24 @@ export function QuestionFlow({
         )
         .map(optionValue) ?? [];
 
+    const pairedQuestionId = question.id === 17 ? 18 : question.id === 18 ? 17 : null;
+    const pairedValues = pairedQuestionId
+      ? answers[pairedQuestionId]?.value
+      : undefined;
+    if (
+      !selectedOption?.exclusive &&
+      Array.isArray(pairedValues) &&
+      pairedValues.includes(value) &&
+      !selectedValues.includes(value)
+    ) {
+      setError(
+        question.id === 17
+          ? "피하고 싶은 활동으로도 선택한 항목이에요. 한쪽 선택을 먼저 해제해주세요."
+          : "하고 싶은 활동으로도 선택한 항목이에요. 한쪽 선택을 먼저 해제해주세요.",
+      );
+      return;
+    }
+
     let nextValues: string[];
     if (selectedOption?.exclusive) {
       nextValues = [value];
@@ -628,7 +837,7 @@ export function QuestionFlow({
     if (isGuest) {
       trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
-      await moveToNext(nextAnswers);
+      await showMilestoneOrMoveNext(nextAnswers);
       endSaving();
       return;
     }
@@ -637,7 +846,7 @@ export function QuestionFlow({
       await saveAnswer(question, answerToContinue);
       trackQuestionAnswered(question);
       trackQuestionMilestones(nextAnswers);
-      await moveToNext(nextAnswers);
+      await showMilestoneOrMoveNext(nextAnswers);
     } catch (saveError) {
       console.error("Failed to save onboarding answer:", saveError);
       setError("답변 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -646,203 +855,299 @@ export function QuestionFlow({
     }
   };
 
-  const categoryLabel =
-    questionCategories.find((category) => category.key === question.category)
-      ?.label ?? question.category;
+  const isConversationQuestion = (question.order ?? question.id) <= 16;
+  const completedStarParts = Math.min(5, Math.floor(questionIndex / 4));
+  const currentStarPart = Math.min(4, Math.floor(questionIndex / 4));
+  const milestoneMessages = [
+    {
+      title: "좋아요, 잘 진행하고 있어요.",
+      body: "첫 번째 별 조각이 채워졌어요.\n지금처럼 평소의 모습에 가까운 쪽을 골라주세요.",
+    },
+    {
+      title: "좋은 흐름이에요.",
+      body: "당신이 대화를 이어가는 방식이\n조금씩 선명해지고 있어요.",
+    },
+    {
+      title: "어느새 절반을 넘었어요.",
+      body: "답변이 차곡차곡 모이고 있어요.\n조금만 더 당신의 이야기를 들려주세요.",
+    },
+    {
+      title: "이제 거의 다 왔어요.",
+      body: "마지막으로 좋아하는 활동과\n요즘의 이야기를 들려주세요.",
+    },
+    {
+      title: "별이 모두 완성됐어요.",
+      body: "답변을 바탕으로 당신의 대화 결과를\n차분히 정리해볼게요.",
+    },
+  ] as const;
+
+  if (resultAnswers) {
+    const resultCode = conversationResultCode(resultAnswers);
+    const result = conversationResults[resultCode];
+    const resultAxes = [
+      resultCode[0] === "O" ? "천천히 살피는 시작" : "먼저 여는 시작",
+      resultCode[1] === "L" ? "들으며 잇는 대화" : "질문으로 여는 대화",
+      resultCode[2] === "H" ? "조화를 찾는 관점" : "차이를 탐색하는 관점",
+      resultCode[3] === "C" ? "편안한 만남" : "새로운 발견이 있는 만남",
+    ];
+
+    return (
+      <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-[calc(120px+env(safe-area-inset-bottom))] pt-[calc(54px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="relative z-10 flex flex-1 flex-col"
+        >
+          <div className="flex justify-center">
+            <StarProgress completedParts={5} currentPart={-1} large />
+          </div>
+          <p className="mt-8 text-center text-[12px] font-bold tracking-[-0.01em] text-black/38">
+            나의 대화 결과 · {resultCode}
+          </p>
+          <h1 className="mt-3 text-center text-[30px] font-black tracking-[-0.055em] text-black/88">
+            {result.title}
+          </h1>
+          <p className="mx-auto mt-3 max-w-[300px] break-keep text-center text-[15px] font-semibold leading-6 tracking-[-0.025em] text-black/48">
+            {result.subtitle}
+          </p>
+
+          <div className="mt-9 rounded-[26px] border border-black/[0.08] bg-white/70 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.06)] backdrop-blur-sm">
+            <div className="flex flex-wrap gap-2">
+              {resultAxes.map((axis) => (
+                <span
+                  key={axis}
+                  className="rounded-full border border-black/[0.07] bg-[#f7f7f5] px-3 py-2 text-[11px] font-bold tracking-[-0.02em] text-black/52"
+                >
+                  {axis}
+                </span>
+              ))}
+            </div>
+            <p className="mt-5 break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/62">
+              {resultOverviewSummary(result.body)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            aria-expanded={showResultDetails}
+            onClick={() => setShowResultDetails((current) => !current)}
+            className="mt-4 flex h-13 w-full items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white/55 px-5 py-4 text-[14px] font-extrabold text-black/64 transition hover:border-black/20"
+          >
+            {showResultDetails ? "결과 해설 접기" : "내 결과 자세히 보기"}
+            <ChevronRight
+              size={16}
+              aria-hidden
+              className={`transition-transform ${showResultDetails ? "rotate-90" : ""}`}
+            />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {showResultDetails && (
+              <motion.article
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.38, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 rounded-[26px] border border-black/[0.08] bg-white/72 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.05)] backdrop-blur-sm">
+                  <h2 className="mb-4 text-[19px] font-black tracking-[-0.04em] text-black/82">
+                    결과 해설
+                  </h2>
+                  <FixedResultExplanation
+                    body={resultExplanation(result.body)}
+                  />
+                </div>
+              </motion.article>
+            )}
+          </AnimatePresence>
+
+        </motion.div>
+        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/98 to-transparent px-6 pb-[max(18px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
+          {error && (
+            <p className="mb-2 text-center text-[12px] font-semibold text-red-600">
+              {error}
+            </p>
+          )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              if (isPreview) {
+                router.push("/onboarding/profile");
+                return;
+              }
+              if (!beginSaving()) return;
+              setError(null);
+              void completeOrMoveNext(resultAnswers)
+                .catch((completionError) => {
+                  console.error(
+                    "Failed to complete profile questions:",
+                    completionError,
+                  );
+                  setError(
+                    "답변 완료 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+                  );
+                })
+                .finally(() => {
+                  if (!completionSubmittedRef.current) endSaving();
+                });
+            }}
+            className="flex h-14 w-full items-center justify-center rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98] disabled:opacity-45"
+          >
+            {saving ? "프로필로 이동하는 중..." : "프로필 작성하기"}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (milestone !== null) {
+    const message = milestoneMessages[milestone - 1];
+    const isLastMilestone = milestone === 5;
+
+    return (
+      <section className="relative flex min-h-dvh flex-col overflow-hidden bg-[#f7f7f5] px-6 pb-[calc(18px+env(safe-area-inset-bottom))] pt-[calc(18px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center text-center">
+          <StarProgress
+            completedParts={milestone}
+            currentPart={-1}
+            large
+            celebratePart={milestone - 1}
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.42, duration: 0.42, ease: "easeOut" }}
+            className="mt-10"
+          >
+            <p className="text-[12px] font-bold text-black/35">
+              {milestone * 4} / {questions.length}
+            </p>
+            <h1 className="mt-3 break-keep text-[25px] font-black leading-[1.25] tracking-[-0.055em] text-black/86">
+              {message.title}
+            </h1>
+            <p className="mt-4 whitespace-pre-line break-keep text-[14px] font-semibold leading-6 tracking-[-0.02em] text-black/48">
+              {message.body}
+            </p>
+          </motion.div>
+        </div>
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.58, duration: 0.35 }}
+          onClick={() => {
+            const nextAnswers = milestoneAnswersRef.current ?? answers;
+            setMilestone(null);
+            void moveToNext(nextAnswers);
+          }}
+          className="relative z-10 flex h-14 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98]"
+        >
+          {isLastMilestone ? "결과 확인하기" : "계속하기"}
+          <ChevronRight size={17} aria-hidden />
+        </motion.button>
+      </section>
+    );
+  }
 
   return (
-    <section className="relative flex min-h-dvh flex-col px-5 pb-5 pt-7 md:min-h-[calc(100dvh-32px)]">
+    <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+      <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+      <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+      <header className="relative z-10 shrink-0">
+        <div className="grid grid-cols-[42px_1fr_42px] items-center">
+          <button
+            type="button"
+            aria-label="이전 질문"
+            disabled={questionIndex === 0 || saving}
+            onClick={() => {
+              setError(null);
+              setQuestionIndex((current) => Math.max(0, current - 1));
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-black/55 transition hover:bg-black/[0.04] disabled:opacity-0"
+          >
+            <ChevronLeft size={18} aria-hidden />
+          </button>
+          <div className="flex items-center justify-center gap-2">
+            <StarProgress
+              completedParts={completedStarParts}
+              currentPart={currentStarPart}
+            />
+            <span className="text-[13px] font-bold tabular-nums text-black/45">
+              {questionIndex + 1} / {questions.length}
+            </span>
+          </div>
+          <div />
+        </div>
+        <p className="mt-1 text-center text-[11px] font-semibold tracking-[-0.01em] text-black/38">
+          {isConversationQuestion
+            ? "평소의 나에게 더 가까운 쪽을 골라주세요."
+            : "솔직하게 답할수록 더 편안한 자리를 준비할 수 있어요."}
+        </p>
+        <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-black/[0.07]">
+          <motion.div
+            className="h-full rounded-full bg-black/70"
+            initial={false}
+            animate={{ width: `${progressPercent}%` }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+          />
+        </div>
+      </header>
+
       <AnimatePresence mode="wait">
         <motion.div
           key={question.id}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -10 }}
+          transition={{ duration: 0.24, ease: "easeOut" }}
+          className="relative z-10 flex flex-1 flex-col"
         >
-          <div className="mb-5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                질문 진행도 {questionIndex + 1}/{questions.length}
-              </span>
-              <span className="text-[10px] font-semibold text-black/35">
-                {Math.round(progressPercent)}%
-              </span>
-            </div>
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-black/5">
-              <motion.div
-                className="h-full rounded-full bg-accent"
-                initial={false}
-                animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
-              {categoryLabel}
-            </span>
-            <h1 className="mt-2 whitespace-pre-line text-xl font-bold leading-8 tracking-tight text-black">
+          <div className={cn("text-center", isConversationQuestion ? "mt-[12vh]" : "mt-10")}>
+            <h1 className="mx-auto max-w-[350px] whitespace-pre-line break-keep text-[25px] font-black leading-[1.34] tracking-[-0.055em] text-black/86">
               {question.question}
             </h1>
-            {question.scaleLabel && !usesNumericScale && (
-              <p className="mt-2 text-[11px] font-semibold text-black/35">
-                {question.scaleLabel}
+            {question.prompt && (
+              <p className="mx-auto mt-3 max-w-[330px] whitespace-pre-line text-[13px] font-semibold leading-5 text-black/42">
+                {question.prompt}
               </p>
             )}
             {question.description && (
-              <p className="mt-2 whitespace-pre-line text-xs leading-5 text-black/45">
+              <p className="mx-auto mt-3 max-w-[340px] whitespace-pre-line break-keep text-[13px] font-semibold leading-6 text-black/45">
                 {question.description}
               </p>
             )}
           </div>
 
-          {question.type === "single_choice" && usesNumericScale && (
-            <div className="space-y-2">
-              {scaleOptions.map((option) => {
+          {question.type === "single_choice" && (
+            <div className="my-auto space-y-4 pb-10 pt-10">
+              {(question.options ?? []).map((option, index) => {
                 const value = optionValue(option);
                 const selected = answer?.value === value;
-
                 return (
                   <motion.button
                     key={value}
                     type="button"
-                    whileTap={!saving ? { scale: 0.98 } : undefined}
-                    disabled={saving}
-                    onClick={() => void selectSingle(value)}
-                    aria-label={
-                      hideNumericScaleValues
-                        ? optionLabel(option)
-                        : `${value}. ${optionLabel(option)}`
-                    }
-                    className={cn(
-                      "flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all disabled:cursor-wait",
-                      selected
-                        ? "border-black bg-black text-white shadow-sm"
-                        : "border-black/10 bg-white text-black/70 hover:border-black/20",
-                    )}
-                  >
-                    {!hideNumericScaleValues && (
-                      <span className="shrink-0 text-xs font-extrabold tabular-nums opacity-55">
-                        {value}.
-                      </span>
-                    )}
-                    <span className="flex-1">{optionLabel(option)}</span>
-                    {selected && <Check size={16} aria-hidden />}
-                  </motion.button>
-                );
-              })}
-            </div>
-          )}
-
-          {question.type === "single_choice" && isAgeRange && (
-            <div className="rounded-[28px] border border-black/10 bg-white px-5 py-7 shadow-[0_18px_46px_rgba(0,0,0,0.045)]">
-              <div className="mx-auto flex min-h-[154px] max-w-[300px] flex-col justify-center rounded-[26px] border border-black/10 bg-[#f8f8f5] px-5 py-6 text-center shadow-[0_16px_38px_rgba(0,0,0,0.045)]">
-                <p className="whitespace-pre-line text-[22px] font-extrabold leading-[1.34] tracking-[-0.035em] text-black">
-                  아래로 {ageRangeYears.down}살{"\n"}
-                  위로 {ageRangeYears.up}살{"\n"}
-                  까지 가능해요.
-                </p>
-              </div>
-
-              <div className="mt-8">
-                <div className="flex items-center justify-between px-1 text-[12px] font-black text-accent">
-                  <span>아래로</span>
-                  <span>위로</span>
-                </div>
-              </div>
-
-              <div className="relative mt-3 min-h-[86px] px-1 pt-8">
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-x-1 top-[35px] h-2 rounded-full bg-black/[0.07]"
-                />
-                <div
-                  aria-hidden="true"
-                  className="absolute top-[35px] h-2 rounded-full bg-accent"
-                  style={{
-                    left: `${ageRangeDownPercent}%`,
-                    width: `${ageRangeUpPercent - ageRangeDownPercent}%`,
-                  }}
-                />
-                {ageRangeTickMarks.map((tick) => {
-                  const percent = (tick.value / AGE_RANGE_TRACK_MAX) * 100;
-
-                  return (
-                    <span
-                      key={`${tick.value}-${tick.label}`}
-                      aria-hidden="true"
-                      className="absolute top-[31px] flex -translate-x-1/2 flex-col items-center gap-2 text-[10px] font-black tabular-nums text-black/38"
-                      style={{ left: `${percent}%` }}
-                    >
-                      <span className="h-4 w-px bg-black/12" />
-                      <span>{tick.label}</span>
-                    </span>
-                  );
-                })}
-                <input
-                  type="range"
-                  min={0}
-                  max={AGE_RANGE_TRACK_MAX}
-                  step={1}
-                  value={ageRangeDownTrackValue}
-                  disabled={saving}
-                  aria-label={`아래로 ${ageRangeYears.down}살까지 허용`}
-                  onChange={(event) => {
-                    const trackValue = clamp(
-                      Number(event.currentTarget.value),
-                      0,
-                      AGE_RANGE_MAX_YEARS - AGE_RANGE_MIN_YEARS,
-                    );
-                    selectAgeRange("down", AGE_RANGE_MAX_YEARS - trackValue);
-                  }}
-                  className="pointer-events-none absolute inset-x-0 top-[25px] z-20 h-7 w-full appearance-none bg-transparent outline-none disabled:opacity-60 [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)]"
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={AGE_RANGE_TRACK_MAX}
-                  step={1}
-                  value={ageRangeUpTrackValue}
-                  disabled={saving}
-                  aria-label={`위로 ${ageRangeYears.up}살까지 허용`}
-                  onChange={(event) => {
-                    const trackValue = clamp(
-                      Number(event.currentTarget.value),
-                      AGE_RANGE_MAX_YEARS + AGE_RANGE_MIN_YEARS,
-                      AGE_RANGE_TRACK_MAX,
-                    );
-                    selectAgeRange("up", trackValue - AGE_RANGE_MAX_YEARS);
-                  }}
-                  className="pointer-events-none absolute inset-x-0 top-[25px] z-30 h-7 w-full appearance-none bg-transparent outline-none disabled:opacity-60 [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-black [&::-moz-range-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)] [&::-moz-range-track]:h-2 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-black [&::-webkit-slider-thumb]:shadow-[0_5px_14px_rgba(0,0,0,0.2)]"
-                />
-              </div>
-            </div>
-          )}
-
-          {question.type === "single_choice" && !usesNumericScale && !isAgeRange && (
-            <div className="space-y-2">
-              {(question.options ?? []).map((option) => {
-                const value = optionValue(option);
-                const selected = answer?.value === value;
-
-                return (
-                  <motion.button
-                    key={value}
-                    type="button"
-                    whileTap={{ scale: 0.98 }}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.08 + index * 0.07 }}
+                    whileTap={!saving ? { scale: 0.985 } : undefined}
                     disabled={saving}
                     onClick={() => void selectSingle(value)}
                     className={cn(
-                      "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all disabled:cursor-wait",
+                      "flex min-h-[84px] w-full items-center justify-center rounded-[24px] border px-5 py-4 text-center text-[14px] font-semibold leading-[1.55] tracking-[-0.02em] backdrop-blur transition disabled:cursor-wait",
                       selected
-                        ? "border-black bg-black text-white shadow-sm"
-                        : "border-black/10 bg-white text-black/70 hover:border-black/20",
+                        ? "border-black bg-black font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)]"
+                        : "border-black/[0.07] bg-white/68 text-black/68 shadow-[0_12px_35px_rgba(18,18,18,0.045)] hover:border-black/15",
                     )}
                   >
-                    <span className="flex-1">{optionLabel(option)}</span>
-                    {selected && <Check size={16} aria-hidden />}
+                    <span className="max-w-[310px]">{optionLabel(option)}</span>
                   </motion.button>
                 );
               })}
@@ -850,59 +1155,41 @@ export function QuestionFlow({
           )}
 
           {question.type === "multi_choice" && (
-            <div className="space-y-3">
-              <div className="space-y-2">
-                {(question.options ?? []).map((option) => {
-                  const value = optionValue(option);
-                  const priorityIndex = selectedValues.indexOf(value);
-                  const selected = priorityIndex !== -1;
-
-                  return (
-                    <motion.button
-                      key={value}
-                      type="button"
-                      whileTap={{ scale: 0.96 }}
-                      onClick={() => toggleMultiple(value)}
-                      className={cn(
-                        "flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm font-semibold leading-5 transition-all",
-                        selected
-                          ? "border-black bg-black text-white shadow-sm"
-                          : "border-black/10 bg-white text-black/70 hover:border-black/20",
-                      )}
-                    >
-                      <span>{optionLabel(option)}</span>
-                      {selected ? (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/14 px-2 py-1 text-[10px] font-black text-current">
-                          {priorityIndex + 1}순위
-                          <Check size={12} aria-hidden />
-                        </span>
-                      ) : null}
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              {selectedValues.some(
-                (value) => optionMeta(question, value)?.hasTextInput,
-              ) && (
-                <input
-                  value={answer?.otherText ?? ""}
-                  placeholder="직접 입력해주세요."
-                  onChange={(event) =>
-                    updateLocalAnswer({
-                      questionId: question.id,
-                      value: selectedValues,
-                      otherText: event.target.value,
-                    })
-                  }
-                  className="h-11 w-full rounded-xl border border-black/10 bg-white px-3.5 text-xs outline-none focus:border-accent"
-                />
-              )}
+            <div className="mt-8 grid grid-cols-2 gap-3 pb-24">
+              {(question.options ?? []).map((option) => {
+                const value = optionValue(option);
+                const priorityIndex = selectedValues.indexOf(value);
+                const selected = priorityIndex !== -1;
+                const exclusive = optionMeta(question, value)?.exclusive;
+                return (
+                  <motion.button
+                    key={value}
+                    type="button"
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => toggleMultiple(value)}
+                    className={cn(
+                      "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center text-[13px] font-bold leading-5 backdrop-blur transition",
+                      exclusive && "col-span-2 min-h-[58px]",
+                      selected
+                        ? "border-black bg-black font-extrabold text-white shadow-[0_14px_32px_rgba(18,18,18,0.14)]"
+                        : "border-black/[0.07] bg-white/65 text-black/65 shadow-[0_10px_28px_rgba(18,18,18,0.04)]",
+                    )}
+                  >
+                    {optionLabel(option)}
+                    {selected && !exclusive && (
+                      <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/18 px-1 text-[9px] font-black text-white">
+                        {priorityIndex + 1}
+                      </span>
+                    )}
+                    {selected && exclusive && <Check className="ml-2" size={15} />}
+                  </motion.button>
+                );
+              })}
             </div>
           )}
 
           {question.type === "text" && (
-            <div>
+            <div className="mt-8 pb-24">
               <textarea
                 value={typeof answer?.value === "string" ? answer.value : ""}
                 placeholder={question.placeholder ?? "편하게 적어주세요."}
@@ -913,80 +1200,35 @@ export function QuestionFlow({
                     value: event.target.value,
                   })
                 }
-                className="min-h-[210px] w-full resize-none rounded-[18px] border border-black/10 bg-white px-4 py-3 text-sm leading-6 outline-none placeholder:text-black/25 focus:border-accent"
+                className="min-h-[210px] w-full resize-none rounded-[28px] border border-black/[0.07] bg-white/68 px-5 py-5 text-[14px] font-medium leading-6 text-black/75 shadow-[0_18px_50px_rgba(18,18,18,0.055)] backdrop-blur outline-none placeholder:text-black/28 focus:border-black/20"
               />
-              <p className="mt-2 text-right text-[10px] font-semibold text-black/32">
+              <p className="mt-2 pr-1 text-right text-[10px] font-semibold text-black/30">
                 {typeof answer?.value === "string" ? answer.value.length : 0}/300
               </p>
-              {question.examples && question.examples.length > 0 && (
-                <div className="mt-5 border border-[#eadfc8] bg-[#fff8ea] shadow-[4px_4px_0_rgba(0,0,0,0.035)]">
-                  {question.examples.map((example) => {
-                    const exampleText = example.replace(/^예:\s*/, "");
-
-                    return (
-                      <div
-                        key={example}
-                        className="grid grid-cols-[18px_1fr] gap-2 border-b border-[#eadfc8]/70 px-3 py-2.5 text-[11px] font-semibold leading-5 text-black/52 last:border-b-0"
-                      >
-                        <span className="pt-px text-[12px]" aria-hidden>
-                          📌
-                        </span>
-                        <p>{exampleText}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
         </motion.div>
       </AnimatePresence>
 
       {error && (
-        <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+        <p className="fixed bottom-24 left-1/2 z-20 w-[calc(100%-48px)] max-w-[382px] -translate-x-1/2 rounded-2xl bg-black px-4 py-3 text-center text-xs font-semibold leading-5 text-white shadow-lg">
           {error}
         </p>
       )}
 
-      <div className="sticky bottom-0 mt-auto flex items-center justify-between bg-white/95 pb-[calc(4px+env(safe-area-inset-bottom))] pt-5 backdrop-blur">
-        <button
-          type="button"
-          aria-label="이전 질문"
-          disabled={questionIndex === 0 || saving}
-          onClick={() => {
-            setError(null);
-            setQuestionIndex((current) => Math.max(0, current - 1));
-          }}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-black/55 disabled:text-black/15"
-        >
-          <ChevronLeft size={19} aria-hidden />
-        </button>
-
-        {(question.type === "multi_choice" || question.type === "text" || isAgeRange) && (
+      {question.type !== "single_choice" && (
+        <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
           <button
             type="button"
-            aria-label={saving ? "답변 저장 중" : "다음 질문"}
             disabled={!canContinue || saving}
             onClick={() => void continueQuestion()}
-            className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-full transition",
-              canContinue && !saving
-                ? "text-black/60 hover:text-black"
-                : "text-black/18",
-            )}
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98] disabled:bg-black/10 disabled:text-black/30 disabled:shadow-none"
           >
-            <ChevronRight
-              size={20}
-              aria-hidden
-              className={saving ? "animate-pulse" : ""}
-            />
+            {saving ? "답변을 저장하고 있어요" : questionIndex === questions.length - 1 ? "결과 확인하기" : "다음"}
+            {!saving && <ChevronRight size={17} aria-hidden />}
           </button>
-        )}
-
-        {question.type !== "multi_choice" && question.type !== "text" && !isAgeRange && (
-          <div className="h-11 w-11" />
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
