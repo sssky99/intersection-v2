@@ -1510,7 +1510,7 @@ function MeetingDateApplicationFlow({
   }, [applications, onDateApplicationsChange]);
 
   const toggleDate = (date: string) => {
-    if (date <= today || applicationByDate.has(date) || saving) return;
+    if (date < today || applicationByDate.has(date) || saving) return;
     setSelectedDates((current) => (current.includes(date) ? [] : [date]));
     setError(null);
   };
@@ -1744,7 +1744,7 @@ function MeetingDateApplicationFlow({
                     date.date,
                     today,
                   )}
-                  closed={date.date <= today}
+                  closed={date.date < today}
                   disabled={saving}
                   onToggle={() => toggleDate(date.date)}
                 />

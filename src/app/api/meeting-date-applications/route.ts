@@ -54,7 +54,7 @@ function requestedDates(value: unknown) {
 
   const today = todayInKst();
   const selectableDates = new Set(
-    meetingDateApplicationDates(today).filter((date) => date > today),
+    meetingDateApplicationDates(today).filter((date) => date >= today),
   );
 
   return Array.from(
