@@ -72,8 +72,7 @@ const ticketDatesCacheTtlMs = 30_000;
 const noShowDepositBankName = "카카오뱅크";
 const noShowDepositAccountNumber = "7942-26-95406";
 const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
-const meetingApplicationStoreUrl =
-  "https://smartstore.naver.com/intersection_blinddate/products/13622643532";
+const meetingApplicationPaymentUrl = "https://www.groble.im/payment/PeXqpV";
 const kakaoDepositMessageChatUrl = "http://pf.kakao.com/_xnweQn/chat";
 const depositMessageSummaryStorageKey =
   "intersection:deposit-message-summary";
@@ -1567,7 +1566,7 @@ function MeetingDateApplicationFlow({
         return nextApplications;
       });
       if (openStoreAfterSave) {
-        window.location.assign(meetingApplicationStoreUrl);
+        window.location.assign(meetingApplicationPaymentUrl);
         return;
       }
       setSubmittedDates(targetDates);
@@ -1619,7 +1618,7 @@ function MeetingDateApplicationFlow({
         deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       });
       if (openStoreAfterSave) {
-        window.location.assign(meetingApplicationStoreUrl);
+        window.location.assign(meetingApplicationPaymentUrl);
         return;
       }
       setSubmittedDates(targetDates);
