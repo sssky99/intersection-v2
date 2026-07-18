@@ -9,6 +9,7 @@ type AnalyticsParams = Record<
 type ClarityFn = ((...args: unknown[]) => void) & { q?: unknown[][] };
 
 const anonymousSessionStorageKey = "intersection_anonymous_session_id";
+const acquisitionStorageKey = "intersection_acquisition_context";
 
 const supabaseEventNameAliases: Record<string, string> = {
   kakao_start_click: "kakao_login_click",
@@ -75,6 +76,44 @@ function supabaseEventName(eventName: string) {
 function applicationIdFromPayload(payload: Record<string, AnalyticsParamValue>) {
   const value = payload.application_id ?? payload.applicationId;
   return typeof value === "string" ? value : undefined;
+}
+
+function acquisitionContext() {
+  const url = new URL(window.location.href);
+  const current = {
+    utm_source: url.searchParams.get("utm_source") ?? "",
+    utm_medium: url.searchParams.get("utm_medium") ?? "",
+    utm_campaign: url.searchParams.get("utm_campaign") ?? "",
+    utm_content: url.searchParams.get("utm_content") ?? "",
+    fbclid: url.searchParams.get("fbclid") ?? "",
+    initial_referrer: document.referrer || "",
+    landing_path: `${url.pathname}${url.search}`,
+  };
+  const hasCampaignMarker = Boolean(
+    current.utm_source ||
+      current.utm_medium ||
+      current.utm_campaign ||
+      current.utm_content ||
+      current.fbclid,
+  );
+
+  try {
+    if (hasCampaignMarker) {
+      window.localStorage.setItem(acquisitionStorageKey, JSON.stringify(current));
+      return current;
+    }
+    const stored = window.localStorage.getItem(acquisitionStorageKey);
+    if (stored) {
+      const parsed = JSON.parse(stored) as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+    }
+    window.localStorage.setItem(acquisitionStorageKey, JSON.stringify(current));
+  } catch {
+    // Attribution must never interrupt the user flow.
+  }
+  return current;
 }
 
 function isLocalHostname(hostname: string) {
@@ -174,10 +213,13 @@ function trackSupabaseEvent(
     eventName: normalizedEventName,
     path: window.location.pathname,
     referrer: document.referrer || null,
-    metadata:
-      normalizedEventName === eventName
-        ? payload
-        : { ...payload, original_event_name: eventName },
+    metadata: {
+      ...payload,
+      ...acquisitionContext(),
+      ...(normalizedEventName === eventName
+        ? {}
+        : { original_event_name: eventName }),
+    },
   });
 
   if (navigator.sendBeacon) {

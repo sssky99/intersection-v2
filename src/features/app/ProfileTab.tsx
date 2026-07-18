@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  ChevronRight,
   ExternalLink,
   Gift,
   Info,
@@ -29,6 +30,44 @@ import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
 
 type AnswerMap = Record<number, QuestionAnswer>;
+
+function conversationResultExplanation(body: string) {
+  return (
+    body.match(/## 결과 해설\s*([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ??
+    body
+  );
+}
+
+function ConversationResultExplanation({ body }: { body: string }) {
+  return (
+    <div className="space-y-3">
+      {body.split(/\n\s*\n/).map((block, index) => {
+        const text = block.trim();
+        if (!text) return null;
+        if (text.startsWith("> ")) {
+          return (
+            <div
+              key={`${index}-${text}`}
+              className="rounded-[20px] border border-black/[0.07] bg-[#f7f7f5] px-4 py-4 text-[14px] font-semibold leading-6 tracking-[-0.02em] text-black/62"
+            >
+              {text.split("\n").map((line) => (
+                <p key={line}>{line.replace(/^>\s?/, "")}</p>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <p
+            key={`${index}-${text}`}
+            className="break-keep text-[14px] font-medium leading-6 tracking-[-0.02em] text-black/58"
+          >
+            {text}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 const profileVibeAxes = [
   "temperature",
@@ -539,9 +578,9 @@ export function ProfileTab({
   loggingOut,
   logoutError,
   onOpenQuestionReview,
-  onOpenProfileCompletionReplay,
   onRequestProfileRegeneration,
   onLogout,
+  legacyResultPreview = false,
   operatorConversationPreview = false,
 }: {
   profile: ProfileRow;
@@ -551,25 +590,29 @@ export function ProfileTab({
   loggingOut: boolean;
   logoutError: string | null;
   onOpenQuestionReview: () => void;
-  onOpenProfileCompletionReplay: () => void;
   onRequestProfileRegeneration: () => void;
   onLogout: () => Promise<void>;
+  legacyResultPreview?: boolean;
   operatorConversationPreview?: boolean;
 }) {
   const publicIntro = profile.public_intro?.trim();
+  const [showConversationDetails, setShowConversationDetails] = useState(false);
   const storedConversationCode = useMemo(
     () => resolvedConversationResultCode(profile, answers),
     [answers, profile],
   );
   const usesNewConversationProfile =
     operatorConversationPreview ||
-    (profile.conversation_result_version === "v1" &&
-      Boolean(storedConversationCode));
+    Boolean(storedConversationCode);
   const conversationCode =
     storedConversationCode ?? (operatorConversationPreview ? "OLHC" : null);
   const conversationResult = conversationCode
     ? conversationResults[conversationCode]
     : null;
+  const showRenewedQuestionsNotice =
+    legacyResultPreview ||
+    profile.conversation_result_source === "legacy_inferred" ||
+    profile.conversation_result_version === "legacy-inferred-v1";
   const matchingPrecisionCount = profileMatchingPrecisionCount(
     profile,
     participationCount,
@@ -592,6 +635,7 @@ export function ProfileTab({
         </header>
 
         {usesNewConversationProfile && conversationResult && conversationCode ? (
+          <>
           <section className="mt-7 rounded-[24px] border border-black/[0.08] bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
             <div className="grid grid-cols-[168px_minmax(0,1fr)] items-center gap-2">
               <div className="flex h-[298px] items-center justify-center overflow-hidden">
@@ -622,6 +666,40 @@ export function ProfileTab({
               {conversationResultOverview(conversationResult.body)}
             </p>
           </section>
+          <button
+            type="button"
+            aria-expanded={showConversationDetails}
+            onClick={() => setShowConversationDetails((current) => !current)}
+            className="mt-4 flex h-13 w-full items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white/55 px-5 py-4 text-[14px] font-extrabold text-black/64 transition hover:border-black/20"
+          >
+            {showConversationDetails ? "결과 해설 접기" : "내 결과 자세히 보기"}
+            <ChevronRight
+              size={16}
+              aria-hidden
+              className={`transition-transform ${showConversationDetails ? "rotate-90" : ""}`}
+            />
+          </button>
+          <AnimatePresence initial={false}>
+            {showConversationDetails && (
+              <motion.article
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.38, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="mt-4 rounded-[26px] border border-black/[0.08] bg-white/72 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.05)] backdrop-blur-sm">
+                  <h2 className="mb-4 text-[19px] font-black tracking-[-0.04em] text-black/82">
+                    결과 해설
+                  </h2>
+                  <ConversationResultExplanation
+                    body={conversationResultExplanation(conversationResult.body)}
+                  />
+                </div>
+              </motion.article>
+            )}
+          </AnimatePresence>
+          </>
         ) : (
           <section className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
             <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
@@ -636,6 +714,31 @@ export function ProfileTab({
             <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">
               {publicIntro ?? "아직 소개가 준비 중이에요."}
             </p>
+          </section>
+        )}
+
+        {showRenewedQuestionsNotice && conversationResult && (
+          <section className="mt-3 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
+                <Sparkles size={17} aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-black text-black/78">
+                  프로필 질문이 새로워졌어요
+                </p>
+                <p className="mt-1 break-keep text-xs font-semibold leading-5 text-black/48">
+                  새 질문에 답하면 내 대화 스타일을 더 정확하게 알아볼 수 있어요.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onRequestProfileRegeneration}
+              className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-black text-xs font-black text-white transition hover:bg-black/85"
+            >
+              새 질문으로 다시 알아보기
+            </button>
           </section>
         )}
 
@@ -693,17 +796,6 @@ export function ProfileTab({
               기본정보 다시보기
             </button>
           </div>
-        )}
-
-        {profile.is_test_participant && (
-          <button
-            type="button"
-            onClick={onOpenProfileCompletionReplay}
-            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
-          >
-            <Sparkles size={15} aria-hidden />
-            프로필 완성 다시보기
-          </button>
         )}
 
         <button

@@ -79,7 +79,7 @@ export function BasicInfoForm({
   userId,
   initialValues,
   mode = "onboarding",
-  returnPath = "/meetings?tab=recommend&profileComplete=1",
+  returnPath = "/meetings?tab=profile",
   onGuestDraftChange,
   onGuestPhotoChange,
   onGuestComplete,
@@ -270,7 +270,7 @@ export function BasicInfoForm({
       trackEvent("basic_info_complete", {
         mode: "regeneration",
       });
-      router.replace("/meetings?tab=recommend&profileComplete=1");
+      router.replace("/meetings?tab=profile");
       router.refresh();
       return;
     }

@@ -8,5 +8,5 @@ export default async function ProfileResultPage() {
   if (!profile.questions_completed) redirect("/onboarding/questions");
   if (!profile.profile_completed) redirect("/onboarding/profile");
 
-  redirect("/meetings?tab=recommend&profileComplete=1");
+  redirect("/meetings?tab=profile");
 }

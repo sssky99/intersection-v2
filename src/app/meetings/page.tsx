@@ -17,12 +17,11 @@ import {
   operatorTestAccounts,
 } from "@/lib/operatorTestAccounts";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { hasUsablePublicIntro } from "@/lib/textQuality";
 
 type MeetingsPageProps = {
   searchParams?: Promise<{
     tab?: string | string[];
-    profileComplete?: string | string[];
+    legacyPreview?: string | string[];
   }>;
 };
 
@@ -42,19 +41,11 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   if (!user || !profile) redirect("/");
   if (!profile.questions_completed) redirect("/onboarding/questions");
   if (!profile.profile_completed) redirect("/onboarding/profile");
-  const introUsable = hasUsablePublicIntro(profile.public_intro);
-  const profileCompleteParam = Array.isArray(params?.profileComplete)
-    ? params?.profileComplete[0]
-    : params?.profileComplete;
-  const hasUnrevealedGeneratedIntro = Boolean(
-    profile.public_intro_generated_at &&
-      profile.public_intro_revealed_generated_at !==
-        profile.public_intro_generated_at,
-  );
-  const shouldOpenCompletionModal =
-    hasUnrevealedGeneratedIntro ||
-    (profileCompleteParam === "1" && !introUsable);
-  if (!introUsable && !shouldOpenCompletionModal) redirect("/profile/result");
+  const legacyPreviewParam = Array.isArray(params?.legacyPreview)
+    ? params?.legacyPreview[0]
+    : params?.legacyPreview;
+  const legacyResultPreview =
+    process.env.NODE_ENV === "development" && legacyPreviewParam === "1";
 
   const cookieStore = await cookies();
   const returnSession = decryptOperatorReturnSession(
@@ -84,7 +75,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
         userId={user.id}
         profile={profile}
         initialTab={initialTabFromSearchParam(params?.tab)}
-        initialProfileCompletionOpen={shouldOpenCompletionModal}
+        initialLegacyResultPreview={legacyResultPreview}
         operatorAccountSwitcher={operatorAccountSwitcher}
       />
     </MobileFrame>

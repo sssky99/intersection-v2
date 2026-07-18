@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 import { profileQuestions } from "@/data/profileQuestions";
-import { generateProfileText, publicProfileModel } from "@/lib/openai";
 import {
-  buildFallbackIntro,
-  buildProfileInput,
-  isValidGeneratedIntro,
-  parseGeneratedProfileContent,
-  profileInstructions,
-  type PromptAnswerRow,
-} from "@/lib/profilePrompt";
+  calculateConversationResultCode,
+  conversationResultVersion,
+} from "@/lib/conversationResult";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
@@ -18,7 +13,12 @@ const REGENERATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 const BIRTH_YEAR_MIN = 1992;
 const BIRTH_YEAR_MAX = 2007;
 
-type DraftAnswerRow = PromptAnswerRow & {
+type DraftAnswerRow = {
+  question_order: number;
+  answer_value: string | null;
+  answer_values: string[] | null;
+  answer_text: string | null;
+  other_text: string | null;
   category: string;
   question_type: string;
   created_at?: string;
@@ -32,14 +32,6 @@ type CompleteRequestBody = {
   birthYear?: unknown;
   mbti?: unknown;
   photoUrl?: unknown;
-};
-
-type GeneratedProfileResult = {
-  intro: string;
-  emoji: string | null;
-  generatedAt: string;
-  model: string;
-  notice?: string;
 };
 
 function text(value: unknown) {
@@ -101,61 +93,6 @@ function requiredQuestionOrders() {
   ).sort(
     (left, right) => left - right,
   );
-}
-
-async function generateRegeneratedProfile(
-  profile: ProfileRow,
-  answers: DraftAnswerRow[],
-): Promise<GeneratedProfileResult> {
-  const generatedAt = new Date().toISOString();
-  const promptAnswers = answers as PromptAnswerRow[];
-  const fallbackIntro = buildFallbackIntro(profile, promptAnswers);
-
-  if (!process.env.OPENAI_API_KEY) {
-    return {
-      intro: fallbackIntro,
-      emoji: profile.public_emoji,
-      generatedAt,
-      model: "fallback",
-      notice: "OPENAI_API_KEY가 없어 개발용 임시 공개 프로필을 저장했어요.",
-    };
-  }
-
-  try {
-    const generatedRaw = await generateProfileText({
-      instructions: profileInstructions,
-      input: buildProfileInput(profile, promptAnswers),
-    });
-    const generatedProfile = parseGeneratedProfileContent(generatedRaw);
-    const generatedIntro = generatedProfile?.publicIntro ?? null;
-
-    if (!generatedIntro || !isValidGeneratedIntro(generatedIntro, profile)) {
-      return {
-        intro: fallbackIntro,
-        emoji: profile.public_emoji,
-        generatedAt,
-        model: "fallback",
-        notice:
-          "생성 문장이 공개 프로필 형식과 맞지 않아 안전한 소개문으로 정리했어요.",
-      };
-    }
-
-    return {
-      intro: generatedIntro.trim(),
-      emoji: generatedProfile?.publicEmoji ?? profile.public_emoji,
-      generatedAt,
-      model: publicProfileModel,
-    };
-  } catch (error) {
-    console.error("[profile regeneration complete] public profile generation failed", error);
-    return {
-      intro: fallbackIntro,
-      emoji: profile.public_emoji,
-      generatedAt,
-      model: "fallback",
-      notice: "공개 프로필 생성이 잠시 지연되어 임시 소개문을 저장했어요.",
-    };
-  }
 }
 
 export async function POST(request: Request) {
@@ -273,24 +210,19 @@ export async function POST(request: Request) {
     mbti,
     photo_url: photoUrl,
   };
-  const nextProfile: ProfileRow = {
-    ...profile,
-    ...basicInfo,
-    profile_completed: true,
-    questions_completed: true,
-  };
   const scores = profileScoresFromAnswers(answers);
-  const generatedProfile = await generateRegeneratedProfile(nextProfile, answers);
+  const resultCode = calculateConversationResultCode(answers);
+  const calculatedAt = new Date().toISOString();
 
   const { error: completeError } = await admin.rpc(
     "complete_profile_regeneration",
     {
       p_user_id: user.id,
       p_basic_info: basicInfo,
-      p_public_intro: generatedProfile.intro,
-      p_public_emoji: generatedProfile.emoji,
-      p_public_intro_model: generatedProfile.model,
-      p_public_intro_generated_at: generatedProfile.generatedAt,
+      p_public_intro: profile.public_intro,
+      p_public_emoji: profile.public_emoji,
+      p_public_intro_model: profile.public_intro_model,
+      p_public_intro_generated_at: profile.public_intro_generated_at,
       p_scores: scores,
     },
   );
@@ -303,12 +235,30 @@ export async function POST(request: Request) {
     );
   }
 
+  if (resultCode) {
+    const { error: resultError } = await admin
+      .from("profiles")
+      .update({
+        conversation_result_code: resultCode,
+        conversation_result_version: conversationResultVersion,
+        conversation_result_calculated_at: calculatedAt,
+        conversation_result_source: "direct",
+        conversation_result_confidence: 1,
+      })
+      .eq("user_id", user.id);
+
+    if (resultError) {
+      console.error("[profile regeneration complete] result save failed", resultError);
+      return NextResponse.json(
+        { error: "Conversation type could not be saved." },
+        { status: 500 },
+      );
+    }
+  }
+
   return NextResponse.json({
     ok: true,
-    intro: generatedProfile.intro,
-    emoji: generatedProfile.emoji,
-    generatedAt: generatedProfile.generatedAt,
-    model: generatedProfile.model,
-    notice: generatedProfile.notice,
+    conversationResultCode: resultCode,
+    conversationResultVersion: resultCode ? conversationResultVersion : null,
   });
 }

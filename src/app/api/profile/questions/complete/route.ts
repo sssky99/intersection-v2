@@ -53,6 +53,8 @@ export async function POST(request: Request) {
         conversation_result_code: resultCode,
         conversation_result_version: conversationResultVersion,
         conversation_result_calculated_at: new Date().toISOString(),
+        conversation_result_source: "direct",
+        conversation_result_confidence: 1,
       };
   const { error: updateError } = await admin.from("profiles").update(update).eq("user_id", user.id);
 

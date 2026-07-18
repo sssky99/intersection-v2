@@ -37,6 +37,8 @@ export type ProfileRow = {
   conversation_result_code?: string | null;
   conversation_result_version?: string | null;
   conversation_result_calculated_at?: string | null;
+  conversation_result_source?: string | null;
+  conversation_result_confidence?: number | null;
   score_temperature?: number | null;
   score_texture?: number | null;
   score_tone?: number | null;

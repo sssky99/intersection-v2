@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { hasUsablePublicIntro } from "@/lib/textQuality";
 import type { ProfileRow } from "@/types/profile";
 
 type OnboardingPathOptions = {
@@ -32,9 +31,6 @@ export function nextOnboardingPathAfterDetails(
   }
 
   if (!profile.profile_completed) return "/onboarding/profile";
-  if (!hasUsablePublicIntro(profile.public_intro)) {
-    return "/meetings?tab=recommend&profileComplete=1";
-  }
   return "/meetings?tab=recommend";
 }
 

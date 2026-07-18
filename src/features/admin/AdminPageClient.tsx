@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   Download,
   ExternalLink,
@@ -15,6 +16,12 @@ import { VibeAxisBar } from "@/components/vibe/VibeGraph";
 import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import { profileQuestions } from "@/data/profileQuestions";
+import {
+  conversationResultImageSrc,
+  conversationResultOverview,
+  conversationResults,
+  type ConversationResultCode,
+} from "@/data/conversationResults";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
@@ -35,6 +42,7 @@ import {
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
 import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
+import { calculateConversationResultCode } from "@/lib/conversationResult";
 import {
   membershipStatusLabels,
   type MembershipStatus,
@@ -350,8 +358,6 @@ type AdminProfileScoreColumn =
 
 type ProfileDetailPatch = {
   scores?: Partial<Record<AdminProfileScoreColumn, number | null>>;
-  publicIntro?: string;
-  publicEmoji?: string;
   isTestParticipant?: boolean;
   matchingPrecisionBonus?: number;
 };
@@ -362,8 +368,6 @@ const adminProfileScoreColumns = {
   tone: "score_tone",
   rhythm: "score_rhythm",
 } as const satisfies Record<AdminProfileAxis, AdminProfileScoreColumn>;
-
-const defaultProfileEmoji = "💎";
 
 function clampAdminScore(value: number) {
   return Math.min(100, Math.max(-100, Math.round(value)));
@@ -396,8 +400,32 @@ function adminScoreDraft(profile: AdminProfile | null) {
   ) as Record<AdminProfileAxis, number>;
 }
 
-function profilePublicEmoji(profile: Pick<AdminProfile, "public_emoji">) {
-  return profile.public_emoji?.trim() || defaultProfileEmoji;
+function adminConversationResult(profile: AdminProfile) {
+  const storedCode = profile.conversation_result_code;
+  const code =
+    storedCode && storedCode in conversationResults
+      ? (storedCode as ConversationResultCode)
+      : calculateConversationResultCode(profile.answers ?? []);
+
+  return code ? conversationResults[code] : null;
+}
+
+function isLegacyInferredConversationResult(profile: AdminProfile) {
+  return (
+    profile.conversation_result_source === "legacy_inferred" ||
+    profile.conversation_result_version === "legacy-inferred-v1"
+  );
+}
+
+function conversationResultConfidenceLabel(profile: AdminProfile) {
+  const confidence = profile.conversation_result_confidence;
+  if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
+    return "신뢰도 미측정";
+  }
+
+  const percent = Math.round(confidence * 100);
+  const band = confidence >= 0.55 ? "높음" : confidence >= 0.3 ? "보통" : "낮음";
+  return `신뢰도 ${band} · ${percent}%`;
 }
 
 export function AdminPageClient({
@@ -1217,13 +1245,14 @@ function ApplicantTable({
 }) {
   return (
     <div className="h-full overflow-auto">
-      <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left text-sm">
+      <table className="min-w-[1120px] w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
           <tr>
             <TableHead className="w-[120px] px-3">이름</TableHead>
             <TableHead className="w-20 px-3">성별</TableHead>
             <TableHead className="w-24">출생연도</TableHead>
             <TableHead className="w-20">MBTI</TableHead>
+            <TableHead className="w-40">배정 타입</TableHead>
             <TableHead className="w-32">전화번호</TableHead>
             <TableHead className="w-28">가입일</TableHead>
             <TableHead className="w-44">멤버십 상태</TableHead>
@@ -1232,6 +1261,7 @@ function ApplicantTable({
         <tbody>
           {profiles.map((profile) => {
             const selected = selectedProfileId === profile.user_id;
+            const conversationResult = adminConversationResult(profile);
 
             return (
               <tr
@@ -1252,6 +1282,21 @@ function ApplicantTable({
                 </TableCell>
                 <TableCell>{display(profile.birth_year)}</TableCell>
                 <TableCell>{display(profile.mbti)}</TableCell>
+                <TableCell className="w-40">
+                  {conversationResult ? (
+                    <div className="min-w-0">
+                      <span className="block truncate font-bold text-black/75">
+                        {conversationResult.title}
+                      </span>
+                      <span className="text-[10px] font-black tracking-[0.12em] text-accent">
+                        {conversationResult.code}
+                        {isLegacyInferredConversationResult(profile) ? " · 추정" : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-semibold text-black/30">미배정</span>
+                  )}
+                </TableCell>
                 <TableCell>{formatPhoneCompact(profile.phone)}</TableCell>
                 <TableCell>{formatCreatedAtCompact(profile.created_at)}</TableCell>
                 <TableCell className="w-44">
@@ -1287,6 +1332,7 @@ function ApplicantCards({
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {profiles.map((profile) => {
           const selected = selectedProfileId === profile.user_id;
+          const conversationResult = adminConversationResult(profile);
 
           return (
             <button
@@ -1313,7 +1359,10 @@ function ApplicantCards({
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-black/50">
                   <InfoPill label="MBTI" value={display(profile.mbti)} />
-                  <InfoPill label="전화" value={formatPhoneCompact(profile.phone)} />
+                  <InfoPill
+                    label="배정 타입"
+                    value={conversationResult?.title ?? "미배정"}
+                  />
                 </div>
               </div>
             </button>
@@ -1358,8 +1407,6 @@ function ProfileDetailPanel({
   const [precisionBonusDraft, setPrecisionBonusDraft] = useState(
     initialPrecisionBonusDraft,
   );
-  const [introDraft, setIntroDraft] = useState(profile?.public_intro ?? "");
-  const [emojiDraft, setEmojiDraft] = useState(profile?.public_emoji ?? "");
 
   useEffect(() => {
     setScoreDraft(initialScoreDraft);
@@ -1369,21 +1416,11 @@ function ProfileDetailPanel({
     setPrecisionBonusDraft(initialPrecisionBonusDraft);
   }, [initialPrecisionBonusDraft]);
 
-  useEffect(() => {
-    setIntroDraft(profile?.public_intro ?? "");
-    setEmojiDraft(profile?.public_emoji ?? "");
-  }, [profile?.public_emoji, profile?.public_intro, profile?.user_id]);
-
   const scoresDirty = Boolean(
     profile &&
       adminProfileAxes.some(
         (axis) => scoreDraft[axis] !== adminProfileScore(profile, axis),
       ),
-  );
-  const introDirty = Boolean(
-    profile &&
-      (introDraft !== (profile.public_intro ?? "") ||
-        emojiDraft !== (profile.public_emoji ?? "")),
   );
   const precisionBonusDirty = Boolean(
     profile &&
@@ -1391,6 +1428,7 @@ function ProfileDetailPanel({
   );
   const isTestParticipant = Boolean(profile?.is_test_participant);
   const detailNickname = profile?.nickname?.trim();
+  const conversationResult = profile ? adminConversationResult(profile) : null;
 
   const updateScoreDraft = (axis: AdminProfileAxis, value: number) => {
     setScoreDraft((current) => ({
@@ -1408,14 +1446,6 @@ function ProfileDetailPanel({
           scoreDraft[axis],
         ]),
       ) as Record<AdminProfileScoreColumn, number>,
-    });
-  };
-
-  const saveIntro = () => {
-    if (!profile || !introDirty || profileSaving) return;
-    void onProfileDetailSave(profile.user_id, {
-      publicIntro: introDraft,
-      publicEmoji: emojiDraft,
     });
   };
 
@@ -1639,48 +1669,49 @@ function ProfileDetailPanel({
           </button>
         </section>
 
-        <section className="mt-5 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
+        <section className="mt-5 overflow-hidden rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold">GPT 자기소개</h3>
+            <h3 className="text-sm font-bold">배정 대화 타입</h3>
             <span className="text-[11px] font-semibold text-black/35">
-              이모지 포함 수정 가능
+              {isLegacyInferredConversationResult(profile)
+                ? `구형 질문 기반 추정 · ${conversationResultConfidenceLabel(profile)}`
+                : "신형 질문 직접 계산"}
             </span>
           </div>
-          <div className="mt-4 flex items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
-              {emojiDraft.trim() || profilePublicEmoji(profile)}
+          {conversationResult ? (
+            <div className="mt-4 rounded-2xl border border-black/8 bg-white p-4">
+              <div className="flex items-center gap-4">
+                <Image
+                  src={conversationResultImageSrc[conversationResult.code as ConversationResultCode]}
+                  alt={`${conversationResult.title} 타입 이미지`}
+                  width={88}
+                  height={88}
+                  className="h-[88px] w-[88px] shrink-0 rounded-2xl object-cover"
+                />
+                <div className="min-w-0">
+                  <span className="inline-flex rounded-full bg-accent/15 px-2.5 py-1 text-[10px] font-black tracking-[0.14em] text-accent">
+                    {conversationResult.code}
+                  </span>
+                  <p className="mt-2 text-lg font-black text-black">
+                    {conversationResult.title}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-black/50">
+                    {conversationResult.subtitle}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-4 rounded-xl bg-[#f7f7f5] px-3 py-3 text-xs font-semibold leading-5 text-black/60">
+                {conversationResultOverview(conversationResult.body)}
+              </p>
             </div>
-            <label className="min-w-0 flex-1">
-              <span className="text-[11px] font-bold text-black/40">
-                프로필 이모지
-              </span>
-              <input
-                value={emojiDraft}
-                maxLength={16}
-                disabled={profileSaving}
-                onChange={(event) => setEmojiDraft(event.target.value)}
-                placeholder={defaultProfileEmoji}
-                className="mt-1 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-bold outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
-              />
-            </label>
-          </div>
-          <textarea
-            value={introDraft}
-            disabled={profileSaving}
-            onChange={(event) => setIntroDraft(event.target.value)}
-            rows={7}
-            className="mt-4 w-full resize-none rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold leading-6 text-black/70 outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
-            placeholder="GPT 자기소개를 입력해주세요."
-          />
-          <button
-            type="button"
-            disabled={!introDirty || profileSaving}
-            onClick={saveIntro}
-            className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25"
-          >
-            <Save size={15} aria-hidden />
-            {profileSaving ? "저장 중..." : "자기소개 저장"}
-          </button>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-black/12 bg-white px-4 py-6 text-center">
+              <p className="text-sm font-bold text-black/45">아직 배정된 타입이 없습니다.</p>
+              <p className="mt-1 text-xs font-semibold text-black/35">
+                대화 타입 질문 16개 응답이 완료되면 자동으로 표시됩니다.
+              </p>
+            </div>
+          )}
         </section>
 
         <ProfileAnswersSection answers={profile.answers ?? []} />

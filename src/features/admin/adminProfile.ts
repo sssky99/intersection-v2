@@ -25,6 +25,11 @@ export type AdminProfile = {
   public_intro: string | null;
   public_emoji?: string | null;
   public_intro_model?: string | null;
+  conversation_result_code?: string | null;
+  conversation_result_version?: string | null;
+  conversation_result_calculated_at?: string | null;
+  conversation_result_source?: string | null;
+  conversation_result_confidence?: number | null;
   created_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;

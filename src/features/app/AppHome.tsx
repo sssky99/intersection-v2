@@ -422,13 +422,13 @@ export function AppHome({
   userId,
   profile,
   initialTab = "recommend",
-  initialProfileCompletionOpen = false,
+  initialLegacyResultPreview = false,
   operatorAccountSwitcher = null,
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
-  initialProfileCompletionOpen?: boolean;
+  initialLegacyResultPreview?: boolean;
   operatorAccountSwitcher?: OperatorAccountSwitcher;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
@@ -451,10 +451,6 @@ export function AppHome({
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
-  const [profileCompletionOpen, setProfileCompletionOpen] = useState(
-    initialProfileCompletionOpen,
-  );
-  const [profileCompletionReplayKey, setProfileCompletionReplayKey] = useState(0);
   const [profileRegenerationConfirmOpen, setProfileRegenerationConfirmOpen] =
     useState(false);
   const [profileRegenerating, setProfileRegenerating] = useState(false);
@@ -581,10 +577,6 @@ export function AppHome({
   }, [activeTab]);
 
   useEffect(() => {
-    if (initialProfileCompletionOpen) setProfileCompletionOpen(true);
-  }, [initialProfileCompletionOpen]);
-
-  useEffect(() => {
     let cancelled = false;
 
     void loadUserTicketsProgressively({
@@ -660,13 +652,6 @@ export function AppHome({
     setBlindDateOpenRequestPending(true);
   };
 
-  const openProfileCompletionReplay = () => {
-    setProfilePanelOpen(false);
-    setQuestionReviewOpen(false);
-    setProfileCompletionReplayKey((current) => current + 1);
-    setProfileCompletionOpen(true);
-  };
-
   const openProfileRegenerationConfirm = () => {
     setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
@@ -704,16 +689,6 @@ export function AppHome({
     }
 
     window.location.href = "/onboarding/questions?regenerate=1&start=1";
-  };
-
-  const finishProfileCompletion = (nextProfile: Partial<ProfileRow>) => {
-    trackEvent("profile_intro_complete", {
-      source: "profile_completion_modal",
-    });
-    setCurrentProfile((current) => ({ ...current, ...nextProfile }));
-    setProfileCompletionOpen(false);
-    setActiveTab("recommend");
-    setTabUrl("recommend");
   };
 
   const addWaitlistedTicket = (_ticket: GatheringTicket) => {
@@ -972,8 +947,8 @@ export function AppHome({
               loggingOut={loggingOut}
               logoutError={logoutError}
               onOpenQuestionReview={() => setQuestionReviewOpen(true)}
-              onOpenProfileCompletionReplay={openProfileCompletionReplay}
               onRequestProfileRegeneration={openProfileRegenerationConfirm}
+              legacyResultPreview={initialLegacyResultPreview}
               onLogout={logout}
               operatorConversationPreview={
                 operatorAccountSwitcher?.mode === "operator"
@@ -1036,16 +1011,6 @@ export function AppHome({
       )}
 
       <AnimatePresence>
-        {profileCompletionOpen && (
-          <ProfileCompletionModal
-            key={`profile-completion-${profileCompletionReplayKey}`}
-            userId={userId}
-            profile={currentProfile}
-            answers={answers}
-            animationKey={profileCompletionReplayKey}
-            onComplete={finishProfileCompletion}
-          />
-        )}
         {profileRegenerationConfirmOpen && (
           <ProfileRegenerationConfirmModal
             key="profile-regeneration-confirm"
