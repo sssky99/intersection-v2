@@ -52,14 +52,38 @@ type StatusFilter = WaitlistStatus | "all";
 type GenderFilter = "all" | "남성" | "여성" | "unknown";
 type MembershipFilter = MembershipStatus | "all";
 const allDatesValue = "all" as const;
-type DateFilter = typeof allDatesValue | string;
+const actionableDatesValue = "actionable" as const;
+const pastDatesValue = "past" as const;
+type DateFilter =
+  | typeof allDatesValue
+  | typeof actionableDatesValue
+  | typeof pastDatesValue
+  | string;
 
 type WaitlistGroup = {
   id: string;
   title: string;
+  date: string;
   rows: AdminWaitlistRow[];
   total: number;
   counts: Record<WaitlistStatus, number>;
+};
+
+const actionableStatuses = new Set<WaitlistStatus>([
+  "waitlisted",
+  "payment_pending",
+  "on_hold",
+]);
+
+const waitlistStatusPriority: Record<WaitlistStatus, number> = {
+  waitlisted: 0,
+  payment_pending: 1,
+  on_hold: 2,
+  approved: 3,
+  not_selected: 4,
+  feedback_done: 5,
+  completed: 6,
+  cancelled: 7,
 };
 
 const dateTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
@@ -123,6 +147,15 @@ function normalizeDate(value: string | null | undefined) {
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
 }
 
+function todayInSeoul() {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function rowDate(row: AdminWaitlistRow) {
   return (
     normalizeDate(row.meeting_date) ||
@@ -155,8 +188,17 @@ function formatShortDateLabel(value: string) {
   )} ${weekday}`;
 }
 
-function waitlistDateOptions(rows: AdminWaitlistRow[]) {
-  return Array.from(new Set(rows.map(rowDate).filter(Boolean))).sort();
+function waitlistDateOptions(
+  rows: AdminWaitlistRow[],
+  predicate?: (date: string) => boolean,
+) {
+  return Array.from(
+    new Set(
+      rows
+        .map(rowDate)
+        .filter((date) => Boolean(date) && (!predicate || predicate(date))),
+    ),
+  ).sort();
 }
 
 function waitlistDateCounts(rows: AdminWaitlistRow[]) {
@@ -289,6 +331,7 @@ function countStatuses(rows: AdminWaitlistRow[]) {
 function groupWaitlistRows(
   rows: AdminWaitlistRow[],
   includeDateInGroup = false,
+  dateDirection: "asc" | "desc" | "operational" = "asc",
 ): WaitlistGroup[] {
   const groups = new Map<string, WaitlistGroup>();
 
@@ -304,6 +347,7 @@ function groupWaitlistRows(
         title: includeDateInGroup
           ? `${date ? formatShortDateLabel(date) : "날짜 미선택"} · ${ticketTitle(row)}`
           : ticketTitle(row),
+        date,
         rows: [],
         total: 0,
         counts: countStatuses([]),
@@ -315,9 +359,32 @@ function groupWaitlistRows(
     groups.set(id, current);
   });
 
-  return Array.from(groups.values()).sort((a, b) =>
-    a.title.localeCompare(b.title, "ko"),
-  );
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => {
+        const statusCompare =
+          waitlistStatusPriority[a.status] - waitlistStatusPriority[b.status];
+        if (statusCompare !== 0) return statusCompare;
+        return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+      }),
+    }))
+    .sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) {
+        if (dateDirection === "operational") {
+          if (!a.date) return 1;
+          if (!b.date) return -1;
+          const today = todayInSeoul();
+          const aIsPast = a.date < today;
+          const bIsPast = b.date < today;
+          if (aIsPast !== bIsPast) return aIsPast ? 1 : -1;
+          return aIsPast ? -dateCompare : dateCompare;
+        }
+        return dateDirection === "desc" ? -dateCompare : dateCompare;
+      }
+      return a.title.localeCompare(b.title, "ko");
+    });
 }
 
 function instancesForRow(
@@ -347,7 +414,8 @@ export function WaitlistAdminPanel() {
   const [templates, setTemplates] = useState<WaitlistTicketTemplate[]>([]);
   const [instances, setInstances] = useState<WaitlistTicketInstance[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<DateFilter>(allDatesValue);
+  const [selectedDate, setSelectedDate] =
+    useState<DateFilter>(actionableDatesValue);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
   const [membershipFilter, setMembershipFilter] =
@@ -371,9 +439,15 @@ export function WaitlistAdminPanel() {
       ),
     );
     setSelectedDate((current) => {
-      if (current === allDatesValue) return current;
+      if (
+        current === allDatesValue ||
+        current === actionableDatesValue ||
+        current === pastDatesValue
+      ) {
+        return current;
+      }
       const dates = waitlistDateOptions(nextRows);
-      return current && dates.includes(current) ? current : allDatesValue;
+      return current && dates.includes(current) ? current : actionableDatesValue;
     });
     setSelectedId((current) => {
       if (current && nextRows.some((row) => rowKey(row) === current)) {
@@ -411,15 +485,59 @@ export function WaitlistAdminPanel() {
     [templates],
   );
 
-  const dateOptions = useMemo(() => waitlistDateOptions(rows), [rows]);
+  const today = useMemo(() => todayInSeoul(), []);
+  const dateOptions = useMemo(
+    () => waitlistDateOptions(rows, (date) => date >= today),
+    [rows, today],
+  );
   const dateCounts = useMemo(() => waitlistDateCounts(rows), [rows]);
   const showingAllDates = selectedDate === allDatesValue;
+  const showingActionableDates = selectedDate === actionableDatesValue;
+  const showingPastDates = selectedDate === pastDatesValue;
+  const showingExactDate =
+    !showingAllDates && !showingActionableDates && !showingPastDates;
+
+  const actionableCount = useMemo(
+    () =>
+      rows.filter((row) => {
+        const date = rowDate(row);
+        return date >= today && actionableStatuses.has(row.status);
+      }).length,
+    [rows, today],
+  );
+  const pastCount = useMemo(
+    () =>
+      rows.filter((row) => {
+        const date = rowDate(row);
+        return Boolean(date) && date < today;
+      }).length,
+    [rows, today],
+  );
 
   const dateScopedRows = useMemo(() => {
     if (showingAllDates) return rows;
+    if (showingActionableDates) {
+      return rows.filter((row) => {
+        const date = rowDate(row);
+        return date >= today && actionableStatuses.has(row.status);
+      });
+    }
+    if (showingPastDates) {
+      return rows.filter((row) => {
+        const date = rowDate(row);
+        return Boolean(date) && date < today;
+      });
+    }
     if (!selectedDate) return [];
     return rows.filter((row) => rowDate(row) === selectedDate);
-  }, [rows, selectedDate, showingAllDates]);
+  }, [
+    rows,
+    selectedDate,
+    showingActionableDates,
+    showingAllDates,
+    showingPastDates,
+    today,
+  ]);
 
   const filteredRows = useMemo(
     () =>
@@ -440,8 +558,13 @@ export function WaitlistAdminPanel() {
   );
 
   const groups = useMemo(
-    () => groupWaitlistRows(filteredRows, showingAllDates),
-    [filteredRows, showingAllDates],
+    () =>
+      groupWaitlistRows(
+        filteredRows,
+        !showingExactDate,
+        showingPastDates ? "desc" : showingAllDates ? "operational" : "asc",
+      ),
+    [filteredRows, showingAllDates, showingExactDate, showingPastDates],
   );
   const selectedRow =
     rows.find((row) => rowKey(row) === selectedId) ?? null;
@@ -537,9 +660,9 @@ export function WaitlistAdminPanel() {
             <FilterField label="날짜 선택">
               <input
                 type="date"
-                value={showingAllDates ? "" : selectedDate}
+                value={showingExactDate ? selectedDate : ""}
                 onChange={(event) =>
-                  setSelectedDate(event.target.value || allDatesValue)
+                  setSelectedDate(event.target.value || actionableDatesValue)
                 }
                 className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/70 outline-none focus:border-accent"
               />
@@ -624,29 +747,29 @@ export function WaitlistAdminPanel() {
           )}
         </header>
 
-        {dateOptions.length > 0 && (
+        {rows.length > 0 && (
           <div className="shrink-0 overflow-x-auto border-b border-black/10 px-5 py-3">
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedDate(allDatesValue)}
+                onClick={() => setSelectedDate(actionableDatesValue)}
                 className={cn(
                   "inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition",
-                  showingAllDates
+                  showingActionableDates
                     ? "border-black bg-black text-white"
                     : "border-black/10 bg-white text-black/55 hover:border-black/25 hover:text-black",
                 )}
               >
-                전체 날짜
+                처리 필요
                 <span
                   className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px]",
-                    showingAllDates
+                    showingActionableDates
                       ? "bg-white/15 text-white"
                       : "bg-black/5 text-black/45",
                   )}
                 >
-                  {rows.length}
+                  {actionableCount}
                 </span>
               </button>
               {dateOptions.map((date) => (
@@ -674,6 +797,52 @@ export function WaitlistAdminPanel() {
                   </span>
                 </button>
               ))}
+              {pastCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(pastDatesValue)}
+                  className={cn(
+                    "inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition",
+                    showingPastDates
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white text-black/55 hover:border-black/25 hover:text-black",
+                  )}
+                >
+                  지난 일정
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px]",
+                      showingPastDates
+                        ? "bg-white/15 text-white"
+                        : "bg-black/5 text-black/45",
+                    )}
+                  >
+                    {pastCount}
+                  </span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedDate(allDatesValue)}
+                className={cn(
+                  "inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition",
+                  showingAllDates
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-white text-black/55 hover:border-black/25 hover:text-black",
+                )}
+              >
+                전체
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px]",
+                    showingAllDates
+                      ? "bg-white/15 text-white"
+                      : "bg-black/5 text-black/45",
+                  )}
+                >
+                  {rows.length}
+                </span>
+              </button>
             </div>
           </div>
         )}
@@ -686,7 +855,15 @@ export function WaitlistAdminPanel() {
           ) : rows.length === 0 ? (
             <StateMessage message="아직 대기열 등록 내역이 없습니다." />
           ) : !showingAllDates && dateScopedRows.length === 0 ? (
-            <StateMessage message="이 날짜에 신청한 대기열이 없습니다." />
+            <StateMessage
+              message={
+                showingActionableDates
+                  ? "현재 처리할 신청자가 없습니다."
+                  : showingPastDates
+                    ? "지난 일정이 없습니다."
+                    : "이 날짜에 신청한 대기열이 없습니다."
+              }
+            />
           ) : filteredRows.length === 0 ? (
             <StateMessage message="필터 조건에 맞는 신청자가 없습니다." />
           ) : (
@@ -694,10 +871,22 @@ export function WaitlistAdminPanel() {
               <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-black uppercase tracking-[0.16em] text-accent">
-                    {showingAllDates ? "all dates" : "selected date"}
+                    {showingActionableDates
+                      ? "action required"
+                      : showingPastDates
+                        ? "past dates"
+                        : showingAllDates
+                          ? "all dates"
+                          : "selected date"}
                   </p>
                   <h3 className="mt-1 text-xl font-black">
-                    {showingAllDates ? "전체 날짜" : formatDateLabel(selectedDate)}
+                    {showingActionableDates
+                      ? "처리 필요"
+                      : showingPastDates
+                        ? "지난 일정"
+                        : showingAllDates
+                          ? "전체 날짜"
+                          : formatDateLabel(selectedDate)}
                   </h3>
                 </div>
                 <p className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-black/50 ring-1 ring-black/10">
