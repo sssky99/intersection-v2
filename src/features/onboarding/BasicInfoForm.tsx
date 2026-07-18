@@ -228,9 +228,9 @@ export function BasicInfoForm({
     setSaving(true);
     setError(null);
     if (isGuest) {
+      trackEvent("basic_info_complete", { mode: "guest" });
       try {
         await onGuestComplete?.(draft);
-        trackEvent("basic_info_complete", { mode: "guest" });
       } catch {
         setError("카카오 로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
         setSaving(false);

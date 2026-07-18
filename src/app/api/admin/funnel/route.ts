@@ -31,38 +31,39 @@ type UserProgress = {
 
 const funnelStages: FunnelStage[] = [
   { key: "landing", label: "랜딩 방문", eventNames: ["landing_view"] },
-  { key: "kakao_login_click", label: "카카오 로그인 클릭", eventNames: ["kakao_login_click"] },
-  { key: "kakao_auth_return", label: "카카오 인증 복귀", eventNames: ["kakao_auth_return"] },
   { key: "question_start", label: "질문 시작", eventNames: ["question_start"] },
   { key: "questions_complete", label: "질문 완료", eventNames: ["questions_complete"] },
   { key: "basic_info_complete", label: "기본정보 완료", eventNames: ["basic_info_complete"] },
-  { key: "profile_generated", label: "프로필 완성", eventNames: ["profile_generated"] },
+  { key: "kakao_login_click", label: "카카오 로그인 클릭", eventNames: ["kakao_login_click"] },
+  { key: "kakao_auth_return", label: "카카오 인증 복귀", eventNames: ["kakao_auth_return"] },
+  {
+    key: "conversation_result_view",
+    label: "대화 타입 결과 확인",
+    eventNames: ["conversation_result_view", "profile_generated"],
+  },
   { key: "recommendation_view", label: "추천 보기", eventNames: ["recommendation_view"] },
-  { key: "ticket_detail_view", label: "티켓 상세 보기", eventNames: ["ticket_detail_view"] },
+  {
+    key: "application_intro_continue_click",
+    label: "신청 안내 통과",
+    eventNames: ["application_intro_continue_click"],
+  },
+  {
+    key: "application_date_selected",
+    label: "참여 날짜 선택",
+    eventNames: ["application_date_selected"],
+  },
   { key: "application_submit_click", label: "신청 클릭", eventNames: ["application_submit_click"] },
-  {
-    key: "membership_required_shown",
-    label: "멤버십 필요 표시",
-    eventNames: ["membership_required_shown"],
-    previousKey: "application_submit_click",
-  },
-  {
-    key: "membership_purchase_notice_open",
-    label: "결제 안내 열기",
-    eventNames: ["membership_purchase_notice_open"],
-    previousKey: "membership_required_shown",
-  },
-  {
-    key: "membership_purchase_click",
-    label: "결제창 이동",
-    eventNames: ["membership_purchase_click"],
-    previousKey: "membership_purchase_notice_open",
-  },
   {
     key: "application_created",
     label: "신청 생성",
     eventNames: ["application_created"],
     previousKey: "application_submit_click",
+  },
+  {
+    key: "payment_page_open",
+    label: "그로블 결제창 이동",
+    eventNames: ["payment_page_open"],
+    previousKey: "application_created",
   },
 ];
 

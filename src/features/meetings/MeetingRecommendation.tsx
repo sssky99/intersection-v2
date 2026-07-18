@@ -1511,7 +1511,14 @@ function MeetingDateApplicationFlow({
 
   const toggleDate = (date: string) => {
     if (date < today || applicationByDate.has(date) || saving) return;
-    setSelectedDates((current) => (current.includes(date) ? [] : [date]));
+    setSelectedDates((current) => {
+      if (current.includes(date)) return [];
+      trackEvent("application_date_selected", {
+        application_type: "meeting_date",
+        meeting_date: date,
+      });
+      return [date];
+    });
     setError(null);
   };
 
@@ -1566,6 +1573,11 @@ function MeetingDateApplicationFlow({
         return nextApplications;
       });
       if (openStoreAfterSave) {
+        trackEvent("payment_page_open", {
+          application_type: "meeting_date",
+          payment_provider: "groble",
+          date_count: targetDates.length,
+        });
         window.location.assign(meetingApplicationPaymentUrl);
         return;
       }
@@ -1618,6 +1630,11 @@ function MeetingDateApplicationFlow({
         deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       });
       if (openStoreAfterSave) {
+        trackEvent("payment_page_open", {
+          application_type: "meeting_date",
+          payment_provider: "groble",
+          date_count: targetDates.length,
+        });
         window.location.assign(meetingApplicationPaymentUrl);
         return;
       }

@@ -468,6 +468,7 @@ export function AppHome({
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const recommendTabTrackedRef = useRef(false);
+  const conversationResultTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const recommendationMembershipStatus = useMemo(
     () =>
@@ -575,6 +576,16 @@ export function AppHome({
     recommendTabTrackedRef.current = true;
     trackEvent("recommend_tab_view");
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "profile" || conversationResultTrackedRef.current) return;
+
+    conversationResultTrackedRef.current = true;
+    trackEvent("conversation_result_view", {
+      result_code: currentProfile.conversation_result_code,
+      result_source: currentProfile.conversation_result_source,
+    });
+  }, [activeTab, currentProfile.conversation_result_code, currentProfile.conversation_result_source]);
 
   useEffect(() => {
     let cancelled = false;

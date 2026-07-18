@@ -15,10 +15,14 @@ const funnelEvents = [
   "basic_info_start",
   "basic_info_complete",
   "profile_generated",
+  "conversation_result_view",
   "recommendation_view",
   "ticket_detail_view",
+  "application_intro_continue_click",
+  "application_date_selected",
   "application_submit_click",
   "application_created",
+  "payment_page_open",
   "membership_required_shown",
   "membership_required_close",
   "membership_purchase_notice_open",
@@ -27,7 +31,11 @@ const funnelEvents = [
 ] as const;
 
 const conversionBaseEvents: Record<string, string> = {
+  application_intro_continue_click: "recommendation_view",
+  application_date_selected: "application_intro_continue_click",
+  application_submit_click: "application_date_selected",
   application_created: "application_submit_click",
+  payment_page_open: "application_created",
   membership_required_shown: "application_submit_click",
   membership_required_close: "membership_required_shown",
   membership_purchase_notice_open: "membership_required_shown",
