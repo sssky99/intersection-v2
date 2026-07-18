@@ -64,7 +64,7 @@ export function meetingDateApplicationDates(today: string) {
   const dayMs = 24 * 60 * 60 * 1000;
   const currentDateMs = Date.UTC(current.year, current.month - 1, current.day);
   const daysUntilVisibleFriday =
-    current.weekday === 6 ? -1 : (5 - current.weekday + 7) % 7;
+    current.weekday === 6 ? 6 : (5 - current.weekday + 7) % 7;
   const visibleFridayMs = currentDateMs + daysUntilVisibleFriday * dayMs;
 
   return [0, 1, 7, 8].map((offset) =>
