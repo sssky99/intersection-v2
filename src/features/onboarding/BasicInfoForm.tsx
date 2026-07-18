@@ -314,7 +314,7 @@ export function BasicInfoForm({
         <Field
           label="이름"
           value={draft.name}
-          placeholder="교집합"
+          placeholder="김서연"
           actionLabel={visibleStepCount === 1 ? "완료" : undefined}
           actionDisabled={!isStepComplete("name", draft) || saving || photoUploading}
           onAction={visibleStepCount === 1 ? handleNameComplete : undefined}
