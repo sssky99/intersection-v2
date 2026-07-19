@@ -3,7 +3,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ChevronRight,
-  ExternalLink,
   Gift,
   Info,
   LogOut,
@@ -766,14 +765,6 @@ export function ProfileTab({
           monochrome={usesNewConversationProfile}
           className="mt-5"
         />
-
-        <a
-          href="/"
-          className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-accent/35 bg-accent/[0.08] text-xs font-bold text-black/62 transition hover:border-accent/55 hover:bg-accent/[0.12] hover:text-black/75"
-        >
-          <ExternalLink size={15} aria-hidden />
-          상세페이지 다시보기
-        </a>
 
         {profile.is_test_participant && (
           <div className="mt-3 space-y-3">

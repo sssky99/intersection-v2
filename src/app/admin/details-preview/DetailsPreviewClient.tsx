@@ -292,13 +292,6 @@ export function DetailsPreviewClient({
     };
   }, []);
 
-  const scrollToDetails = () => {
-    document.getElementById("details-flow")?.scrollIntoView({
-      behavior: reduceMotion ? "auto" : "smooth",
-      block: "start",
-    });
-  };
-
   return (
     <>
       <AnimatePresence>
@@ -346,27 +339,38 @@ export function DetailsPreviewClient({
 
       <main
         aria-hidden={asLandingPage && landingAuthState === "checking"}
-        className="flex min-h-dvh justify-center bg-[#e9e9e5] text-[#121212] md:px-4"
+        className={`flex justify-center bg-[#e9e9e5] text-[#121212] md:px-4 ${
+          asLandingPage ? "h-dvh overflow-hidden" : "min-h-dvh"
+        }`}
       >
       <section
         data-testid="details-preview"
-        className="relative min-h-[100svh] w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] md:my-4 md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
+        className={`relative w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] md:my-4 md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame ${
+          asLandingPage
+            ? "h-dvh min-h-0 md:h-[calc(100dvh-32px)]"
+            : "min-h-[100svh]"
+        }`}
       >
         <div className="absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
         <div className="absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/55 blur-[70px]" />
 
-        <div className="relative z-20 flex min-h-[100svh] flex-col px-6 pb-[max(28px,env(safe-area-inset-bottom))] pt-[22svh] md:min-h-[calc(100svh-32px)]">
+        <div
+          className={`relative z-20 flex flex-col px-6 pb-[max(28px,env(safe-area-inset-bottom))] ${
+            asLandingPage
+              ? "h-full min-h-0 pt-[25svh] md:pt-[28%]"
+              : "min-h-[100svh] pt-[22svh] md:min-h-[calc(100svh-32px)]"
+          }`}
+        >
           <div>
-            <p className="text-[16px] font-semibold leading-6 tracking-[-0.025em] text-black/48">
-              당신과 잘 맞는 사람들이 함께하는
-            </p>
-            <h1 className="mt-2 max-w-[340px] break-keep text-[40px] font-black leading-[1.12] tracking-[-0.065em] text-black sm:text-[42px]">
-              주말 약속
-              <br />
-              만들어드릴게요
+            <h1 className="max-w-[380px] break-keep text-[clamp(32px,9vw,38px)] font-black leading-[1.15] tracking-[-0.035em] text-black">
+              <span className="block whitespace-nowrap">이번 주말, 나와 잘 맞는</span>
+              <span className="block whitespace-nowrap">사람과 만나보세요.</span>
             </h1>
+            <p className="mt-4 max-w-[350px] break-keep text-[16px] font-semibold leading-6 tracking-[-0.025em] text-black/48">
+              3분 성향 테스트로 나와 잘 맞는 교집합을 찾아줄게요.
+            </p>
 
-            <div className="mt-8 flex min-h-12 items-center gap-3">
+            <div className="mt-7 flex min-h-12 items-center gap-3">
               <span
                 aria-label={`${activeStep + 1}단계`}
                 className="flex w-[48px] shrink-0 items-center text-[14px] font-bold text-black/34"
@@ -415,28 +419,29 @@ export function DetailsPreviewClient({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={scrollToDetails}
-              className="mt-8 inline-flex items-center gap-2 text-[15px] font-bold tracking-[-0.025em] text-black/42 transition hover:text-black/66"
-              aria-label="상세 진행 방식으로 이동"
-            >
-              어떻게 진행되나요?
-              <svg
-                aria-hidden="true"
-                viewBox="0 0 16 16"
-                className="h-4 w-4"
-                fill="none"
+            {!asLandingPage && (
+              <a
+                href="#details-flow"
+                className="mt-8 inline-flex items-center gap-2 text-[15px] font-bold tracking-[-0.025em] text-black/42 transition hover:text-black/66"
+                aria-label="상세 진행 방식으로 이동"
               >
-                <path
-                  d="M4.5 6.25 8 9.75l3.5-3.5"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+                어떻게 진행되나요?
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  className="h-4 w-4"
+                  fill="none"
+                >
+                  <path
+                    d="M4.5 6.25 8 9.75l3.5-3.5"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </a>
+            )}
           </div>
 
           <div className="relative mt-auto h-[310px]">
@@ -474,10 +479,11 @@ export function DetailsPreviewClient({
           </div>
         </div>
 
-        <section
-          id="details-flow"
-          className="relative z-20 border-t border-black/[0.06] bg-[#f1f0eb] px-6 pb-36 pt-16"
-        >
+        {!asLandingPage && (
+          <section
+            id="details-flow"
+            className="relative z-20 border-t border-black/[0.06] bg-[#f1f0eb] px-6 pb-36 pt-16"
+          >
           <div className="space-y-8">
             {detailSteps.map((step, index) => (
               <motion.article
@@ -542,7 +548,8 @@ export function DetailsPreviewClient({
               개인정보 처리방침
             </a>
           </footer>
-        </section>
+          </section>
+        )}
 
         <div className="fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
           {landingAuthState === "checking" ? (
