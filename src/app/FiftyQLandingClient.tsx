@@ -1,98 +1,126 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import KakaoLoginButton from "@/components/KakaoLoginButton";
-import { trackEvent } from "@/lib/analytics";
-import { createClient } from "@/lib/supabase/client";
 
 const headline = "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
+const headlineLead = "아무나 만나지 않도록,\n";
+
+const KakaoLoginButton = dynamic(
+  () => import("@/components/KakaoLoginButton"),
+  {
+    ssr: false,
+    loading: () => <span className="font-bold text-black/75">카카오로 로그인</span>,
+  },
+);
 
 const photos = [
   {
     src: "/images/landing-50q/hero-photo-1.jpeg",
-    className: "-left-[13%] -top-[10%]",
-    initial: { x: "96vw", y: "105dvh", rotate: 10, scale: 0.88 },
-    animate: { x: 0, y: 0, rotate: -8, scale: 1 },
-    delay: 0,
-    duration: 0.48,
+    className: "-left-[13%] -top-[10%] -rotate-[8deg]",
+    priority: false,
   },
   {
     src: "/images/landing-50q/hero-photo-2.jpeg",
-    className: "-right-[13%] -top-[10%]",
-    initial: { x: "-96vw", y: "105dvh", rotate: -10, scale: 0.88 },
-    animate: { x: 0, y: 0, rotate: 8, scale: 1 },
-    delay: 0.3,
-    duration: 0.51,
+    className: "-right-[13%] -top-[10%] rotate-[8deg]",
+    priority: false,
   },
   {
     src: "/images/landing-50q/hero-photo-3.png",
-    className: "left-1/2 -top-[7%] -translate-x-1/2",
-    initial: { x: "-50%", y: "108dvh", rotate: 5, scale: 0.88 },
-    animate: { x: "-50%", y: 0, rotate: -1.5, scale: 1 },
-    delay: 0.66,
-    duration: 0.51,
+    className: "left-1/2 -top-[7%] -translate-x-1/2 -rotate-[1.5deg]",
+    priority: true,
   },
 ] as const;
 
 export function FiftyQLandingClient() {
-  const reduceMotion = useReducedMotion();
-  const [typedHeadline, setTypedHeadline] = useState(reduceMotion ? headline : "");
+  const [typedHeadline, setTypedHeadline] = useState(headlineLead);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setTypedHeadline(headline);
       return;
     }
 
+    let started = false;
+    let startTimer: number | undefined;
     let interval: number | undefined;
-    const start = window.setTimeout(() => {
-      let length = 0;
-      interval = window.setInterval(() => {
-        length += 1;
-        setTypedHeadline(headline.slice(0, length));
-        if (length >= headline.length && interval) window.clearInterval(interval);
-      }, 870 / headline.length);
-    }, 1170);
+    let frame: number | undefined;
+
+    const startTyping = () => {
+      if (
+        started ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+
+      started = true;
+      startTimer = window.setTimeout(() => {
+        let length = headlineLead.length;
+        interval = window.setInterval(() => {
+          length += 1;
+          setTypedHeadline(headline.slice(0, length));
+          if (length >= headline.length && interval) {
+            window.clearInterval(interval);
+          }
+        }, 1300 / (headline.length - headlineLead.length));
+      }, 300);
+    };
+
+    const scheduleTyping = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(startTyping);
+    };
+
+    window.addEventListener("load", scheduleTyping);
+    window.addEventListener("pageshow", scheduleTyping);
+    document.addEventListener("visibilitychange", scheduleTyping);
+    scheduleTyping();
 
     return () => {
-      window.clearTimeout(start);
+      window.removeEventListener("load", scheduleTyping);
+      window.removeEventListener("pageshow", scheduleTyping);
+      document.removeEventListener("visibilitychange", scheduleTyping);
+      if (frame) window.cancelAnimationFrame(frame);
+      if (startTimer) window.clearTimeout(startTimer);
       if (interval) window.clearInterval(interval);
     };
-  }, [reduceMotion]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     let finished = false;
-    const supabase = createClient();
     const revealAnonymous = () => {
       if (!mounted || finished) return;
       finished = true;
       window.clearTimeout(fallbackTimer);
-      trackEvent("landing_view");
+      void import("@/lib/analytics").then(({ trackEvent }) => {
+        trackEvent("landing_view");
+      });
     };
-    const fallbackTimer = window.setTimeout(revealAnonymous, 2000);
-
-    supabase.auth
-      .getUser()
-      .then(({ data }) => {
-        if (!mounted || finished) return;
-        if (data.user) {
-          finished = true;
-          window.clearTimeout(fallbackTimer);
-          setIsAuthenticated(true);
-          window.location.replace("/meetings?tab=recommend");
-          return;
-        }
-        revealAnonymous();
-      })
-      .catch(revealAnonymous);
+    const fallbackTimer = window.setTimeout(revealAnonymous, 4000);
+    const authTimer = window.setTimeout(() => {
+      void import("@/lib/supabase/client")
+        .then(({ createClient }) => createClient().auth.getUser())
+        .then(({ data }) => {
+          if (!mounted || finished) return;
+          if (data.user) {
+            finished = true;
+            window.clearTimeout(fallbackTimer);
+            setIsAuthenticated(true);
+            window.location.replace("/meetings?tab=recommend");
+            return;
+          }
+          revealAnonymous();
+        })
+        .catch(revealAnonymous);
+    }, 1800);
 
     return () => {
       mounted = false;
+      window.clearTimeout(authTimer);
       window.clearTimeout(fallbackTimer);
     };
   }, []);
@@ -107,19 +135,8 @@ export function FiftyQLandingClient() {
         <div className="absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/55 blur-[70px]" />
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
           {photos.map((photo) => (
-            <motion.div
+            <div
               key={photo.src}
-              initial={reduceMotion ? false : photo.initial}
-              animate={photo.animate}
-              transition={
-                reduceMotion
-                  ? { duration: 0 }
-                  : {
-                      delay: photo.delay,
-                      duration: photo.duration,
-                      ease: [0.175, 0.885, 0.32, 1.275],
-                    }
-              }
               className={`absolute h-[73vw] max-h-[314px] w-[59vw] max-w-[254px] rounded-[8px] bg-white p-[7px] pb-[18px] shadow-[0_12px_26px_rgba(18,18,18,0.2)] ${photo.className}`}
             >
               <div className="relative h-full w-full overflow-hidden rounded-[4px]">
@@ -127,54 +144,46 @@ export function FiftyQLandingClient() {
                   src={photo.src}
                   alt=""
                   fill
-                  priority
+                  priority={photo.priority}
                   sizes="(max-width: 460px) 59vw, 271px"
                   className="object-cover"
                 />
               </div>
-            </motion.div>
+            </div>
           ))}
         </div>
 
         <div className="absolute inset-x-6 top-[56%] -translate-y-1/2 text-center">
           <h1
             aria-label={headline.replace("\n", " ")}
-            className="mx-auto min-h-[76px] whitespace-pre-line break-keep text-[22px] font-black leading-[1.42] tracking-[-0.045em] text-black/85"
+            className="mx-auto min-h-[76px] whitespace-pre-line break-keep text-[22px] font-bold leading-[1.42] tracking-[-0.045em] text-black/85"
           >
             {typedHeadline}
-            {!reduceMotion && typedHeadline.length < headline.length && (
+            {typedHeadline.length < headline.length && (
               <span className="ml-0.5 inline-block h-[1em] w-px animate-pulse bg-black/45 align-[-0.12em]" />
             )}
           </h1>
         </div>
 
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? { duration: 0 } : { delay: 2.46, duration: 0.54, ease: "easeOut" }}
-          className="absolute inset-x-6 top-[72%]"
-        >
+        <div className="absolute inset-x-6 top-[72%]">
           <a
             href={isAuthenticated ? "/meetings?tab=recommend" : "/onboarding/start"}
-            className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition-transform active:scale-[0.98]"
+            className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition-transform active:scale-[0.98]"
           >
             {isAuthenticated ? "내 추천 보러가기" : "내 교집합 찾기"}
-            <ArrowRight
-              size={20}
-              strokeWidth={2}
-              aria-hidden="true"
-              className="absolute right-6"
-            />
+            <span aria-hidden="true" className="absolute right-6 text-[22px] font-bold leading-none">
+              →
+            </span>
           </a>
           {!isAuthenticated && (
-            <p className="mt-3 text-center text-[14px] font-semibold leading-5 text-black/50">
+            <p className="mt-3 text-center text-[14px] font-bold leading-5 text-black/50">
               이미 교집합을 이용 중인가요?{" "}
-              <KakaoLoginButton variant="text" className="font-extrabold text-black/75">
+              <KakaoLoginButton variant="text" className="font-bold text-black/75">
                 {(loading) => (loading ? "카카오로 이동 중..." : "카카오로 로그인")}
               </KakaoLoginButton>
             </p>
           )}
-        </motion.div>
+        </div>
 
       </section>
     </main>
