@@ -6,7 +6,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "교집합",
-  description: "교집합 서비스의 모바일 퍼스트 프론트엔드 목업",
+  description: "나와 잘 맞는 사람들을 찾아주는 교집합",
 };
 
 export const viewport: Viewport = {

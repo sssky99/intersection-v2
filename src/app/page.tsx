@@ -1,5 +1,5 @@
-import { DetailsPreviewClient } from './admin/details-preview/DetailsPreviewClient';
+import { FiftyQLandingClient } from "./FiftyQLandingClient";
 
 export default function Home() {
-  return <DetailsPreviewClient asLandingPage />;
+  return <FiftyQLandingClient />;
 }
