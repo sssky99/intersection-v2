@@ -45,6 +45,7 @@ const summaryStageKeys = [
   "conversation_result_view",
   "application_submit_click",
   "payment_page_open",
+  "payment_completed",
 ] as const;
 
 const trendSeries = [
@@ -52,6 +53,7 @@ const trendSeries = [
   { key: "questions_complete", label: "질문 완료", color: "#7eb3c7" },
   { key: "application_submit_click", label: "신청 클릭", color: "#d88a5b" },
   { key: "payment_page_open", label: "결제 이동", color: "#7d9b76" },
+  { key: "payment_completed", label: "결제 완료", color: "#5b7f65" },
 ] as const;
 
 function cn(...values: Array<string | false | null | undefined>) {

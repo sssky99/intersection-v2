@@ -65,6 +65,12 @@ const funnelStages: FunnelStage[] = [
     eventNames: ["payment_page_open"],
     previousKey: "application_created",
   },
+  {
+    key: "payment_completed",
+    label: "결제 완료",
+    eventNames: ["payment_completed"],
+    previousKey: "payment_page_open",
+  },
 ];
 
 const eventSelect =
