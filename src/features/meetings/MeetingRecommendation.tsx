@@ -33,7 +33,6 @@ import {
   MEETING_DATE_REGION,
   meetingDateApplicationDates,
   meetingDateLabel,
-  meetingDateRelativeWeekLabel,
   meetingDateSchedule,
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
@@ -1186,7 +1185,7 @@ function LegacyMeetingRecommendation({
 }
 
 type MeetingRecommendationProps = Parameters<typeof LegacyMeetingRecommendation>[0];
-type DateApplicationScreen = "intro" | "dates" | "submitted" | "blindDate";
+type DateApplicationScreen = "dates" | "submitted" | "blindDate";
 
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
@@ -1213,7 +1212,6 @@ function DateApplicationOption({
   date,
   selected,
   application,
-  relativeWeekLabel,
   closed,
   disabled,
   onToggle,
@@ -1221,7 +1219,6 @@ function DateApplicationOption({
   date: AvailableDate;
   selected: boolean;
   application: MeetingDateApplication | null;
-  relativeWeekLabel: string;
   closed: boolean;
   disabled: boolean;
   onToggle: () => void;
@@ -1237,164 +1234,49 @@ function DateApplicationOption({
       whileTap={!disabled && !closed && !application ? { scale: 0.98 } : undefined}
       onClick={onToggle}
       className={cn(
-        "relative min-h-[108px] min-w-0 border px-4 py-4 text-left transition",
+        "relative flex min-h-[64px] min-w-0 items-center rounded-[17px] border px-3 py-2.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-black/20",
         closed
           ? "border-black/5 bg-black/[0.035] text-black/32"
           : application
             ? "border-black/10 bg-white text-black"
             : selected
-          ? "border-black bg-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
-          : "border-black/10 bg-white text-black hover:border-black/25",
+              ? "border-black bg-black/[0.035] text-black shadow-[inset_0_0_0_1px_#111]"
+              : "border-black/10 bg-white text-black hover:border-black/25",
         (disabled || closed || application) && "cursor-default",
       )}
     >
-      <span
-        className={cn(
-          "absolute right-3 top-3 flex h-5 min-w-5 items-center justify-center rounded-full border px-1 font-black",
-          closed || application ? "text-[10px]" : "text-[9px]",
-          closed
-            ? "border-red-200 bg-red-50 text-red-600"
-            : application
-              ? "border-blue-200 bg-blue-50 text-blue-700"
-              : selected
-            ? "border-white/30 bg-white text-black"
-            : "border-black/15 bg-white text-transparent",
-        )}
-      >
-        {closed
-          ? "마감"
-          : application
-            ? "신청 완료"
-            : selected
-              ? <Check size={12} aria-hidden />
-              : "-"}
+      <span className="min-w-0 pr-7">
+        <span className="block text-[13px] font-black leading-5">
+          {schedule.month}월 {schedule.day}일 {schedule.weekdayLabel}
+        </span>
+        <span className="mt-0.5 block text-[10px] font-bold text-black/42">
+          {schedule.timeLabel} · {MEETING_DATE_REGION}
+        </span>
       </span>
-      <span className="block pr-9 text-base font-black leading-5">
-        {schedule.month}월 {schedule.day}일
-      </span>
-      <span className={cn("mt-0.5 block text-[13px] font-bold", selected ? "text-white/55" : "text-black/40")}>
-        {relativeWeekLabel}
-      </span>
-      <span className={cn("mt-3 flex items-center gap-1.5 text-[13px] font-bold", selected ? "text-white/78" : "text-black/62")}>
-        <Clock3 size={12} aria-hidden />
-        {schedule.timeLabel}
-        <span className={selected ? "text-white/25" : "text-black/20"}>·</span>
-        <MapPin size={12} aria-hidden />
-        {MEETING_DATE_REGION}
-      </span>
+      {closed || application ? (
+        <span
+          className={cn(
+            "absolute right-2.5 top-2.5 rounded-full border px-1.5 py-0.5 text-[9px] font-black",
+            closed
+              ? "border-red-200 bg-red-50 text-red-600"
+              : "border-blue-200 bg-blue-50 text-blue-700",
+          )}
+        >
+          {closed ? "마감" : "신청 완료"}
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border",
+            selected
+              ? "border-black bg-black text-white"
+              : "border-black/15 bg-white text-transparent",
+          )}
+        >
+          <Check size={12} strokeWidth={3} aria-hidden />
+        </span>
+      )}
     </motion.button>
-  );
-}
-
-function DateApplicationIntro({
-  recommendationName,
-  onContinue,
-}: {
-  recommendationName?: string;
-  onContinue: () => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const displayName = recommendationName?.trim() || "회원";
-
-  return (
-    <motion.div
-      key="date-application-intro"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      className="relative isolate"
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 -top-16 -z-10 h-44 w-44 rounded-full bg-accent/15 blur-3xl"
-      />
-
-      <header className="pr-8">
-        <h1 className="text-[30px] font-black leading-[1.22] tracking-[-0.045em] text-black">
-          <span className="relative inline-block">
-            <span
-              aria-hidden
-              className="absolute inset-x-[-3px] bottom-1 h-2.5 -rotate-1 rounded-full bg-accent/25"
-            />
-            <span className="relative">날짜만</span>
-          </span>{" "}
-          고르면,
-          <br />
-          만남은 저희가 준비해요.
-        </h1>
-      </header>
-
-      <div className="mt-8 space-y-3">
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: reduceMotion ? 0 : 0.12, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
-        >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
-            1
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <h2 className="text-[15px] font-black text-black">
-              가능한 날짜를 선택하세요.
-            </h2>
-            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
-              날짜만 선택하시면 {displayName}님과 잘 맞는 사람과 활동을
-              준비해드려요.
-            </p>
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: reduceMotion ? 0 : 0.24, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
-        >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
-            2
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <h2 className="text-[15px] font-black text-black">
-              장소와 활동은 시작 24시간 전에 공개돼요.
-            </h2>
-            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
-              최적의 구성을 위해서, 정확한 장소와 활동은 모임 시작 24시간
-              전에 공개 돼요.
-            </p>
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: reduceMotion ? 0 : 0.36, duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          className="flex gap-4 rounded-[22px] border border-black/[0.07] bg-white/90 p-4 shadow-[0_12px_32px_rgba(18,18,18,0.045)]"
-        >
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-black text-[15px] font-black tabular-nums text-white shadow-[0_8px_20px_rgba(0,0,0,0.14)]">
-            3
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <h2 className="text-[15px] font-black text-black">
-              다시 만나고 싶은 사람을 선택해요.
-            </h2>
-            <p className="mt-1.5 text-[13px] font-semibold leading-5 text-black/48">
-              모임이 끝나면 피드백을 통해서 다시 만나고 싶은 사람을 선택할 수
-              있어요. 서로 선택한 경우 1대1로 만날 수 있는 자리를
-              준비해드려요.
-            </p>
-          </div>
-        </motion.div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onContinue}
-        className="mt-7 flex h-[56px] w-full items-center justify-center rounded-[18px] bg-black text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] transition active:scale-[0.985]"
-      >
-        날짜 선택하기
-      </button>
-    </motion.div>
   );
 }
 
@@ -1404,7 +1286,6 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 
 function MeetingDateApplicationFlow({
   userId,
-  recommendationName,
   embedded = false,
   active = true,
   membershipStatus,
@@ -1415,7 +1296,7 @@ function MeetingDateApplicationFlow({
   onBlindDateOpenRequestHandled,
   onDateApplicationsChange,
 }: MeetingRecommendationProps) {
-  const [screen, setScreen] = useState<DateApplicationScreen>("intro");
+  const [screen, setScreen] = useState<DateApplicationScreen>("dates");
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [submittedDates, setSubmittedDates] = useState<string[]>([]);
@@ -1680,15 +1561,7 @@ function MeetingDateApplicationFlow({
       )}
     >
       <AnimatePresence mode="wait" initial={false}>
-        {screen === "intro" ? (
-          <DateApplicationIntro
-            recommendationName={recommendationName}
-            onContinue={() => {
-              trackEvent("application_intro_continue_click");
-              setScreen("dates");
-            }}
-          />
-        ) : screen === "submitted" ? (
+        {screen === "submitted" ? (
           <motion.div
             key="date-submitted"
             initial={{ opacity: 0, y: 10 }}
@@ -1741,26 +1614,58 @@ function MeetingDateApplicationFlow({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
           >
-            <header>
-              <h1 className="text-[27px] font-bold leading-9 text-black">
-                참여 가능한 날짜
+            <header className="pr-12">
+              <h1 className="whitespace-nowrap text-[28px] font-black leading-9 tracking-[-0.05em] text-black">
+                가능한 날짜를 골라주세요.
               </h1>
-              <p className="mt-2 text-sm font-semibold leading-6 text-black/48">
-                배정되면 참여가 확정되니, 가능한 날짜를 선택해주세요.
+              <p className="mt-3 text-[13px] font-semibold leading-5 text-black/48">
+                문답을 바탕으로 잘 맞는 사람과 활동을 준비해드려요.
               </p>
             </header>
 
-            <div className="mt-6 grid grid-cols-2 gap-2.5 overflow-hidden">
+            <div className="mt-5 grid grid-cols-2 gap-2.5">
+              <div className="min-h-[104px] rounded-[18px] border border-black/[0.06] bg-black/[0.035] p-3.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white text-black shadow-[0_3px_8px_rgba(0,0,0,0.05)]">
+                  <span className="text-[15px] leading-none" aria-hidden>
+                    👥
+                  </span>
+                </span>
+                <p className="mt-3 text-[12px] font-black leading-[1.45] text-black">
+                  대화가 잘 맞는
+                  <br />
+                  사람들로 구성해요
+                </p>
+              </div>
+              <div className="min-h-[104px] rounded-[18px] border border-black/[0.06] bg-black/[0.035] p-3.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white text-black shadow-[0_3px_8px_rgba(0,0,0,0.05)]">
+                  <span className="text-[15px] leading-none" aria-hidden>
+                    📍
+                  </span>
+                </span>
+                <p className="mt-3 text-[12px] font-black leading-[1.45] text-black">
+                  장소와 활동은
+                  <br />
+                  24시간 전에 공개해요
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-end justify-between gap-3">
+              <h2 className="text-[18px] font-black tracking-[-0.04em] text-black">
+                참여 가능한 날짜
+              </h2>
+              <span className="pb-0.5 text-[10px] font-bold text-black/38">
+                1개를 선택해주세요
+              </span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2.5 overflow-hidden">
               {availableDates.map((date) => (
                 <DateApplicationOption
                   key={date.date}
                   date={date}
                   selected={selectedDates.includes(date.date)}
                   application={applicationByDate.get(date.date) ?? null}
-                  relativeWeekLabel={meetingDateRelativeWeekLabel(
-                    date.date,
-                    today,
-                  )}
                   closed={date.date < today}
                   disabled={saving}
                   onToggle={() => toggleDate(date.date)}
@@ -1778,25 +1683,23 @@ function MeetingDateApplicationFlow({
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-6 border-t border-black/10 py-4"
+                className="mt-6 border-t border-black/10 pb-[96px] pt-4"
               >
-                <div>
-                  <p className="text-xs font-bold text-black/42">
-                    선택한 날짜
+                <div className="flex items-end justify-between gap-4">
+                  <p className="text-[11px] font-bold text-black/42">참가비</p>
+                  <p className="whitespace-nowrap text-[24px] font-black leading-none tracking-[-0.05em] text-black">
+                    {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
                   </p>
-                  <div className="mt-1 flex items-baseline justify-between gap-3">
-                    <p className="whitespace-nowrap text-xl font-black text-black">
-                      참가비 {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
-                    </p>
-                  </div>
                 </div>
                 <button
                   type="button"
                   disabled={saving}
                   onClick={() => void submitDateApplications(true)}
-                  className="mt-4 h-[52px] w-full bg-black text-sm font-black text-white disabled:bg-black/15 disabled:text-black/35"
+                  className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-black text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
                 >
-                  {saving ? "신청 정보를 저장하는 중..." : "신청하기"}
+                  {saving
+                    ? "신청 정보를 저장하는 중..."
+                    : `${meetingDateLabel(selectedDates[0])} 신청하기`}
                 </button>
               </motion.div>
             )}
@@ -1823,18 +1726,6 @@ function MeetingDateApplicationFlow({
               </button>
             )}
 
-            <div className="mt-1">
-              <button
-                type="button"
-                onClick={() => setScreen("intro")}
-                className="inline-flex items-center gap-1 py-2 text-[11px] font-bold text-[#92928e] transition hover:text-[#6f6f6b] active:opacity-70"
-              >
-                <span aria-hidden className="text-[13px] leading-none">
-                  ←
-                </span>
-                설명 다시보기
-              </button>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>
