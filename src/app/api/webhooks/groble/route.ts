@@ -128,6 +128,11 @@ function objectParts(object: JsonRecord) {
   return {
     merchantUid: text(object.merchantUid),
     buyerPhone: normalizePhone(buyer?.phoneNumber),
+    buyerName:
+      text(buyer?.name) ??
+      text(buyer?.fullName) ??
+      text(buyer?.buyerName) ??
+      text(object.buyerName),
     finalAmount: number(pricing?.finalAmount),
     purchasedAt: text(payment?.purchasedAt),
     cancelRequestedAt: text(cancelRequest?.requestedAt),
@@ -197,6 +202,40 @@ async function pendingApplicationMatch({
   return { status: "matched" as const, userId, groupId: groupIds[0] };
 }
 
+async function syncProfileNameFromPayment({
+  userId,
+  buyerName,
+}: {
+  userId: string;
+  buyerName: string | null;
+}) {
+  const normalizedBuyerName = buyerName?.trim();
+  if (!normalizedBuyerName) return;
+
+  const admin = createAdminClient();
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("name,nickname")
+    .eq("user_id", userId)
+    .maybeSingle<{ name: string | null; nickname: string | null }>();
+  if (profileError) throw profileError;
+  if (!profile) return;
+
+  const currentName = profile.name?.trim() ?? "";
+  if (currentName === normalizedBuyerName) return;
+
+  const nickname = profile.nickname?.trim() || currentName || null;
+  const { error: updateError } = await admin
+    .from("profiles")
+    .update({
+      name: normalizedBuyerName,
+      nickname,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+  if (updateError) throw updateError;
+}
+
 async function processPaymentCompleted(
   envelope: WebhookEnvelope,
   idempotencyKey: string,
@@ -228,6 +267,11 @@ async function processPaymentCompleted(
     .eq("application_group_id", match.groupId)
     .eq("user_id", match.userId);
   if (updateError) throw updateError;
+
+  await syncProfileNameFromPayment({
+    userId: match.userId,
+    buyerName: details.buyerName,
+  });
 
   const { error: analyticsError } = await admin.from("user_events").insert({
     profile_id: match.userId,
