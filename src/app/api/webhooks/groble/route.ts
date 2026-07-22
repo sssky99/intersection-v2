@@ -189,17 +189,15 @@ async function pendingApplicationMatch({
     .returns<ApplicationRow[]>();
   if (applicationError) throw applicationError;
 
-  const groupIds = Array.from(
-    new Set((applications ?? []).map((row) => row.application_group_id)),
-  );
-  if (groupIds.length === 0) {
+  const latestGroupId = applications?.[0]?.application_group_id ?? null;
+  if (!latestGroupId) {
     return { status: "unmatched" as const, userId, groupId: null };
   }
-  if (groupIds.length > 1) {
-    return { status: "ambiguous" as const, userId, groupId: null };
-  }
 
-  return { status: "matched" as const, userId, groupId: groupIds[0] };
+  // A previous cancelled payment can leave an older application in
+  // payment_pending. The query is newest-first, so bind a new payment to the
+  // most recently created eligible application group.
+  return { status: "matched" as const, userId, groupId: latestGroupId };
 }
 
 async function syncProfileNameFromPayment({
@@ -454,4 +452,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
   }
 }
-
