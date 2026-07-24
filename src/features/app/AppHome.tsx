@@ -339,14 +339,24 @@ type FetchUserTicketsOptions = {
   offset?: number;
 };
 
+function ticketRevealPreviewEnabled() {
+  return (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("previewReveal") === "1"
+  );
+}
+
 function userTicketsRequestKey({ limit, offset = 0 }: FetchUserTicketsOptions) {
-  return `${offset}:${limit ?? "all"}`;
+  return `${ticketRevealPreviewEnabled() ? "preview" : "live"}:${offset}:${
+    limit ?? "all"
+  }`;
 }
 
 function userTicketsRequestPath({ limit, offset = 0 }: FetchUserTicketsOptions) {
   const params = new URLSearchParams();
   if (typeof limit === "number") params.set("limit", String(limit));
   if (offset > 0) params.set("offset", String(offset));
+  if (ticketRevealPreviewEnabled()) params.set("previewReveal", "1");
   const query = params.toString();
   return query ? `/api/meetings/my-tickets?${query}` : "/api/meetings/my-tickets";
 }
@@ -1109,6 +1119,7 @@ type TicketListItem =
 function isVisibleMysteryApplication(
   application: MeetingDateApplication,
   nowMs: number | null,
+  forceReveal = false,
 ) {
   if (
     ["cancelled", "not_selected", "feedback_done", "completed"].includes(
@@ -1121,6 +1132,8 @@ function isVisibleMysteryApplication(
   if (!application.assignedTicketInstanceId || application.status !== "approved") {
     return true;
   }
+
+  if (forceReveal) return false;
 
   const revealAt = dateApplicationConfirmationAt(application);
   return nowMs === null || revealAt === null || nowMs < revealAt;
@@ -1142,6 +1155,7 @@ function TicketListTab({
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
   const [nowMs, setNowMs] = useState<number | null>(null);
+  const [forceReveal, setForceReveal] = useState(false);
   const dragState = useRef({
     active: false,
     interacting: false,
@@ -1156,10 +1170,10 @@ function TicketListTab({
     () =>
       dateApplications
         .filter((application) =>
-          isVisibleMysteryApplication(application, nowMs),
+          isVisibleMysteryApplication(application, nowMs, forceReveal),
         )
         .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
-    [dateApplications, nowMs],
+    [dateApplications, forceReveal, nowMs],
   );
   const ticketItems = useMemo<TicketListItem[]>(
     () => [
@@ -1179,6 +1193,7 @@ function TicketListTab({
   const itemCount = ticketItems.length;
 
   useEffect(() => {
+    setForceReveal(ticketRevealPreviewEnabled());
     setNowMs(Date.now());
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(timer);

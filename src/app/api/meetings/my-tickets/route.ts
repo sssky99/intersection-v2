@@ -852,11 +852,22 @@ function effectiveSourceStatus(
   return row.status;
 }
 
+function ticketDisplayNow(
+  now: Date,
+  startAt: Date | null,
+  previewReveal: boolean,
+) {
+  if (!previewReveal || !startAt) return now;
+  const revealAt = addHours(startAt, -24);
+  return now < revealAt ? revealAt : now;
+}
+
 function sourceTicketCandidate(
   row: TicketSourceRow,
   instanceMap: Map<string, InstanceRow>,
   userAssignedInstanceIds: Set<string>,
   now: Date,
+  previewReveal = false,
 ): SourceTicketCandidate | null {
   const instanceId = sourceRowInstanceId(row);
   const instance = instanceId ? instanceMap.get(instanceId) ?? null : null;
@@ -868,11 +879,12 @@ function sourceTicketCandidate(
     instanceId,
     userAssignedInstanceIds,
   );
+  const displayNow = ticketDisplayNow(now, startAt, previewReveal);
 
   if (
     confirmedStatuses.has(effectiveStatus) &&
     startAt &&
-    now < addHours(startAt, -24)
+    displayNow < addHours(startAt, -24)
   ) {
     return null;
   }
@@ -880,7 +892,7 @@ function sourceTicketCandidate(
   const derived = deriveStatus(
     effectiveStatus,
     startAt,
-    now,
+    displayNow,
   );
 
   if (!derived.status) return null;
@@ -957,6 +969,8 @@ function ticketsResponse(
 
 export async function GET(request: Request) {
   const pagination = userTicketsPagination(request);
+  const previewRevealRequested =
+    new URL(request.url).searchParams.get("previewReveal") === "1";
   const userSupabase = await createClient();
   const {
     data: { user },
@@ -977,6 +991,7 @@ export async function GET(request: Request) {
       .maybeSingle<ProfileAccessRow>();
     if (profileAccessError) throw profileAccessError;
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
+    const previewReveal = previewRevealRequested && canSeeTestTickets;
 
     const { data: waitlistData, error: waitlistError } = await supabase
       .from("ticket_participations")
@@ -1064,7 +1079,13 @@ export async function GET(request: Request) {
       [
         ...ticketSourceRows
           .map((row) =>
-            sourceTicketCandidate(row, instanceMap, userAssignedInstanceIds, now),
+            sourceTicketCandidate(
+              row,
+              instanceMap,
+              userAssignedInstanceIds,
+              now,
+              previewReveal,
+            ),
           )
           .filter(
             (candidate): candidate is SourceTicketCandidate =>
@@ -1266,10 +1287,11 @@ export async function GET(request: Request) {
           instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
         const sourceTime = instance?.event_time ?? row.ticket_snapshot?.time;
         const startAt = toStartAt(sourceDate, sourceTime);
+        const displayNow = ticketDisplayNow(now, startAt, previewReveal);
         const placeVisible = placeOpenForConfirmedStatus(
           effectiveStatus,
           startAt,
-          now,
+          displayNow,
           instance?.place_visibility,
         );
         const ticket = toTicket(
@@ -1281,7 +1303,7 @@ export async function GET(request: Request) {
         );
         if (!ticket) return null;
 
-        const derived = deriveStatus(effectiveStatus, startAt, now);
+        const derived = deriveStatus(effectiveStatus, startAt, displayNow);
         if (!derived.status) return null;
 
         const confirmed = confirmedStatuses.has(effectiveStatus);
