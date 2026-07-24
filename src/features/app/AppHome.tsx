@@ -1106,13 +1106,24 @@ type TicketListItem =
     }
   | { kind: "stored-ticket"; id: string; userTicket: UserTicket };
 
-function isVisibleMysteryApplication(application: MeetingDateApplication) {
-  return (
-    !application.assignedTicketInstanceId &&
-    !["cancelled", "not_selected", "feedback_done", "completed"].includes(
+function isVisibleMysteryApplication(
+  application: MeetingDateApplication,
+  nowMs: number | null,
+) {
+  if (
+    ["cancelled", "not_selected", "feedback_done", "completed"].includes(
       application.status,
     )
-  );
+  ) {
+    return false;
+  }
+
+  if (!application.assignedTicketInstanceId || application.status !== "approved") {
+    return true;
+  }
+
+  const revealAt = dateApplicationConfirmationAt(application);
+  return nowMs === null || revealAt === null || nowMs < revealAt;
 }
 
 function TicketListTab({
@@ -1130,6 +1141,7 @@ function TicketListTab({
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
+  const [nowMs, setNowMs] = useState<number | null>(null);
   const dragState = useRef({
     active: false,
     interacting: false,
@@ -1143,9 +1155,11 @@ function TicketListTab({
   const mysteryApplications = useMemo(
     () =>
       dateApplications
-        .filter(isVisibleMysteryApplication)
+        .filter((application) =>
+          isVisibleMysteryApplication(application, nowMs),
+        )
         .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
-    [dateApplications],
+    [dateApplications, nowMs],
   );
   const ticketItems = useMemo<TicketListItem[]>(
     () => [
@@ -1163,6 +1177,12 @@ function TicketListTab({
     [mysteryApplications, tickets],
   );
   const itemCount = ticketItems.length;
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setActiveIndex((current) =>
@@ -1560,6 +1580,11 @@ function dateApplicationBadgeClass(application: MeetingDateApplication) {
 }
 
 function dateApplicationConfirmationAt(application: MeetingDateApplication) {
+  if (application.ticketRevealsAt) {
+    const revealAt = new Date(application.ticketRevealsAt).getTime();
+    if (Number.isFinite(revealAt)) return revealAt;
+  }
+
   const dateMatch = application.meetingDate.match(
     /^(\d{4})-(\d{2})-(\d{2})$/,
   );

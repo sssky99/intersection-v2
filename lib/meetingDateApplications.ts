@@ -26,6 +26,7 @@ export type MeetingDateApplication = {
   depositAmount: number;
   depositStatus: MeetingDateDepositStatus;
   assignedTicketInstanceId: string | null;
+  ticketRevealsAt?: string | null;
   createdAt: string | null;
 };
 

@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  UsersRound,
   UserRound,
 } from "lucide-react";
 import {
@@ -279,6 +280,16 @@ function instanceOptionLabel(
     .join(" · ");
 }
 
+function ticketRevealText(instance: WaitlistTicketInstance) {
+  if (!instance.event_date) return "공개 시각 미정";
+  const time = formatTime(instance.event_time) || "00:00";
+  const startsAt = new Date(`${instance.event_date}T${time}:00+09:00`);
+  if (!Number.isFinite(startsAt.getTime())) return "공개 시각 미정";
+  return `${dateTimeFormatter.format(
+    new Date(startsAt.getTime() - 24 * 60 * 60 * 1000),
+  )} 공개`;
+}
+
 function rowKey(row: AdminWaitlistRow) {
   return String(row.id);
 }
@@ -423,8 +434,14 @@ export function WaitlistAdminPanel() {
   const [query, setQuery] = useState("");
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [groupTicketDrafts, setGroupTicketDrafts] = useState<
+    Record<string, string>
+  >({});
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [bulkSavingGroupId, setBulkSavingGroupId] = useState<string | null>(
+    null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -622,6 +639,78 @@ export function WaitlistAdminPanel() {
       { adminNote: noteDrafts[rowKey(row)] ?? "" },
       "운영자 메모를 저장했습니다.",
     );
+
+  const assignGroupToTicket = async (group: WaitlistGroup) => {
+    if (bulkSavingGroupId) return;
+
+    const eligibleRows = group.rows.filter(
+      (row) => row.source === "date_application" && row.status === "waitlisted",
+    );
+    const instanceOptions = eligibleRows[0]
+      ? instancesForRow(eligibleRows[0], instances)
+      : [];
+    const ticketInstanceId =
+      groupTicketDrafts[group.id] ??
+      (instanceOptions.length === 1 ? instanceOptions[0].id : "");
+    const selectedInstance = instanceOptions.find(
+      (instance) => instance.id === ticketInstanceId,
+    );
+    const applicationIds = eligibleRows
+      .map((row) => row.source_id)
+      .filter((id): id is number => typeof id === "number");
+
+    if (!selectedInstance || applicationIds.length === 0) {
+      setError("옮길 대기 인원과 세부 티켓을 선택해주세요.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `${eligibleRows.length}명을 '${selectedInstance.title}' 티켓으로 옮길까요?\n실제 티켓은 ${ticketRevealText(selectedInstance)}됩니다.`,
+      )
+    ) {
+      return;
+    }
+
+    setBulkSavingGroupId(group.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin/waitlist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "assign_date_applications",
+          applicationIds,
+          ticketInstanceId: selectedInstance.id,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | (AdminWaitlistData & { assignedCount?: number; error?: string })
+        | null;
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "waitlist-bulk-assignment-failed");
+      }
+
+      hydrate(data);
+      setGroupTicketDrafts((current) => {
+        const next = { ...current };
+        delete next[group.id];
+        return next;
+      });
+      setNotice(
+        `${data.assignedCount ?? applicationIds.length}명을 세부 티켓으로 옮겼습니다.`,
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "대기 인원을 티켓으로 옮기지 못했습니다.",
+      );
+    } finally {
+      setBulkSavingGroupId(null);
+    }
+  };
 
   const toggleGroup = (groupId: string) => {
     setOpenGroupIds((current) => {
@@ -899,11 +988,22 @@ export function WaitlistAdminPanel() {
                   <WaitlistAccordion
                     key={group.id}
                     group={group}
+                    instances={instances}
+                    templateMap={templateMap}
+                    selectedTicketInstanceId={groupTicketDrafts[group.id] ?? ""}
                     selectedId={selectedId}
                     savingId={savingId}
+                    bulkSaving={bulkSavingGroupId === group.id}
                     open={openGroupIds.has(group.id)}
                     onToggle={() => toggleGroup(group.id)}
                     onSelect={(row) => setSelectedId(rowKey(row))}
+                    onTicketInstanceChange={(instanceId) =>
+                      setGroupTicketDrafts((current) => ({
+                        ...current,
+                        [group.id]: instanceId,
+                      }))
+                    }
+                    onAssign={() => void assignGroupToTicket(group)}
                   />
                 ))}
               </div>
@@ -932,19 +1032,44 @@ export function WaitlistAdminPanel() {
 
 function WaitlistAccordion({
   group,
+  instances,
+  templateMap,
+  selectedTicketInstanceId,
   open,
   selectedId,
   savingId,
+  bulkSaving,
   onToggle,
   onSelect,
+  onTicketInstanceChange,
+  onAssign,
 }: {
   group: WaitlistGroup;
+  instances: WaitlistTicketInstance[];
+  templateMap: Map<string, WaitlistTicketTemplate>;
+  selectedTicketInstanceId: string;
   open: boolean;
   selectedId: string | null;
   savingId: string | null;
+  bulkSaving: boolean;
   onToggle: () => void;
   onSelect: (row: AdminWaitlistRow) => void;
+  onTicketInstanceChange: (instanceId: string) => void;
+  onAssign: () => void;
 }) {
+  const eligibleRows = group.rows.filter(
+    (row) => row.source === "date_application" && row.status === "waitlisted",
+  );
+  const instanceOptions = eligibleRows[0]
+    ? instancesForRow(eligibleRows[0], instances)
+    : [];
+  const effectiveTicketInstanceId =
+    selectedTicketInstanceId ||
+    (instanceOptions.length === 1 ? instanceOptions[0].id : "");
+  const selectedInstance = instanceOptions.find(
+    (instance) => instance.id === effectiveTicketInstanceId,
+  );
+
   return (
     <article className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <button
@@ -979,6 +1104,64 @@ function WaitlistAccordion({
 
       {open && (
         <div className="space-y-2 border-t border-black/10 bg-[#fcfcfb] p-3">
+          {eligibleRows.length > 0 && (
+            <div className="mb-3 rounded-2xl border border-accent/25 bg-accent/[0.07] p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
+                  <UsersRound size={17} aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black">
+                    결제 확인된 대기 {eligibleRows.length}명 티켓 이동
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+                    선택한 티켓의 참여자로 확정합니다. 사용자는 행사 24시간
+                    전부터 실제 티켓을 볼 수 있습니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 xl:grid-cols-[minmax(0,1fr)_180px]">
+                <select
+                  value={effectiveTicketInstanceId}
+                  disabled={bulkSaving}
+                  onChange={(event) =>
+                    onTicketInstanceChange(event.target.value)
+                  }
+                  className="h-11 min-w-0 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+                >
+                  <option value="">옮길 세부 티켓 선택</option>
+                  {instanceOptions.map((instance) => (
+                    <option key={instance.id} value={instance.id}>
+                      {instanceOptionLabel(instance, templateMap)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  disabled={!selectedInstance || bulkSaving}
+                  onClick={onAssign}
+                  className="h-11 rounded-xl bg-black px-4 text-sm font-black text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/20"
+                >
+                  {bulkSaving
+                    ? "옮기는 중..."
+                    : `${eligibleRows.length}명 티켓으로 옮기기`}
+                </button>
+              </div>
+
+              {selectedInstance && (
+                <p className="mt-2 text-xs font-bold text-black/50">
+                  실제 티켓 {ticketRevealText(selectedInstance)}
+                </p>
+              )}
+              {instanceOptions.length === 0 && (
+                <p className="mt-2 text-xs font-bold text-rose-600">
+                  같은 날짜의 세부 티켓이 없습니다. 티켓 관리에서 일정을 먼저
+                  저장해주세요.
+                </p>
+              )}
+            </div>
+          )}
           {group.rows.map((row) => (
             <ApplicantRow
               key={rowKey(row)}

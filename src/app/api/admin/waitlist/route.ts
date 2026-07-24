@@ -325,12 +325,66 @@ export async function PATCH(request: NextRequest) {
     string,
     unknown
   > | null;
+  const action = body?.action;
   const id = body?.id;
   const status = body?.status;
   const adminNote = body?.adminNote;
   const depositStatus = body?.depositStatus;
   const ticketInstanceId =
     body && "ticketInstanceId" in body ? body.ticketInstanceId : undefined;
+
+  if (action === "assign_date_applications") {
+    const applicationIds = Array.isArray(body?.applicationIds)
+      ? Array.from(
+          new Set(
+            body.applicationIds.filter(
+              (value): value is number =>
+                typeof value === "number" &&
+                Number.isSafeInteger(value) &&
+                value > 0,
+            ),
+          ),
+        )
+      : [];
+    const instanceId = text(ticketInstanceId);
+
+    if (applicationIds.length === 0 || !instanceId) {
+      return NextResponse.json(
+        { error: "옮길 신청자와 세부 티켓을 선택해주세요." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const supabase = createAdminClient();
+      const { data: assignedCount, error } = await supabase.rpc(
+        "assign_meeting_date_applications_to_ticket",
+        {
+          p_application_ids: applicationIds,
+          p_ticket_instance_id: instanceId,
+        },
+      );
+      if (error) throw error;
+
+      return NextResponse.json({
+        ...(await loadWaitlistData()),
+        assignedCount:
+          typeof assignedCount === "number"
+            ? assignedCount
+            : applicationIds.length,
+      });
+    } catch (error) {
+      console.error("Admin bulk waitlist assignment failed:", {
+        applicationCount: applicationIds.length,
+        ticketInstanceId: instanceId,
+        error,
+      });
+      return NextResponse.json(
+        { error: "대기 인원을 티켓으로 옮기지 못했습니다." },
+        { status: 500 },
+      );
+    }
+  }
 
   if (typeof id !== "string" && typeof id !== "number") {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });

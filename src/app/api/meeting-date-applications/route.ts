@@ -28,6 +28,12 @@ type DateApplicationRow = {
   created_at: string | null;
 };
 
+type AssignedTicketSchedule = {
+  id: string;
+  event_date: string | null;
+  event_time: string | null;
+};
+
 const activeStatuses = [
   "payment_pending",
   "waitlisted",
@@ -35,7 +41,18 @@ const activeStatuses = [
   "approved",
 ] as const;
 
-function toApplication(row: DateApplicationRow): MeetingDateApplication {
+function ticketRevealsAt(schedule: AssignedTicketSchedule | undefined) {
+  if (!schedule?.event_date) return null;
+  const time = schedule.event_time?.slice(0, 5) || "00:00";
+  const startAt = new Date(`${schedule.event_date}T${time}:00+09:00`);
+  if (!Number.isFinite(startAt.getTime())) return null;
+  return new Date(startAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+}
+
+function toApplication(
+  row: DateApplicationRow,
+  schedule?: AssignedTicketSchedule,
+): MeetingDateApplication {
   return {
     id: row.id,
     meetingDate: row.meeting_date,
@@ -45,6 +62,7 @@ function toApplication(row: DateApplicationRow): MeetingDateApplication {
     depositAmount: row.deposit_amount,
     depositStatus: row.deposit_status,
     assignedTicketInstanceId: row.assigned_ticket_instance_id,
+    ticketRevealsAt: ticketRevealsAt(schedule),
     createdAt: row.created_at,
   };
 }
@@ -104,8 +122,38 @@ export async function GET() {
 
     if (error) throw error;
 
+    const rows = data ?? [];
+    const assignedInstanceIds = Array.from(
+      new Set(
+        rows
+          .map((row) => row.assigned_ticket_instance_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+    let scheduleMap = new Map<string, AssignedTicketSchedule>();
+
+    if (assignedInstanceIds.length > 0) {
+      const { data: schedules, error: scheduleError } =
+        await createAdminClient()
+          .from("ticket_instances")
+          .select("id,event_date,event_time")
+          .in("id", assignedInstanceIds)
+          .returns<AssignedTicketSchedule[]>();
+      if (scheduleError) throw scheduleError;
+      scheduleMap = new Map(
+        (schedules ?? []).map((schedule) => [schedule.id, schedule]),
+      );
+    }
+
     return NextResponse.json({
-      applications: (data ?? []).map(toApplication),
+      applications: rows.map((row) =>
+        toApplication(
+          row,
+          row.assigned_ticket_instance_id
+            ? scheduleMap.get(row.assigned_ticket_instance_id)
+            : undefined,
+        ),
+      ),
     });
   } catch (error) {
     if (isMissingApplicationsTable(error)) {
@@ -210,7 +258,7 @@ export async function POST(request: Request) {
       .filter((row): row is DateApplicationRow => Boolean(row));
 
     return NextResponse.json({
-      applications: rows.map(toApplication),
+      applications: rows.map((row) => toApplication(row)),
       duplicateDates: protectedRows.map((row) => row.meeting_date),
       totalDepositAmount: dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
     });

@@ -863,8 +863,22 @@ function sourceTicketCandidate(
   const date = instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
   const time = instance?.event_time ?? row.ticket_snapshot?.time;
   const startAt = toStartAt(date, time);
+  const effectiveStatus = effectiveSourceStatus(
+    row,
+    instanceId,
+    userAssignedInstanceIds,
+  );
+
+  if (
+    confirmedStatuses.has(effectiveStatus) &&
+    startAt &&
+    now < addHours(startAt, -24)
+  ) {
+    return null;
+  }
+
   const derived = deriveStatus(
-    effectiveSourceStatus(row, instanceId, userAssignedInstanceIds),
+    effectiveStatus,
     startAt,
     now,
   );
