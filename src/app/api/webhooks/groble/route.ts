@@ -32,6 +32,10 @@ type ApplicationRow = {
   deposit_amount: number;
   created_at: string;
 };
+type PaymentIntentMatchRow = {
+  intent_id: number | string;
+  application_group_id: string;
+};
 
 function jsonRecord(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -153,9 +157,11 @@ async function eventStatus(
 async function pendingApplicationMatch({
   buyerPhone,
   finalAmount,
+  paidAt,
 }: {
   buyerPhone: string | null;
   finalAmount: number | null;
+  paidAt: string | null;
 }) {
   if (!buyerPhone || finalAmount === null) {
     return { status: "unmatched" as const, userId: null, groupId: null };
@@ -177,6 +183,54 @@ async function pendingApplicationMatch({
   }
 
   const userId = profiles[0].user_id;
+  if (paidAt) {
+    const paidAtDate = new Date(paidAt);
+    if (Number.isFinite(paidAtDate.getTime())) {
+      const { data: paymentIntents, error: paymentIntentError } =
+        await admin.rpc("match_meeting_date_payment_intent", {
+          p_user_id: userId,
+          p_paid_at: paidAtDate.toISOString(),
+          p_amount: finalAmount,
+        });
+      if (paymentIntentError) throw paymentIntentError;
+
+      const intentMatches = (paymentIntents ?? []) as PaymentIntentMatchRow[];
+      if (intentMatches.length > 1) {
+        return {
+          status: "ambiguous" as const,
+          userId,
+          groupId: null,
+          intentId: null,
+        };
+      }
+      if (intentMatches.length === 1) {
+        return {
+          status: "matched" as const,
+          userId,
+          groupId: intentMatches[0].application_group_id,
+          intentId: intentMatches[0].intent_id,
+        };
+      }
+    }
+  }
+
+  const { count: paymentIntentCount, error: paymentIntentHistoryError } =
+    await admin
+      .from("meeting_date_payment_intents")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId);
+  if (paymentIntentHistoryError) throw paymentIntentHistoryError;
+  if ((paymentIntentCount ?? 0) > 0) {
+    return {
+      status: "unmatched" as const,
+      userId,
+      groupId: null,
+      intentId: null,
+    };
+  }
+
+  // Compatibility for applications created before payment-intent tracking:
+  // only auto-match when exactly one eligible application group exists.
   const { data: applications, error: applicationError } = await admin
     .from("meeting_date_applications")
     .select("application_group_id,user_id,deposit_amount,created_at")
@@ -184,20 +238,36 @@ async function pendingApplicationMatch({
     .eq("deposit_status", "payment_pending")
     .eq("deposit_amount", finalAmount)
     .in("status", [...activeApplicationStatuses])
-    .order("created_at", { ascending: false })
     .limit(20)
     .returns<ApplicationRow[]>();
   if (applicationError) throw applicationError;
 
-  const latestGroupId = applications?.[0]?.application_group_id ?? null;
-  if (!latestGroupId) {
-    return { status: "unmatched" as const, userId, groupId: null };
+  const applicationGroups = new Set(
+    (applications ?? []).map((application) => application.application_group_id),
+  );
+  if (applicationGroups.size === 0) {
+    return {
+      status: "unmatched" as const,
+      userId,
+      groupId: null,
+      intentId: null,
+    };
+  }
+  if (applicationGroups.size > 1) {
+    return {
+      status: "ambiguous" as const,
+      userId,
+      groupId: null,
+      intentId: null,
+    };
   }
 
-  // A previous cancelled payment can leave an older application in
-  // payment_pending. The query is newest-first, so bind a new payment to the
-  // most recently created eligible application group.
-  return { status: "matched" as const, userId, groupId: latestGroupId };
+  return {
+    status: "matched" as const,
+    userId,
+    groupId: Array.from(applicationGroups)[0],
+    intentId: null,
+  };
 }
 
 async function syncProfileNameFromPayment({
@@ -239,7 +309,11 @@ async function processPaymentCompleted(
   idempotencyKey: string,
 ) {
   const details = objectParts(envelope.object);
-  const match = await pendingApplicationMatch(details);
+  const paymentOccurredAt = details.purchasedAt ?? envelope.occurredAt;
+  const match = await pendingApplicationMatch({
+    ...details,
+    paidAt: paymentOccurredAt,
+  });
 
   if (match.status !== "matched" || !match.userId || !match.groupId) {
     await eventStatus(idempotencyKey, {
@@ -250,7 +324,7 @@ async function processPaymentCompleted(
     return match.status;
   }
 
-  const paidAt = details.purchasedAt ?? envelope.occurredAt ?? new Date().toISOString();
+  const paidAt = paymentOccurredAt ?? new Date().toISOString();
   const admin = createAdminClient();
   const { error: updateError } = await admin
     .from("meeting_date_applications")
@@ -279,6 +353,7 @@ async function processPaymentCompleted(
       provider: "groble",
       merchant_uid: details.merchantUid,
       application_group_id: match.groupId,
+      payment_intent_id: match.intentId,
       amount: details.finalAmount,
       event_id: envelope.id,
     },
@@ -286,11 +361,27 @@ async function processPaymentCompleted(
   });
   if (analyticsError) throw analyticsError;
 
+  if (match.intentId !== null) {
+    const { error: intentUpdateError } = await admin
+      .from("meeting_date_payment_intents")
+      .update({
+        status: "completed",
+        ended_at: paidAt,
+        completed_at: paidAt,
+        groble_payment_event_id: envelope.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", match.intentId)
+      .eq("user_id", match.userId);
+    if (intentUpdateError) throw intentUpdateError;
+  }
+
   await eventStatus(idempotencyKey, {
     processing_status: "processed",
     merchant_uid: details.merchantUid,
     matched_user_id: match.userId,
     matched_application_group_id: match.groupId,
+    matched_payment_intent_id: match.intentId,
     processed_at: new Date().toISOString(),
   });
   return "processed";

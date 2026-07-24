@@ -14,10 +14,12 @@ export const dynamic = "force-dynamic";
 
 type DateApplicationRequest = {
   dates?: unknown;
+  openPayment?: unknown;
 };
 
 type DateApplicationRow = {
   id: number | string;
+  application_group_id: string;
   meeting_date: string;
   meeting_time: string;
   region: string;
@@ -112,7 +114,7 @@ export async function GET() {
     const { data, error } = await createAdminClient()
       .from("meeting_date_applications")
       .select(
-        "id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
       )
       .eq("user_id", user.id)
       .gte("meeting_date", todayInKst())
@@ -175,6 +177,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as DateApplicationRequest;
   const dates = requestedDates(body.dates);
+  const openPayment = body.openPayment === true;
   if (dates.length !== 1) {
     return NextResponse.json(
       { error: "신청할 날짜를 하나만 선택해주세요." },
@@ -188,7 +191,7 @@ export async function POST(request: Request) {
     const { data: existingRows, error: existingError } = await admin
       .from("meeting_date_applications")
       .select(
-        "id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
       )
       .eq("user_id", user.id)
       .in("meeting_date", dates)
@@ -241,7 +244,7 @@ export async function POST(request: Request) {
         .from("meeting_date_applications")
         .upsert(rowsToSave, { onConflict: "user_id,meeting_date" })
         .select(
-          "id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+          "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
         )
         .returns<DateApplicationRow[]>();
       if (error) throw error;
@@ -257,10 +260,50 @@ export async function POST(request: Request) {
       )
       .filter((row): row is DateApplicationRow => Boolean(row));
 
+    let paymentIntentCreated = false;
+    if (openPayment) {
+      const application = rows[0];
+      if (
+        !application ||
+        application.deposit_status !== "payment_pending" ||
+        !["payment_pending", "waitlisted", "on_hold", "approved"].includes(
+          application.status,
+        )
+      ) {
+        return NextResponse.json(
+          { error: "결제 대상을 확인할 수 없습니다." },
+          { status: 409 },
+        );
+      }
+
+      const applicationId =
+        typeof application.id === "number"
+          ? application.id
+          : Number(application.id);
+      if (!Number.isSafeInteger(applicationId)) {
+        throw new Error("Invalid meeting date application id.");
+      }
+
+      const { data: paymentIntent, error: paymentIntentError } = await admin.rpc(
+        "activate_meeting_date_payment_intent",
+        {
+          p_user_id: user.id,
+          p_application_id: applicationId,
+        },
+      );
+      if (paymentIntentError) throw paymentIntentError;
+      paymentIntentCreated =
+        Array.isArray(paymentIntent) && paymentIntent.length === 1;
+      if (!paymentIntentCreated) {
+        throw new Error("Meeting date payment intent was not created.");
+      }
+    }
+
     return NextResponse.json({
       applications: rows.map((row) => toApplication(row)),
       duplicateDates: protectedRows.map((row) => row.meeting_date),
       totalDepositAmount: dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      paymentIntentCreated,
     });
   } catch (error) {
     console.error("Meeting date applications save failed:", error);

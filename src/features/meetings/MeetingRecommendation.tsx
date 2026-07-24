@@ -1190,6 +1190,7 @@ type DateApplicationScreen = "dates" | "submitted" | "blindDate";
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
+  paymentIntentCreated?: boolean;
   error?: string;
 };
 
@@ -1478,7 +1479,10 @@ function MeetingDateApplicationFlow({
       const response = await fetch("/api/meeting-date-applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dates: targetDates }),
+        body: JSON.stringify({
+          dates: targetDates,
+          openPayment: openStoreAfterSave,
+        }),
       });
       const data = (await response.json().catch(() => null)) as
         | DateApplicationsResponse
@@ -1511,6 +1515,9 @@ function MeetingDateApplicationFlow({
         deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       });
       if (openStoreAfterSave) {
+        if (!data.paymentIntentCreated) {
+          throw new Error("date-applications-save-failed");
+        }
         trackEvent("payment_page_open", {
           application_type: "meeting_date",
           payment_provider: "groble",
