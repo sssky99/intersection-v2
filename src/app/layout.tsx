@@ -5,8 +5,30 @@ import { ClarityScript } from "./ClarityScript";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://interv2.netlify.app"),
   title: "교집합",
   description: "나와 잘 맞는 사람들을 찾아주는 교집합",
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "교집합",
+    title: "교집합",
+    description: "나와 잘 맞는 사람들을 찾아주는 교집합",
+    images: [
+      {
+        url: "/images/channel-logo.jpg",
+        width: 1024,
+        height: 1024,
+        alt: "교집합",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "교집합",
+    description: "나와 잘 맞는 사람들을 찾아주는 교집합",
+    images: ["/images/channel-logo.jpg"],
+  },
 };
 
 export const viewport: Viewport = {
