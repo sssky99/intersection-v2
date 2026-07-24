@@ -1679,13 +1679,7 @@ function MysteryApplicationTicketCard({
       className="relative"
     >
       <IntersectionTicketCard
-        title={
-          application.status === "approved" ? (
-            "참여가\n확정됐어요"
-          ) : (
-            <MysteryConfirmationCountdown application={application} />
-          )
-        }
+        title={<MysteryConfirmationCountdown application={application} />}
         date={application.meetingDate}
         time={schedule?.time ?? application.meetingTime}
         location={application.region}
