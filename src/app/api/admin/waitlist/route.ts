@@ -127,6 +127,32 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
   const waitlistRows = (waitlistResult.data ?? []) as WaitlistDbRow[];
   const dateApplicationRows = (dateApplicationsResult.data ?? []) as DateApplicationDbRow[];
+  const participationById = new Map(
+    waitlistRows.map((row) => [String(row.id), row]),
+  );
+  const participationByUserAndInstance = new Map(
+    waitlistRows
+      .filter((row) => row.ticket_instance_id)
+      .map((row) => [`${row.user_id}:${row.ticket_instance_id}`, row]),
+  );
+  const linkedParticipationForApplication = (row: DateApplicationDbRow) =>
+    (row.ticket_participation_id !== null
+      ? participationById.get(String(row.ticket_participation_id))
+      : undefined) ??
+    (row.assigned_ticket_instance_id
+      ? participationByUserAndInstance.get(
+          `${row.user_id}:${row.assigned_ticket_instance_id}`,
+        )
+      : undefined);
+  const linkedParticipationIds = new Set(
+    dateApplicationRows
+      .map(linkedParticipationForApplication)
+      .filter((row): row is WaitlistDbRow => Boolean(row))
+      .map((row) => String(row.id)),
+  );
+  const visibleWaitlistRows = waitlistRows.filter(
+    (row) => !linkedParticipationIds.has(String(row.id)),
+  );
   const userIds = uniqueText([
     ...waitlistRows.map((row) => row.user_id),
     ...dateApplicationRows.map((row) => row.user_id),
@@ -214,7 +240,7 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
   const templateMap = new Map(templates.map((template) => [template.id, template]));
   const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
 
-  const waitlist = waitlistRows.map(
+  const waitlist = visibleWaitlistRows.map(
     (row): AdminWaitlistRow => {
       const instance = row.ticket_instance_id
         ? instanceMap.get(row.ticket_instance_id) ?? null
@@ -237,6 +263,7 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
   const dateApplications = dateApplicationRows.map(
     (row): AdminWaitlistRow => {
+      const linkedParticipation = linkedParticipationForApplication(row);
       const instance = row.assigned_ticket_instance_id
         ? instanceMap.get(row.assigned_ticket_instance_id) ?? null
         : null;
@@ -252,10 +279,11 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
         ticket_instance_id: row.assigned_ticket_instance_id,
         meeting_date: row.meeting_date,
         status: isWaitlistStatus(row.status) ? row.status : "waitlisted",
-        arrival_status: null,
-        arrival_status_updated_at: null,
+        arrival_status: linkedParticipation?.arrival_status ?? null,
+        arrival_status_updated_at:
+          linkedParticipation?.arrival_status_updated_at ?? null,
         admin_note: row.admin_note,
-        ticket_snapshot: null,
+        ticket_snapshot: linkedParticipation?.ticket_snapshot ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
         deposit_amount: row.deposit_amount,

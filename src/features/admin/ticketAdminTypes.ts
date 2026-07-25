@@ -30,15 +30,6 @@ export type TicketVisibility =
 
 export type PlaceVisibility = "hidden" | "confirmed_only";
 
-export type TicketTemplateScores = {
-  score_temperature: number | null;
-  score_texture: number | null;
-  score_tone: number | null;
-  score_rhythm: number | null;
-  score_alcohol: number | null;
-  score_romance: number | null;
-};
-
 export type TicketParticipation = {
   id: number | string;
   ticket_instance_id: string;
@@ -82,7 +73,7 @@ export type AdminTicketInstance = {
   participants: TicketParticipation[];
 };
 
-export type AdminTicketTemplate = TicketTemplateScores & {
+export type AdminTicketTemplate = {
   id: string;
   template_kind: "experience" | "question_sample";
   lifecycle_status: "active" | "archived";

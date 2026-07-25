@@ -83,14 +83,6 @@ export type GatheringTicket = {
     ageBandOverrideId?: MeetingAtmosphereAgeBandId | null;
     genderMoodOverride?: MeetingAtmosphereGenderMood | null;
   } | null;
-  vibeScores?: {
-    temperature?: number | null;
-    texture?: number | null;
-    tone?: number | null;
-    rhythm?: number | null;
-    alcohol?: number | null;
-    romance?: number | null;
-  };
 };
 
 export type AvailableDate = {

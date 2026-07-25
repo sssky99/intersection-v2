@@ -140,12 +140,6 @@ const templateSelect = [
   "atmosphere_age_band_id",
   "visibility",
   "question_order",
-  "score_temperature",
-  "score_texture",
-  "score_tone",
-  "score_rhythm",
-  "score_alcohol",
-  "score_romance",
   "created_at",
   "updated_at",
 ].join(",");
@@ -270,18 +264,6 @@ function participantLimit(value: unknown, fallback: number) {
 }
 
 function questionOrder(value: unknown) {
-  const number =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseInt(value, 10)
-        : null;
-  if (number === null || !Number.isFinite(number)) return null;
-  return Math.max(1, Math.min(5, Math.trunc(number)));
-}
-
-function scoreValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
   const number =
     typeof value === "number"
       ? value
@@ -498,12 +480,6 @@ function templatePayload(body: Record<string, unknown>) {
     atmosphere_age_band_id: atmosphereAgeBandId(body.atmosphereAgeBandId),
     visibility: isQuestionSample ? ("question" as TicketVisibility) : ("draft" as TicketVisibility),
     question_order: questionOrder(body.questionOrder),
-    score_temperature: scoreValue(body.scoreTemperature),
-    score_texture: scoreValue(body.scoreTexture),
-    score_tone: scoreValue(body.scoreTone),
-    score_rhythm: scoreValue(body.scoreRhythm),
-    score_alcohol: scoreValue(body.scoreAlcohol),
-    score_romance: scoreValue(body.scoreRomance),
     updated_at: new Date().toISOString(),
   };
 }
@@ -869,12 +845,6 @@ export async function POST(request: NextRequest) {
             sourceTemplate.template_kind === "question_sample"
               ? sourceTemplate.question_order
               : null,
-          score_temperature: sourceTemplate.score_temperature ?? null,
-          score_texture: sourceTemplate.score_texture ?? null,
-          score_tone: sourceTemplate.score_tone ?? null,
-          score_rhythm: sourceTemplate.score_rhythm ?? null,
-          score_alcohol: sourceTemplate.score_alcohol ?? null,
-          score_romance: sourceTemplate.score_romance ?? null,
         })
         .select("id")
         .single();

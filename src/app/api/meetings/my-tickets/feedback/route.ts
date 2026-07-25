@@ -6,10 +6,6 @@ import type { GatheringTicket } from "@/types/ticket";
 export const dynamic = "force-dynamic";
 
 type PersonAxis = "temperature" | "texture" | "tone" | "rhythm";
-type PlaceAxis =
-  | PersonAxis
-  | "alcohol"
-  | "romance";
 
 type NegativeFeedbackReason =
   | "no_show"
@@ -53,14 +49,6 @@ type AssignmentRow = {
 };
 
 const personAxes: PersonAxis[] = ["temperature", "texture", "tone", "rhythm"];
-const placeAxes: PlaceAxis[] = [
-  "temperature",
-  "texture",
-  "tone",
-  "rhythm",
-  "alcohol",
-  "romance",
-];
 const allowedPersonScores = new Set([-100, -50, 0, 50, 100]);
 const allowedNegativeFeedbackReasons = new Set<NegativeFeedbackReason>([
   "no_show",
@@ -223,20 +211,7 @@ function normalizePlaceFeedback(value: unknown) {
     };
   }
 
-  const result: Partial<Record<PlaceAxis, number>> = {};
-  for (const axis of placeAxes) {
-    const score = raw[axis];
-    if (
-      typeof score !== "number" ||
-      !Number.isInteger(score) ||
-      score < 1 ||
-      score > 5
-    ) {
-      return null;
-    }
-    result[axis] = score;
-  }
-  return result;
+  return null;
 }
 
 function negativeFeedbackTargetIds(placeFeedback: Record<string, unknown>) {

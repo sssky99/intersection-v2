@@ -24,6 +24,11 @@ import {
   conversationResults,
   type ConversationResultCode,
 } from "@/data/conversationResults";
+import {
+  conversationAxisLabelOverrides,
+  conversationVibeAxes,
+  conversationVibeScores,
+} from "@/lib/conversationVibe";
 import { calculateConversationResultCode } from "@/lib/conversationResult";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
@@ -68,12 +73,7 @@ function ConversationResultExplanation({ body }: { body: string }) {
   );
 }
 
-const profileVibeAxes = [
-  "temperature",
-  "texture",
-  "tone",
-  "rhythm",
-] as const satisfies readonly VibeAxis[];
+const profileVibeAxes = conversationVibeAxes;
 
 type ProfileVibeAxis = (typeof profileVibeAxes)[number];
 
@@ -83,33 +83,6 @@ const profileScoreColumns = {
   tone: "score_tone",
   rhythm: "score_rhythm",
 } as const satisfies Record<ProfileVibeAxis, keyof ProfileRow>;
-
-const conversationAxisLabelOverrides = {
-  temperature: {
-    label: "낯선 자리의 시작",
-    leftLabel: "Observe",
-    rightLabel: "Initiate",
-    summaryLabel: "관찰 · 주도",
-  },
-  texture: {
-    label: "대화를 여는 방식",
-    leftLabel: "Listening",
-    rightLabel: "Questioning",
-    summaryLabel: "경청 · 질문",
-  },
-  tone: {
-    label: "차이를 다루는 방식",
-    leftLabel: "Harmony",
-    rightLabel: "Wonder",
-    summaryLabel: "조화 · 탐구",
-  },
-  rhythm: {
-    label: "만남의 분위기",
-    leftLabel: "Conversation",
-    rightLabel: "Experience",
-    summaryLabel: "대화 · 경험",
-  },
-} as const;
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -161,36 +134,6 @@ function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores 
     texture: profileAxisScore(profile, answers, "texture", 2),
     tone: profileAxisScore(profile, answers, "tone", 3),
     rhythm: profileAxisScore(profile, answers, "rhythm", 4),
-  };
-}
-
-function conversationAxisScore(
-  answers: AnswerMap,
-  orders: number[],
-  left: string,
-  right: string,
-  fallback: string | undefined,
-) {
-  const values = orders.map((order) => answers[order]?.value);
-  if (values.every((value) => value === left || value === right)) {
-    const rightCount = values.filter((value) => value === right).length;
-    const leftCount = values.length - rightCount;
-    return ((rightCount - leftCount) / values.length) * 100;
-  }
-  if (fallback === left) return -65;
-  if (fallback === right) return 65;
-  return 0;
-}
-
-function conversationVibeScores(
-  answers: AnswerMap,
-  code: ConversationResultCode,
-): VibeScores {
-  return {
-    temperature: conversationAxisScore(answers, [1, 2, 3, 4], "O", "I", code[0]),
-    texture: conversationAxisScore(answers, [5, 6, 7, 8], "L", "Q", code[1]),
-    tone: conversationAxisScore(answers, [9, 10, 11, 12], "H", "W", code[2]),
-    rhythm: conversationAxisScore(answers, [13, 14, 15, 16], "C", "E", code[3]),
   };
 }
 
@@ -619,7 +562,10 @@ export function ProfileTab({
   const vibeScores = useMemo(
     () =>
       usesNewConversationProfile && conversationCode
-        ? conversationVibeScores(answers, conversationCode)
+        ? conversationVibeScores(
+            (order) => answers[order]?.value,
+            conversationCode,
+          )
         : profileVibeScores(profile, answers),
     [answers, conversationCode, profile, usesNewConversationProfile],
   );

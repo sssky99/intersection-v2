@@ -712,12 +712,6 @@ export function AppHome({
     window.location.href = "/onboarding/questions?regenerate=1&start=1";
   };
 
-  const addWaitlistedTicket = (_ticket: GatheringTicket) => {
-    void loadUserTicketsProgressively({
-      force: true,
-    });
-  };
-
   const applyAccountSession = async ({
     accessToken,
     refreshToken,
@@ -926,12 +920,9 @@ export function AppHome({
         >
           <MeetingRecommendation
             userId={userId}
-            recommendationName={profileNickname(currentProfile)}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
-            onWaitlisted={addWaitlistedTicket}
-            onOpenList={() => switchTab("browse")}
             blindDateOffers={blindDateOffers}
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}

@@ -194,16 +194,6 @@ function queryErrorMessage(
   return [`${label}: ${error.message}`, error.hint].filter(Boolean).join(" | ");
 }
 
-function clampScore(value: number) {
-  return Math.min(100, Math.max(-100, Math.round(value)));
-}
-
-function scoreValue(value: unknown) {
-  if (value === null) return null;
-  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
-  return clampScore(value);
-}
-
 function precisionBonusValue(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return Math.min(5, Math.max(0, Math.round(value)));
@@ -292,7 +282,6 @@ export async function PATCH(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as {
     userId?: unknown;
     status?: unknown;
-    scores?: Partial<Record<(typeof scoreProfileFields)[number], unknown>>;
     publicIntro?: unknown;
     publicEmoji?: unknown;
     isTestParticipant?: unknown;
@@ -305,20 +294,6 @@ export async function PATCH(request: NextRequest) {
   if (isMembershipStatus(status)) {
     updates.membership_status = status;
     updates.membership_updated_at = new Date().toISOString();
-  }
-
-  if (body?.scores && typeof body.scores === "object") {
-    for (const field of scoreProfileFields) {
-      if (!(field in body.scores)) continue;
-      const nextScore = scoreValue(body.scores[field]);
-      if (nextScore === undefined) {
-        return NextResponse.json(
-          { error: "사람 지표 점수는 -100부터 100 사이 숫자여야 합니다." },
-          { status: 400 },
-        );
-      }
-      updates[field] = nextScore;
-    }
   }
 
   if (body && "publicIntro" in body) {

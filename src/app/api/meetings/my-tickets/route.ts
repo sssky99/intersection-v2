@@ -56,12 +56,6 @@ type TemplateRow = {
   default_time: string | null;
   atmosphere_gender_mood: string | null;
   atmosphere_age_band_id: string | null;
-  score_temperature: number | null;
-  score_texture: number | null;
-  score_tone: number | null;
-  score_rhythm: number | null;
-  score_alcohol: number | null;
-  score_romance: number | null;
 };
 
 type InstanceRow = {
@@ -160,12 +154,6 @@ const templateSelect = [
   "default_time",
   "atmosphere_gender_mood",
   "atmosphere_age_band_id",
-  "score_temperature",
-  "score_texture",
-  "score_tone",
-  "score_rhythm",
-  "score_alcohol",
-  "score_romance",
 ].join(",");
 
 const instanceSelect = [
@@ -611,15 +599,6 @@ function toTicket(
     place: detailTicketPlace,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
-    vibeScores: {
-      temperature:
-        template.score_temperature ?? snapshot?.vibeScores?.temperature ?? null,
-      texture: template.score_texture ?? snapshot?.vibeScores?.texture ?? null,
-      tone: template.score_tone ?? snapshot?.vibeScores?.tone ?? null,
-      rhythm: template.score_rhythm ?? snapshot?.vibeScores?.rhythm ?? null,
-      alcohol: template.score_alcohol ?? snapshot?.vibeScores?.alcohol ?? null,
-      romance: template.score_romance ?? snapshot?.vibeScores?.romance ?? null,
-    },
   };
 }
 

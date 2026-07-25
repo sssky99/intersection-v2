@@ -18,8 +18,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { NaverPlacePicker } from "@/components/NaverPlacePicker";
-import { VibeAxisBar } from "@/components/vibe/VibeGraph";
-import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
 import { AtmosphereDisplayEditor } from "@/features/admin/AtmosphereDisplayEditor";
 import {
   normalizeMeetingAtmosphereAgeBandId,
@@ -182,21 +180,7 @@ type TicketDraft = {
   remainingSeatLabelCount: string;
   minimumParticipantCount: string;
   maxParticipantCount: string;
-  scoreTemperature: string;
-  scoreTexture: string;
-  scoreTone: string;
-  scoreRhythm: string;
-  scoreAlcohol: string;
-  scoreRomance: string;
 };
-
-type ScoreDraftKey =
-  | "scoreTemperature"
-  | "scoreTexture"
-  | "scoreTone"
-  | "scoreRhythm"
-  | "scoreAlcohol"
-  | "scoreRomance";
 
 let ticketDataCache: TicketData | null = null;
 let ticketDataRequest: Promise<TicketData> | null = null;
@@ -218,49 +202,6 @@ const ticketCategorySelectOptions = [
 const fixedDetailNotices = [
   "상세 장소는 참여 확정 후 안내돼요.",
 ];
-
-const scoreFields: Array<{
-  key: ScoreDraftKey;
-  axis: VibeAxis;
-}> = [
-  {
-    key: "scoreTemperature",
-    axis: "temperature",
-  },
-  {
-    key: "scoreTexture",
-    axis: "texture",
-  },
-  {
-    key: "scoreTone",
-    axis: "tone",
-  },
-  {
-    key: "scoreRhythm",
-    axis: "rhythm",
-  },
-  {
-    key: "scoreAlcohol",
-    axis: "alcohol",
-  },
-  {
-    key: "scoreRomance",
-    axis: "romance",
-  },
-];
-
-const ticketVibeAxisOverrides: Partial<
-  Record<VibeAxis, { leftLabel?: string; rightLabel?: string }>
-> = {
-  alcohol: {
-    leftLabel: "술이 없는",
-    rightLabel: "술이 있는",
-  },
-  romance: {
-    leftLabel: "편한",
-    rightLabel: "설레는",
-  },
-};
 
 async function fetchTicketData(force = false) {
   if (!force && ticketDataCache) return ticketDataCache;
@@ -412,10 +353,6 @@ const detailTicketLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function detailTicketLabel(index: number) {
   const letter = detailTicketLetters[index] ?? String(index + 1);
   return `세부티켓 ${letter}`;
-}
-
-function scoreDraft(value: number | null) {
-  return value == null ? "" : String(value);
 }
 
 function blankCourseStep(order: number): TicketCourseStepDraft {
@@ -685,12 +622,6 @@ function draftFromTicket(
         MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
     ),
     maxParticipantCount: String(instance?.max_participant_count ?? 6),
-    scoreTemperature: scoreDraft(template.score_temperature),
-    scoreTexture: scoreDraft(template.score_texture),
-    scoreTone: scoreDraft(template.score_tone),
-    scoreRhythm: scoreDraft(template.score_rhythm),
-    scoreAlcohol: scoreDraft(template.score_alcohol),
-    scoreRomance: scoreDraft(template.score_romance),
   };
 }
 
@@ -749,12 +680,6 @@ function ticketRequestBody(draft: TicketDraft) {
     remainingSeatLabelCount: syncedDraft.remainingSeatLabelCount,
     minimumParticipantCount: syncedDraft.minimumParticipantCount,
     maxParticipantCount: syncedDraft.maxParticipantCount,
-    scoreTemperature: syncedDraft.scoreTemperature || null,
-    scoreTexture: syncedDraft.scoreTexture || null,
-    scoreTone: syncedDraft.scoreTone || null,
-    scoreRhythm: syncedDraft.scoreRhythm || null,
-    scoreAlcohol: syncedDraft.scoreAlcohol || null,
-    scoreRomance: syncedDraft.scoreRomance || null,
   };
 }
 
@@ -845,14 +770,6 @@ function ticketPreview(
       }),
     stageCopy: stageCopyFromDraft(syncedDraft),
     atmosphere: ticketAtmospherePreview(syncedDraft, template),
-    vibeScores: {
-      temperature: Number.parseInt(syncedDraft.scoreTemperature, 10) || null,
-      texture: Number.parseInt(syncedDraft.scoreTexture, 10) || null,
-      tone: Number.parseInt(syncedDraft.scoreTone, 10) || null,
-      rhythm: Number.parseInt(syncedDraft.scoreRhythm, 10) || null,
-      alcohol: Number.parseInt(syncedDraft.scoreAlcohol, 10) || null,
-      romance: Number.parseInt(syncedDraft.scoreRomance, 10) || null,
-    },
   };
 }
 
@@ -1572,12 +1489,6 @@ export function TicketAdminPanel({
                         onDraftChange={setDraft}
                       />
                     )}
-
-                    <ScoreEditor
-                      draft={draft}
-                      saving={saving}
-                      onDraftChange={setDraft}
-                    />
 
                     <AtmosphereDisplayEditor
                       genderMood={draft.atmosphereGenderMood}
@@ -2685,52 +2596,6 @@ function ProgressStepCopyEditor({
             }
           />
         ))}
-      </div>
-    </section>
-  );
-}
-
-function ScoreEditor({
-  draft,
-  saving,
-  onDraftChange,
-}: {
-  draft: TicketDraft;
-  saving: boolean;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <h3 className="font-bold">자리 분위기 점수</h3>
-      <div className="mt-4 space-y-5 rounded-2xl border border-black/8 bg-black/[0.025] px-4 py-4">
-        {scoreFields.map((field) => {
-          const score = Number.parseInt(draft[field.key], 10);
-          const hasScore =
-            Number.isFinite(score) && score >= 1 && score <= 5;
-          const value = hasScore ? score : 3;
-
-          return (
-            <VibeAxisBar
-              key={field.key}
-              axis={field.axis}
-              score={hasScore ? value : null}
-              axisLabelOverrides={ticketVibeAxisOverrides[field.axis]}
-              valueLabel={hasScore ? `${value} / 5` : "미설정"}
-              input={{
-                value,
-                min: 1,
-                max: 5,
-                step: 1,
-                disabled: saving,
-                onChange: (nextValue) =>
-                  onDraftChange({
-                    ...draft,
-                    [field.key]: String(nextValue),
-                  }),
-              }}
-            />
-          );
-        })}
       </div>
     </section>
   );

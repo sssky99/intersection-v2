@@ -3,7 +3,6 @@
 import Image from "next/image";
 import {
   Download,
-  ExternalLink,
   Image as ImageIcon,
   LogOut,
   Save,
@@ -12,8 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { VibeAxisBar } from "@/components/vibe/VibeGraph";
-import type { VibeAxis } from "@/components/vibe/vibeGraphConfig";
+import { VibeGraph } from "@/components/vibe/VibeGraph";
 import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
@@ -28,7 +26,6 @@ import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
 import { RoomChatAdminPanel } from "@/features/admin/RoomChatAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
-import { TicketRejectionAdminPanel } from "@/features/admin/TicketRejectionAdminPanel";
 import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
 import { WaitlistAdminPanel } from "@/features/admin/WaitlistAdminPanel";
 import {
@@ -44,6 +41,11 @@ import {
 import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import { calculateConversationResultCode } from "@/lib/conversationResult";
 import {
+  conversationAxisLabelOverrides,
+  conversationVibeAxes,
+  conversationVibeScores,
+} from "@/lib/conversationVibe";
+import {
   membershipStatusLabels,
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
@@ -54,7 +56,6 @@ type AdminTab =
   | "visitors"
   | "membership"
   | "tickets"
-  | "ticketRejections"
   | "calendar"
   | "waitlist"
   | "rooms"
@@ -79,7 +80,6 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "티켓 관리" },
-  { id: "ticketRejections", label: "거절 사유 관리" },
   { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
@@ -342,36 +342,10 @@ function membershipStatusValue(profile: AdminProfile): MembershipStatus {
   return profile.membership_status ?? "none";
 }
 
-const adminProfileAxes = [
-  "temperature",
-  "texture",
-  "tone",
-  "rhythm",
-] as const satisfies readonly VibeAxis[];
-
-type AdminProfileAxis = (typeof adminProfileAxes)[number];
-type AdminProfileScoreColumn =
-  | "score_temperature"
-  | "score_texture"
-  | "score_tone"
-  | "score_rhythm";
-
 type ProfileDetailPatch = {
-  scores?: Partial<Record<AdminProfileScoreColumn, number | null>>;
   isTestParticipant?: boolean;
   matchingPrecisionBonus?: number;
 };
-
-const adminProfileScoreColumns = {
-  temperature: "score_temperature",
-  texture: "score_texture",
-  tone: "score_tone",
-  rhythm: "score_rhythm",
-} as const satisfies Record<AdminProfileAxis, AdminProfileScoreColumn>;
-
-function clampAdminScore(value: number) {
-  return Math.min(100, Math.max(-100, Math.round(value)));
-}
 
 function clampMatchingPrecisionBonus(value: number) {
   return Math.min(5, Math.max(0, Math.round(value)));
@@ -382,22 +356,6 @@ function adminMatchingPrecisionBonus(profile: AdminProfile | null) {
   return typeof value === "number" && Number.isFinite(value)
     ? clampMatchingPrecisionBonus(value)
     : 0;
-}
-
-function adminProfileScore(profile: AdminProfile, axis: AdminProfileAxis) {
-  const value = profile[adminProfileScoreColumns[axis]];
-  return typeof value === "number" && Number.isFinite(value)
-    ? clampAdminScore(value)
-    : 0;
-}
-
-function adminScoreDraft(profile: AdminProfile | null) {
-  return Object.fromEntries(
-    adminProfileAxes.map((axis) => [
-      axis,
-      profile ? adminProfileScore(profile, axis) : 0,
-    ]),
-  ) as Record<AdminProfileAxis, number>;
 }
 
 function adminConversationResult(profile: AdminProfile) {
@@ -815,15 +773,6 @@ export function AdminPageClient({
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href="/admin/details-preview"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-black px-3.5 text-sm font-semibold text-white transition hover:bg-black/85"
-              >
-                <ExternalLink size={15} aria-hidden />
-                상세페이지 다시보기
-              </a>
               <button
                 type="button"
                 onClick={logout}
@@ -906,15 +855,6 @@ export function AdminPageClient({
                 focusTicketId={ticketFocusId}
                 onFocusTicketHandled={() => setTicketFocusId(null)}
               />
-            </div>
-          )}
-          {visitedTabs.ticketRejections && (
-            <div
-              className={cn(
-                activeTab === "ticketRejections" ? "block" : "hidden",
-              )}
-            >
-              <TicketRejectionAdminPanel />
             </div>
           )}
           {visitedTabs.calendar && (
@@ -1398,30 +1338,18 @@ function ProfileDetailPanel({
     patch: ProfileDetailPatch,
   ) => Promise<void>;
 }) {
-  const initialScoreDraft = useMemo(() => adminScoreDraft(profile), [profile]);
   const initialPrecisionBonusDraft = useMemo(
     () => adminMatchingPrecisionBonus(profile),
     [profile],
   );
-  const [scoreDraft, setScoreDraft] = useState(initialScoreDraft);
   const [precisionBonusDraft, setPrecisionBonusDraft] = useState(
     initialPrecisionBonusDraft,
   );
 
   useEffect(() => {
-    setScoreDraft(initialScoreDraft);
-  }, [initialScoreDraft]);
-
-  useEffect(() => {
     setPrecisionBonusDraft(initialPrecisionBonusDraft);
   }, [initialPrecisionBonusDraft]);
 
-  const scoresDirty = Boolean(
-    profile &&
-      adminProfileAxes.some(
-        (axis) => scoreDraft[axis] !== adminProfileScore(profile, axis),
-      ),
-  );
   const precisionBonusDirty = Boolean(
     profile &&
       precisionBonusDraft !== adminMatchingPrecisionBonus(profile),
@@ -1429,25 +1357,16 @@ function ProfileDetailPanel({
   const isTestParticipant = Boolean(profile?.is_test_participant);
   const detailNickname = profile?.nickname?.trim();
   const conversationResult = profile ? adminConversationResult(profile) : null;
-
-  const updateScoreDraft = (axis: AdminProfileAxis, value: number) => {
-    setScoreDraft((current) => ({
-      ...current,
-      [axis]: clampAdminScore(value),
-    }));
-  };
-
-  const saveScores = () => {
-    if (!profile || !scoresDirty || profileSaving) return;
-    void onProfileDetailSave(profile.user_id, {
-      scores: Object.fromEntries(
-        adminProfileAxes.map((axis) => [
-          adminProfileScoreColumns[axis],
-          scoreDraft[axis],
-        ]),
-      ) as Record<AdminProfileScoreColumn, number>,
-    });
-  };
+  const currentConversationVibeScores =
+    profile && conversationResult
+      ? conversationVibeScores(
+          (order) =>
+            profile.answers?.find(
+              (answer) => answer.question_order === order,
+            )?.answer_value,
+          conversationResult.code as ConversationResultCode,
+        )
+      : null;
 
   const savePrecisionBonus = () => {
     if (!profile || !precisionBonusDirty || profileSaving) return;
@@ -1606,68 +1525,19 @@ function ProfileDetailPanel({
           </button>
         </section>
 
-        <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold">사람 지표</h3>
-            <span className="text-[11px] font-semibold text-black/35">
-              관리자 수정 가능
-            </span>
-          </div>
-          <div className="mt-4 space-y-5">
-            {adminProfileAxes.map((axis) => {
-              const value = scoreDraft[axis];
-
-              return (
-                <div
-                  key={axis}
-                  className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-3 py-4"
-                >
-                  <VibeAxisBar
-                    axis={axis}
-                    score={value}
-                    scoreScale="internal"
-                    animateBar={false}
-                    valueLabel={`${value}점`}
-                    input={{
-                      value,
-                      min: -100,
-                      max: 100,
-                      step: 1,
-                      disabled: profileSaving,
-                      onChange: (nextValue) => updateScoreDraft(axis, nextValue),
-                    }}
-                  />
-                  <div className="mt-3 flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={-100}
-                      max={100}
-                      step={1}
-                      value={value}
-                      disabled={profileSaving}
-                      onChange={(event) =>
-                        updateScoreDraft(axis, Number(event.target.value))
-                      }
-                      className="h-9 w-24 rounded-xl border border-black/10 bg-white px-3 text-sm font-bold outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:bg-black/5"
-                    />
-                    <span className="text-[11px] font-semibold text-black/40">
-                      -100부터 100까지
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <button
-            type="button"
-            disabled={!scoresDirty || profileSaving}
-            onClick={saveScores}
-            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25"
-          >
-            <Save size={15} aria-hidden />
-            {profileSaving ? "저장 중..." : "사람 지표 저장"}
-          </button>
-        </section>
+        {currentConversationVibeScores && (
+          <VibeGraph
+            title="사람 지표"
+            description="현재 질문 답변을 기준으로 계산한 사용자 화면과 동일한 그래프입니다."
+            scores={currentConversationVibeScores}
+            visibleAxes={conversationVibeAxes}
+            axisLabelOverrides={conversationAxisLabelOverrides}
+            scoreScale="internal"
+            animateBars={false}
+            monochrome
+            className="mt-5"
+          />
+        )}
 
         <section className="mt-5 overflow-hidden rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
           <div className="flex items-center justify-between gap-3">

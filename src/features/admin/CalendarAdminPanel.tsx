@@ -24,6 +24,7 @@ import {
   type AdminTicketTemplate,
   type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
+import { todayInKst } from "@/lib/ticketDate";
 
 type CalendarTicketData = {
   templates?: AdminTicketTemplate[];
@@ -209,6 +210,11 @@ function calendarDatesFromTemplates(templates: AdminTicketTemplate[]) {
     });
 }
 
+function closestOperatingDate(dates: AdminCalendarDate[]) {
+  const today = todayInKst();
+  return dates.find((date) => date.date >= today) ?? dates.at(-1) ?? null;
+}
+
 export function CalendarAdminPanel({
   onOpenTicket,
 }: {
@@ -259,10 +265,10 @@ export function CalendarAdminPanel({
     }
 
     setSelectedDate((current) => {
-      if (!current) return calendarDates[0];
+      if (!current) return closestOperatingDate(calendarDates);
       return (
         calendarDates.find((date) => date.date === current.date) ??
-        calendarDates[0]
+        closestOperatingDate(calendarDates)
       );
     });
   }, [calendarDates]);
