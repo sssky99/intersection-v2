@@ -13,8 +13,8 @@ import {
   OPERATOR_RETURN_SESSION_COOKIE,
 } from "@/lib/operatorSessionSwitch";
 import {
-  operatorTestAccountByUserId,
-  operatorTestAccounts,
+  loadOperatorTestAccountByUserId,
+  loadOperatorTestAccounts,
 } from "@/lib/operatorTestAccounts";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -51,16 +51,18 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   const returnSession = decryptOperatorReturnSession(
     cookieStore.get(OPERATOR_RETURN_SESSION_COOKIE)?.value,
   );
-  const currentTestAccount = operatorTestAccountByUserId(user.id);
+  const currentTestAccount = await loadOperatorTestAccountByUserId(user.id);
   const { data: authoritativeUserData } =
     await createAdminClient().auth.admin.getUserById(user.id);
-  const operatorAccountSwitcher: OperatorAccountSwitcher = isOperatorAccount(
+  const operatorMode = isOperatorAccount(
     authoritativeUserData.user ?? user,
     profile,
-  )
+  );
+  const testAccounts = operatorMode ? await loadOperatorTestAccounts() : [];
+  const operatorAccountSwitcher: OperatorAccountSwitcher = operatorMode
     ? {
         mode: "operator",
-        accounts: operatorTestAccounts.map(({ userId, name }) => ({
+        accounts: testAccounts.map(({ userId, name }) => ({
           userId,
           name,
         })),

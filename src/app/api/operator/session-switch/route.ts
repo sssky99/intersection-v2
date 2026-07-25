@@ -8,7 +8,8 @@ import {
   operatorReturnSessionCookieOptions,
 } from "@/lib/operatorSessionSwitch";
 import {
-  operatorTestAccountByUserId,
+  isOperatorSwitchEnabled,
+  loadOperatorTestAccountByUserId,
 } from "@/lib/operatorTestAccounts";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/config";
@@ -65,9 +66,8 @@ export async function POST(request: NextRequest) {
   } | null;
   const targetUserId =
     typeof body?.targetUserId === "string" ? body.targetUserId : "";
-  const target = operatorTestAccountByUserId(targetUserId);
 
-  if (!target) {
+  if (!targetUserId) {
     return noStoreJson({ error: "전환할 테스트 계정이 올바르지 않습니다." }, 400);
   }
 
@@ -95,6 +95,11 @@ export async function POST(request: NextRequest) {
     return noStoreJson({ error: "운영자 계정만 사용할 수 있습니다." }, 403);
   }
 
+  const target = await loadOperatorTestAccountByUserId(targetUserId);
+  if (!target) {
+    return noStoreJson({ error: "전환할 테스트 계정이 올바르지 않습니다." }, 400);
+  }
+
   const {
     data: { session: operatorSession },
     error: sessionError,
@@ -112,7 +117,7 @@ export async function POST(request: NextRequest) {
       targetUserError ||
       !targetUser ||
       targetUser.email !== target.email ||
-      targetUser.user_metadata?.local_test_user !== true
+      !isOperatorSwitchEnabled(targetUser)
     ) {
       return noStoreJson(
         { error: `${target.name} 테스트 계정을 확인하지 못했습니다.` },
@@ -193,7 +198,7 @@ export async function DELETE(request: NextRequest) {
     data: { user: currentUser },
   } = await supabase.auth.getUser();
   const target = currentUser
-    ? operatorTestAccountByUserId(currentUser.id)
+    ? await loadOperatorTestAccountByUserId(currentUser.id)
     : null;
   if (!target || currentUser?.id !== returnSession.targetUserId) {
     return noStoreJson({ error: "테스트 계정 세션을 확인하지 못했습니다." }, 403);

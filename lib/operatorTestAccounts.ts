@@ -1,23 +1,77 @@
-export const operatorTestAccounts = [
-  {
-    userId: "90132eb5-f557-40e5-a5a1-f536e301d52c",
-    name: "수호",
-    email: "seongmin.local-test@intersection.local",
-  },
-  {
-    userId: "11330923-3127-45f3-9a5e-069d99c64b42",
-    name: "재현",
-    email: "jaehyun.local-test@intersection.local",
-  },
-  {
-    userId: "3df57c3a-96b3-4349-8d76-de7fa4d87257",
-    name: "정우",
-    email: "jeongwoo.local-test@intersection.local",
-  },
-] as const;
+import "server-only";
+import type { User } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-export type OperatorTestAccount = (typeof operatorTestAccounts)[number];
+type TestProfile = {
+  user_id: string;
+  name: string | null;
+  nickname: string | null;
+};
 
-export function operatorTestAccountByUserId(userId: string) {
-  return operatorTestAccounts.find((account) => account.userId === userId) ?? null;
+export type OperatorTestAccount = {
+  userId: string;
+  name: string;
+  email: string;
+};
+
+export function isOperatorSwitchEnabled(user: User) {
+  return (
+    user.user_metadata?.local_test_user === true ||
+    user.user_metadata?.operator_switch_enabled === true
+  );
+}
+
+function accountFromProfile(profile: TestProfile, user: User | null) {
+  if (!user?.email || !isOperatorSwitchEnabled(user)) return null;
+
+  return {
+    userId: profile.user_id,
+    name: profile.name?.trim() || profile.nickname?.trim() || "테스트 사용자",
+    email: user.email,
+  } satisfies OperatorTestAccount;
+}
+
+export async function loadOperatorTestAccountByUserId(userId: string) {
+  if (!userId) return null;
+
+  const admin = createAdminClient();
+  const [
+    { data: profile, error: profileError },
+    { data: userData, error: userError },
+  ] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("user_id,name,nickname")
+      .eq("user_id", userId)
+      .eq("is_test_participant", true)
+      .maybeSingle<TestProfile>(),
+    admin.auth.admin.getUserById(userId),
+  ]);
+
+  if (profileError || userError || !profile) return null;
+  return accountFromProfile(profile, userData.user);
+}
+
+export async function loadOperatorTestAccounts() {
+  const admin = createAdminClient();
+  const { data: profiles, error } = await admin
+    .from("profiles")
+    .select("user_id,name,nickname")
+    .eq("is_test_participant", true)
+    .returns<TestProfile[]>();
+
+  if (error || !profiles?.length) return [];
+
+  const accounts = await Promise.all(
+    profiles.map(async (profile) => {
+      const { data, error: userError } =
+        await admin.auth.admin.getUserById(profile.user_id);
+      if (userError) return null;
+      return accountFromProfile(profile, data.user);
+    }),
+  );
+
+  return accounts
+    .filter((account): account is OperatorTestAccount => account !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }

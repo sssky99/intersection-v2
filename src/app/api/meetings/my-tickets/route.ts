@@ -83,7 +83,9 @@ type WaitlistRow = {
   ticket_instance_id: string | null;
   meeting_date: string | null;
   status: string;
-  ticket_snapshot: GatheringTicket | null;
+  ticket_snapshot:
+    | (GatheringTicket & { previewSourceInstanceId?: string | null })
+    | null;
   arrival_status: TicketArrivalStatus | null;
   arrival_status_updated_at: string | null;
   created_at: string | null;
@@ -1107,25 +1109,44 @@ export async function GET(request: Request) {
     }
 
     const templateMap = new Map(templates.map((template) => [template.id, template]));
+    const memberSourceByInstance = new Map<string, string>();
+    for (const row of pagedTicketSourceRows) {
+      const instanceId = sourceRowInstanceId(row);
+      const previewSourceInstanceId =
+        row.ticket_snapshot?.previewSourceInstanceId?.trim();
+      const instance = instanceId ? instanceMap.get(instanceId) : null;
+      if (
+        instanceId &&
+        previewSourceInstanceId &&
+        instance?.visibility === "test_only" &&
+        canSeeTestTickets
+      ) {
+        memberSourceByInstance.set(instanceId, previewSourceInstanceId);
+      }
+    }
+    const memberInstanceIds = unique([
+      ...pagedInstanceIds,
+      ...memberSourceByInstance.values(),
+    ]);
     let assignments: ParticipantRow[] = [];
-    if (pagedInstanceIds.length > 0) {
+    if (memberInstanceIds.length > 0) {
       const { data, error } = await supabase
         .from("ticket_participations")
         .select("ticket_instance_id,user_id")
-        .in("ticket_instance_id", pagedInstanceIds)
+        .in("ticket_instance_id", memberInstanceIds)
         .in("status", Array.from(confirmedStatuses));
       if (error) throw error;
       assignments = (data ?? []) as unknown as ParticipantRow[];
     }
 
     let memberArrivalRows: MemberArrivalRow[] = [];
-    if (pagedInstanceIds.length > 0) {
+    if (memberInstanceIds.length > 0) {
       const { data: byInstanceId, error: byInstanceIdError } = await supabase
         .from("ticket_participations")
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_instance_id", pagedInstanceIds)
+        .in("ticket_instance_id", memberInstanceIds)
         .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byInstanceIdError) throw byInstanceIdError;
@@ -1135,7 +1156,7 @@ export async function GET(request: Request) {
         .select(
           "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
         )
-        .in("ticket_id", pagedInstanceIds)
+        .in("ticket_id", memberInstanceIds)
         .in("status", Array.from(confirmedStatuses))
         .returns<MemberArrivalRow[]>();
       if (byTicketIdError) throw byTicketIdError;
@@ -1210,8 +1231,10 @@ export async function GET(request: Request) {
         .filter((instance) => {
           const startAt = toStartAt(instance.event_date, instance.event_time);
           if (!startAt || now < startAt) return false;
+          const participantSourceId =
+            memberSourceByInstance.get(instance.id) ?? instance.id;
           const participantCount =
-            participantIdsByInstance.get(instance.id)?.size ?? 0;
+            participantIdsByInstance.get(participantSourceId)?.size ?? 0;
           return (
             participantCount <
             (instance.minimum_participant_count ??
@@ -1287,16 +1310,19 @@ export async function GET(request: Request) {
 
         const confirmed = confirmedStatuses.has(effectiveStatus);
         const memberInfoVisible = confirmed && derived.progressIndex >= 1;
+        const memberInstanceId = instanceId
+          ? memberSourceByInstance.get(instanceId) ?? instanceId
+          : "";
         const assignedIds = memberInfoVisible
-          ? assignmentsByInstance.get(instanceId ?? "") ?? []
+          ? assignmentsByInstance.get(memberInstanceId) ?? []
           : [];
         const memberIds = memberInfoVisible
           ? unique([...assignedIds, user.id])
           : [];
         const members: TicketMemberIntro[] = memberIds.map((id) => {
           const memberProfile = profileMap.get(id);
-          const memberArrival = instanceId
-            ? arrivalByMember.get(`${instanceId}:${id}`)
+          const memberArrival = memberInstanceId
+            ? arrivalByMember.get(`${memberInstanceId}:${id}`)
             : null;
           const arrivalStatus =
             id === user.id

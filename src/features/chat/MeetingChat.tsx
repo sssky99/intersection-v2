@@ -138,13 +138,15 @@ function roomActivityMap(
   return new Map(
     rooms.map((room) => {
       const lastReadAt = ownReadByRoom.get(room.id) ?? "";
-      const unreadCount = messages.filter(
-        (message) =>
-          message.ticket_instance_id === room.id &&
-          message.sender_id !== userId &&
-          !message.deleted_at &&
-          message.created_at > lastReadAt,
-      ).length;
+      const unreadCount = room.readOnly
+        ? 0
+        : messages.filter(
+            (message) =>
+              message.ticket_instance_id === room.id &&
+              message.sender_id !== userId &&
+              !message.deleted_at &&
+              message.created_at > lastReadAt,
+          ).length;
 
       return [
         room.id,
@@ -205,6 +207,21 @@ export function MeetingChat({
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null;
   const roomKey = rooms.map((room) => room.id).join(",");
 
+  const fetchChatData = useCallback(async () => {
+    const response = await fetch("/api/meetings/chat/rooms", {
+      cache: "no-store",
+    }).catch(() => null);
+    const data = response
+      ? ((await response.json().catch(() => null)) as
+          | MeetingChatRoomsResponse
+          | { error?: string }
+          | null)
+      : null;
+
+    if (!response?.ok || !data || !("rooms" in data)) return null;
+    return data;
+  }, []);
+
   useEffect(() => {
     onRoomOpenChange(Boolean(selectedRoom));
     return () => onRoomOpenChange(false);
@@ -218,32 +235,17 @@ export function MeetingChat({
   }, []);
 
   const loadActivity = useCallback(
-    async (nextRooms: MeetingChatRoom[]) => {
+    async (
+      nextRooms: MeetingChatRoom[],
+      chatData?: MeetingChatRoomsResponse,
+    ) => {
       if (nextRooms.length === 0) {
         setActivityByRoom(new Map());
         return;
       }
 
-      const roomIds = nextRooms.map((room) => room.id);
-      const [messagesResult, readsResult] = await Promise.all([
-        supabase
-          .from("meeting_chat_messages")
-          .select(
-            "id,ticket_instance_id,sender_id,body,deleted_at,created_at",
-          )
-          .in("ticket_instance_id", roomIds)
-          .order("created_at", { ascending: false })
-          .limit(500)
-          .returns<MeetingChatMessage[]>(),
-        supabase
-          .from("meeting_chat_reads")
-          .select("ticket_instance_id,user_id,last_read_at")
-          .eq("user_id", userId)
-          .in("ticket_instance_id", roomIds)
-          .returns<MeetingChatRead[]>(),
-      ]);
-
-      if (messagesResult.error || readsResult.error) {
+      const data = chatData ?? (await fetchChatData());
+      if (!data) {
         setError("채팅 내역을 불러오지 못했어요.");
         return;
       }
@@ -251,31 +253,19 @@ export function MeetingChat({
       setActivityByRoom(
         roomActivityMap(
           nextRooms,
-          messagesResult.data ?? [],
-          readsResult.data ?? [],
+          data.messages ?? [],
+          data.reads ?? [],
           userId,
         ),
       );
     },
-    [supabase, userId],
+    [fetchChatData, userId],
   );
 
   const loadRooms = useCallback(async () => {
-    const response = await fetch("/api/meetings/chat/rooms", {
-      cache: "no-store",
-    }).catch(() => null);
-    const data = response
-      ? ((await response.json().catch(() => null)) as
-          | MeetingChatRoomsResponse
-          | { error?: string }
-          | null)
-      : null;
-
-    if (!response?.ok || !data || !("rooms" in data)) {
-      setError(
-        (data && "error" in data && data.error) ||
-          "채팅방을 불러오지 못했어요.",
-      );
+    const data = await fetchChatData();
+    if (!data) {
+      setError("채팅방을 불러오지 못했어요.");
       setLoading(false);
       return;
     }
@@ -287,58 +277,74 @@ export function MeetingChat({
         ? current
         : null,
     );
-    await loadActivity(data.rooms);
+    if (selectedRoomId) {
+      setMessages(
+        (data.messages ?? [])
+          .filter(
+            (message) => message.ticket_instance_id === selectedRoomId,
+          )
+          .reverse(),
+      );
+      setReads(
+        (data.reads ?? []).filter(
+          (read) => read.ticket_instance_id === selectedRoomId,
+        ),
+      );
+    }
+    await loadActivity(data.rooms, data);
     setLoading(false);
-  }, [loadActivity]);
+  }, [fetchChatData, loadActivity, selectedRoomId]);
 
   const loadMessages = useCallback(
     async (roomId: string) => {
       setRoomLoading(true);
-      const [messagesResult, readsResult] = await Promise.all([
-        supabase
-          .from("meeting_chat_messages")
-          .select(
-            "id,ticket_instance_id,sender_id,body,deleted_at,created_at",
-          )
-          .eq("ticket_instance_id", roomId)
-          .order("created_at", { ascending: false })
-          .limit(500)
-          .returns<MeetingChatMessage[]>(),
-        supabase
-          .from("meeting_chat_reads")
-          .select("ticket_instance_id,user_id,last_read_at")
-          .eq("ticket_instance_id", roomId)
-          .returns<MeetingChatRead[]>(),
-      ]);
-
-      if (messagesResult.error || readsResult.error) {
+      const data = await fetchChatData();
+      if (!data) {
         setError("대화를 불러오지 못했어요.");
         setRoomLoading(false);
         return;
       }
 
-      setMessages([...(messagesResult.data ?? [])].reverse());
-      setReads(readsResult.data ?? []);
+      setMessages(
+        (data.messages ?? [])
+          .filter((message) => message.ticket_instance_id === roomId)
+          .reverse(),
+      );
+      setReads(
+        (data.reads ?? []).filter(
+          (read) => read.ticket_instance_id === roomId,
+        ),
+      );
       setRoomLoading(false);
     },
-    [supabase],
+    [fetchChatData],
   );
 
   const loadReads = useCallback(
     async (roomId: string) => {
-      const { data, error: readsError } = await supabase
-        .from("meeting_chat_reads")
-        .select("ticket_instance_id,user_id,last_read_at")
-        .eq("ticket_instance_id", roomId)
-        .returns<MeetingChatRead[]>();
-      if (readsError) return;
-      setReads(data ?? []);
+      const data = await fetchChatData();
+      if (!data) return;
+      setReads(
+        (data.reads ?? []).filter(
+          (read) => read.ticket_instance_id === roomId,
+        ),
+      );
     },
-    [supabase],
+    [fetchChatData],
   );
 
   const markRead = useCallback(
     async (roomId: string) => {
+      if (rooms.some((room) => room.id === roomId && room.readOnly)) {
+        setActivityByRoom((current) => {
+          const next = new Map(current);
+          const activity = next.get(roomId);
+          if (activity) next.set(roomId, { ...activity, unreadCount: 0 });
+          return next;
+        });
+        return;
+      }
+
       const { data, error: readError } = await supabase.rpc(
         "mark_meeting_chat_read",
         {
@@ -369,7 +375,7 @@ export function MeetingChat({
         return next;
       });
     },
-    [loadRooms, supabase, userId],
+    [loadRooms, rooms, supabase, userId],
   );
 
   useEffect(() => {
@@ -473,7 +479,15 @@ export function MeetingChat({
 
   const sendMessage = async () => {
     const body = draft.trim();
-    if (!selectedRoom || !body || body.length > 100 || sending) return;
+    if (
+      !selectedRoom ||
+      selectedRoom.readOnly ||
+      !body ||
+      body.length > 100 ||
+      sending
+    ) {
+      return;
+    }
 
     setSending(true);
     setError(null);
@@ -501,7 +515,7 @@ export function MeetingChat({
   };
 
   const deleteMessage = async (messageId: string) => {
-    if (!selectedRoom) return;
+    if (!selectedRoom || selectedRoom.readOnly) return;
     setError(null);
     const { error: deleteError } = await supabase
       .from("meeting_chat_messages")
@@ -645,7 +659,7 @@ export function MeetingChat({
                           </span>
                         )}
                         <time>{formatMessageTime(message.created_at)}</time>
-                        {own && !deleted && (
+                        {own && !deleted && !selectedRoom.readOnly && (
                           <button
                             type="button"
                             onClick={() => setPendingDeleteMessageId(message.id)}
@@ -672,37 +686,43 @@ export function MeetingChat({
               {error}
             </p>
           )}
-          <div className="flex items-end gap-2">
-            <div className="min-w-0 flex-1 rounded-[20px] border border-black/10 bg-black/[0.025] px-4 py-2">
-              <textarea
-                value={draft}
-                maxLength={100}
-                rows={1}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={handleComposerKeyDown}
-                placeholder="메시지 입력"
-                aria-label="메시지 입력"
-                className="max-h-20 min-h-6 w-full resize-none bg-transparent text-base font-medium leading-6 text-black outline-none placeholder:text-black/28"
-              />
-              <p className="text-right text-[9px] font-semibold text-black/25">
-                {draft.length}/100
-              </p>
+          {selectedRoom.readOnly ? (
+            <p className="rounded-2xl bg-black/[0.04] px-4 py-3 text-center text-xs font-bold text-black/45">
+              실제 채팅을 확인하는 미리보기입니다. 메시지는 전송되지 않습니다.
+            </p>
+          ) : (
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1 rounded-[20px] border border-black/10 bg-black/[0.025] px-4 py-2">
+                <textarea
+                  value={draft}
+                  maxLength={100}
+                  rows={1}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder="메시지 입력"
+                  aria-label="메시지 입력"
+                  className="max-h-20 min-h-6 w-full resize-none bg-transparent text-base font-medium leading-6 text-black outline-none placeholder:text-black/28"
+                />
+                <p className="text-right text-[9px] font-semibold text-black/25">
+                  {draft.length}/100
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void sendMessage()}
+                disabled={!draft.trim() || sending}
+                title="메시지 보내기"
+                aria-label="메시지 보내기"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white transition active:scale-95 disabled:bg-black/[0.08] disabled:text-black/25"
+              >
+                {sending ? (
+                  <Loader2 size={17} className="animate-spin" aria-hidden />
+                ) : (
+                  <Send size={17} aria-hidden />
+                )}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void sendMessage()}
-              disabled={!draft.trim() || sending}
-              title="메시지 보내기"
-              aria-label="메시지 보내기"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white transition active:scale-95 disabled:bg-black/[0.08] disabled:text-black/25"
-            >
-              {sending ? (
-                <Loader2 size={17} className="animate-spin" aria-hidden />
-              ) : (
-                <Send size={17} aria-hidden />
-              )}
-            </button>
-          </div>
+          )}
         </div>
 
         {pendingDeleteMessageId && (

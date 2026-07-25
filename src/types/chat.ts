@@ -17,10 +17,13 @@ export type MeetingChatRoom = {
   feedbackOpensAt: string;
   closesAt: string;
   members: MeetingChatMember[];
+  readOnly?: boolean;
 };
 
 export type MeetingChatRoomsResponse = {
   rooms: MeetingChatRoom[];
+  messages?: MeetingChatMessage[];
+  reads?: MeetingChatRead[];
 };
 
 export type MeetingChatMessage = {

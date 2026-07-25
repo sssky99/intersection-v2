@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   MeetingChatMember,
+  MeetingChatMessage,
+  MeetingChatRead,
   MeetingChatRoom,
   MeetingChatRoomsResponse,
 } from "@/types/chat";
@@ -13,6 +15,9 @@ export const dynamic = "force-dynamic";
 type ParticipationRow = {
   ticket_instance_id: string;
   user_id: string;
+  ticket_snapshot: {
+    previewSourceInstanceId?: string | null;
+  } | null;
 };
 
 type InstanceRow = {
@@ -22,6 +27,7 @@ type InstanceRow = {
   event_time: string | null;
   region: string | null;
   place_name: string | null;
+  visibility: string | null;
 };
 
 type ProfileRow = {
@@ -82,37 +88,90 @@ export async function GET() {
     const { data: ownParticipationData, error: ownParticipationError } =
       await supabase
         .from("ticket_participations")
-        .select("ticket_instance_id,user_id")
+        .select("ticket_instance_id,user_id,ticket_snapshot")
         .eq("user_id", user.id)
         .in("status", Array.from(CHAT_MEMBER_STATUSES))
         .returns<ParticipationRow[]>();
     if (ownParticipationError) throw ownParticipationError;
 
-    const instanceIds = unique(
+    const ownInstanceIds = unique(
       (ownParticipationData ?? []).map((row) => row.ticket_instance_id),
     );
-    if (instanceIds.length === 0) {
+    if (ownInstanceIds.length === 0) {
       return NextResponse.json<MeetingChatRoomsResponse>({ rooms: [] });
     }
 
-    const [instancesResult, participationsResult] =
-      await Promise.all([
-        supabase
-          .from("ticket_instances")
-          .select("id,title,event_date,event_time,region,place_name")
-          .in("id", instanceIds)
-          .returns<InstanceRow[]>(),
-        supabase
-          .from("ticket_participations")
-          .select("ticket_instance_id,user_id")
-          .in("ticket_instance_id", instanceIds)
-          .in("status", Array.from(CHAT_MEMBER_STATUSES))
-          .returns<ParticipationRow[]>(),
-      ]);
+    const [ownInstancesResult, profileResult, authResult] = await Promise.all([
+      supabase
+        .from("ticket_instances")
+        .select("id,title,event_date,event_time,region,place_name,visibility")
+        .in("id", ownInstanceIds)
+        .returns<InstanceRow[]>(),
+      supabase
+        .from("profiles")
+        .select("is_test_participant")
+        .eq("user_id", user.id)
+        .maybeSingle<{ is_test_participant: boolean | null }>(),
+      supabase.auth.admin.getUserById(user.id),
+    ]);
+    if (ownInstancesResult.error) throw ownInstancesResult.error;
+    if (profileResult.error) throw profileResult.error;
+    if (authResult.error) throw authResult.error;
 
-    const error =
-      instancesResult.error ??
-      participationsResult.error;
+    const ownInstanceMap = new Map(
+      (ownInstancesResult.data ?? []).map((instance) => [instance.id, instance]),
+    );
+    const previewAllowed =
+      profileResult.data?.is_test_participant === true &&
+      authResult.data.user?.user_metadata?.operator_switch_enabled === true;
+    const previewLinks = previewAllowed
+      ? (ownParticipationData ?? [])
+          .map((participation) => {
+            const ownInstance = ownInstanceMap.get(
+              participation.ticket_instance_id,
+            );
+            const sourceId =
+              ownInstance?.visibility === "test_only"
+                ? participation.ticket_snapshot?.previewSourceInstanceId?.trim()
+                : null;
+            return sourceId
+              ? { carrierId: participation.ticket_instance_id, sourceId }
+              : null;
+          })
+          .filter(
+            (
+              link,
+            ): link is {
+              carrierId: string;
+              sourceId: string;
+            } => link !== null,
+          )
+      : [];
+    const previewSourceIds = unique(previewLinks.map((link) => link.sourceId));
+    const previewCarrierIds = new Set(
+      previewLinks.map((link) => link.carrierId),
+    );
+    const instanceIds = unique([
+      ...ownInstanceIds.filter((id) => !previewCarrierIds.has(id)),
+      ...previewSourceIds,
+    ]);
+    const readOnlyRoomIds = new Set(previewSourceIds);
+
+    const [instancesResult, participationsResult] = await Promise.all([
+      supabase
+        .from("ticket_instances")
+        .select("id,title,event_date,event_time,region,place_name,visibility")
+        .in("id", instanceIds)
+        .returns<InstanceRow[]>(),
+      supabase
+        .from("ticket_participations")
+        .select("ticket_instance_id,user_id,ticket_snapshot")
+        .in("ticket_instance_id", instanceIds)
+        .in("status", Array.from(CHAT_MEMBER_STATUSES))
+        .returns<ParticipationRow[]>(),
+    ]);
+
+    const error = instancesResult.error ?? participationsResult.error;
     if (error) throw error;
 
     const activeParticipations = participationsResult.data ?? [];
@@ -134,12 +193,15 @@ export async function GET() {
     const profileMap = new Map(
       profiles.map((profile) => [profile.user_id, profile]),
     );
-    const memberIdsByInstance = activeParticipations.reduce((map, participation) => {
-      const current = map.get(participation.ticket_instance_id) ?? [];
-      current.push(participation.user_id);
-      map.set(participation.ticket_instance_id, current);
-      return map;
-    }, new Map<string, string[]>());
+    const memberIdsByInstance = activeParticipations.reduce(
+      (map, participation) => {
+        const current = map.get(participation.ticket_instance_id) ?? [];
+        current.push(participation.user_id);
+        map.set(participation.ticket_instance_id, current);
+        return map;
+      },
+      new Map<string, string[]>(),
+    );
     const now = new Date();
 
     const rooms = (instancesResult.data ?? [])
@@ -151,10 +213,11 @@ export async function GET() {
         const feedbackOpensAt = addHours(startAt, 3);
         const closesAt = addHours(feedbackOpensAt, 24);
         const memberIds = unique(memberIdsByInstance.get(instance.id) ?? []);
+        const readOnly = readOnlyRoomIds.has(instance.id);
         if (
           now < opensAt ||
           now >= closesAt ||
-          !memberIds.includes(user.id)
+          (!readOnly && !memberIds.includes(user.id))
         ) {
           return null;
         }
@@ -184,13 +247,40 @@ export async function GET() {
           feedbackOpensAt: feedbackOpensAt.toISOString(),
           closesAt: closesAt.toISOString(),
           members,
+          readOnly,
         };
       })
       .filter((room): room is MeetingChatRoom => Boolean(room))
       .sort((left, right) => left.closesAt.localeCompare(right.closesAt));
 
+    const roomIds = rooms.map((room) => room.id);
+    const [messagesResult, readsResult] = roomIds.length
+      ? await Promise.all([
+          supabase
+            .from("meeting_chat_messages")
+            .select(
+              "id,ticket_instance_id,sender_id,body,deleted_at,created_at",
+            )
+            .in("ticket_instance_id", roomIds)
+            .order("created_at", { ascending: false })
+            .limit(500)
+            .returns<MeetingChatMessage[]>(),
+          supabase
+            .from("meeting_chat_reads")
+            .select("ticket_instance_id,user_id,last_read_at")
+            .in("ticket_instance_id", roomIds)
+            .returns<MeetingChatRead[]>(),
+        ])
+      : [{ data: [], error: null }, { data: [], error: null }];
+    const chatDataError = messagesResult.error ?? readsResult.error;
+    if (chatDataError) throw chatDataError;
+
     return NextResponse.json<MeetingChatRoomsResponse>(
-      { rooms },
+      {
+        rooms,
+        messages: messagesResult.data ?? [],
+        reads: readsResult.data ?? [],
+      },
       {
         headers: {
           "Cache-Control": "private, no-store",
