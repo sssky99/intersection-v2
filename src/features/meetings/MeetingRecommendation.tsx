@@ -285,6 +285,7 @@ type MeetingRecommendationProps = {
 };
 
 type DateApplicationScreen = "dates" | "submitted" | "blindDate";
+type DateApplicationPurchaseOption = "single" | "membership";
 
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
@@ -356,17 +357,17 @@ function DateApplicationOption({
       )}
     >
       <span className="min-w-0 pr-7">
-        <span className="block text-[13px] font-black leading-5">
+        <span className="block text-[13px] font-bold leading-5">
           {schedule.month}월 {schedule.day}일 {schedule.weekdayLabel}
         </span>
-        <span className="mt-0.5 block text-[10px] font-bold text-black/42">
+        <span className="mt-0.5 block text-[10px] font-medium text-black/42">
           {schedule.timeLabel} · {MEETING_DATE_REGION}
         </span>
       </span>
       {closed || application ? (
         <span
           className={cn(
-            "absolute right-2.5 top-2.5 rounded-full border px-1.5 py-0.5 text-[9px] font-black",
+            "absolute right-2.5 top-2.5 rounded-full border px-1.5 py-0.5 text-[9px] font-bold",
             closed
               ? "border-red-200 bg-red-50 text-red-600"
               : canResumePayment
@@ -411,6 +412,8 @@ function MeetingDateApplicationFlow({
   const [screen, setScreen] = useState<DateApplicationScreen>("dates");
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [purchaseOption, setPurchaseOption] =
+    useState<DateApplicationPurchaseOption>("single");
   const [submittedDates, setSubmittedDates] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -745,10 +748,10 @@ function MeetingDateApplicationFlow({
             exit={{ opacity: 0, y: -8 }}
           >
             <header className="pr-12">
-              <h1 className="whitespace-nowrap text-[28px] font-black leading-9 tracking-[-0.05em] text-black">
+              <h1 className="whitespace-nowrap text-[28px] font-extrabold leading-9 tracking-[-0.05em] text-black">
                 가능한 날짜를 골라주세요.
               </h1>
-              <p className="mt-3 text-[13px] font-semibold leading-5 text-black/48">
+              <p className="mt-3 text-[13px] font-medium leading-5 text-black/48">
                 문답을 바탕으로 잘 맞는 사람과 활동을 준비해드려요.
               </p>
             </header>
@@ -760,7 +763,7 @@ function MeetingDateApplicationFlow({
                     👥
                   </span>
                 </span>
-                <p className="mt-3 text-[12px] font-black leading-[1.45] text-black">
+                <p className="mt-3 text-[12px] font-bold leading-[1.45] text-black">
                   대화가 잘 맞는
                   <br />
                   사람들로 구성해요
@@ -772,7 +775,7 @@ function MeetingDateApplicationFlow({
                     📍
                   </span>
                 </span>
-                <p className="mt-3 text-[12px] font-black leading-[1.45] text-black">
+                <p className="mt-3 text-[12px] font-bold leading-[1.45] text-black">
                   장소와 활동은
                   <br />
                   24시간 전에 공개해요
@@ -781,10 +784,10 @@ function MeetingDateApplicationFlow({
             </div>
 
             <div className="mt-6 flex items-end justify-between gap-3">
-              <h2 className="text-[18px] font-black tracking-[-0.04em] text-black">
+              <h2 className="text-[18px] font-bold tracking-[-0.04em] text-black">
                 참여 가능한 날짜
               </h2>
-              <span className="pb-0.5 text-[10px] font-bold text-black/38">
+              <span className="pb-0.5 text-[10px] font-medium text-black/38">
                 1개를 선택해주세요
               </span>
             </div>
@@ -815,25 +818,106 @@ function MeetingDateApplicationFlow({
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-6 border-t border-black/10 pb-[96px] pt-4"
               >
-                <div className="flex items-end justify-between gap-4">
-                  <p className="text-[11px] font-bold text-black/42">참가비</p>
-                  <p className="whitespace-nowrap text-[24px] font-black leading-none tracking-[-0.05em] text-black">
-                    {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
-                  </p>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-[15px] font-bold tracking-[-0.03em] text-black">
+                    참여 방식을 선택해주세요
+                  </h3>
+                  <span className="text-[10px] font-medium text-black/38">
+                    1개 선택
+                  </span>
                 </div>
+
+                <div className="mt-3 space-y-2.5">
+                  <button
+                    type="button"
+                    aria-pressed={purchaseOption === "single"}
+                    onClick={() => setPurchaseOption("single")}
+                    className={cn(
+                      "relative flex min-h-[82px] w-full items-center justify-between gap-4 rounded-[18px] border px-4 py-3.5 text-left transition",
+                      purchaseOption === "single"
+                        ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
+                        : "border-black/10 bg-white hover:border-black/25",
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span
+                        className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                          purchaseOption === "single"
+                            ? "border-black bg-black text-white"
+                            : "border-black/15 bg-white text-transparent",
+                        )}
+                      >
+                        <Check size={12} strokeWidth={3} aria-hidden />
+                      </span>
+                      <span className="text-[14px] font-bold text-black">
+                        1회 참가비
+                      </span>
+                    </span>
+                    <span className="whitespace-nowrap text-[20px] font-extrabold tracking-[-0.04em] text-black">
+                      10,000원
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-pressed={purchaseOption === "membership"}
+                    onClick={() => setPurchaseOption("membership")}
+                    className={cn(
+                      "relative w-full rounded-[18px] border px-4 py-4 text-left transition",
+                      purchaseOption === "membership"
+                        ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
+                        : "border-black/10 bg-white hover:border-black/25",
+                    )}
+                  >
+                    <span className="flex items-start gap-3">
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                          purchaseOption === "membership"
+                            ? "border-black bg-black text-white"
+                            : "border-black/15 bg-white text-transparent",
+                        )}
+                      >
+                        <Check size={12} strokeWidth={3} aria-hidden />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="text-[14px] font-bold text-black">
+                            1개월 멤버십
+                          </span>
+                          <span className="rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
+                            추천
+                          </span>
+                        </span>
+                        <span className="mt-2 block text-[12px] font-medium leading-[1.55] text-black/52">
+                          30일 동안 참여 횟수와 관계 없이
+                          <br />
+                          모임 참가비가 면제됩니다.
+                        </span>
+                      </span>
+                      <span className="whitespace-nowrap pt-0.5 text-[20px] font-extrabold tracking-[-0.04em] text-black">
+                        20,000원
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={saving || purchaseOption === "membership"}
                   onClick={() => void submitDateApplications(true)}
-                  className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-black text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
+                  className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-bold text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
                 >
                   {saving
                     ? isResumingPayment
                       ? "결제창을 여는 중..."
                       : "신청 정보를 저장하는 중..."
+                    : purchaseOption === "membership"
+                      ? "멤버십 결제 준비 중"
                     : isResumingPayment
                       ? `${meetingDateLabel(selectedDates[0])} 결제 계속하기`
-                      : `${meetingDateLabel(selectedDates[0])} 신청하기`}
+                      : "10,000원 결제하고 신청하기"}
                 </button>
               </motion.div>
             )}
