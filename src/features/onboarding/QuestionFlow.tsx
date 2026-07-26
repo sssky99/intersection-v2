@@ -299,81 +299,29 @@ function initialIndexFromSearch(value: string | null, questionCount: number) {
   return parsed - 1;
 }
 
-function StarProgress({
-  completedParts,
-  currentPart,
-  large = false,
-  celebratePart,
-}: {
-  completedParts: number;
-  currentPart: number;
-  large?: boolean;
-  celebratePart?: number;
-}) {
-  const parts = [
-    "20,20 15.59,13.93 20,2 24.41,13.93",
-    "20,20 24.41,13.93 37.12,14.44 27.13,22.32",
-    "20,20 27.13,22.32 30.58,34.56 20,27.5",
-    "20,20 20,27.5 9.42,34.56 12.87,22.32",
-    "20,20 12.87,22.32 2.88,14.44 15.59,13.93",
-  ];
-  const outline =
-    "20,2 24.41,13.93 37.12,14.44 27.13,22.32 30.58,34.56 20,27.5 9.42,34.56 12.87,22.32 2.88,14.44 15.59,13.93";
+const progressAnchors = [
+  { completed: 0, percent: 0 },
+  { completed: 4, percent: 35 },
+  { completed: 8, percent: 60 },
+  { completed: 12, percent: 78 },
+  { completed: 16, percent: 90 },
+  { completed: 20, percent: 100 },
+] as const;
+
+function perceivedProgress(completedQuestionCount: number) {
+  const completed = clamp(completedQuestionCount, 0, 20);
+  const nextAnchorIndex = progressAnchors.findIndex(
+    (anchor) => anchor.completed >= completed,
+  );
+  if (nextAnchorIndex <= 0) return progressAnchors[0].percent;
+
+  const previous = progressAnchors[nextAnchorIndex - 1];
+  const next = progressAnchors[nextAnchorIndex];
+  const segmentProgress =
+    (completed - previous.completed) / (next.completed - previous.completed);
 
   return (
-    <motion.svg
-      viewBox="0 0 40 38"
-      className={large ? "h-28 w-28" : "h-8 w-9"}
-      aria-hidden
-      initial={large ? { opacity: 0, scale: 0.78, rotate: -5 } : false}
-      animate={
-        large
-          ? { opacity: 1, scale: [0.78, 1.08, 1], rotate: 0 }
-          : { scale: completedParts > 0 ? [1, 1.04, 1] : 1 }
-      }
-      transition={{ duration: large ? 0.7 : 0.35, ease: "easeOut" }}
-    >
-      {parts.map((points, index) => (
-        <motion.polygon
-          key={points}
-          points={points}
-          initial={
-            celebratePart === index
-              ? { fill: "#d5d5d0", stroke: "#d5d5d0" }
-              : false
-          }
-          animate={{
-            fill:
-              index < completedParts
-                ? "#121212"
-                : index === currentPart
-                  ? "#d5d5d0"
-                  : "#ecece8",
-            stroke:
-              index < completedParts
-                ? "#121212"
-                : index === currentPart
-                  ? "#d5d5d0"
-                  : "#ecece8",
-          }}
-          transition={{
-            duration: celebratePart === index ? 0.65 : 0.28,
-            delay: celebratePart === index ? 0.28 : 0,
-            ease: "easeOut",
-          }}
-          strokeWidth="0.7"
-          strokeLinejoin="round"
-        />
-      ))}
-      <polygon
-        points={outline}
-        fill="none"
-        stroke="#121212"
-        strokeOpacity="0.28"
-        strokeWidth="1.15"
-        strokeLinejoin="round"
-      />
-    </motion.svg>
+    previous.percent + segmentProgress * (next.percent - previous.percent)
   );
 }
 
@@ -452,13 +400,11 @@ export function QuestionFlow({
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [milestone, setMilestone] = useState<number | null>(null);
   const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(
     previewResultAnswers,
   );
   const [showResultDetails, setShowResultDetails] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
-  const milestoneAnswersRef = useRef<AnswerMap | null>(null);
   const savingRef = useRef(false);
   const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
@@ -466,7 +412,7 @@ export function QuestionFlow({
   const question = questions[questionIndex];
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
-  const progressPercent = ((questionIndex + 1) / questions.length) * 100;
+  const progressPercent = perceivedProgress(questionIndex);
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
   const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
@@ -665,13 +611,6 @@ export function QuestionFlow({
   };
 
   const showMilestoneOrMoveNext = async (nextAnswers: AnswerMap) => {
-    const completedQuestionCount = questionIndex + 1;
-    if (completedQuestionCount % 4 === 0) {
-      milestoneAnswersRef.current = nextAnswers;
-      setMilestone(completedQuestionCount / 4);
-      return;
-    }
-
     await moveToNext(nextAnswers);
   };
 
@@ -849,30 +788,6 @@ export function QuestionFlow({
   };
 
   const isConversationQuestion = (question.order ?? question.id) <= 16;
-  const completedStarParts = Math.min(5, Math.floor(questionIndex / 4));
-  const currentStarPart = Math.min(4, Math.floor(questionIndex / 4));
-  const milestoneMessages = [
-    {
-      title: "좋아요, 잘 진행하고 있어요.",
-      body: "첫 번째 별 조각이 채워졌어요.\n지금처럼 평소의 모습에 가까운 쪽을 골라주세요.",
-    },
-    {
-      title: "좋은 흐름이에요.",
-      body: "당신이 대화를 이어가는 방식이\n조금씩 선명해지고 있어요.",
-    },
-    {
-      title: "어느새 절반을 넘었어요.",
-      body: "답변이 차곡차곡 모이고 있어요.\n조금만 더 당신의 이야기를 들려주세요.",
-    },
-    {
-      title: "이제 거의 다 왔어요.",
-      body: "마지막으로 좋아하는 활동과\n요즘의 이야기를 들려주세요.",
-    },
-    {
-      title: "별이 모두 완성됐어요.",
-      body: "답변을 바탕으로 당신의 대화 결과를\n차분히 정리해볼게요.",
-    },
-  ] as const;
 
   if (resultAnswers) {
     const resultCode = conversationResultCode(resultAnswers);
@@ -996,57 +911,6 @@ export function QuestionFlow({
     );
   }
 
-  if (milestone !== null) {
-    const message = milestoneMessages[milestone - 1];
-    const isLastMilestone = milestone === 5;
-
-    return (
-      <section className="relative flex min-h-dvh flex-col overflow-hidden bg-[#f7f7f5] px-6 pb-[calc(18px+env(safe-area-inset-bottom))] pt-[calc(18px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
-        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
-        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center text-center">
-          <StarProgress
-            completedParts={milestone}
-            currentPart={-1}
-            large
-            celebratePart={milestone - 1}
-          />
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.42, duration: 0.42, ease: "easeOut" }}
-            className="mt-10"
-          >
-            <p className="text-[12px] font-bold text-black/35">
-              {milestone * 4} / {questions.length}
-            </p>
-            <h1 className="mt-3 break-keep text-[25px] font-black leading-[1.25] tracking-[-0.055em] text-black/86">
-              {message.title}
-            </h1>
-            <p className="mt-4 whitespace-pre-line break-keep text-[14px] font-semibold leading-6 tracking-[-0.02em] text-black/48">
-              {message.body}
-            </p>
-          </motion.div>
-        </div>
-        <motion.button
-          type="button"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.58, duration: 0.35 }}
-          onClick={() => {
-            const nextAnswers = milestoneAnswersRef.current ?? answers;
-            setMilestone(null);
-            void moveToNext(nextAnswers);
-          }}
-          className="relative z-10 flex h-14 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98]"
-        >
-          {isLastMilestone ? "결과 확인하기" : "계속하기"}
-          <ChevronRight size={17} aria-hidden />
-        </motion.button>
-      </section>
-    );
-  }
-
   return (
     <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
       <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
@@ -1065,15 +929,9 @@ export function QuestionFlow({
           >
             <ChevronLeft size={18} aria-hidden />
           </button>
-          <div className="flex items-center justify-center gap-2">
-            <StarProgress
-              completedParts={completedStarParts}
-              currentPart={currentStarPart}
-            />
-            <span className="text-[13px] font-bold tabular-nums text-black/45">
-              {questionIndex + 1} / {questions.length}
-            </span>
-          </div>
+          <span className="text-center text-[13px] font-bold tabular-nums text-black/45">
+            {questionIndex + 1} / {questions.length}
+          </span>
           <div />
         </div>
         <p className="mt-1 text-center text-[11px] font-semibold tracking-[-0.01em] text-black/38">
@@ -1081,7 +939,14 @@ export function QuestionFlow({
             ? "평소의 나에게 더 가까운 쪽을 골라주세요."
             : "솔직하게 답할수록 더 편안한 자리를 준비할 수 있어요."}
         </p>
-        <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-black/[0.07]">
+        <div
+          className="mt-4 h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
+          role="progressbar"
+          aria-label="질문 진행률"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progressPercent)}
+        >
           <motion.div
             className="h-full rounded-full bg-black/70"
             initial={false}
