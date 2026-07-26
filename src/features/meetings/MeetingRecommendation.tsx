@@ -324,25 +324,35 @@ function DateApplicationOption({
   onToggle: () => void;
 }) {
   const schedule = meetingDateSchedule(date.date)!;
+  const canResumePayment =
+    application?.status === "payment_pending" &&
+    application.depositStatus === "payment_pending";
+  const hasLockedApplication = Boolean(application) && !canResumePayment;
 
   return (
     <motion.button
       type="button"
       data-testid={`meeting-date-${date.date}`}
       aria-pressed={selected}
-      disabled={disabled || closed || Boolean(application)}
-      whileTap={!disabled && !closed && !application ? { scale: 0.98 } : undefined}
+      disabled={disabled || closed || hasLockedApplication}
+      whileTap={
+        !disabled && !closed && !hasLockedApplication
+          ? { scale: 0.98 }
+          : undefined
+      }
       onClick={onToggle}
       className={cn(
         "relative flex min-h-[64px] min-w-0 items-center rounded-[17px] border px-3 py-2.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-black/20",
         closed
           ? "border-black/5 bg-black/[0.035] text-black/32"
-          : application
-            ? "border-black/10 bg-white text-black"
-            : selected
+          : selected
               ? "border-black bg-black/[0.035] text-black shadow-[inset_0_0_0_1px_#111]"
+            : canResumePayment
+              ? "border-amber-200 bg-amber-50/60 text-black hover:border-amber-300"
+            : application
+              ? "border-black/10 bg-white text-black"
               : "border-black/10 bg-white text-black hover:border-black/25",
-        (disabled || closed || application) && "cursor-default",
+        (disabled || closed || hasLockedApplication) && "cursor-default",
       )}
     >
       <span className="min-w-0 pr-7">
@@ -359,10 +369,12 @@ function DateApplicationOption({
             "absolute right-2.5 top-2.5 rounded-full border px-1.5 py-0.5 text-[9px] font-black",
             closed
               ? "border-red-200 bg-red-50 text-red-600"
+              : canResumePayment
+                ? "border-amber-200 bg-amber-50 text-amber-700"
               : "border-blue-200 bg-blue-50 text-blue-700",
           )}
         >
-          {closed ? "마감" : "신청 완료"}
+          {closed ? "마감" : canResumePayment ? "결제 대기" : "신청 완료"}
         </span>
       ) : (
         <span
@@ -491,7 +503,11 @@ function MeetingDateApplicationFlow({
   }, [applications, onDateApplicationsChange]);
 
   const toggleDate = (date: string) => {
-    if (date < today || applicationByDate.has(date) || saving) return;
+    const application = applicationByDate.get(date);
+    const canResumePayment =
+      application?.status === "payment_pending" &&
+      application.depositStatus === "payment_pending";
+    if (date < today || (application && !canResumePayment) || saving) return;
     setSelectedDates((current) => {
       if (current.includes(date)) return [];
       trackEvent("application_date_selected", {
@@ -515,6 +531,14 @@ function MeetingDateApplicationFlow({
       );
     }
   };
+
+  const selectedApplication =
+    selectedDates.length === 1
+      ? applicationByDate.get(selectedDates[0]) ?? null
+      : null;
+  const isResumingPayment =
+    selectedApplication?.status === "payment_pending" &&
+    selectedApplication.depositStatus === "payment_pending";
 
   const submitDateApplications = async (openStoreAfterSave = false) => {
     if (selectedDates.length !== 1 || saving) return;
@@ -804,8 +828,12 @@ function MeetingDateApplicationFlow({
                   className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-black text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
                 >
                   {saving
-                    ? "신청 정보를 저장하는 중..."
-                    : `${meetingDateLabel(selectedDates[0])} 신청하기`}
+                    ? isResumingPayment
+                      ? "결제창을 여는 중..."
+                      : "신청 정보를 저장하는 중..."
+                    : isResumingPayment
+                      ? `${meetingDateLabel(selectedDates[0])} 결제 계속하기`
+                      : `${meetingDateLabel(selectedDates[0])} 신청하기`}
                 </button>
               </motion.div>
             )}
