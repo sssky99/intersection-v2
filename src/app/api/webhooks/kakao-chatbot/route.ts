@@ -76,6 +76,17 @@ function helpResponse() {
   );
 }
 
+function linkedResponse(name: string) {
+  return skillResponse(
+    [
+      `네 안녕하세요 ${name}님 확인 되셨습니다.`,
+      "운영 관련 추가 안내와 공지는 해당 채널로 전달드릴 예정입니다.",
+      "",
+      "문의 사항이 있으시면 편하게 남겨주세요 :)",
+    ].join("\n"),
+  );
+}
+
 function parseIdentity(utterance: unknown) {
   const normalized = text(utterance).normalize("NFKC").replace(/\s+/g, " ");
   const match = normalized.match(/^(.{2,40}?)\s+([0-9]{4})$/u);
@@ -298,7 +309,7 @@ export async function POST(request: Request) {
       result: "already_linked",
       profileId: profile.user_id,
     });
-    return skillResponse(`${identity.name}님, 이미 교집합 신청 정보와 연결되어 있어요.`);
+    return linkedResponse(identity.name);
   }
 
   const { error: insertError } = await admin.from("kakao_channel_links").insert({
@@ -339,7 +350,5 @@ export async function POST(request: Request) {
     profileId: profile.user_id,
   });
 
-  return skillResponse(
-    `${identity.name}님, 교집합 신청 정보가 연결됐어요.\n문의 내용을 남겨주시면 운영자가 확인할게요.`,
-  );
+  return linkedResponse(identity.name);
 }
