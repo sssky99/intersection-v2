@@ -18,6 +18,7 @@ import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { trackEvent } from "@/lib/analytics";
+import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
@@ -557,6 +558,87 @@ function MeetingDateApplicationFlow({
       membership_status: membershipStatus,
     });
 
+    if (purchaseOption === "membership") {
+      try {
+        if (!isLocalTestHost()) {
+          const applicationResponse = await fetch(
+            "/api/meeting-date-applications",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dates: targetDates,
+                openPayment: false,
+              }),
+            },
+          );
+          const applicationData = (await applicationResponse
+            .json()
+            .catch(() => null)) as DateApplicationsResponse | null;
+          if (!applicationResponse.ok || !applicationData?.applications) {
+            throw new Error(
+              applicationData?.error ?? "date-applications-save-failed",
+            );
+          }
+
+          const membershipResponse = await fetch(
+            "/api/membership/purchase-click",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ plan: "one_month" }),
+            },
+          );
+          const membershipData = (await membershipResponse
+            .json()
+            .catch(() => null)) as { error?: string } | null;
+          if (!membershipResponse.ok) {
+            throw new Error(
+              membershipData?.error ?? "membership-purchase-save-failed",
+            );
+          }
+
+          setApplications((current) => {
+            const next = new Map(
+              [...current, ...applicationData.applications!].map(
+                (application) => [application.meetingDate, application],
+              ),
+            );
+            return Array.from(next.values()).sort((left, right) =>
+              left.meetingDate.localeCompare(right.meetingDate),
+            );
+          });
+        }
+
+        trackEvent("application_created", {
+          application_type: "meeting_date",
+          date_count: targetDates.length,
+          deposit_amount: 0,
+          payment_option: "one_month_membership",
+        });
+        trackEvent("membership_purchase_click", {
+          plan: "one_month",
+          months: 1,
+          application_type: "meeting_date",
+          meeting_date: targetDates[0],
+        });
+        window.location.assign(membershipStoreUrls.one_month);
+      } catch (membershipPurchaseError) {
+        const message =
+          membershipPurchaseError instanceof Error &&
+          ![
+            "date-applications-save-failed",
+            "membership-purchase-save-failed",
+          ].includes(membershipPurchaseError.message)
+            ? membershipPurchaseError.message
+            : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.";
+        setError(message);
+        setDepositCopyError(message);
+        setSaving(false);
+      }
+      return;
+    }
+
     if (isLocalTestHost()) {
       const now = new Date().toISOString();
       const localApplications = targetDates.map(
@@ -905,7 +987,7 @@ function MeetingDateApplicationFlow({
 
                 <button
                   type="button"
-                  disabled={saving || purchaseOption === "membership"}
+                  disabled={saving}
                   onClick={() => void submitDateApplications(true)}
                   className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-bold text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
                 >
@@ -914,7 +996,7 @@ function MeetingDateApplicationFlow({
                       ? "결제창을 여는 중..."
                       : "신청 정보를 저장하는 중..."
                     : purchaseOption === "membership"
-                      ? "멤버십 결제 준비 중"
+                      ? "20,000원 결제하고 멤버십 시작하기"
                     : isResumingPayment
                       ? `${meetingDateLabel(selectedDates[0])} 결제 계속하기`
                       : "10,000원 결제하고 신청하기"}

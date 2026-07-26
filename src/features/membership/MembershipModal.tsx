@@ -9,6 +9,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { MembershipPlan } from "@/features/membership/membershipTypes";
 import { trackEvent } from "@/lib/analytics";
+import { membershipStoreUrls } from "@/lib/membershipStore";
 import { rememberPendingTicketPayment } from "@/lib/pendingTicketPayment";
 import type { GatheringTicket } from "@/types/ticket";
 
@@ -42,8 +43,7 @@ const membershipPlanOptions: MembershipPlanOption[] = [
     price: "20,000원",
     monthlyPrice: "20,000원",
     periodText: "첫 모임을 시작한 날로부터 한 달",
-    storeUrl:
-      "https://smartstore.naver.com/intersection_blinddate/products/13643025427",
+    storeUrl: membershipStoreUrls.one_month,
   },
   {
     id: "three_months",
@@ -57,8 +57,7 @@ const membershipPlanOptions: MembershipPlanOption[] = [
     savingsLabel: "10,000원 절약",
     recommended: true,
     periodText: "첫 모임을 시작한 날로부터 세 달",
-    storeUrl:
-      "https://m.smartstore.naver.com/intersection_blinddate/products/13621500025",
+    storeUrl: membershipStoreUrls.three_months,
   },
   {
     id: "six_months",
@@ -71,8 +70,7 @@ const membershipPlanOptions: MembershipPlanOption[] = [
     discountRateLabel: "25% 할인",
     savingsLabel: "30,000원 절약",
     periodText: "첫 모임을 시작한 날로부터 여섯 달",
-    storeUrl:
-      "https://m.smartstore.naver.com/intersection_blinddate/products/13623599558",
+    storeUrl: membershipStoreUrls.six_months,
   },
 ];
 
