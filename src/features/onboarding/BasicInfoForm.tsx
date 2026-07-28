@@ -36,6 +36,15 @@ const basicInfoSteps: Array<{ key: BasicInfoStepKey; label: string }> = [
   { key: "photo", label: "사진" },
 ];
 
+const basicInfoStepViewEvents: Record<BasicInfoStepKey, string> = {
+  name: "basic_info_name_view",
+  phone: "basic_info_phone_view",
+  gender: "basic_info_gender_view",
+  birthYear: "basic_info_birth_year_view",
+  mbti: "basic_info_mbti_view",
+  photo: "basic_info_photo_view",
+};
+
 const BIRTH_YEAR_MIN = 1992;
 const BIRTH_YEAR_MAX = 2007;
 const birthYearOptions = Array.from(
@@ -101,6 +110,7 @@ export function BasicInfoForm({
   const [photoUploading, setPhotoUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const startTrackedRef = useRef(false);
+  const viewedStepsRef = useRef(new Set<BasicInfoStepKey>());
   const canSave = useMemo(
     () => basicInfoSteps.every((step) => isStepComplete(step.key, draft)),
     [draft],
@@ -158,6 +168,19 @@ export function BasicInfoForm({
     startTrackedRef.current = true;
     trackEvent("basic_info_start");
   }, [isRegeneration]);
+
+  useEffect(() => {
+    const stepKey = currentStep?.key;
+    if (isRegeneration || !stepKey || viewedStepsRef.current.has(stepKey)) return;
+
+    viewedStepsRef.current.add(stepKey);
+    trackEvent(basicInfoStepViewEvents[stepKey], {
+      mode: isGuest ? "guest" : "onboarding",
+      step: stepKey,
+      step_index: basicInfoSteps.findIndex((step) => step.key === stepKey) + 1,
+      step_total: basicInfoSteps.length,
+    });
+  }, [currentStep?.key, isGuest, isRegeneration]);
 
   useEffect(() => {
     if (visibleStepCount >= basicInfoSteps.length) return;
