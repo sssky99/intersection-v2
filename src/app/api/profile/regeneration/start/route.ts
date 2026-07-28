@@ -12,7 +12,7 @@ function nextRegenerationDate(lastRegeneratedAt: string | null) {
   return new Date(last.getTime() + REGENERATION_COOLDOWN_MS);
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -22,11 +22,16 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = (await request.json().catch(() => null)) as {
+    mode?: unknown;
+  } | null;
+  const isPreferenceUpgrade = body?.mode === "preferences-v2-upgrade";
+
   const admin = createAdminClient();
   const { data: profile, error: profileError } = await admin
     .from("profiles")
     .select(
-      "user_id,profile_completed,is_test_participant,last_profile_regenerated_at",
+      "user_id,profile_completed,profile_experience_version,is_test_participant,last_profile_regenerated_at",
     )
     .eq("user_id", user.id)
     .single<
@@ -34,6 +39,7 @@ export async function POST() {
         ProfileRow,
         | "user_id"
         | "profile_completed"
+        | "profile_experience_version"
         | "is_test_participant"
         | "last_profile_regenerated_at"
       >
@@ -50,8 +56,19 @@ export async function POST() {
     );
   }
 
+  if (
+    isPreferenceUpgrade &&
+    profile.profile_experience_version === "preferences-v2"
+  ) {
+    return NextResponse.json(
+      { error: "Profile already uses the updated questions." },
+      { status: 409 },
+    );
+  }
+
   const nextAvailableAt = nextRegenerationDate(profile.last_profile_regenerated_at);
   if (
+    !isPreferenceUpgrade &&
     profile.is_test_participant !== true &&
     nextAvailableAt &&
     nextAvailableAt.getTime() > Date.now()

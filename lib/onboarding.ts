@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { preferenceProfileVersion } from "@/data/preferenceQuestions";
 import type { ProfileRow } from "@/types/profile";
 
 type OnboardingPathOptions = {
@@ -66,6 +67,7 @@ export async function getAuthenticatedProfile() {
       questions_completed: false,
       profile_completed: false,
       meeting_guidelines_agreed: false,
+      profile_experience_version: preferenceProfileVersion,
     })
     .select("*")
     .single<ProfileRow>();

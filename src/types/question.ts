@@ -20,7 +20,12 @@ export type QuestionCategory =
   | "나이 조건"
   | "자기소개"
   | "나의 일"
-  | "관심 주제";
+  | "관심 주제"
+  | "일상 취향"
+  | "최근 관심사"
+  | "관계 가치"
+  | "선호 활동"
+  | "비선호 활동";
 
 export type QuestionOption = {
   value: string;
@@ -46,6 +51,7 @@ export type ProfileQuestion = {
   examples?: string[];
   type: QuestionType;
   options?: Array<string | QuestionOption>;
+  minSelections?: number;
   maxSelections?: number;
   scaleLabel?: string;
   prompt?: string;

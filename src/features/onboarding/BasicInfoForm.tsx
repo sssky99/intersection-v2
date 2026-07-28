@@ -344,7 +344,7 @@ export function BasicInfoForm({
     if (stepKey === "gender") {
       return (
         <fieldset>
-          <legend className="text-xs font-semibold text-black/45">성별</legend>
+          <legend className="text-[11px] font-bold text-black/42">성별</legend>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {(["여성", "남성"] as Gender[]).map((gender) => (
               <button
@@ -353,10 +353,10 @@ export function BasicInfoForm({
                 onClick={() =>
                   setDraft((current) => ({ ...current, gender }))
                 }
-                className={`h-12 rounded-2xl border text-xs font-semibold transition ${
+                className={`h-[52px] rounded-[18px] border text-[13px] font-extrabold transition ${
                   draft.gender === gender
-                    ? "border-black bg-black text-white"
-                    : "border-black/10 bg-white text-black/50"
+                    ? "border-[#171714] bg-[#171714] text-white"
+                    : "border-black/[0.08] bg-white/70 text-black/50"
                 }`}
               >
                 {gender}
@@ -391,7 +391,7 @@ export function BasicInfoForm({
     if (stepKey === "mbti") {
       return (
         <div>
-          <span className="text-xs font-semibold text-black/45">MBTI</span>
+          <span className="text-[11px] font-bold text-black/42">MBTI</span>
           <MbtiSelect
             value={draft.mbti}
             onChange={(mbti) =>
@@ -407,7 +407,7 @@ export function BasicInfoForm({
 
     return (
       <div>
-        <p className="text-xs font-semibold text-black/45">사진 업로드</p>
+        <p className="text-[11px] font-bold text-black/42">사진 업로드</p>
         <p className="mt-1 text-xs leading-5 text-black/45">
           나중에 함께 자리한 분들이 얼굴과 이름을 헷갈리지 않도록 사진을
           올려주세요.
@@ -426,7 +426,7 @@ export function BasicInfoForm({
         />
         <label
           htmlFor="onboarding-basic-photo"
-          className={`mt-3 flex items-center justify-between rounded-2xl border border-dashed border-black/16 bg-black/[0.02] px-4 py-4 ${
+          className={`mt-3 flex items-center justify-between rounded-[20px] border border-dashed border-black/14 bg-white/60 px-4 py-4 ${
             photoUploading || saving ? "cursor-wait opacity-70" : "cursor-pointer"
           }`}
         >
@@ -459,29 +459,16 @@ export function BasicInfoForm({
   };
 
   return (
-    <section className="flex min-h-dvh flex-col px-5 pb-6 pt-7 md:min-h-[calc(100dvh-32px)]">
+    <section className="flex min-h-dvh flex-col bg-[#F7F5EF] px-5 pb-6 pt-5 md:min-h-[calc(100dvh-32px)]">
       <header>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-black/35">
-            final profile info
-          </p>
-          <span className="text-[10px] font-semibold text-black/35">
-            {visibleStepCount}/{basicInfoSteps.length}
-          </span>
-        </div>
-        <h1 className="mt-2 text-[27px] font-bold leading-9 tracking-tight text-black">
+        <h1 className="mt-2 text-[27px] font-extrabold leading-[1.25] tracking-[-0.055em] text-[#171714]">
           마지막으로 기본 정보를 입력하면
           <br />
           프로필이 완성돼요.
         </h1>
-        <p className="mt-3 text-sm leading-6 text-black/48">
-          이 정보는 교집합이 더 잘 맞는 사람들과 자리를 구성하고,
-          <br />
-          함께 자리한 분들이 서로를 자연스럽게 알아볼 수 있도록 사용돼요.
-        </p>
       </header>
 
-      <div className="mt-8 space-y-5">
+      <div className="mt-7 space-y-5">
         <AnimatePresence initial={false}>
           {visibleSteps.map((step, index) => (
             <motion.div
@@ -516,9 +503,9 @@ export function BasicInfoForm({
             whileTap={canSave && !saving ? { scale: 0.98 } : undefined}
             disabled={!canSave || saving || photoUploading}
             onClick={() => void save()}
-            className={`flex h-14 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
+            className={`flex min-h-[58px] w-full items-center justify-center gap-2 rounded-[19px] text-[14px] font-extrabold transition ${
               canSave && !saving
-                ? "bg-black text-white"
+                ? "bg-[#171714] text-white"
                 : "bg-black/[0.06] text-black/30"
             }`}
           >
@@ -550,12 +537,12 @@ function BirthYearSelect({
 
   return (
     <label className="block">
-      <span className="text-xs font-semibold text-black/45">{label}</span>
+      <span className="text-[11px] font-bold text-black/42">{label}</span>
       <select
         aria-label={label}
         value={selectedValue}
         onChange={(event) => onChange(event.target.value)}
-        className={`mt-1.5 h-12 w-full appearance-none rounded-2xl border bg-white px-4 text-sm font-semibold outline-none focus:border-black/40 ${
+        className={`mt-2 h-[52px] w-full appearance-none rounded-[18px] border bg-white/75 px-4 text-[13px] font-bold outline-none focus:border-black/35 ${
           helperTone === "error" ? "border-red-300" : "border-black/10"
         } ${selectedValue ? "text-black" : "text-black/30"}`}
       >
@@ -606,8 +593,8 @@ function Field({
 }) {
   return (
     <div className="block">
-      <span className="text-xs font-semibold text-black/45">{label}</span>
-      <span className="relative mt-1.5 block">
+      <span className="text-[11px] font-bold text-black/42">{label}</span>
+      <span className="relative mt-2 block">
         <input
           aria-label={label}
           value={value}
@@ -615,7 +602,7 @@ function Field({
           inputMode={inputMode}
           maxLength={maxLength}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-12 w-full rounded-2xl border bg-white px-4 text-sm outline-none placeholder:text-black/25 focus:border-black/40 ${
+          className={`h-[52px] w-full rounded-[18px] border bg-white/75 px-4 text-[13px] font-semibold outline-none placeholder:text-black/25 focus:border-black/35 ${
             actionLabel ? "pr-[76px]" : ""
           } ${helperTone === "error" ? "border-red-300" : "border-black/10"}`}
         />

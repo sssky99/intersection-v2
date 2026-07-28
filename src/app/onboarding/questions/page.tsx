@@ -3,12 +3,15 @@ import { MobileFrame } from "@/components/MobileFrame";
 import {
   QuestionFlow,
 } from "@/features/onboarding/QuestionFlow";
+import { PreferenceQuestionFlow } from "@/features/onboarding/TableCardSurveyPreview";
+import { usesPreferenceProfile } from "@/data/preferenceQuestions";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 import type { StoredAnswerRow } from "@/types/question";
 
 type QuestionsPageProps = {
   searchParams?: Promise<{
     regenerate?: string | string[];
+    upgrade?: string | string[];
   }>;
 };
 
@@ -20,15 +23,30 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
   const params = await searchParams;
   const { supabase, user, profile } = await getAuthenticatedProfile();
   const isRegeneration = searchValue(params?.regenerate) === "1";
+  const isPreferenceUpgrade =
+    searchValue(params?.upgrade) === "preferences-v2";
 
   if (!user || !profile) redirect("/");
-  if (isRegeneration && !profile.profile_regeneration_started_at) {
+  if (
+    (isRegeneration || isPreferenceUpgrade) &&
+    !profile.profile_regeneration_started_at
+  ) {
     redirect("/meetings?tab=profile");
   }
-  if (profile.questions_completed && !isRegeneration) redirect("/onboarding/profile");
+  if (
+    profile.questions_completed &&
+    !isRegeneration &&
+    !isPreferenceUpgrade
+  ) {
+    redirect("/onboarding/profile");
+  }
 
   const { data } = await supabase
-    .from(isRegeneration ? "profile_regeneration_answers" : "user_answers")
+    .from(
+      isRegeneration || isPreferenceUpgrade
+        ? "profile_regeneration_answers"
+        : "user_answers",
+    )
     .select(
       "question_order,answer_value,answer_values,answer_text,other_text",
     )
@@ -36,11 +54,25 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
     .order("question_order");
   return (
     <MobileFrame>
-      <QuestionFlow
-        userId={user.id}
-        initialRows={(data ?? []) as StoredAnswerRow[]}
-        mode={isRegeneration ? "regeneration" : "onboarding"}
-      />
+      {usesPreferenceProfile(profile) || isPreferenceUpgrade ? (
+        <PreferenceQuestionFlow
+          userId={user.id}
+          initialRows={(data ?? []) as StoredAnswerRow[]}
+          mode={
+            isPreferenceUpgrade
+              ? "upgrade"
+              : isRegeneration
+                ? "regeneration"
+                : "onboarding"
+          }
+        />
+      ) : (
+        <QuestionFlow
+          userId={user.id}
+          initialRows={(data ?? []) as StoredAnswerRow[]}
+          mode={isRegeneration ? "regeneration" : "onboarding"}
+        />
+      )}
     </MobileFrame>
   );
 }

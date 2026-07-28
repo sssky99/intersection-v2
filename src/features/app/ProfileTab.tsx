@@ -6,9 +6,9 @@ import {
   Gift,
   Info,
   LogOut,
+  MessageCircle,
   PenLine,
   RotateCcw,
-  Sparkles,
   UserRound,
 } from "lucide-react";
 import Image from "next/image";
@@ -519,6 +519,8 @@ export function ProfileTab({
   vibeAnimationKey,
   loggingOut,
   logoutError,
+  profileRegenerating = false,
+  profileRegenerationError = null,
   onOpenQuestionReview,
   onRequestProfileRegeneration,
   onLogout,
@@ -531,6 +533,8 @@ export function ProfileTab({
   vibeAnimationKey: number;
   loggingOut: boolean;
   logoutError: string | null;
+  profileRegenerating?: boolean;
+  profileRegenerationError?: string | null;
   onOpenQuestionReview: () => void;
   onRequestProfileRegeneration: () => void;
   onLogout: () => Promise<void>;
@@ -551,10 +555,6 @@ export function ProfileTab({
   const conversationResult = conversationCode
     ? conversationResults[conversationCode]
     : null;
-  const showRenewedQuestionsNotice =
-    legacyResultPreview ||
-    profile.conversation_result_source === "legacy_inferred" ||
-    profile.conversation_result_version === "legacy-inferred-v1";
   const matchingPrecisionCount = profileMatchingPrecisionCount(
     profile,
     participationCount,
@@ -578,6 +578,36 @@ export function ProfileTab({
             {profileInitial(profile)}님의 프로필
           </h1>
         </header>
+
+        <section className="mt-5 rounded-[24px] border border-accent/25 bg-accent/[0.08] px-5 py-5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
+              <span aria-hidden className="text-[15px]">🔔</span>
+            </span>
+            <p className="text-[16px] font-black tracking-[-0.025em] text-black/82">
+              질문이 업데이트 되었어요!
+            </p>
+          </div>
+          <p className="mt-1.5 break-keep text-xs font-semibold leading-5 text-black/48">
+            간단한 5가지 질문으로 프로필 카드를 완성해보세요
+          </p>
+          <button
+            type="button"
+            disabled={profileRegenerating}
+            onClick={onRequestProfileRegeneration}
+            className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black text-xs font-black text-white transition hover:bg-black/85 disabled:cursor-wait disabled:opacity-55"
+          >
+            <RotateCcw size={15} aria-hidden />
+            {profileRegenerating
+              ? "질문을 준비하고 있어요..."
+              : "새로운 프로필 카드 만들기"}
+          </button>
+          {profileRegenerationError && (
+            <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
+              {profileRegenerationError}
+            </p>
+          )}
+        </section>
 
         {usesNewConversationProfile && conversationResult && conversationCode ? (
           <>
@@ -662,31 +692,6 @@ export function ProfileTab({
           </section>
         )}
 
-        {showRenewedQuestionsNotice && conversationResult && (
-          <section className="mt-3 rounded-[22px] border border-accent/25 bg-accent/[0.08] px-4 py-4">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
-                <Sparkles size={17} aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-black text-black/78">
-                  프로필 질문이 새로워졌어요
-                </p>
-                <p className="mt-1 break-keep text-xs font-semibold leading-5 text-black/48">
-                  새 질문에 답하면 내 대화 스타일을 더 정확하게 알아볼 수 있어요.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onRequestProfileRegeneration}
-              className="mt-4 flex h-11 w-full items-center justify-center rounded-full bg-black text-xs font-black text-white transition hover:bg-black/85"
-            >
-              새 질문으로 다시 알아보기
-            </button>
-          </section>
-        )}
-
         <VibeGraph
           title="나의 대화결"
           titleInlineAccessory={<VibeGraphInfoButton />}
@@ -737,22 +742,6 @@ export function ProfileTab({
 
         <button
           type="button"
-          onClick={onRequestProfileRegeneration}
-          className="mt-8 flex min-h-[58px] w-full items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-white px-4 py-3 text-left transition hover:border-black/20 hover:bg-black/[0.015]"
-        >
-          <span>
-            <span className="block text-xs font-black text-black/62">
-              프로필 새로 만들기
-            </span>
-            <span className="mt-1 block text-[11px] font-semibold leading-4 text-black/38">
-              질문을 다시 답하고 내 대화 결을 새로 만들어요.
-            </span>
-          </span>
-          <RotateCcw size={16} className="shrink-0 text-black/35" aria-hidden />
-        </button>
-
-        <button
-          type="button"
           disabled={loggingOut}
           onClick={() => void onLogout()}
           className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-white text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
@@ -767,7 +756,7 @@ export function ProfileTab({
           rel="noreferrer"
           className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
         >
-          <Info size={15} aria-hidden />
+          <MessageCircle size={15} aria-hidden />
           문의하기
         </a>
 

@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import {
+  preferenceQuestions,
+  usesPreferenceProfile,
+} from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   calculateConversationResultCode,
   conversationResultVersion,
 } from "@/lib/conversationResult";
+import { assignedProfileEmoji } from "@/lib/profileEmoji";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
@@ -34,7 +39,7 @@ function validAnswer(question: ProfileQuestion, row: StoredAnswerRow) {
   if (question.type === "multi_choice") {
     const values = row.answer_values ?? [];
     return (
-      values.length > 0 &&
+      values.length >= (question.minSelections ?? 1) &&
       (!question.maxSelections || values.length <= question.maxSelections) &&
       values.every((value) => allowedValues.has(value))
     );
@@ -70,11 +75,26 @@ export async function POST(request: Request) {
         photoUrl?: unknown;
       }
     | null;
+  const admin = createAdminClient();
+  const { data: existingProfile } = await admin
+    .from("profiles")
+    .select("*")
+    .eq("user_id", user.id)
+    .maybeSingle<ProfileRow>();
+
+  if (!existingProfile) {
+    return NextResponse.json({ error: "Profile is unavailable." }, { status: 409 });
+  }
+
+  const isPreferenceOnboarding = usesPreferenceProfile(existingProfile);
+  const questions = isPreferenceOnboarding
+    ? preferenceQuestions
+    : profileQuestions;
   const rows = Array.isArray(body?.answers)
     ? body.answers.filter(isStoredAnswerRow)
     : [];
   const rowsByOrder = new Map(rows.map((row) => [row.question_order, row]));
-  const answersValid = profileQuestions.every((question) => {
+  const answersValid = questions.every((question) => {
     const order = question.order ?? question.id;
     const row = rowsByOrder.get(order);
     return Boolean(row && validAnswer(question, row));
@@ -110,17 +130,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const admin = createAdminClient();
-  const { data: existingProfile } = await admin
-    .from("profiles")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle<ProfileRow>();
-
-  if (!existingProfile) {
-    return NextResponse.json({ error: "Profile is unavailable." }, { status: 409 });
-  }
-
   if (existingProfile.questions_completed || existingProfile.profile_completed) {
     return NextResponse.json(
       { error: "Existing profile must not be overwritten.", existing: true },
@@ -128,7 +137,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const answerRows = profileQuestions.map((question) => {
+  const answerRows = questions.map((question) => {
     const order = question.order ?? question.id;
     const row = rowsByOrder.get(order)!;
     return {
@@ -143,8 +152,10 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
   });
-  const resultCode = calculateConversationResultCode(answerRows);
-  if (!resultCode) {
+  const resultCode = isPreferenceOnboarding
+    ? null
+    : calculateConversationResultCode(answerRows);
+  if (!isPreferenceOnboarding && !resultCode) {
     return NextResponse.json(
       { error: "Conversation result could not be calculated." },
       { status: 400 },
@@ -171,11 +182,18 @@ export async function POST(request: Request) {
       photo_url: photoUrl,
       questions_completed: true,
       profile_completed: true,
-      conversation_result_code: resultCode,
-      conversation_result_version: conversationResultVersion,
-      conversation_result_calculated_at: new Date().toISOString(),
-      conversation_result_source: "direct",
-      conversation_result_confidence: 1,
+      ...(isPreferenceOnboarding
+        ? { public_emoji: assignedProfileEmoji(user.id) }
+        : {}),
+      ...(isPreferenceOnboarding
+        ? {}
+        : {
+            conversation_result_code: resultCode,
+            conversation_result_version: conversationResultVersion,
+            conversation_result_calculated_at: new Date().toISOString(),
+            conversation_result_source: "direct",
+            conversation_result_confidence: 1,
+          }),
     })
     .eq("user_id", user.id);
 

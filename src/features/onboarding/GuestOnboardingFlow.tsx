@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BasicInfoForm, type BasicInfoValues } from "@/features/onboarding/BasicInfoForm";
-import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
+import { PreferenceQuestionFlow } from "@/features/onboarding/TableCardSurveyPreview";
 import {
   loadGuestOnboardingDraft,
   loadGuestProfilePhoto,
@@ -168,7 +168,7 @@ export function GuestOnboardingFlow() {
 
   if (draft.phase === "questions") {
     return (
-      <QuestionFlow
+      <PreferenceQuestionFlow
         initialRows={draft.answers}
         mode="guest"
         onGuestDraftChange={handleAnswerDraftChange}

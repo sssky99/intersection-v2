@@ -1,7 +1,7 @@
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
 
-const DRAFT_KEY = "intersection-guest-onboarding-v1";
+const DRAFT_KEY = "intersection-guest-onboarding-v2";
 const PHOTO_DATABASE = "intersection-guest-onboarding";
 const PHOTO_STORE = "draft-files";
 const PHOTO_KEY = "profile-photo";
@@ -15,7 +15,7 @@ export type GuestBasicInfo = {
 };
 
 export type GuestOnboardingDraft = {
-  version: 1;
+  version: 2;
   id: string;
   phase: "questions" | "profile";
   answers: StoredAnswerRow[];
@@ -41,7 +41,7 @@ export const emptyGuestBasicInfo: GuestBasicInfo = {
 
 export function emptyGuestOnboardingDraft(): GuestOnboardingDraft {
   return {
-    version: 1,
+    version: 2,
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     phase: "questions",
     answers: [],
@@ -79,12 +79,12 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
     const parsed = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY) ?? "null") as
       | Partial<GuestOnboardingDraft>
       | null;
-    if (!parsed || parsed.version !== 1 || typeof parsed.id !== "string") {
+    if (!parsed || parsed.version !== 2 || typeof parsed.id !== "string") {
       return emptyGuestOnboardingDraft();
     }
 
     return {
-      version: 1,
+      version: 2,
       id: parsed.id,
       phase: parsed.phase === "profile" ? "profile" : "questions",
       answers: Array.isArray(parsed.answers)

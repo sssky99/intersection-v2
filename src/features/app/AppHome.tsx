@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  AlertTriangle,
   ArrowRight,
   CalendarDays,
   Check,
@@ -43,6 +42,10 @@ import {
   type VibeAxis,
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
+import {
+  preferenceQuestions,
+  usesPreferenceProfile,
+} from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
@@ -79,7 +82,7 @@ import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
-import type { QuestionAnswer } from "@/types/question";
+import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
@@ -102,6 +105,17 @@ const LazyMeetingChat = dynamic(
 
 const LazyProfileTab = dynamic(
   () => import("@/features/app/ProfileTab").then((module) => module.ProfileTab),
+  {
+    ssr: false,
+    loading: () => <ProfileTabLoading />,
+  },
+);
+
+const LazyPreferenceProfileTab = dynamic(
+  () =>
+    import("@/features/app/PreferenceProfileTab").then(
+      (module) => module.PreferenceProfileTab,
+    ),
   {
     ssr: false,
     loading: () => <ProfileTabLoading />,
@@ -190,8 +204,11 @@ function normalizePhone(phone: string) {
   return digits;
 }
 
-function rowToAnswer(row: AnswerRow): QuestionAnswer {
-  const question = profileQuestions.find(
+function rowToAnswer(
+  row: AnswerRow,
+  questions: ProfileQuestion[] = profileQuestions,
+): QuestionAnswer {
+  const question = questions.find(
     (item) => (item.order ?? item.id) === row.question_order,
   );
   const optionValues = new Set(
@@ -458,11 +475,10 @@ export function AppHome({
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [currentProfile, setCurrentProfile] = useState(profile);
+  const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
-  const [profileRegenerationConfirmOpen, setProfileRegenerationConfirmOpen] =
-    useState(false);
   const [profileRegenerating, setProfileRegenerating] = useState(false);
   const [profileRegenerationError, setProfileRegenerationError] = useState<
     string | null
@@ -478,7 +494,7 @@ export function AppHome({
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const recommendTabTrackedRef = useRef(false);
-  const conversationResultTrackedRef = useRef(false);
+  const profileTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const recommendationMembershipStatus = useMemo(
     () =>
@@ -588,14 +604,24 @@ export function AppHome({
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab !== "profile" || conversationResultTrackedRef.current) return;
+    if (activeTab !== "profile" || profileTabTrackedRef.current) return;
 
-    conversationResultTrackedRef.current = true;
+    profileTabTrackedRef.current = true;
+    if (preferenceProfileEnabled) {
+      trackEvent("profile_tab_view");
+      return;
+    }
+
     trackEvent("conversation_result_view", {
       result_code: currentProfile.conversation_result_code,
       result_source: currentProfile.conversation_result_source,
     });
-  }, [activeTab, currentProfile.conversation_result_code, currentProfile.conversation_result_source]);
+  }, [
+    activeTab,
+    currentProfile.conversation_result_code,
+    currentProfile.conversation_result_source,
+    preferenceProfileEnabled,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -609,6 +635,9 @@ export function AppHome({
       setBlindDateOffers(offers);
     });
     const supabase = createClient();
+    const answerQuestions = usesPreferenceProfile(profile)
+      ? preferenceQuestions
+      : profileQuestions;
 
     supabase
       .from("user_answers")
@@ -624,13 +653,13 @@ export function AppHome({
           Object.fromEntries(
             data
               .filter((row) =>
-                profileQuestions.some(
+                answerQuestions.some(
                   (question) =>
                     (question.order ?? question.id) === row.question_order,
                 ),
               )
               .map((row) => {
-                const answer = rowToAnswer(row);
+                const answer = rowToAnswer(row, answerQuestions);
                 return [answer.questionId, answer];
               }),
           ) as AnswerMap,
@@ -640,7 +669,11 @@ export function AppHome({
     return () => {
       cancelled = true;
     };
-  }, [loadUserTicketsProgressively, userId]);
+  }, [
+    loadUserTicketsProgressively,
+    profile.profile_experience_version,
+    userId,
+  ]);
 
   useEffect(() => {
     const refreshTickets = () => {
@@ -673,13 +706,6 @@ export function AppHome({
     setBlindDateOpenRequestPending(true);
   };
 
-  const openProfileRegenerationConfirm = () => {
-    setProfilePanelOpen(false);
-    setQuestionReviewOpen(false);
-    setProfileRegenerationError(null);
-    setProfileRegenerationConfirmOpen(true);
-  };
-
   const startProfileRegeneration = async () => {
     if (profileRegenerating) return;
 
@@ -688,6 +714,12 @@ export function AppHome({
 
     const response = await fetch("/api/profile/regeneration/start", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: preferenceProfileEnabled
+          ? "preferences-v2-regeneration"
+          : "preferences-v2-upgrade",
+      }),
     }).catch(() => null);
     const body = response
       ? ((await response.json().catch(() => null)) as
@@ -709,7 +741,9 @@ export function AppHome({
       return;
     }
 
-    window.location.href = "/onboarding/questions?regenerate=1&start=1";
+    window.location.href = preferenceProfileEnabled
+      ? "/onboarding/questions?regenerate=1&start=1"
+      : "/onboarding/questions?upgrade=preferences-v2";
   };
 
   const applyAccountSession = async ({
@@ -848,49 +882,61 @@ export function AppHome({
         </button>
       )}
 
-      <button
-        type="button"
-        onClick={() => {
-          setProfilePanelOpen((open) => !open);
-        }}
-        aria-label="기본정보 카드 열기"
-        aria-expanded={profilePanelOpen}
-        className={cn(
-          "absolute right-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xs font-bold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
-          profilePanelOpen
-            ? "border-black text-black shadow-md"
-            : "border-black/15 text-black/70 hover:text-black",
-        )}
-      >
-        {profileInitial(currentProfile)}
-      </button>
+      {(!preferenceProfileEnabled || operatorAccountSwitcher) && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setProfilePanelOpen((open) => !open);
+            }}
+            aria-label={
+              operatorAccountSwitcher
+                ? "테스트 계정 전환 카드 열기"
+                : "기본정보 카드 열기"
+            }
+            aria-expanded={profilePanelOpen}
+            className={cn(
+              "absolute right-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xs font-bold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
+              profilePanelOpen
+                ? "border-black text-black shadow-md"
+                : "border-black/15 text-black/70 hover:text-black",
+            )}
+          >
+            {profileInitial(currentProfile)}
+          </button>
 
-      <AnimatePresence>
-        {profilePanelOpen && (
-          <>
-            <motion.button
-              type="button"
-              aria-label="기본정보 카드 닫기"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setProfilePanelOpen(false)}
-              className="absolute inset-0 z-20 bg-black/10"
-            />
-            <BasicInfoPanel
-              key="basic-info-panel"
-              profile={currentProfile}
-              operatorAccountSwitcher={operatorAccountSwitcher}
-              switchingAccountId={switchingAccountId}
-              accountSwitchError={accountSwitchError}
-              onProfileUpdated={setCurrentProfile}
-              onClose={() => setProfilePanelOpen(false)}
-              onSwitchAccount={switchToTestAccount}
-              onReturnToOperator={returnToOperatorAccount}
-            />
-          </>
-        )}
-      </AnimatePresence>
+          <AnimatePresence>
+            {profilePanelOpen && (
+              <>
+                <motion.button
+                  type="button"
+                  aria-label={
+                    operatorAccountSwitcher
+                      ? "테스트 계정 전환 카드 닫기"
+                      : "기본정보 카드 닫기"
+                  }
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setProfilePanelOpen(false)}
+                  className="absolute inset-0 z-20 bg-black/10"
+                />
+                <BasicInfoPanel
+                  key="basic-info-panel"
+                  profile={currentProfile}
+                  operatorAccountSwitcher={operatorAccountSwitcher}
+                  switchingAccountId={switchingAccountId}
+                  accountSwitchError={accountSwitchError}
+                  onProfileUpdated={setCurrentProfile}
+                  onClose={() => setProfilePanelOpen(false)}
+                  onSwitchAccount={switchToTestAccount}
+                  onReturnToOperator={returnToOperatorAccount}
+                />
+              </>
+            )}
+          </AnimatePresence>
+        </>
+      )}
 
       <div
         ref={scrollAreaRef}
@@ -951,21 +997,42 @@ export function AppHome({
           className={cn(activeTab === "profile" ? "block min-h-full" : "hidden")}
         >
           {activeTab === "profile" && (
-            <LazyProfileTab
-              profile={currentProfile}
-              answers={answers}
-              participationCount={participationCount}
-              vibeAnimationKey={profileVibeAnimationKey}
-              loggingOut={loggingOut}
-              logoutError={logoutError}
-              onOpenQuestionReview={() => setQuestionReviewOpen(true)}
-              onRequestProfileRegeneration={openProfileRegenerationConfirm}
-              legacyResultPreview={initialLegacyResultPreview}
-              onLogout={logout}
-              operatorConversationPreview={
-                operatorAccountSwitcher?.mode === "operator"
-              }
-            />
+            preferenceProfileEnabled ? (
+              <LazyPreferenceProfileTab
+                profile={currentProfile}
+                loggingOut={loggingOut}
+                logoutError={logoutError}
+                preferredActivities={
+                  Array.isArray(answers[4]?.value) ? answers[4].value : []
+                }
+                recentInterests={
+                  Array.isArray(answers[2]?.value) ? answers[2].value : []
+                }
+                participationCount={participationCount}
+                onProfileUpdated={setCurrentProfile}
+                onLogout={logout}
+              />
+            ) : (
+              <LazyProfileTab
+                profile={currentProfile}
+                answers={answers}
+                participationCount={participationCount}
+                vibeAnimationKey={profileVibeAnimationKey}
+                loggingOut={loggingOut}
+                logoutError={logoutError}
+                profileRegenerating={profileRegenerating}
+                profileRegenerationError={profileRegenerationError}
+                onOpenQuestionReview={() => setQuestionReviewOpen(true)}
+                onRequestProfileRegeneration={() =>
+                  void startProfileRegeneration()
+                }
+                legacyResultPreview={initialLegacyResultPreview}
+                onLogout={logout}
+                operatorConversationPreview={
+                  operatorAccountSwitcher?.mode === "operator"
+                }
+              />
+            )
           )}
         </div>
       </div>
@@ -1023,18 +1090,6 @@ export function AppHome({
       )}
 
       <AnimatePresence>
-        {profileRegenerationConfirmOpen && (
-          <ProfileRegenerationConfirmModal
-            key="profile-regeneration-confirm"
-            loading={profileRegenerating}
-            error={profileRegenerationError}
-            onCancel={() => {
-              if (profileRegenerating) return;
-              setProfileRegenerationConfirmOpen(false);
-            }}
-            onConfirm={() => void startProfileRegeneration()}
-          />
-        )}
         {questionReviewOpen && (
           <motion.div
             key="question-review"
@@ -3595,96 +3650,6 @@ const profileCompletionMessages = [
   "요즘 관심사를 반영하고 있어요.",
   "거의 다 완성 됐어요.",
 ];
-
-function ProfileRegenerationConfirmModal({
-  loading,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  loading: boolean;
-  error: string | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-
-  return (
-    <motion.div
-      key="profile-regeneration-confirm-modal"
-      initial={shouldReduceMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-      className="absolute inset-0 z-[75] flex items-center justify-center bg-black/28 px-4 py-8 backdrop-blur-[3px]"
-    >
-      <motion.section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="profile-regeneration-title"
-        initial={shouldReduceMotion ? false : { opacity: 0, y: 14, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8, scale: 0.98 }}
-        transition={{ duration: 0.22, ease: "easeOut" }}
-        className="w-full max-w-[390px] rounded-[26px] border border-black/10 bg-white px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.16)]"
-      >
-        <div className="flex items-center gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500">
-            <AlertTriangle size={20} aria-hidden />
-          </span>
-          <h2
-            id="profile-regeneration-title"
-            className="text-[21px] font-black leading-7 text-black"
-          >
-            프로필을 다시 만들까요?
-          </h2>
-        </div>
-
-        <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-black/58">
-          <p>프로필을 새로 만들면 1번 질문부터 다시 답변하게 됩니다.</p>
-          <p>
-            또한 이전 교집합 참여와 피드백을 통해 보정되었던 대화 결 점수는
-            초기화됩니다.
-          </p>
-          <p>
-            원본 참여 기록과 피드백 기록은 삭제되지 않지만, 새 프로필에는 기존
-            보정치가 다시 반영되지 않습니다.
-          </p>
-          <p>
-            <strong className="font-black text-black/75">
-              프로필 새로 만들기는 한 달에 한 번만 가능
-            </strong>
-            합니다.
-          </p>
-        </div>
-
-        {error && (
-          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-600">
-            {error}
-          </p>
-        )}
-
-        <div className="mt-5 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={loading}
-            onClick={onCancel}
-            className="h-12 rounded-full border border-black/10 bg-white text-xs font-bold text-black/55 transition hover:border-black/20 disabled:opacity-45"
-          >
-            취소
-          </button>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={onConfirm}
-            className="h-12 rounded-full border border-red-200 bg-red-50 px-3 text-xs font-black text-red-600 transition hover:border-red-300 hover:bg-red-100 disabled:cursor-wait disabled:opacity-55"
-          >
-            {loading ? "시작 중..." : "정말 프로필 새로 만들기"}
-          </button>
-        </div>
-      </motion.section>
-    </motion.div>
-  );
-}
 
 function wait(ms: number) {
   return new Promise((resolve) => {

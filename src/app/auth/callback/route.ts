@@ -7,6 +7,7 @@ import {
 import { createClient } from '@/lib/supabase/server';
 import { recordUserEvent } from '@/lib/userEvents';
 import type { ProfileRow } from '@/types/profile';
+import { preferenceProfileVersion } from '@/data/preferenceQuestions';
 
 function cleanRedirect(requestUrl: URL, path = '/', origin = requestUrl.origin) {
   const redirectUrl = new URL(path, origin);
@@ -127,6 +128,7 @@ export async function GET(request: Request) {
           profile_completed: false,
           questions_completed: false,
           meeting_guidelines_agreed: false,
+          profile_experience_version: preferenceProfileVersion,
         })
         .select('*')
         .single<ProfileRow>();
