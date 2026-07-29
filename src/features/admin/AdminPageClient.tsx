@@ -13,6 +13,10 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { VibeGraph } from "@/components/vibe/VibeGraph";
 import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
+import {
+  preferenceQuestions,
+  usesPreferenceProfile,
+} from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   conversationResultImageSrc,
@@ -115,12 +119,17 @@ function questionOrder(question: ProfileQuestion) {
   return question.order ?? question.id;
 }
 
-function questionForOrder(order: number) {
-  return profileQuestions.find((question) => questionOrder(question) === order);
+function questionsForProfile(
+  profile: Pick<AdminProfile, "profile_experience_version">,
+) {
+  return usesPreferenceProfile(profile) ? preferenceQuestions : profileQuestions;
 }
 
-function questionForAnswer(answer: AdminProfileAnswer) {
-  return questionForOrder(answer.question_order);
+function questionForOrder(
+  order: number,
+  questions: ProfileQuestion[] = profileQuestions,
+) {
+  return questions.find((question) => questionOrder(question) === order);
 }
 
 function optionMeta(option: string | QuestionOption) {
@@ -159,11 +168,14 @@ function answerText(answer: AdminProfileAnswer) {
   );
 }
 
-function answerDisplayForExport(answer: AdminProfileAnswer) {
+function answerDisplayForExport(
+  answer: AdminProfileAnswer,
+  questions: ProfileQuestion[],
+) {
   const ticketRating = parseTicketRatingAnswer(answer.answer_text);
   if (ticketRating) return `${ticketRating.title} (${ticketRating.rating}점)`;
 
-  const question = questionForAnswer(answer);
+  const question = questionForOrder(answer.question_order, questions);
   if (!question || question.type === "text") return answerText(answer);
 
   const values = selectedValues(answer);
@@ -195,27 +207,38 @@ function compactTsvLabel(value: string) {
 }
 
 function answerExportColumns(profiles: AdminProfile[]) {
-  const knownColumns = profileQuestions
-    .map((question) => ({ order: questionOrder(question), question }))
-    .sort((left, right) => left.order - right.order);
-  const knownOrders = new Set(knownColumns.map((column) => column.order));
-  const unknownOrders = Array.from(
-    new Set(
-      profiles.flatMap((profile) =>
-        (profile.answers ?? [])
-          .map((answer) => answer.question_order)
-          .filter((order) => !knownOrders.has(order)),
-      ),
-    ),
-  ).sort((left, right) => left - right);
+  const questionSets = [
+    profiles.some((profile) => !usesPreferenceProfile(profile))
+      ? { key: "legacy" as const, label: "기존", questions: profileQuestions }
+      : null,
+    profiles.some((profile) => usesPreferenceProfile(profile))
+      ? {
+          key: "preferences" as const,
+          label: "신규",
+          questions: preferenceQuestions,
+        }
+      : null,
+  ].filter(
+    (
+      item,
+    ): item is {
+      key: "legacy" | "preferences";
+      label: string;
+      questions: ProfileQuestion[];
+    } => Boolean(item),
+  );
+  const showSetLabel = questionSets.length > 1;
 
-  return [
-    ...knownColumns,
-    ...unknownOrders.map((order) => ({
-      order,
-      question: questionForOrder(order),
-    })),
-  ];
+  return questionSets.flatMap((questionSet) =>
+    questionSet.questions
+      .map((question) => ({
+        questionSet: questionSet.key,
+        setLabel: showSetLabel ? questionSet.label : "",
+        order: questionOrder(question),
+        question,
+      }))
+      .sort((left, right) => left.order - right.order),
+  );
 }
 
 function answerExportHeader(
@@ -225,7 +248,7 @@ function answerExportHeader(
   if (!question) return `Q${column.order}`;
 
   return compactTsvLabel(
-    `Q${column.order}. ${question.category} - ${question.question}`,
+    `${column.setLabel ? `[${column.setLabel}] ` : ""}Q${column.order}. ${question.category} - ${question.question}`,
   );
 }
 
@@ -255,6 +278,10 @@ function downloadApplicantAnswersTsv(profiles: AdminProfile[]) {
     ...columns.map(answerExportHeader),
   ];
   const rows = profiles.map((profile) => {
+    const profileQuestionSet = usesPreferenceProfile(profile)
+      ? "preferences"
+      : "legacy";
+    const questions = questionsForProfile(profile);
     const answersByOrder = new Map(
       (profile.answers ?? []).map((answer) => [answer.question_order, answer]),
     );
@@ -272,8 +299,9 @@ function downloadApplicantAnswersTsv(profiles: AdminProfile[]) {
       completionText(profile.questions_completed),
       membershipStatusLabels[membershipStatusValue(profile)],
       ...columns.map((column) => {
+        if (column.questionSet !== profileQuestionSet) return "";
         const answer = answersByOrder.get(column.order);
-        return answer ? answerDisplayForExport(answer) : "";
+        return answer ? answerDisplayForExport(answer, questions) : "";
       }),
     ];
   });
@@ -1584,7 +1612,7 @@ function ProfileDetailPanel({
           )}
         </section>
 
-        <ProfileAnswersSection answers={profile.answers ?? []} />
+        <ProfileAnswersSection profile={profile} />
 
         {(saveError || saveNotice) && (
           <p
@@ -1708,7 +1736,10 @@ function InfoPill({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProfileAnswersSection({ answers }: { answers: AdminProfileAnswer[] }) {
+function ProfileAnswersSection({ profile }: { profile: AdminProfile }) {
+  const answers = profile.answers ?? [];
+  const questions = questionsForProfile(profile);
+  const preferenceProfile = usesPreferenceProfile(profile);
   const sortedAnswers = [...answers].sort(
     (left, right) => left.question_order - right.question_order,
   );
@@ -1718,7 +1749,7 @@ function ProfileAnswersSection({ answers }: { answers: AdminProfileAnswer[] }) {
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold">신청자 답변</h3>
         <span className="text-[11px] font-semibold text-black/35">
-          총 {sortedAnswers.length}개
+          {preferenceProfile ? "신규 5개 질문" : `총 ${sortedAnswers.length}개`}
         </span>
       </div>
 
@@ -1732,6 +1763,7 @@ function ProfileAnswersSection({ answers }: { answers: AdminProfileAnswer[] }) {
             <ProfileAnswerCard
               key={`${answer.question_order}-${answer.updated_at ?? ""}`}
               answer={answer}
+              question={questionForOrder(answer.question_order, questions)}
             />
           ))}
         </div>
@@ -1740,7 +1772,13 @@ function ProfileAnswersSection({ answers }: { answers: AdminProfileAnswer[] }) {
   );
 }
 
-function ProfileAnswerCard({ answer }: { answer: AdminProfileAnswer }) {
+function ProfileAnswerCard({
+  answer,
+  question,
+}: {
+  answer: AdminProfileAnswer;
+  question?: ProfileQuestion;
+}) {
   const ticketRating = parseTicketRatingAnswer(answer.answer_text);
   if (ticketRating) {
     return (
@@ -1758,7 +1796,6 @@ function ProfileAnswerCard({ answer }: { answer: AdminProfileAnswer }) {
     );
   }
 
-  const question = questionForAnswer(answer);
   if (!question) {
     return (
       <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">

@@ -30,6 +30,7 @@ const baseProfileFields = [
   "created_at",
   "profile_completed",
   "questions_completed",
+  "profile_experience_version",
 ];
 
 const precisionProfileFields = ["matching_precision_bonus"];
