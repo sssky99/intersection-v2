@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isMembershipPlan } from "@/features/membership/membershipTypes";
+import {
+  membershipPlanAmounts,
+  oneTimeMembershipCreditAmount,
+} from "@/lib/membershipPlans";
 import { isPastTicketDate } from "@/lib/ticketDate";
 import type { GatheringTicket } from "@/types/ticket";
 
@@ -132,6 +136,84 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
+  let creditAmount = 0;
+
+  if (body.plan === "one_month") {
+    const { data: completedMembership, error: completedMembershipError } =
+      await admin
+        .from("payment_transactions")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "completed")
+        .in("payment_kind", [
+          "membership_initial",
+          "membership_upgrade",
+          "membership_renewal",
+        ])
+        .limit(1)
+        .maybeSingle<{ id: number | string }>();
+    if (completedMembershipError) {
+      console.error(
+        "Membership payment history lookup failed:",
+        completedMembershipError.message,
+      );
+      return NextResponse.json(
+        { error: "멤버십 결제 이력을 확인하지 못했습니다." },
+        { status: 500 },
+      );
+    }
+
+    if (!completedMembership) {
+      const { data: completedOneTime, error: completedOneTimeError } =
+        await admin
+          .from("payment_transactions")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("payment_kind", "one_time")
+          .eq("status", "completed")
+          .limit(1)
+          .maybeSingle<{ id: number | string }>();
+      if (completedOneTimeError) {
+        console.error(
+          "One-time payment history lookup failed:",
+          completedOneTimeError.message,
+        );
+        return NextResponse.json(
+          { error: "1회권 결제 이력을 확인하지 못했습니다." },
+          { status: 500 },
+        );
+      }
+      if (completedOneTime) {
+        creditAmount = oneTimeMembershipCreditAmount;
+      }
+    }
+  }
+
+  const expectedAmount = membershipPlanAmounts[body.plan];
+  const { data: paymentIntent, error: paymentIntentError } = await admin.rpc(
+    "activate_membership_payment_intent",
+    {
+      p_user_id: user.id,
+      p_plan: body.plan,
+      p_expected_amount: expectedAmount,
+      p_credit_amount: creditAmount,
+    },
+  );
+  if (
+    paymentIntentError ||
+    !Array.isArray(paymentIntent) ||
+    paymentIntent.length !== 1
+  ) {
+    console.error(
+      "Membership payment intent save failed:",
+      paymentIntentError?.message,
+    );
+    return NextResponse.json(
+      { error: "멤버십 결제를 준비하지 못했습니다." },
+      { status: 500 },
+    );
+  }
+
   const { error } = await admin
     .from("profiles")
     .update({
@@ -227,5 +309,11 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    paymentIntentCreated: true,
+    expectedAmount,
+    creditAmount,
+    payableAmount: expectedAmount - creditAmount,
+  });
 }
