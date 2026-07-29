@@ -8,7 +8,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
@@ -234,6 +234,7 @@ export function PreferenceQuestionFlow({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const questionStartTrackedRef = useRef(false);
 
   const storedRows = useMemo<StoredAnswerRow[]>(
     () =>
@@ -293,6 +294,21 @@ export function PreferenceQuestionFlow({
   useEffect(() => {
     if (mode === "guest") onGuestDraftChange?.(storedRows);
   }, [mode, onGuestDraftChange, storedRows]);
+
+  useEffect(() => {
+    if (
+      (mode !== "guest" && mode !== "onboarding") ||
+      questionStartTrackedRef.current
+    ) {
+      return;
+    }
+
+    questionStartTrackedRef.current = true;
+    trackEvent("question_start", {
+      question_count: preferenceQuestions.length,
+      mode: mode === "guest" ? "guest" : "preferences-v2",
+    });
+  }, [mode]);
 
   const canContinue = useMemo(() => {
     if (step === 0) return Boolean(movie);
