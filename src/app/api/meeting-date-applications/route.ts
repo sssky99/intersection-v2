@@ -34,6 +34,7 @@ type AssignedTicketSchedule = {
   id: string;
   event_date: string | null;
   event_time: string | null;
+  ticket_reveal_override_at: string | null;
 };
 
 const activeStatuses = [
@@ -48,7 +49,18 @@ function ticketRevealsAt(schedule: AssignedTicketSchedule | undefined) {
   const time = schedule.event_time?.slice(0, 5) || "00:00";
   const startAt = new Date(`${schedule.event_date}T${time}:00+09:00`);
   if (!Number.isFinite(startAt.getTime())) return null;
-  return new Date(startAt.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const scheduledRevealAt = new Date(
+    startAt.getTime() - 24 * 60 * 60 * 1000,
+  );
+  if (!schedule.ticket_reveal_override_at) {
+    return scheduledRevealAt.toISOString();
+  }
+
+  const override = new Date(schedule.ticket_reveal_override_at);
+  if (!Number.isFinite(override.getTime()) || override > scheduledRevealAt) {
+    return scheduledRevealAt.toISOString();
+  }
+  return override.toISOString();
 }
 
 function toApplication(
@@ -138,7 +150,7 @@ export async function GET() {
       const { data: schedules, error: scheduleError } =
         await createAdminClient()
           .from("ticket_instances")
-          .select("id,event_date,event_time")
+          .select("id,event_date,event_time,ticket_reveal_override_at")
           .in("id", assignedInstanceIds)
           .returns<AssignedTicketSchedule[]>();
       if (scheduleError) throw scheduleError;

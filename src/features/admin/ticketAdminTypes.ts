@@ -61,6 +61,7 @@ export type AdminTicketInstance = {
   place_payload: MeetingPlace | null;
   operation_code: string | null;
   operation_note: string | null;
+  ticket_reveal_override_at: string | null;
   place_visibility: PlaceVisibility;
   visibility: TicketVisibility;
   remaining_seat_label_count: number;

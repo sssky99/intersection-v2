@@ -1280,6 +1280,26 @@ export function TicketAdminPanel({
     );
   };
 
+  const revealInstanceNow = async () => {
+    if (!selectedInstance || selectedInstance.ticket_reveal_override_at) return;
+    if (
+      !window.confirm(
+        "배정된 확정 참가자에게 이 티켓을 지금 공개할까요?\n코스별 활동과 장소의 순차 공개 시점은 그대로 유지됩니다.",
+      )
+    ) {
+      return;
+    }
+
+    await runAction(
+      "POST",
+      {
+        action: "reveal_instance_now",
+        instanceId: selectedInstance.id,
+      },
+      "확정 참가자에게 티켓을 즉시 공개했습니다.",
+    );
+  };
+
   const deleteTicket = async () => {
     if (!selectedTicket) return;
     const confirmed = window.confirm(
@@ -1470,6 +1490,14 @@ export function TicketAdminPanel({
                     courseSteps={selectedTicket.course_steps}
                     saving={saving}
                     onMove={(mode) => void moveTestTime(mode)}
+                  />
+                )}
+
+                {!isSampleTicket && selectedInstance && (
+                  <ImmediateRevealControl
+                    instance={selectedInstance}
+                    saving={saving}
+                    onReveal={() => void revealInstanceNow()}
                   />
                 )}
 
@@ -1874,6 +1902,55 @@ function TestTimeControl({
       <p className="mt-3 text-[11px] font-semibold text-black/42">
         현재 설정: {[instance.event_date, instance.event_time].filter(Boolean).join(" ") || "일정 미정"}
       </p>
+    </section>
+  );
+}
+
+function ImmediateRevealControl({
+  instance,
+  saving,
+  onReveal,
+}: {
+  instance: AdminTicketInstance;
+  saving: boolean;
+  onReveal: () => void;
+}) {
+  const revealedAt = instance.ticket_reveal_override_at
+    ? new Date(instance.ticket_reveal_override_at)
+    : null;
+  const revealed =
+    revealedAt !== null && Number.isFinite(revealedAt.getTime());
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
+            <Eye size={18} aria-hidden />
+          </div>
+          <div>
+            <h3 className="font-bold">참가자 티켓 공개</h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-black/52">
+              확정 참가자의 물음표 티켓을 24시간 공개 시점보다 먼저 열 수
+              있습니다. 코스별 활동과 장소의 순차 공개 시간은 바뀌지 않습니다.
+            </p>
+            {revealedAt && (
+              <p className="mt-2 text-[11px] font-semibold text-accent">
+                즉시 공개됨 · {revealedAt.toLocaleString("ko-KR")}
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={saving || revealed}
+          onClick={onReveal}
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/10 disabled:text-black/35"
+        >
+          <Eye size={15} aria-hidden />
+          {revealed ? "즉시 공개됨" : "지금 공개"}
+        </button>
+      </div>
     </section>
   );
 }

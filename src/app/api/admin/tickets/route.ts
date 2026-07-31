@@ -165,6 +165,7 @@ const instanceSelect = [
   "place_payload",
   "operation_code",
   "operation_note",
+  "ticket_reveal_override_at",
   "place_visibility",
   "visibility",
   "remaining_seat_label_count",
@@ -1000,6 +1001,23 @@ export async function POST(request: NextRequest) {
         p_user_id: profileId,
         p_status: "approved",
       });
+      if (error) throw error;
+    } else if (action === "reveal_instance_now") {
+      const instanceId = text(body?.instanceId);
+      if (!instanceId) {
+        return NextResponse.json(
+          { error: "즉시 공개할 세부티켓을 선택해주세요." },
+          { status: 400 },
+        );
+      }
+
+      const { error } = await supabase
+        .from("ticket_instances")
+        .update({
+          ticket_reveal_override_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", instanceId);
       if (error) throw error;
     } else {
       return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });

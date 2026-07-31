@@ -69,6 +69,7 @@ type InstanceRow = {
   address: string | null;
   place_visibility: string | null;
   place_payload: unknown;
+  ticket_reveal_override_at: string | null;
   remaining_seat_label_count: number | null;
   minimum_participant_count: number | null;
   max_participant_count: number | null;
@@ -169,6 +170,7 @@ const instanceSelect = [
   "address",
   "place_visibility",
   "place_payload",
+  "ticket_reveal_override_at",
   "remaining_seat_label_count",
   "minimum_participant_count",
   "max_participant_count",
@@ -465,6 +467,18 @@ function isoOrNull(date: Date | null) {
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function ticketRevealAt(
+  startAt: Date,
+  revealOverrideAt: string | null | undefined,
+) {
+  const scheduledRevealAt = addHours(startAt, -24);
+  if (!revealOverrideAt) return scheduledRevealAt;
+
+  const override = new Date(revealOverrideAt);
+  if (!Number.isFinite(override.getTime())) return scheduledRevealAt;
+  return override < scheduledRevealAt ? override : scheduledRevealAt;
 }
 
 function placeOpenForConfirmedStatus(
@@ -865,7 +879,8 @@ function sourceTicketCandidate(
   if (
     confirmedStatuses.has(effectiveStatus) &&
     startAt &&
-    displayNow < addHours(startAt, -24)
+    displayNow <
+      ticketRevealAt(startAt, instance?.ticket_reveal_override_at)
   ) {
     return null;
   }
