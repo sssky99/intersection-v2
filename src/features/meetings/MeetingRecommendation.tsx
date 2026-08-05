@@ -144,6 +144,38 @@ function isLocalTestHost() {
 
 const localDateApplicationsStoragePrefix =
   "intersection:local-date-applications";
+const guestDeclinedTicketStorageKey =
+  "intersection:guest-declined-ticket-ids";
+
+function loadGuestDeclinedTicketIds() {
+  if (typeof window === "undefined") return new Set<string>();
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(guestDeclinedTicketStorageKey) ?? "[]",
+    ) as unknown;
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === "string")
+        : [],
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function rememberGuestDeclinedTicket(ticketId: string) {
+  try {
+    const declinedIds = loadGuestDeclinedTicketIds();
+    declinedIds.add(ticketId);
+    window.localStorage.setItem(
+      guestDeclinedTicketStorageKey,
+      JSON.stringify(Array.from(declinedIds)),
+    );
+  } catch {
+    // Guest ticket history is best-effort until sign-in.
+  }
+}
 
 function localDateApplicationsStorageKey(userId: string) {
   return `${localDateApplicationsStoragePrefix}:${userId}`;
@@ -357,6 +389,9 @@ type MeetingRecommendationProps = {
   blindDateOpenRequestId?: number;
   blindDateOpenRequestPending?: boolean;
   onBlindDateOpenRequestHandled?: () => void;
+  ticketAcceptRequestId?: number;
+  ticketAcceptRequestTicketId?: string | null;
+  onTicketAcceptRequestHandled?: () => void;
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
 };
 
@@ -587,6 +622,9 @@ function MeetingDateApplicationFlow({
   blindDateOpenRequestId = 0,
   blindDateOpenRequestPending = false,
   onBlindDateOpenRequestHandled,
+  ticketAcceptRequestId = 0,
+  ticketAcceptRequestTicketId = null,
+  onTicketAcceptRequestHandled,
   onDateApplicationsChange,
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
@@ -692,8 +730,16 @@ function MeetingDateApplicationFlow({
     const load = async () => {
       if (alive) setAvailableTicketsLoading(true);
       try {
-        const tickets = await fetchAvailableTickets();
+        const fetchedTickets = await fetchAvailableTickets();
         if (!alive) return;
+        const guestDeclinedIds = guestMode
+          ? loadGuestDeclinedTicketIds()
+          : new Set<string>();
+        const tickets = fetchedTickets.map((ticket) =>
+          guestDeclinedIds.has(ticket.id)
+            ? { ...ticket, rejected: true }
+            : ticket,
+        );
         setAvailableTickets(tickets);
         onAvailableTicketsChange?.(tickets);
       } catch (loadError) {
@@ -715,7 +761,7 @@ function MeetingDateApplicationFlow({
       alive = false;
       window.removeEventListener("focus", load);
     };
-  }, [active, onAvailableTicketsChange]);
+  }, [active, guestMode, onAvailableTicketsChange]);
 
   useEffect(() => {
     if (
@@ -727,8 +773,17 @@ function MeetingDateApplicationFlow({
       return;
     }
 
+    const resumeTicket = availableTickets.find(
+      (ticket) => ticket.date === resumeDate,
+    );
+    if (!resumeTicket) return;
+
     setSelectedDates([resumeDate]);
-  }, [profileCompleted, resumeDate, today]);
+    setSelectedTicket(resumeTicket);
+    setPurchaseOption("single");
+    setError(null);
+    setScreen("purchase");
+  }, [availableTickets, profileCompleted, resumeDate, today]);
 
   useEffect(() => {
     onDateApplicationsChange?.(applications);
@@ -763,12 +818,86 @@ function MeetingDateApplicationFlow({
     });
   };
 
+  const acceptTicket = (ticket: GatheringTicket) => {
+    if (saving) return;
+
+    setPurchaseOption("single");
+    setError(null);
+
+    if (!profileCompleted) {
+      if (onRequestBasicInfo) {
+        onRequestBasicInfo(ticket.date);
+      } else {
+        window.location.assign(
+          `/onboarding/profile?from=application&date=${encodeURIComponent(ticket.date)}`,
+        );
+      }
+      return;
+    }
+
+    setScreen("purchase");
+  };
+
+  useEffect(() => {
+    if (!ticketAcceptRequestId || !ticketAcceptRequestTicketId) return;
+    const ticket = availableTickets.find(
+      (item) => item.id === ticketAcceptRequestTicketId,
+    );
+    if (!ticket) return;
+
+    setSelectedTicket(ticket);
+    setPurchaseOption("single");
+    setError(null);
+
+    if (!profileCompleted) {
+      setScreen("ticket");
+      if (onRequestBasicInfo) {
+        onRequestBasicInfo(ticket.date);
+      } else {
+        window.location.assign(
+          `/onboarding/profile?from=application&date=${encodeURIComponent(ticket.date)}`,
+        );
+      }
+    } else {
+      setScreen("purchase");
+    }
+
+    onTicketAcceptRequestHandled?.();
+  }, [
+    availableTickets,
+    onRequestBasicInfo,
+    onTicketAcceptRequestHandled,
+    profileCompleted,
+    ticketAcceptRequestId,
+    ticketAcceptRequestTicketId,
+  ]);
+
   const declineTicket = async (ticket: GatheringTicket) => {
     if (saving) return;
     setSaving(true);
     setError(null);
 
     try {
+      if (guestMode) {
+        rememberGuestDeclinedTicket(ticket.id);
+        setAvailableTickets((current) => {
+          const next = current.map((item) =>
+            item.id === ticket.id ? { ...item, rejected: true } : item,
+          );
+          onAvailableTicketsChange?.(next);
+          return next;
+        });
+        setSelectedTicket(null);
+        setScreen("dates");
+        trackEvent("meeting_ticket_response", {
+          ticket_instance_id: ticket.id,
+          meeting_date: ticket.date,
+          response: "no",
+          guest_mode: true,
+        });
+        return;
+      }
+
       const response = await fetch("/api/meetings/available-tickets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1206,11 +1335,7 @@ function MeetingDateApplicationFlow({
             type="button"
             whileTap={!saving ? { scale: 0.98 } : undefined}
             disabled={saving}
-            onClick={() => {
-              setPurchaseOption("single");
-              setError(null);
-              setScreen("purchase");
-            }}
+            onClick={() => acceptTicket(selectedTicket)}
             className="flex h-[56px] items-center justify-center rounded-full bg-black font-serif text-[17px] font-semibold tracking-[0.16em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
           >
             YES

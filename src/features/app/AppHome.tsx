@@ -544,9 +544,14 @@ export function AppHome({
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const [recommendationFocusMode, setRecommendationFocusMode] = useState(false);
+  const [ticketTabFocusMode, setTicketTabFocusMode] = useState(false);
   const [availableMeetingTickets, setAvailableMeetingTickets] = useState<
     GatheringTicket[]
   >([]);
+  const [ticketAcceptRequest, setTicketAcceptRequest] = useState<{
+    id: number;
+    ticketId: string;
+  } | null>(null);
   const recommendTabTrackedRef = useRef(false);
   const profileTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -814,6 +819,11 @@ export function AppHome({
     setBlindDateOpenRequestPending(true);
   };
 
+  const requestDeclinedTicketApplication = (ticket: GatheringTicket) => {
+    setTicketAcceptRequest({ id: Date.now(), ticketId: ticket.id });
+    switchTab("recommend");
+  };
+
   const startProfileRegeneration = async () => {
     if (profileRegenerating) return;
 
@@ -994,7 +1004,7 @@ export function AppHome({
         ref={scrollAreaRef}
         className={cn(
           "min-h-0 flex-1 touch-pan-y scrollbar-none",
-          chatRoomOpen || recommendationFocusMode
+          chatRoomOpen || recommendationFocusMode || ticketTabFocusMode
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
           activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
@@ -1011,6 +1021,8 @@ export function AppHome({
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
             onGoRecommend={() => switchTab("recommend")}
+            onReapplyTicket={requestDeclinedTicketApplication}
+            onFocusModeChange={setTicketTabFocusMode}
           />
         </div>
         <div
@@ -1036,6 +1048,9 @@ export function AppHome({
             onBlindDateOffersChange={setBlindDateOffers}
             blindDateOpenRequestId={blindDateOpenRequestId}
             blindDateOpenRequestPending={blindDateOpenRequestPending}
+            ticketAcceptRequestId={ticketAcceptRequest?.id ?? 0}
+            ticketAcceptRequestTicketId={ticketAcceptRequest?.ticketId ?? null}
+            onTicketAcceptRequestHandled={() => setTicketAcceptRequest(null)}
             onDateApplicationsChange={setDateApplications}
             onBlindDateOpenRequestHandled={() =>
               setBlindDateOpenRequestPending(false)
@@ -1242,7 +1257,7 @@ export function AppHome({
         </div>
       </div>
 
-      {!chatRoomOpen && !recommendationFocusMode && (
+      {!chatRoomOpen && !recommendationFocusMode && !ticketTabFocusMode && (
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
@@ -1457,6 +1472,8 @@ function TicketListTab({
   totalTicketCount,
   loadingMore,
   onGoRecommend,
+  onReapplyTicket,
+  onFocusModeChange,
 }: {
   tickets: UserTicket[];
   dateApplications: MeetingDateApplication[];
@@ -1464,11 +1481,15 @@ function TicketListTab({
   totalTicketCount: number;
   loadingMore: boolean;
   onGoRecommend: () => void;
+  onReapplyTicket: (ticket: GatheringTicket) => void;
+  onFocusModeChange: (focused: boolean) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
   const [selectedApplicationTicket, setSelectedApplicationTicket] =
     useState<GatheringTicket | null>(null);
+  const [selectedApplicationTicketDeclined, setSelectedApplicationTicketDeclined] =
+    useState(false);
   const [declinedViewOpen, setDeclinedViewOpen] = useState(false);
   const [declinedTickets, setDeclinedTickets] = useState<GatheringTicket[]>([]);
   const [declinedLoading, setDeclinedLoading] = useState(false);
@@ -1494,6 +1515,18 @@ function TicketListTab({
         .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
     [dateApplications, forceReveal, nowMs],
   );
+
+  useEffect(() => {
+    const focused = Boolean(
+      selectedApplicationTicket && selectedApplicationTicketDeclined,
+    );
+    onFocusModeChange(focused);
+    return () => onFocusModeChange(false);
+  }, [
+    onFocusModeChange,
+    selectedApplicationTicket,
+    selectedApplicationTicketDeclined,
+  ]);
   const availableTicketById = useMemo(
     () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
     [availableTickets],
@@ -1629,6 +1662,11 @@ function TicketListTab({
 
   const startDesktopDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse" || event.button !== 0) return;
+    if (
+      (event.target as HTMLElement).closest("[data-drag-scroll-ignore]")
+    ) {
+      return;
+    }
 
     if (snapTimerRef.current !== null) {
       window.clearTimeout(snapTimerRef.current);
@@ -1695,6 +1733,7 @@ function TicketListTab({
       tappedItem?.kind === "date-application" &&
       tappedItem.ticket
     ) {
+      setSelectedApplicationTicketDeclined(false);
       setSelectedApplicationTicket(tappedItem.ticket);
       return;
     }
@@ -1718,6 +1757,12 @@ function TicketListTab({
   };
 
   const startTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (
+      (event.target as HTMLElement).closest("[data-drag-scroll-ignore]")
+    ) {
+      return;
+    }
+
     const touch = event.touches[0];
     if (!touch) return;
 
@@ -1779,6 +1824,7 @@ function TicketListTab({
     setDeclinedViewOpen(true);
     setDeclinedLoading(true);
     setDeclinedError(null);
+    const locallyDeclined = availableTickets.filter((ticket) => ticket.rejected);
 
     try {
       const response = await fetch(
@@ -1791,7 +1837,13 @@ function TicketListTab({
       if (!response.ok || !data) {
         throw new Error(data?.error ?? "declined-tickets-load-failed");
       }
-      setDeclinedTickets(data.tickets ?? []);
+      const mergedTickets = new Map(
+        [...locallyDeclined, ...(data.tickets ?? [])].map((ticket) => [
+          ticket.id,
+          ticket,
+        ]),
+      );
+      setDeclinedTickets(Array.from(mergedTickets.values()));
     } catch (loadError) {
       setDeclinedError(
         loadError instanceof Error &&
@@ -1817,7 +1869,20 @@ function TicketListTab({
           <AssignedApplicationTicketDetailView
             key={`assigned-application-ticket-${selectedApplicationTicket.id}`}
             ticket={selectedApplicationTicket}
-            onClose={() => setSelectedApplicationTicket(null)}
+            onClose={() => {
+              setSelectedApplicationTicket(null);
+              setSelectedApplicationTicketDeclined(false);
+            }}
+            onReapply={
+              selectedApplicationTicketDeclined
+                ? () => {
+                    const ticket = selectedApplicationTicket;
+                    setSelectedApplicationTicket(null);
+                    setSelectedApplicationTicketDeclined(false);
+                    onReapplyTicket(ticket);
+                  }
+                : undefined
+            }
           />
         ) : declinedViewOpen ? (
           <DeclinedTicketReview
@@ -1826,7 +1891,10 @@ function TicketListTab({
             loading={declinedLoading}
             error={declinedError}
             onBack={() => setDeclinedViewOpen(false)}
-            onOpen={setSelectedApplicationTicket}
+            onOpen={(ticket) => {
+              setSelectedApplicationTicketDeclined(true);
+              setSelectedApplicationTicket(ticket);
+            }}
           />
         ) : (
           <motion.section
@@ -1904,9 +1972,10 @@ function TicketListTab({
                           <AssignedApplicationTicketCard
                             application={item.application}
                             ticket={item.ticket}
-                            onOpen={() =>
-                              setSelectedApplicationTicket(item.ticket)
-                            }
+                            onOpen={() => {
+                              setSelectedApplicationTicketDeclined(false);
+                              setSelectedApplicationTicket(item.ticket);
+                            }}
                           />
                         ) : (
                           <MysteryApplicationTicketCard
@@ -1926,7 +1995,7 @@ function TicketListTab({
                         type="button"
                         data-drag-scroll-ignore
                         onClick={() => void openDeclinedReview()}
-                        className="flex items-center gap-2.5 rounded-full px-5 py-3 font-serif text-[16px] text-black/46 transition hover:bg-black/[0.035] hover:text-black/70"
+                        className="flex items-center gap-2.5 rounded-full px-5 py-3 text-[14px] font-extrabold tracking-[-0.025em] text-black/52 transition hover:bg-black/[0.035] hover:text-black/75"
                       >
                         <RotateCcw size={20} strokeWidth={1.5} aria-hidden />
                         거절한 티켓 다시 보기
@@ -1973,21 +2042,113 @@ function DeclinedTicketReview({
   onBack: () => void;
   onOpen: (ticket: GatheringTicket) => void;
 }) {
+  const [activeIndex, setActiveIndex] = useState(0);
   const carouselRef = useRef<HTMLDivElement | null>(null);
+  const snapTimerRef = useRef<number | null>(null);
   const dragState = useRef({
     active: false,
+    interacting: false,
     moved: false,
     startX: 0,
     scrollLeft: 0,
+    startIndex: 0,
   });
+
+  const closestSlide = (viewport: HTMLDivElement) => {
+    const viewportCenter = viewport.scrollLeft + viewport.clientWidth / 2;
+    const slides = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-declined-ticket-slide]"),
+    );
+    if (slides.length === 0) return null;
+
+    return slides.reduce(
+      (closest, slide, index) => {
+        const slideCenter = slide.offsetLeft + slide.offsetWidth / 2;
+        const distance = Math.abs(viewportCenter - slideCenter);
+        return distance < closest.distance
+          ? { index, slide, distance }
+          : closest;
+      },
+      {
+        index: 0,
+        slide: slides[0],
+        distance: Number.POSITIVE_INFINITY,
+      },
+    );
+  };
+
+  const snapToSlideIndex = (
+    index: number,
+    viewport = carouselRef.current,
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    if (!viewport || tickets.length === 0) return;
+    const slides = Array.from(
+      viewport.querySelectorAll<HTMLElement>("[data-declined-ticket-slide]"),
+    );
+    const nextIndex = Math.max(0, Math.min(index, slides.length - 1));
+    const slide = slides[nextIndex];
+    if (!slide) return;
+
+    setActiveIndex(nextIndex);
+    viewport.scrollTo({
+      left:
+        slide.offsetLeft +
+        slide.offsetWidth / 2 -
+        viewport.clientWidth / 2,
+      behavior,
+    });
+  };
+
+  const snapToClosestSlide = (
+    viewport = carouselRef.current,
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    if (!viewport) return;
+    const closest = closestSlide(viewport);
+    if (!closest) return;
+    snapToSlideIndex(closest.index, viewport, behavior);
+  };
+
+  useEffect(() => {
+    setActiveIndex((current) =>
+      Math.min(current, Math.max(tickets.length - 1, 0)),
+    );
+    carouselRef.current?.scrollTo({ left: 0, behavior: "auto" });
+
+    return () => {
+      if (snapTimerRef.current !== null) {
+        window.clearTimeout(snapTimerRef.current);
+      }
+    };
+  }, [tickets.length]);
+
+  const updateActiveSlide = (event: React.UIEvent<HTMLDivElement>) => {
+    const viewport = event.currentTarget;
+    const closest = closestSlide(viewport);
+    if (closest) setActiveIndex(closest.index);
+
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+    }
+    snapTimerRef.current = window.setTimeout(() => {
+      if (!dragState.current.interacting) snapToClosestSlide(viewport);
+    }, 120);
+  };
 
   const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse" || event.button !== 0) return;
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+    }
+    const closest = closestSlide(event.currentTarget);
     dragState.current = {
       active: true,
+      interacting: true,
       moved: false,
       startX: event.clientX,
       scrollLeft: event.currentTarget.scrollLeft,
+      startIndex: closest?.index ?? activeIndex,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -2001,13 +2162,86 @@ function DeclinedTicketReview({
   };
 
   const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState.current.active) return;
+    const dragDistance = event.clientX - dragState.current.startX;
+    const moved = dragState.current.moved;
+    const tappedSlide = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-declined-ticket-slide-index]");
+    const tappedIndex = Number(tappedSlide?.dataset.declinedTicketSlideIndex);
+
     dragState.current.active = false;
+    dragState.current.interacting = false;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+
+    if (!moved && Math.abs(dragDistance) <= 8 && Number.isInteger(tappedIndex)) {
+      const ticket = tickets[tappedIndex];
+      if (ticket) onOpen(ticket);
+      return;
+    }
+
+    if (Math.abs(dragDistance) > 22) {
+      snapToSlideIndex(
+        dragState.current.startIndex + (dragDistance < 0 ? 1 : -1),
+        event.currentTarget,
+      );
+    } else {
+      snapToSlideIndex(dragState.current.startIndex, event.currentTarget);
+    }
+
     window.setTimeout(() => {
       dragState.current.moved = false;
     }, 0);
+  };
+
+  const startTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+    }
+    const closest = closestSlide(event.currentTarget);
+    dragState.current = {
+      active: false,
+      interacting: true,
+      moved: false,
+      startX: touch.clientX,
+      scrollLeft: event.currentTarget.scrollLeft,
+      startIndex: closest?.index ?? activeIndex,
+    };
+  };
+
+  const moveTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch || !dragState.current.interacting) return;
+    if (Math.abs(touch.clientX - dragState.current.startX) > 8) {
+      dragState.current.moved = true;
+    }
+  };
+
+  const finishTouchScroll = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (!dragState.current.interacting) return;
+    const touch = event.changedTouches[0];
+    const dragDistance = touch
+      ? touch.clientX - dragState.current.startX
+      : 0;
+    const moved = dragState.current.moved;
+    dragState.current.interacting = false;
+
+    if (moved && Math.abs(dragDistance) > 54) {
+      snapToSlideIndex(
+        dragState.current.startIndex + (dragDistance < 0 ? 1 : -1),
+        event.currentTarget,
+      );
+    } else {
+      snapToClosestSlide(event.currentTarget);
+    }
+
+    window.setTimeout(() => {
+      dragState.current.moved = false;
+    }, 180);
   };
 
   return (
@@ -2027,8 +2261,8 @@ function DeclinedTicketReview({
         >
           <ChevronLeft size={21} aria-hidden />
         </button>
-        <p className="mt-2 font-serif text-[22px] italic tracking-wide text-black">
-          DECLINED <span className="ml-1.5 text-[17px] text-black/38">{tickets.length}</span>
+        <p className="mt-2 text-[20px] font-extrabold tracking-[-0.04em] text-black">
+          거절한 티켓 <span className="ml-1 text-[15px] font-bold text-black/38">{tickets.length}</span>
         </p>
       </header>
 
@@ -2069,15 +2303,26 @@ function DeclinedTicketReview({
         <div className="flex min-h-0 flex-1 -translate-y-3 flex-col justify-center pb-3 pt-4">
           <div
             ref={carouselRef}
+            onScroll={updateActiveSlide}
             onPointerDown={startDrag}
             onPointerMove={moveDrag}
             onPointerUp={finishDrag}
             onPointerCancel={finishDrag}
+            onTouchStart={startTouchScroll}
+            onTouchMove={moveTouchScroll}
+            onTouchEnd={finishTouchScroll}
+            onTouchCancel={finishTouchScroll}
+            style={{
+              scrollBehavior: "smooth",
+              WebkitOverflowScrolling: "touch",
+            }}
             className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
           >
-            {tickets.map((ticket) => (
+            {tickets.map((ticket, index) => (
               <div
                 key={ticket.id}
+                data-declined-ticket-slide
+                data-declined-ticket-slide-index={index}
                 className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
               >
                 <DeclinedTicketCard
@@ -2089,6 +2334,19 @@ function DeclinedTicketReview({
               </div>
             ))}
           </div>
+          {tickets.length > 1 && (
+            <div className="mt-1.5 flex shrink-0 justify-center gap-1.5">
+              {tickets.map((ticket, index) => (
+                <span
+                  key={`declined-page-${ticket.id}`}
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full transition",
+                    activeIndex === index ? "bg-black/70" : "bg-black/15",
+                  )}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </motion.section>
@@ -2178,9 +2436,11 @@ function StoredTicketCard({
 function AssignedApplicationTicketDetailView({
   ticket,
   onClose,
+  onReapply,
 }: {
   ticket: GatheringTicket;
   onClose: () => void;
+  onReapply?: () => void;
 }) {
   return (
     <motion.section
@@ -2210,6 +2470,18 @@ function AssignedApplicationTicketDetailView({
           className="px-4 pb-5"
         />
       </div>
+      {onReapply && (
+        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.985 }}
+            onClick={onReapply}
+            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[16px] font-black tracking-[0.14em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+          >
+            YES
+          </motion.button>
+        </div>
+      )}
     </motion.section>
   );
 }
