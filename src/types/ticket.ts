@@ -51,6 +51,7 @@ export type GatheringTicket = {
   templateId: string;
   invitationId?: string | null;
   invitationStatus?: "sent" | "viewed" | "accepted" | null;
+  rejected?: boolean;
   title: string;
   subtitle: string;
   date: string;

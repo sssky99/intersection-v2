@@ -412,6 +412,7 @@ async function fetchAvailableTickets() {
 
 function DateApplicationOption({
   ticket,
+  rejected,
   selected,
   application,
   closed,
@@ -421,6 +422,7 @@ function DateApplicationOption({
   onWaitlist,
 }: {
   ticket: GatheringTicket;
+  rejected: boolean;
   selected: boolean;
   application: MeetingDateApplication | null;
   closed: boolean;
@@ -454,7 +456,9 @@ function DateApplicationOption({
       onClick={canJoinWaitlist ? onWaitlist : onToggle}
       className={cn(
         "relative flex min-h-[96px] w-full min-w-0 items-center gap-3 border-b border-black/[0.07] px-3 py-3 text-left outline-none transition last:border-b-0 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/20",
-        closed
+        rejected
+          ? "bg-black/[0.025] text-black"
+          : closed
           ? "bg-black/[0.02] text-black/32"
           : selected
               ? "bg-black/[0.045] text-black"
@@ -513,7 +517,11 @@ function DateApplicationOption({
           {schedule?.timeLabel ?? ticket.time} · {application?.region || ticket.area}
         </span>
       </span>
-      {closed || application ? (
+      {rejected ? (
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-black/12 bg-black/[0.04] px-2.5 py-1.5 text-[11px] font-black text-black/48">
+          거절함
+        </span>
+      ) : closed || application ? (
         canJoinWaitlist ? (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-black/15 bg-[#faf8f2] px-2.5 py-2 text-[11px] font-black text-black/68 shadow-sm">
             빈 자리 대기하기
@@ -680,13 +688,6 @@ function MeetingDateApplicationFlow({
   }, [active, guestMode, userId]);
 
   useEffect(() => {
-    if (guestMode) {
-      setAvailableTickets([]);
-      onAvailableTicketsChange?.([]);
-      setAvailableTicketsLoading(false);
-      return;
-    }
-
     let alive = true;
     const load = async () => {
       if (alive) setAvailableTicketsLoading(true);
@@ -714,7 +715,7 @@ function MeetingDateApplicationFlow({
       alive = false;
       window.removeEventListener("focus", load);
     };
-  }, [active, guestMode, onAvailableTicketsChange]);
+  }, [active, onAvailableTicketsChange]);
 
   useEffect(() => {
     if (
@@ -783,9 +784,13 @@ function MeetingDateApplicationFlow({
         throw new Error(data?.error ?? "ticket-rejection-save-failed");
       }
 
-      setAvailableTickets((current) =>
-        current.filter((item) => item.id !== ticket.id),
-      );
+      setAvailableTickets((current) => {
+        const next = current.map((item) =>
+          item.id === ticket.id ? { ...item, rejected: true } : item,
+        );
+        onAvailableTicketsChange?.(next);
+        return next;
+      });
       setSelectedTicket(null);
       setScreen("dates");
       trackEvent("meeting_ticket_response", {
@@ -1471,6 +1476,7 @@ function MeetingDateApplicationFlow({
                   <DateApplicationOption
                     key={ticket.id}
                     ticket={ticket}
+                    rejected={Boolean(ticket.rejected)}
                     selected={false}
                     application={applicationByDate.get(ticket.date) ?? null}
                     closed={
@@ -1547,6 +1553,7 @@ function MeetingDateApplicationFlow({
                 <DateApplicationOption
                   key={ticket.id}
                   ticket={ticket}
+                  rejected={Boolean(ticket.rejected)}
                   selected={false}
                   application={applicationByDate.get(ticket.date) ?? null}
                   closed={

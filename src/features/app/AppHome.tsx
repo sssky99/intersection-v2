@@ -14,6 +14,7 @@ import {
   Loader2,
   MapPin,
   MessageCircle,
+  RotateCcw,
   X,
   PenLine,
   Sparkles,
@@ -1468,6 +1469,10 @@ function TicketListTab({
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
   const [selectedApplicationTicket, setSelectedApplicationTicket] =
     useState<GatheringTicket | null>(null);
+  const [declinedViewOpen, setDeclinedViewOpen] = useState(false);
+  const [declinedTickets, setDeclinedTickets] = useState<GatheringTicket[]>([]);
+  const [declinedLoading, setDeclinedLoading] = useState(false);
+  const [declinedError, setDeclinedError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState<number | null>(null);
   const [forceReveal, setForceReveal] = useState(false);
   const dragState = useRef({
@@ -1516,6 +1521,7 @@ function TicketListTab({
     [availableTicketById, availableTickets, mysteryApplications, tickets],
   );
   const itemCount = ticketItems.length;
+  const carouselItemCount = itemCount + 1;
 
   useEffect(() => {
     setForceReveal(ticketRevealPreviewEnabled());
@@ -1526,7 +1532,7 @@ function TicketListTab({
 
   useEffect(() => {
     setActiveIndex((current) =>
-      Math.min(current, Math.max(itemCount - 1, 0)),
+      Math.min(current, Math.max(carouselItemCount - 1, 0)),
     );
     carouselRef.current?.scrollTo({ left: 0, behavior: "auto" });
 
@@ -1535,7 +1541,7 @@ function TicketListTab({
         window.clearTimeout(snapTimerRef.current);
       }
     };
-  }, [itemCount]);
+  }, [carouselItemCount]);
 
   const closestSlide = (viewport: HTMLDivElement) => {
     const viewportCenter = viewport.scrollLeft + viewport.clientWidth / 2;
@@ -1568,7 +1574,7 @@ function TicketListTab({
     viewport = carouselRef.current,
     behavior: ScrollBehavior = "smooth",
   ) => {
-    if (!viewport || itemCount === 0) return;
+    if (!viewport || carouselItemCount === 0) return;
 
     const closest = closestSlide(viewport);
     if (!closest) return;
@@ -1587,7 +1593,7 @@ function TicketListTab({
     viewport = carouselRef.current,
     behavior: ScrollBehavior = "smooth",
   ) => {
-    if (!viewport || itemCount === 0) return;
+    if (!viewport || carouselItemCount === 0) return;
 
     const slides = Array.from(
       viewport.querySelectorAll<HTMLElement>("[data-ticket-slide]"),
@@ -1604,7 +1610,7 @@ function TicketListTab({
   };
 
   const updateActiveSlide = (event: React.UIEvent<HTMLDivElement>) => {
-    if (itemCount === 0) return;
+    if (carouselItemCount === 0) return;
 
     const viewport = event.currentTarget;
     const closest = closestSlide(viewport);
@@ -1769,6 +1775,35 @@ function TicketListTab({
     setSelectedTicket(ticket);
   };
 
+  const openDeclinedReview = async () => {
+    setDeclinedViewOpen(true);
+    setDeclinedLoading(true);
+    setDeclinedError(null);
+
+    try {
+      const response = await fetch(
+        "/api/meetings/available-tickets?view=declined",
+        { cache: "no-store" },
+      );
+      const data = (await response.json().catch(() => null)) as
+        | { tickets?: GatheringTicket[]; error?: string }
+        | null;
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "declined-tickets-load-failed");
+      }
+      setDeclinedTickets(data.tickets ?? []);
+    } catch (loadError) {
+      setDeclinedError(
+        loadError instanceof Error &&
+          loadError.message !== "declined-tickets-load-failed"
+          ? loadError.message
+          : "거절한 티켓을 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setDeclinedLoading(false);
+    }
+  };
+
   return (
     <TabMotion>
       <AnimatePresence mode="wait" initial={false}>
@@ -1783,6 +1818,15 @@ function TicketListTab({
             key={`assigned-application-ticket-${selectedApplicationTicket.id}`}
             ticket={selectedApplicationTicket}
             onClose={() => setSelectedApplicationTicket(null)}
+          />
+        ) : declinedViewOpen ? (
+          <DeclinedTicketReview
+            key="declined-ticket-review"
+            tickets={declinedTickets}
+            loading={declinedLoading}
+            error={declinedError}
+            onBack={() => setDeclinedViewOpen(false)}
+            onOpen={setSelectedApplicationTicket}
           />
         ) : (
           <motion.section
@@ -1815,6 +1859,13 @@ function TicketListTab({
                   className="mt-6 h-12 w-full rounded-full bg-black text-sm font-semibold text-white"
                 >
                   날짜 신청하기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openDeclinedReview()}
+                  className="mt-3 h-11 w-full rounded-full border border-black/10 bg-transparent text-xs font-bold text-black/45"
+                >
+                  거절한 티켓 다시 보기
                 </button>
               </div>
             ) : (
@@ -1865,16 +1916,33 @@ function TicketListTab({
                       )}
                     </div>
                   ))}
+                  <div
+                    data-ticket-slide
+                    data-ticket-slide-index={ticketItems.length}
+                    className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
+                  >
+                    <div className="grid aspect-[1/1.62] w-full place-items-center rounded-[28px] border border-black/[0.08] bg-[#faf8f2]">
+                      <button
+                        type="button"
+                        data-drag-scroll-ignore
+                        onClick={() => void openDeclinedReview()}
+                        className="flex items-center gap-2.5 rounded-full px-5 py-3 font-serif text-[16px] text-black/46 transition hover:bg-black/[0.035] hover:text-black/70"
+                      >
+                        <RotateCcw size={20} strokeWidth={1.5} aria-hidden />
+                        거절한 티켓 다시 보기
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {itemCount > 1 && (
+                {carouselItemCount > 1 && (
                   <div
                     className="mt-1.5 flex shrink-0 justify-center gap-1.5"
-                    aria-label={`티켓 ${activeIndex + 1}/${itemCount}`}
+                    aria-label={`티켓 ${activeIndex + 1}/${carouselItemCount}`}
                   >
-                    {ticketItems.map((item, index) => (
+                    {Array.from({ length: carouselItemCount }, (_, index) => (
                       <span
-                        key={item.id}
+                        key={`ticket-page-${index}`}
                         className={cn(
                           "h-1.5 w-1.5 rounded-full transition",
                           activeIndex === index ? "bg-black/70" : "bg-black/15",
@@ -1889,6 +1957,180 @@ function TicketListTab({
         )}
       </AnimatePresence>
     </TabMotion>
+  );
+}
+
+function DeclinedTicketReview({
+  tickets,
+  loading,
+  error,
+  onBack,
+  onOpen,
+}: {
+  tickets: GatheringTicket[];
+  loading: boolean;
+  error: string | null;
+  onBack: () => void;
+  onOpen: (ticket: GatheringTicket) => void;
+}) {
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    scrollLeft: 0,
+  });
+
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    dragState.current = {
+      active: true,
+      moved: false,
+      startX: event.clientX,
+      scrollLeft: event.currentTarget.scrollLeft,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragState.current.active) return;
+    const distance = event.clientX - dragState.current.startX;
+    if (Math.abs(distance) > 7) dragState.current.moved = true;
+    event.currentTarget.scrollLeft = dragState.current.scrollLeft - distance;
+    event.preventDefault();
+  };
+
+  const finishDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragState.current.active = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    window.setTimeout(() => {
+      dragState.current.moved = false;
+    }, 0);
+  };
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, x: 16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -12 }}
+      transition={ticketFadeTransition}
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(12px+env(safe-area-inset-top))] text-black"
+    >
+      <header className="shrink-0 px-5 pr-28">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-10 w-10 items-center justify-center rounded-full text-black/48 transition hover:bg-black/[0.04] hover:text-black"
+          aria-label="티켓함으로 돌아가기"
+        >
+          <ChevronLeft size={21} aria-hidden />
+        </button>
+        <p className="mt-2 font-serif text-[22px] italic tracking-wide text-black">
+          DECLINED <span className="ml-1.5 text-[17px] text-black/38">{tickets.length}</span>
+        </p>
+      </header>
+
+      {loading ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs font-bold text-black/38">
+          <Loader2 size={18} className="animate-spin" aria-hidden />
+          거절한 티켓을 불러오는 중...
+        </div>
+      ) : error ? (
+        <div className="mx-5 mt-10 rounded-[24px] border border-red-100 bg-red-50 px-5 py-6 text-center">
+          <p className="text-xs font-semibold leading-5 text-red-600">{error}</p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-4 text-xs font-black text-black/55"
+          >
+            티켓함으로 돌아가기
+          </button>
+        </div>
+      ) : tickets.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-20 text-center">
+          <X size={28} strokeWidth={1.25} className="text-black/30" aria-hidden />
+          <h2 className="mt-5 text-lg font-bold">거절한 티켓이 없어요.</h2>
+          <p className="mt-2 text-xs leading-5 text-black/42">
+            경험 상세에서 NO를 선택한 티켓을
+            <br />
+            이곳에서 다시 확인할 수 있어요.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-6 flex items-center gap-1.5 text-xs font-black text-black/55"
+          >
+            티켓함으로 돌아가기 <ArrowRight size={15} aria-hidden />
+          </button>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 -translate-y-3 flex-col justify-center pb-3 pt-4">
+          <div
+            ref={carouselRef}
+            onPointerDown={startDrag}
+            onPointerMove={moveDrag}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+            className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
+          >
+            {tickets.map((ticket) => (
+              <div
+                key={ticket.id}
+                className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
+              >
+                <DeclinedTicketCard
+                  ticket={ticket}
+                  onOpen={() => {
+                    if (!dragState.current.moved) onOpen(ticket);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.section>
+  );
+}
+
+function DeclinedTicketCard({
+  ticket,
+  onOpen,
+}: {
+  ticket: GatheringTicket;
+  onOpen: () => void;
+}) {
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-label={`${ticket.title} 거절한 티켓 상세 보기`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      whileTap={{ scale: 0.99 }}
+      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+    >
+      <IntersectionTicketCard
+        title={ticket.title}
+        imageUrl={ticket.imageUrl}
+        imageUrls={ticketBackgroundImageUrls(ticket)}
+        date={ticket.date}
+        time={ticket.time}
+        location={`서울\n${ticket.area}`}
+        tags={ticket.moodTags}
+        badgeLabel="거절한 티켓"
+        badgeClassName="border-white/25 bg-white/[0.18] text-white"
+        remainingSeatCount={ticket.remainingSeatCount}
+        className="shadow-none"
+      />
+    </motion.div>
   );
 }
 

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getAvailableMeetingTickets } from "@/lib/publicTicketPreview";
+import {
+  getAvailableMeetingTickets,
+  getRejectedMeetingTickets,
+} from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,12 +12,20 @@ type ProfileAccessRow = {
   is_test_participant: boolean | null;
 };
 
-async function requestContext() {
+async function requestContext(allowAnonymous = false) {
   const userClient = await createClient();
   const {
     data: { user },
   } = await userClient.auth.getUser();
-  if (!user) return null;
+  if (!user) {
+    return allowAnonymous
+      ? {
+          admin: createAdminClient(),
+          userId: null,
+          includeTestOnly: false,
+        }
+      : null;
+  }
 
   const admin = createAdminClient();
   const { data: profile, error } = await admin
@@ -31,19 +42,27 @@ async function requestContext() {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const context = await requestContext();
+    const context = await requestContext(true);
     if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const tickets = await getAvailableMeetingTickets({
-      userId: context.userId,
-      includeTestOnly: context.includeTestOnly,
-    });
+    const view = new URL(request.url).searchParams.get("view");
+    const tickets = await (view === "declined"
+      ? context.userId
+        ? getRejectedMeetingTickets({
+            userId: context.userId,
+            includeTestOnly: context.includeTestOnly,
+          })
+        : []
+      : getAvailableMeetingTickets({
+          userId: context.userId,
+          includeTestOnly: context.includeTestOnly,
+        }));
     return NextResponse.json(
-      { tickets },
+      { tickets, view: view === "declined" ? "declined" : "available" },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   } catch (error) {

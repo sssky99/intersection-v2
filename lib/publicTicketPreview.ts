@@ -141,51 +141,15 @@ function toPublicPreviewTicket(
   };
 }
 
-export async function getAvailableMeetingTickets({
-  userId,
-  includeTestOnly = false,
-}: {
-  userId: string;
-  includeTestOnly?: boolean;
-}): Promise<GatheringTicket[]> {
-  const supabase = createAdminClient();
-  const visibilities = includeTestOnly
-    ? ["public", "test_only"]
-    : ["public"];
-  const today = todayInKst();
-
-  const [{ data: instances, error: instancesError }, rejectionResult] =
-    await Promise.all([
-      supabase
-        .from("ticket_instances")
-        .select(publicTicketInstanceSelect)
-        .in("visibility", visibilities)
-        .not("event_date", "is", null)
-        .gte("event_date", today)
-        .order("event_date", { ascending: true })
-        .order("event_time", { ascending: true, nullsFirst: false })
-        .returns<PublicTicketInstanceRow[]>(),
-      supabase
-        .from("ticket_rejections")
-        .select("ticket_instance_id")
-        .eq("user_id", userId)
-        .returns<Array<{ ticket_instance_id: string }>>(),
-    ]);
-
-  if (instancesError) throw instancesError;
-  if (rejectionResult.error) throw rejectionResult.error;
-
-  const rejectedIds = new Set(
-    (rejectionResult.data ?? []).map((row) => row.ticket_instance_id),
-  );
-  const visibleInstances = (instances ?? []).filter(
-    (instance) => !rejectedIds.has(instance.id),
-  );
+async function previewTicketsFromInstances(
+  instances: PublicTicketInstanceRow[],
+): Promise<GatheringTicket[]> {
   const templateIds = Array.from(
-    new Set(visibleInstances.map((instance) => instance.template_id)),
+    new Set(instances.map((instance) => instance.template_id)),
   );
   if (templateIds.length === 0) return [];
 
+  const supabase = createAdminClient();
   const { data: templates, error: templatesError } = await supabase
     .from("ticket_templates")
     .select(publicTicketTemplateSelect)
@@ -196,12 +160,94 @@ export async function getAvailableMeetingTickets({
   const templateMap = new Map(
     (templates ?? []).map((template) => [template.id, template]),
   );
-  return visibleInstances
+  return instances
     .map((instance) => {
       const template = templateMap.get(instance.template_id);
       return template ? toPublicPreviewTicket(instance, template) : null;
     })
     .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
+}
+
+export async function getAvailableMeetingTickets({
+  userId,
+  includeTestOnly = false,
+}: {
+  userId: string | null;
+  includeTestOnly?: boolean;
+}): Promise<GatheringTicket[]> {
+  const supabase = createAdminClient();
+  const visibilities = includeTestOnly
+    ? ["public", "test_only"]
+    : ["public"];
+  const today = todayInKst();
+
+  const { data: instances, error: instancesError } = await supabase
+    .from("ticket_instances")
+    .select(publicTicketInstanceSelect)
+    .in("visibility", visibilities)
+    .not("event_date", "is", null)
+    .gte("event_date", today)
+    .order("event_date", { ascending: true })
+    .order("event_time", { ascending: true, nullsFirst: false })
+    .returns<PublicTicketInstanceRow[]>();
+
+  if (instancesError) throw instancesError;
+
+  const tickets = await previewTicketsFromInstances(instances ?? []);
+  if (!userId) return tickets;
+
+  const rejectionResult = await supabase
+    .from("ticket_rejections")
+    .select("ticket_instance_id")
+    .eq("user_id", userId)
+    .returns<Array<{ ticket_instance_id: string }>>();
+  if (rejectionResult.error) throw rejectionResult.error;
+
+  const rejectedIds = new Set(
+    (rejectionResult.data ?? []).map((row) => row.ticket_instance_id),
+  );
+  return tickets.map((ticket) =>
+    rejectedIds.has(ticket.id) ? { ...ticket, rejected: true } : ticket,
+  );
+}
+
+export async function getRejectedMeetingTickets({
+  userId,
+  includeTestOnly = false,
+}: {
+  userId: string;
+  includeTestOnly?: boolean;
+}): Promise<GatheringTicket[]> {
+  const supabase = createAdminClient();
+  const visibilities = includeTestOnly
+    ? ["public", "test_only"]
+    : ["public"];
+
+  const { data: rejections, error: rejectionsError } = await supabase
+    .from("ticket_rejections")
+    .select("ticket_instance_id,created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .returns<Array<{ ticket_instance_id: string; created_at: string }>>();
+  if (rejectionsError) throw rejectionsError;
+
+  const rejectedIds = Array.from(
+    new Set((rejections ?? []).map((row) => row.ticket_instance_id)),
+  );
+  if (rejectedIds.length === 0) return [];
+
+  const { data: instances, error: instancesError } = await supabase
+    .from("ticket_instances")
+    .select(publicTicketInstanceSelect)
+    .in("id", rejectedIds)
+    .in("visibility", visibilities)
+    .order("event_date", { ascending: true, nullsFirst: false })
+    .order("event_time", { ascending: true, nullsFirst: false })
+    .returns<PublicTicketInstanceRow[]>();
+  if (instancesError) throw instancesError;
+
+  const tickets = await previewTicketsFromInstances(instances ?? []);
+  return tickets.map((ticket) => ({ ...ticket, rejected: true }));
 }
 
 export async function getPublicTicketPreviewDate(): Promise<AvailableDate | null> {
