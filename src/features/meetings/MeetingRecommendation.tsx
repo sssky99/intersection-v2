@@ -12,18 +12,28 @@ import {
   Gift,
   Landmark,
   MapPin,
+  RefreshCw,
   X,
 } from "lucide-react";
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
+import {
+  SelectionColumn,
+  activityIcons,
+  activityLabels,
+  interestIcons,
+  interestLabels,
+} from "@/features/app/PreferenceProfileTab";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { trackEvent } from "@/lib/analytics";
+import { birthYearNumber } from "@/lib/meetingAgeVisibility";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
@@ -35,6 +45,7 @@ import {
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
 import { todayInKst } from "@/lib/ticketDate";
+import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import type { GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
@@ -146,6 +157,177 @@ const localDateApplicationsStoragePrefix =
   "intersection:local-date-applications";
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
+const initialRecommendedTicketDate = "2026-08-08";
+const initialRecommendedTicketTitle = "베이킹 클래스";
+const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
+const initialRecommendedTicketAudience = {
+  preferredActivities: ["meal", "outdoor", "taste"],
+  recentInterests: ["food", "coffee", "photo"],
+};
+
+function recommendationAgeGroupFromBirthYear(
+  birthYear: string | number | null | undefined,
+) {
+  const year = birthYearNumber(birthYear);
+  if (!year) return null;
+
+  const age = new Date().getFullYear() + 1 - year;
+  if (age >= 20 && age <= 24) return "20대 초중반";
+  if (age >= 25 && age <= 29) return "20대 중후반";
+  if (age >= 30 && age <= 39) return "30대 초반";
+  return null;
+}
+
+function personalizedTicketHeading(name: string | null | undefined) {
+  const displayName = profileGivenName(name);
+  if (!displayName) return initialRecommendedTicketHeading;
+
+  return `${displayName}${displayName.endsWith("님") ? "" : "님"}을 위한 티켓을 추천해드릴게요.`;
+}
+
+function profileGivenName(name: string | null | undefined) {
+  const fullName = name?.trim();
+  if (!fullName) return "";
+
+  const compactName = fullName.replace(/\s+/g, "");
+  return /^[가-힣]{2,}$/.test(compactName)
+    ? Array.from(compactName).slice(1).join("")
+    : fullName.split(/\s+/).at(-1) ?? fullName;
+}
+
+function ProfileCurationOrbit({
+  name,
+  mbti,
+  preferredActivities,
+  recentInterests,
+  reducedMotion,
+}: {
+  name: string | null | undefined;
+  mbti: string | null | undefined;
+  preferredActivities: string[];
+  recentInterests: string[];
+  reducedMotion: boolean;
+}) {
+  const displayName = profileGivenName(name) || "나";
+  const orbitTransition = reducedMotion
+    ? { duration: 0 }
+    : {
+        duration: 2.7,
+        ease: [0.45, 0, 0.2, 1] as const,
+        times: [0, 0.22, 0.9, 1],
+      };
+
+  return (
+    <motion.div
+      key="profile-curation-orbit"
+      initial={reducedMotion ? false : { opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={
+        reducedMotion
+          ? undefined
+          : { opacity: 0, scale: 0.9, filter: "blur(5px)" }
+      }
+      transition={{ duration: reducedMotion ? 0 : 0.38, ease: "easeOut" }}
+      className="relative mx-auto h-[410px] w-full max-w-[360px] overflow-visible"
+      data-curation-stage
+      aria-label={`${displayName}님의 프로필을 바탕으로 티켓을 고르는 중`}
+    >
+      <div
+        aria-hidden
+        className="absolute left-1/2 top-1/2 h-[292px] w-[292px] -translate-x-1/2 -translate-y-1/2"
+      >
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, scale: 0.82 }}
+          animate={{ opacity: [0, 0.22, 0.14], scale: [0.82, 1.04, 1] }}
+          transition={{ duration: reducedMotion ? 0 : 1.1, ease: "easeOut" }}
+          className="h-full w-full rounded-full border border-black/20"
+        />
+      </div>
+
+      <motion.div
+        className="absolute inset-x-2 bottom-6 top-[18px]"
+        initial={reducedMotion ? false : { rotate: 0 }}
+        animate={{ rotate: reducedMotion ? 0 : [0, 0, 360, 360] }}
+        transition={orbitTransition}
+      >
+        <div className="absolute left-1/2 top-1 -translate-x-1/2">
+          <motion.div
+            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
+            animate={{
+              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
+              scale: reducedMotion ? 1 : [1, 1, 0.84, 1],
+            }}
+            transition={orbitTransition}
+            className="rounded-full border border-black/12 bg-[#faf8f2] px-5 py-3 text-center shadow-[0_10px_28px_rgba(24,24,20,0.09)]"
+          >
+            <p className="text-[9px] font-black uppercase tracking-[0.13em] text-black/34">
+              MBTI
+            </p>
+            <p className="mt-0.5 text-[14px] font-black tracking-[-0.025em] text-black">
+              {mbti?.trim().toUpperCase() || "—"}
+            </p>
+          </motion.div>
+        </div>
+
+        <div className="absolute bottom-0 left-0 w-[138px]">
+          <motion.div
+            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
+            animate={{
+              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
+              scale: reducedMotion ? 1 : [1, 1, 0.78, 1],
+            }}
+            transition={orbitTransition}
+          >
+            <SelectionColumn
+              label="선호 활동"
+              values={preferredActivities}
+              labels={activityLabels}
+              icons={activityIcons}
+            />
+          </motion.div>
+        </div>
+
+        <div className="absolute bottom-0 right-0 w-[138px]">
+          <motion.div
+            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
+            animate={{
+              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
+              scale: reducedMotion ? 1 : [1, 1, 0.78, 1],
+            }}
+            transition={orbitTransition}
+          >
+            <SelectionColumn
+              label="최근 관심사"
+              values={recentInterests}
+              labels={interestLabels}
+              icons={interestIcons}
+            />
+          </motion.div>
+        </div>
+      </motion.div>
+
+      <div className="absolute left-1/2 top-1/2 h-[88px] w-[88px] -translate-x-1/2 -translate-y-1/2">
+        <motion.div
+          initial={reducedMotion ? false : { opacity: 0, scale: 0.72 }}
+          animate={{ opacity: 1, scale: [0.72, 1.06, 1] }}
+          transition={{
+            delay: reducedMotion ? 0 : 0.35,
+            duration: reducedMotion ? 0 : 0.68,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          data-curation-name
+          className="flex h-full w-full items-center justify-center rounded-full border border-black/12 bg-[#171714] text-center text-[18px] font-black tracking-[-0.04em] text-[#f7f4ed] shadow-[0_18px_44px_rgba(24,24,20,0.18)]"
+        >
+          {displayName}
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function initialRecommendedTicketStorageKey(userId: string) {
+  return `intersection:initial-recommended-ticket:v3:${userId || "guest"}`;
+}
 
 function loadGuestDeclinedTicketIds() {
   if (typeof window === "undefined") return new Set<string>();
@@ -375,6 +557,11 @@ async function fetchDepositMessageRegistrationSummary() {
 type MeetingRecommendationProps = {
   userId: string;
   profileCompleted?: boolean;
+  profileName?: string | null;
+  profileBirthYear?: string | number | null;
+  profileMbti?: string | null;
+  preferredActivities?: string[];
+  recentInterests?: string[];
   guestMode?: boolean;
   onRequestBasicInfo?: (meetingDate?: string) => void;
   participationPrecisionCount?: number;
@@ -393,10 +580,12 @@ type MeetingRecommendationProps = {
   ticketAcceptRequestTicketId?: string | null;
   onTicketAcceptRequestHandled?: () => void;
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
+  forceInitialRecommendationPreview?: boolean;
 };
 
 type DateApplicationScreen =
   | "dates"
+  | "ticketPreview"
   | "ticket"
   | "purchase"
   | "submitted"
@@ -480,11 +669,11 @@ function DateApplicationOption({
       aria-pressed={selected}
       disabled={
         disabled ||
-        (closed && !canJoinWaitlist && !canResumePayment)
+        (closed && !canJoinWaitlist && !canResumePayment && !isWaitingForSeat)
       }
       whileTap={
         !disabled &&
-        (!closed || canJoinWaitlist || canResumePayment)
+        (!closed || canJoinWaitlist || canResumePayment || isWaitingForSeat)
           ? { scale: 0.98 }
           : undefined
       }
@@ -608,6 +797,11 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 function MeetingDateApplicationFlow({
   userId,
   profileCompleted = true,
+  profileName = null,
+  profileBirthYear = null,
+  profileMbti = null,
+  preferredActivities = [],
+  recentInterests = [],
   guestMode = false,
   onRequestBasicInfo,
   participationPrecisionCount = 0,
@@ -626,8 +820,10 @@ function MeetingDateApplicationFlow({
   ticketAcceptRequestTicketId = null,
   onTicketAcceptRequestHandled,
   onDateApplicationsChange,
+  forceInitialRecommendationPreview = false,
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const [screen, setScreen] = useState<DateApplicationScreen>("dates");
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
   const [availableTickets, setAvailableTickets] = useState<GatheringTicket[]>([]);
@@ -651,12 +847,44 @@ function MeetingDateApplicationFlow({
     );
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
+  const [ticketPreviewMotionKey, setTicketPreviewMotionKey] = useState(0);
+  const [ticketPreviewImageVisible, setTicketPreviewImageVisible] =
+    useState(false);
+  const [ticketPreviewHeadingText, setTicketPreviewHeadingText] = useState("");
+  const [ticketPreviewHeadingComplete, setTicketPreviewHeadingComplete] =
+    useState(false);
+  const [ticketPreviewCurationComplete, setTicketPreviewCurationComplete] =
+    useState(false);
+  const [waitlistDialog, setWaitlistDialog] = useState<
+    "profile" | "success" | null
+  >(null);
+  const [localPreviewControlsVisible, setLocalPreviewControlsVisible] =
+    useState(false);
+  const initialRecommendationHandledRef = useRef(false);
 
   const today = todayInKst();
   const applicationByDate = new Map(
     applications.map((application) => [application.meetingDate, application]),
   );
   const resumeDate = searchParams.get("resumeDate");
+  const ticketPreviewHeading = profileCompleted
+    ? personalizedTicketHeading(profileName)
+    : initialRecommendedTicketHeading;
+  const profileAgeGroup = recommendationAgeGroupFromBirthYear(profileBirthYear);
+  const personalizedAgeReason =
+    profileCompleted && profileAgeGroup
+      ? `${profileAgeGroup}이 많이 신청했어요.`
+      : null;
+  const personalizedActivityReason = preferredActivities
+    .map((value) => activityLabels[value])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
+  const personalizedInterestReason = recentInterests
+    .map((value) => interestLabels[value])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -788,6 +1016,195 @@ function MeetingDateApplicationFlow({
   useEffect(() => {
     onDateApplicationsChange?.(applications);
   }, [applications, onDateApplicationsChange]);
+
+  useEffect(() => {
+    setLocalPreviewControlsVisible(isLocalTestHost());
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "ticketPreview" || !selectedTicket) return;
+
+    if (shouldReduceMotion) {
+      setTicketPreviewHeadingText(ticketPreviewHeading);
+      setTicketPreviewHeadingComplete(true);
+      return;
+    }
+
+    const characters = Array.from(ticketPreviewHeading);
+    let index = 0;
+    setTicketPreviewHeadingText("");
+    setTicketPreviewHeadingComplete(false);
+
+    const timer = window.setInterval(() => {
+      index += 1;
+      setTicketPreviewHeadingText(characters.slice(0, index).join(""));
+
+      if (index >= characters.length) {
+        window.clearInterval(timer);
+        setTicketPreviewHeadingComplete(true);
+      }
+    }, 58);
+
+    return () => window.clearInterval(timer);
+  }, [
+    screen,
+    selectedTicket?.id,
+    shouldReduceMotion,
+    ticketPreviewMotionKey,
+    ticketPreviewHeading,
+  ]);
+
+  useEffect(() => {
+    if (
+      screen !== "ticketPreview" ||
+      !selectedTicket ||
+      !ticketPreviewHeadingComplete
+    ) {
+      setTicketPreviewCurationComplete(false);
+      return;
+    }
+
+    if (!profileCompleted || shouldReduceMotion) {
+      setTicketPreviewCurationComplete(true);
+      return;
+    }
+
+    setTicketPreviewCurationComplete(false);
+    const timer = window.setTimeout(() => {
+      setTicketPreviewCurationComplete(true);
+    }, 3300);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    profileCompleted,
+    screen,
+    selectedTicket,
+    shouldReduceMotion,
+    ticketPreviewHeadingComplete,
+    ticketPreviewMotionKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      screen !== "ticketPreview" ||
+      !selectedTicket ||
+      !ticketPreviewHeadingComplete ||
+      !ticketPreviewCurationComplete
+    ) {
+      setTicketPreviewImageVisible(false);
+      return;
+    }
+
+    setTicketPreviewImageVisible(shouldReduceMotion);
+    if (shouldReduceMotion) return;
+
+    const timer = window.setTimeout(() => {
+      setTicketPreviewImageVisible(true);
+    }, 720);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    screen,
+    selectedTicket,
+    shouldReduceMotion,
+    ticketPreviewCurationComplete,
+    ticketPreviewHeadingComplete,
+    ticketPreviewMotionKey,
+  ]);
+
+  useEffect(() => {
+    if (
+      !active ||
+      availableTicketsLoading ||
+      screen !== "dates" ||
+      resumeDate ||
+      ticketAcceptRequestId ||
+      initialRecommendationHandledRef.current
+    ) {
+      return;
+    }
+
+    const recommendedTicket = availableTickets.find(
+      (ticket) =>
+        ticket.date === initialRecommendedTicketDate &&
+        ticket.title.trim() === initialRecommendedTicketTitle,
+    );
+    if (!recommendedTicket) return;
+
+    initialRecommendationHandledRef.current = true;
+    const storageKey = initialRecommendedTicketStorageKey(userId);
+
+    if (!forceInitialRecommendationPreview) {
+      try {
+        if (window.localStorage.getItem(storageKey) === "shown") return;
+      } catch {
+        // The recommendation still opens when browser storage is unavailable.
+      }
+    }
+
+    const recommendationReasons = profileCompleted
+      ? [
+          personalizedAgeReason ?? "—",
+          personalizedActivityReason || "—",
+          personalizedInterestReason || "—",
+        ]
+      : recommendedTicket.recommendationReasons;
+    const personalizedRecommendedTicket = {
+      ...recommendedTicket,
+      recommendationReasons,
+      recommendationProfile: profileCompleted
+        ? {
+            preferredActivities,
+            recentInterests,
+          }
+        : undefined,
+      recommendationAudience: initialRecommendedTicketAudience,
+    };
+
+    setPurchaseOption("single");
+    setSelectedTicket(personalizedRecommendedTicket);
+    setError(null);
+    setScreen("ticketPreview");
+    trackEvent("meeting_ticket_initial_recommendation_open", {
+      ticket_instance_id: recommendedTicket.id,
+      meeting_date: recommendedTicket.date,
+    });
+  }, [
+    active,
+    availableTickets,
+    availableTicketsLoading,
+    resumeDate,
+    screen,
+    ticketAcceptRequestId,
+    userId,
+    forceInitialRecommendationPreview,
+    personalizedAgeReason,
+    personalizedActivityReason,
+    personalizedInterestReason,
+    preferredActivities,
+    profileCompleted,
+    recentInterests,
+  ]);
+
+  const completeInitialTicketRecommendation = () => {
+    try {
+      window.localStorage.setItem(
+        initialRecommendedTicketStorageKey(userId),
+        "shown",
+      );
+    } catch {
+      // First recommendation history is best-effort when storage is unavailable.
+    }
+  };
+
+  const openInitialTicketDetail = (ticket: GatheringTicket) => {
+    completeInitialTicketRecommendation();
+    setScreen("ticket");
+    trackEvent("meeting_ticket_initial_recommendation_select", {
+      ticket_instance_id: ticket.id,
+      meeting_date: ticket.date,
+    });
+  };
 
   const toggleDate = (date: string) => {
     const application = applicationByDate.get(date);
@@ -1199,8 +1616,12 @@ function MeetingDateApplicationFlow({
   };
 
   const joinClosedDateWaitlist = async (date: string) => {
-    if (saving || applicationByDate.has(date) || !isMeetingDateClosed(date)) {
-      return;
+    const existingApplication = applicationByDate.get(date);
+    if (existingApplication) {
+      return existingApplication.status === "waitlisted";
+    }
+    if (saving || !isMeetingDateClosed(date)) {
+      return false;
     }
 
     if (!profileCompleted) {
@@ -1211,7 +1632,7 @@ function MeetingDateApplicationFlow({
           `/onboarding/profile?from=application&date=${encodeURIComponent(date)}`,
         );
       }
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -1263,6 +1684,7 @@ function MeetingDateApplicationFlow({
         meeting_date: date,
         deposit_amount: 0,
       });
+      return true;
     } catch (waitlistError) {
       setError(
         waitlistError instanceof Error &&
@@ -1270,12 +1692,138 @@ function MeetingDateApplicationFlow({
           ? waitlistError.message
           : "빈 자리 대기를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
       );
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
+  if (screen === "ticketPreview" && selectedTicket) {
+    return (
+      <motion.section
+        key={`meeting-ticket-preview-${selectedTicket.id}`}
+        initial={shouldReduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+        className={cn(
+          "flex min-h-full flex-col bg-[#f7f4ed] px-5 pb-[calc(94px+env(safe-area-inset-bottom))] pt-7 text-black",
+          embedded ? "min-h-[calc(100dvh-16px)]" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+        )}
+      >
+        <header className="relative shrink-0 text-center">
+          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/38">
+            first invitation
+          </p>
+          <h1
+            aria-label={ticketPreviewHeading}
+            className="mt-2 min-h-7 text-[22px] font-black tracking-[-0.045em] text-black"
+          >
+            <span aria-hidden>{ticketPreviewHeadingText}</span>
+            {!ticketPreviewHeadingComplete && (
+              <motion.span
+                aria-hidden
+                animate={{ opacity: [1, 0, 1] }}
+                transition={{ duration: 0.72, repeat: Infinity, ease: "linear" }}
+                className="ml-0.5 inline-block h-[0.9em] w-[2px] translate-y-[1px] bg-black"
+              />
+            )}
+          </h1>
+          {localPreviewControlsVisible && (
+            <motion.button
+              type="button"
+              title="애니메이션 다시 보기"
+              aria-label="애니메이션 다시 보기"
+              whileTap={shouldReduceMotion ? undefined : { scale: 0.94 }}
+              onClick={() => {
+                setTicketPreviewImageVisible(false);
+                setTicketPreviewHeadingText("");
+                setTicketPreviewHeadingComplete(false);
+                setTicketPreviewMotionKey((current) => current + 1);
+              }}
+              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#faf8f2] text-black/55 shadow-sm transition hover:text-black"
+            >
+              <RefreshCw size={17} strokeWidth={1.8} aria-hidden />
+            </motion.button>
+          )}
+        </header>
+
+        <div className="flex flex-1 flex-col items-center justify-center py-5">
+          <AnimatePresence mode="wait">
+            {ticketPreviewHeadingComplete && !ticketPreviewCurationComplete ? (
+              <ProfileCurationOrbit
+                name={profileName}
+                mbti={profileMbti}
+                preferredActivities={preferredActivities}
+                recentInterests={recentInterests}
+                reducedMotion={shouldReduceMotion}
+              />
+            ) : ticketPreviewHeadingComplete ? (
+              <motion.div
+                key={`initial-ticket-stage-${selectedTicket.id}-${ticketPreviewMotionKey}`}
+                initial={shouldReduceMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={shouldReduceMotion ? undefined : { opacity: 0 }}
+                transition={{ duration: 0.16, ease: "easeOut" }}
+                className="w-full"
+              >
+                <motion.button
+                  type="button"
+                  aria-label={`${selectedTicket.title} 추천 이유 확인하기`}
+                  whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                  onClick={() => openInitialTicketDetail(selectedTicket)}
+                  className="relative w-full rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+                >
+                  <TicketDrawingFrame
+                    motionKey={`initial-recommendation-${selectedTicket.id}-${ticketPreviewMotionKey}`}
+                    title={selectedTicket.title}
+                    imageUrl={selectedTicket.imageUrl}
+                    imageUrls={ticketBackgroundImageUrls(selectedTicket)}
+                    date={selectedTicket.date}
+                    time={selectedTicket.time}
+                    location={`서울\n${selectedTicket.area}`}
+                    tags={selectedTicket.moodTags}
+                    remainingSeatCount={selectedTicket.remainingSeatCount}
+                    drawn
+                    imageVisible={ticketPreviewImageVisible}
+                    contentVisible={ticketPreviewImageVisible}
+                    reducedMotion={shouldReduceMotion}
+                    className="!w-full"
+                    cardClassName="!bg-transparent"
+                  />
+                  {ticketPreviewImageVisible && (
+                    <span className="absolute left-1/2 top-7 z-20 h-12 w-[calc(100%-40px)] max-w-[290px] -translate-x-1/2">
+                      <motion.span
+                        initial={
+                          shouldReduceMotion
+                            ? false
+                            : { opacity: 0, y: -10, scale: 0.97 }
+                        }
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={{
+                          delay: shouldReduceMotion ? 0 : 0.72,
+                          duration: shouldReduceMotion ? 0 : 0.38,
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
+                        className="flex h-full w-full items-center justify-center rounded-[18px] bg-black text-[13px] font-black tracking-[-0.025em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
+                      >
+                        추천 이유 확인하기&nbsp;&nbsp;→
+                      </motion.span>
+                    </span>
+                  )}
+                </motion.button>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+      </motion.section>
+    );
+  }
+
   if (screen === "ticket" && selectedTicket) {
+    const selectedTicketClosed =
+      selectedTicket.date < today || isMeetingDateClosed(selectedTicket.date);
+
     return (
       <motion.section
         key={`meeting-ticket-detail-${selectedTicket.id}`}
@@ -1310,7 +1858,13 @@ function MeetingDateApplicationFlow({
           />
           <TicketDetailContent
             ticket={selectedTicket}
-            sections={["summary", "vibe", "activities", "notice"]}
+            sections={[
+              "summary",
+              "recommendation",
+              "vibe",
+              "activities",
+              "notice",
+            ]}
             className="px-4 pb-2"
           />
         </div>
@@ -1321,26 +1875,122 @@ function MeetingDateApplicationFlow({
           </p>
         )}
 
-        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
-          <motion.button
-            type="button"
-            whileTap={!saving ? { scale: 0.98 } : undefined}
-            disabled={saving}
-            onClick={() => void declineTicket(selectedTicket)}
-            className="flex h-[56px] items-center justify-center rounded-full bg-transparent font-serif text-[17px] font-semibold tracking-[0.16em] text-black/42 disabled:opacity-40"
-          >
-            NO
-          </motion.button>
-          <motion.button
-            type="button"
-            whileTap={!saving ? { scale: 0.98 } : undefined}
-            disabled={saving}
-            onClick={() => acceptTicket(selectedTicket)}
-            className="flex h-[56px] items-center justify-center rounded-full bg-black font-serif text-[17px] font-semibold tracking-[0.16em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
-          >
-            YES
-          </motion.button>
-        </div>
+        {selectedTicketClosed ? (
+          <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+            <motion.button
+              type="button"
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              disabled={saving}
+              onClick={() => {
+                if (!profileCompleted) {
+                  setWaitlistDialog("profile");
+                  return;
+                }
+
+                void (async () => {
+                  const joined = await joinClosedDateWaitlist(selectedTicket.date);
+                  if (joined) setWaitlistDialog("success");
+                })();
+              }}
+              className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[-0.02em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+            >
+              {saving ? "알림 신청 중..." : "알림 받기"}
+            </motion.button>
+          </div>
+        ) : (
+          <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+            <motion.button
+              type="button"
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              disabled={saving}
+              onClick={() => void declineTicket(selectedTicket)}
+              className="flex h-[56px] items-center justify-center rounded-full bg-transparent text-[15px] font-black tracking-[0.04em] text-black/42 disabled:opacity-40"
+            >
+              NO
+            </motion.button>
+            <motion.button
+              type="button"
+              whileTap={!saving ? { scale: 0.98 } : undefined}
+              disabled={saving}
+              onClick={() => acceptTicket(selectedTicket)}
+              className="flex h-[56px] items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+            >
+              YES
+            </motion.button>
+          </div>
+        )}
+
+        <AnimatePresence>
+          {waitlistDialog && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 px-5 backdrop-blur-[3px]"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="waitlist-dialog-title"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                className="w-full max-w-[350px] rounded-[28px] border border-black/10 bg-[#f7f4ed] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.2)]"
+              >
+                <h2
+                  id="waitlist-dialog-title"
+                  className="text-[20px] font-black tracking-[-0.04em] text-black"
+                >
+                  {waitlistDialog === "profile"
+                    ? "프로필을 완성해주세요."
+                    : "알림 신청이 완료됐어요."}
+                </h2>
+                <p className="mt-3 break-keep text-[13px] font-semibold leading-6 text-black/50">
+                  {waitlistDialog === "profile"
+                    ? "빈자리 알림을 보내드리려면 기본정보가 필요해요."
+                    : "빈자리가 생기면 알림을 보내드릴게요."}
+                </p>
+
+                {waitlistDialog === "profile" ? (
+                  <div className="mt-6 grid grid-cols-[0.8fr_1.6fr] gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setWaitlistDialog(null)}
+                      className="h-12 rounded-full border border-black/10 text-[13px] font-black text-black/45"
+                    >
+                      나중에
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWaitlistDialog(null);
+                        if (onRequestBasicInfo) {
+                          onRequestBasicInfo(selectedTicket.date);
+                        } else {
+                          window.location.assign(
+                            `/onboarding/profile?from=application&date=${encodeURIComponent(selectedTicket.date)}`,
+                          );
+                        }
+                      }}
+                      className="h-12 rounded-full bg-black text-[13px] font-black text-white"
+                    >
+                      프로필 완성하기
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setWaitlistDialog(null)}
+                    className="mt-6 h-12 w-full rounded-full bg-black text-[13px] font-black text-white"
+                  >
+                    확인
+                  </button>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.section>
     );
   }
@@ -1610,7 +2260,7 @@ function MeetingDateApplicationFlow({
                     waitlistAvailable={isMeetingDateClosed(ticket.date)}
                     disabled={saving}
                     onToggle={() => openTicket(ticket)}
-                    onWaitlist={() => undefined}
+                    onWaitlist={() => openTicket(ticket)}
                   />
                 ))}
                 {availableTicketsLoading && (
@@ -1687,7 +2337,7 @@ function MeetingDateApplicationFlow({
                   waitlistAvailable={isMeetingDateClosed(ticket.date)}
                   disabled={saving}
                   onToggle={() => openTicket(ticket)}
-                  onWaitlist={() => undefined}
+                  onWaitlist={() => openTicket(ticket)}
                 />
               ))}
             </div>

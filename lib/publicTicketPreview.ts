@@ -1,5 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
+  meetingAtmosphereDefaultsFromProfiles,
+  normalizeMeetingAtmosphereAgeBandId,
+  normalizeMeetingAtmosphereGenderMood,
+  type MeetingAtmosphereDefaults,
+} from "@/lib/meetingAtmosphere";
+import {
   displayTicketCourseSteps,
   ensureMinimumStoredTicketCourseSteps,
   legacyStoredTicketCourseSteps,
@@ -41,6 +47,22 @@ type PublicTicketTemplateRow = {
   recommendation_copy: string | null;
   default_region: string | null;
   default_time: string | null;
+  atmosphere_gender_mood: string | null;
+  atmosphere_age_band_id: string | null;
+};
+
+type AtmosphereParticipationRow = {
+  user_id: string;
+  ticket_id: string | null;
+  ticket_template_id: string | null;
+  ticket_instance_id: string | null;
+  meeting_date: string | null;
+};
+
+type AtmosphereProfileRow = {
+  user_id: string;
+  gender: string | null;
+  birth_year: string | number | null;
 };
 
 const publicTicketInstanceSelect = [
@@ -71,7 +93,16 @@ const publicTicketTemplateSelect = [
   "recommendation_copy",
   "default_region",
   "default_time",
+  "atmosphere_gender_mood",
+  "atmosphere_age_band_id",
 ].join(",");
+
+const atmosphereParticipationStatuses = [
+  "payment_pending",
+  "waitlisted",
+  "approved",
+  "on_hold",
+];
 
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -86,6 +117,7 @@ function dateLabel(value: string) {
 function toPublicPreviewTicket(
   instance: PublicTicketInstanceRow,
   template: PublicTicketTemplateRow,
+  atmosphereDefaults?: MeetingAtmosphereDefaults | null,
 ): GatheringTicket | null {
   if (!instance.event_date) return null;
 
@@ -113,6 +145,12 @@ function toPublicPreviewTicket(
   );
   const mainCourseStep =
     courseSteps.find((step) => step.isMainActivity) ?? courseSteps[0] ?? null;
+  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
+    template.atmosphere_age_band_id,
+  );
+  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
+    template.atmosphere_gender_mood,
+  );
 
   return {
     id: instance.id,
@@ -138,7 +176,135 @@ function toPublicPreviewTicket(
     detailFlow: template.detail_flow ?? [],
     detailGoodFor: template.detail_good_for ?? [],
     detailNotice: template.detail_notice ?? undefined,
+    atmosphere: {
+      ageBandId: ageBandOverride ?? atmosphereDefaults?.ageBandId ?? null,
+      genderMood:
+        genderMoodOverride ?? atmosphereDefaults?.genderMood ?? null,
+      defaultAgeBandId: atmosphereDefaults?.ageBandId ?? null,
+      defaultGenderMood: atmosphereDefaults?.genderMood ?? null,
+      ageBandOverrideId: ageBandOverride,
+      genderMoodOverride,
+    },
   };
+}
+
+function unique(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function participationInstanceId(
+  row: AtmosphereParticipationRow,
+  instanceIds: Set<string>,
+  templateDateMap: Map<string, string>,
+) {
+  if (row.ticket_instance_id && instanceIds.has(row.ticket_instance_id)) {
+    return row.ticket_instance_id;
+  }
+  if (row.ticket_id && instanceIds.has(row.ticket_id)) {
+    return row.ticket_id;
+  }
+  if (row.ticket_template_id && row.meeting_date) {
+    return templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ?? null;
+  }
+  return null;
+}
+
+async function atmosphereDefaultsForInstances(
+  supabase: ReturnType<typeof createAdminClient>,
+  instances: PublicTicketInstanceRow[],
+) {
+  const instanceIds = unique(instances.map((instance) => instance.id));
+  if (instanceIds.length === 0) return new Map<string, MeetingAtmosphereDefaults>();
+
+  const templateIds = unique(instances.map((instance) => instance.template_id));
+  const participationSelect =
+    "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date";
+  const rows: AtmosphereParticipationRow[] = [];
+
+  const { data: byInstanceId, error: byInstanceIdError } = await supabase
+    .from("ticket_participations")
+    .select(participationSelect)
+    .in("ticket_instance_id", instanceIds)
+    .in("status", atmosphereParticipationStatuses)
+    .returns<AtmosphereParticipationRow[]>();
+  if (byInstanceIdError) throw byInstanceIdError;
+  rows.push(...(byInstanceId ?? []));
+
+  const { data: byTicketId, error: byTicketIdError } = await supabase
+    .from("ticket_participations")
+    .select(participationSelect)
+    .in("ticket_id", instanceIds)
+    .in("status", atmosphereParticipationStatuses)
+    .returns<AtmosphereParticipationRow[]>();
+  if (byTicketIdError) throw byTicketIdError;
+  rows.push(...(byTicketId ?? []));
+
+  if (templateIds.length > 0) {
+    const { data: byTemplateId, error: byTemplateIdError } = await supabase
+      .from("ticket_participations")
+      .select(participationSelect)
+      .in("ticket_template_id", templateIds)
+      .in("status", atmosphereParticipationStatuses)
+      .returns<AtmosphereParticipationRow[]>();
+    if (byTemplateIdError) throw byTemplateIdError;
+    rows.push(...(byTemplateId ?? []));
+  }
+
+  const instanceIdSet = new Set(instanceIds);
+  const templateDateMap = new Map(
+    instances
+      .filter((instance) => instance.event_date)
+      .map((instance) => [
+        `${instance.template_id}|${instance.event_date}`,
+        instance.id,
+      ]),
+  );
+  const userIdsByInstance = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const instanceId = participationInstanceId(
+      row,
+      instanceIdSet,
+      templateDateMap,
+    );
+    if (!instanceId || !row.user_id) continue;
+    const userIds = userIdsByInstance.get(instanceId) ?? new Set<string>();
+    userIds.add(row.user_id);
+    userIdsByInstance.set(instanceId, userIds);
+  }
+
+  const profileIds = unique(rows.map((row) => row.user_id));
+  if (profileIds.length === 0) {
+    return new Map<string, MeetingAtmosphereDefaults>();
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("user_id,gender,birth_year")
+    .in("user_id", profileIds)
+    .returns<AtmosphereProfileRow[]>();
+  if (profilesError) throw profilesError;
+
+  const profileMap = new Map(
+    (profiles ?? []).map((profile) => [profile.user_id, profile]),
+  );
+
+  return new Map(
+    [...userIdsByInstance.entries()].map(([instanceId, userIds]) => [
+      instanceId,
+      meetingAtmosphereDefaultsFromProfiles(
+        [...userIds]
+          .map((userId) => profileMap.get(userId))
+          .filter((profile): profile is AtmosphereProfileRow => Boolean(profile)),
+      ),
+    ]),
+  );
 }
 
 async function previewTicketsFromInstances(
@@ -157,13 +323,24 @@ async function previewTicketsFromInstances(
     .returns<PublicTicketTemplateRow[]>();
   if (templatesError) throw templatesError;
 
+  const atmosphereDefaultsMap = await atmosphereDefaultsForInstances(
+    supabase,
+    instances,
+  );
+
   const templateMap = new Map(
     (templates ?? []).map((template) => [template.id, template]),
   );
   return instances
     .map((instance) => {
       const template = templateMap.get(instance.template_id);
-      return template ? toPublicPreviewTicket(instance, template) : null;
+      return template
+        ? toPublicPreviewTicket(
+            instance,
+            template,
+            atmosphereDefaultsMap.get(instance.id),
+          )
+        : null;
     })
     .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 }

@@ -56,7 +56,7 @@ const birthYearOptions = Array.from(
   (_, index) => String(1992 + index),
 );
 
-const activityLabels: Record<string, string> = {
+export const activityLabels: Record<string, string> = {
   meal: "식사·카페",
   culture: "문화 콘텐츠",
   outdoor: "활동·체험",
@@ -65,7 +65,7 @@ const activityLabels: Record<string, string> = {
   taste: "취향 탐색",
 };
 
-const activityIcons: Record<string, string> = {
+export const activityIcons: Record<string, string> = {
   meal: "🍽️",
   culture: "🎨",
   outdoor: "🚶",
@@ -74,7 +74,7 @@ const activityIcons: Record<string, string> = {
   taste: "🛍️",
 };
 
-const interestLabels: Record<string, string> = {
+export const interestLabels: Record<string, string> = {
   travel: "여행",
   food: "맛집·요리",
   coffee: "카페·커피",
@@ -89,7 +89,7 @@ const interestLabels: Record<string, string> = {
   growth: "심리·성장",
 };
 
-const interestIcons: Record<string, string> = {
+export const interestIcons: Record<string, string> = {
   travel: "✈️",
   food: "🍳",
   coffee: "☕",
@@ -616,17 +616,21 @@ function BasicQuestionsSection({
   );
 }
 
-function SelectionColumn({
+export function SelectionColumn({
   label,
   values,
   labels,
   icons,
+  matchedValues = [],
 }: {
   label: string;
   values: string[];
   labels: Record<string, string>;
   icons: Record<string, string>;
+  matchedValues?: string[];
 }) {
+  const matchedValueSet = new Set(matchedValues);
+
   return (
     <div className="rounded-[18px] bg-black/[0.025] p-4">
       <p className="text-[10px] font-bold tracking-[0.08em] text-black/34">
@@ -635,7 +639,14 @@ function SelectionColumn({
       <div className="mt-3 space-y-2">
         {values.length > 0 ? (
           values.map((value) => (
-            <div key={value} className="flex min-w-0 items-center gap-2">
+            <div
+              key={value}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-[11px]",
+                matchedValueSet.has(value) &&
+                  "-mx-1 bg-[#f4d35e]/35 px-1 py-1",
+              )}
+            >
               <span
                 aria-hidden
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] bg-white text-sm shadow-[0_3px_10px_rgba(0,0,0,0.04)]"
@@ -645,6 +656,11 @@ function SelectionColumn({
               <span className="min-w-0 truncate text-[11px] font-extrabold tracking-[-0.02em] text-black/70">
                 {labels[value] ?? value}
               </span>
+              {matchedValueSet.has(value) && (
+                <span className="ml-auto shrink-0 rounded-full bg-[#f4d35e] px-1.5 py-0.5 text-[8px] font-black text-black/72">
+                  일치
+                </span>
+              )}
             </div>
           ))
         ) : (

@@ -506,11 +506,11 @@ export function BasicInfoForm({
           </button>
         )}
         <h1 className="mt-2 text-[27px] font-extrabold leading-[1.25] tracking-[-0.055em] text-[#171714]">
-          마지막으로
+          프로필을 완성하면
           <br />
-          기본 정보를 입력하면
+          나와 비슷한 나이대의 사람을
           <br />
-          프로필이 완성돼요.
+          추천받을 수 있어요.
         </h1>
       </header>
 

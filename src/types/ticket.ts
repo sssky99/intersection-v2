@@ -68,6 +68,14 @@ export type GatheringTicket = {
   recommendationName?: string;
   recommendationRank?: number;
   recommendationReasons?: string[];
+  recommendationProfile?: {
+    preferredActivities: string[];
+    recentInterests: string[];
+  };
+  recommendationAudience?: {
+    preferredActivities: string[];
+    recentInterests: string[];
+  };
   detailSummary?: string;
   detailActivities?: string[];
   detailFlow?: string[];

@@ -287,8 +287,10 @@ export function IntersectionTicketCard({
 
       <div
         className={cn(
-          "absolute inset-0 transition-opacity duration-[350ms]",
-          contentVisible ? "opacity-100" : "opacity-0",
+          "absolute inset-0 transition-[opacity,transform] duration-[460ms] ease-out",
+          contentVisible
+            ? "translate-y-0 opacity-100"
+            : "translate-y-4 opacity-0",
         )}
       >
         {badgeLabel && (

@@ -480,6 +480,7 @@ export function AppHome({
   guestMode = false,
   initialAnswerRows = [],
   onRequestBasicInfo,
+  forceInitialRecommendationPreview = false,
 }: {
   userId: string;
   profile: ProfileRow;
@@ -489,6 +490,7 @@ export function AppHome({
   guestMode?: boolean;
   initialAnswerRows?: AnswerRow[];
   onRequestBasicInfo?: (meetingDate?: string) => void;
+  forceInitialRecommendationPreview?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
@@ -1032,6 +1034,15 @@ export function AppHome({
           <MeetingRecommendation
             userId={userId}
             profileCompleted={Boolean(currentProfile.profile_completed)}
+            profileName={currentProfile.name ?? currentProfile.nickname}
+            profileBirthYear={currentProfile.birth_year}
+            profileMbti={currentProfile.mbti}
+            preferredActivities={
+              Array.isArray(answers[4]?.value) ? answers[4].value : []
+            }
+            recentInterests={
+              Array.isArray(answers[2]?.value) ? answers[2].value : []
+            }
             guestMode={guestMode}
             onRequestBasicInfo={onRequestBasicInfo}
             participationPrecisionCount={
@@ -1054,6 +1065,9 @@ export function AppHome({
             onDateApplicationsChange={setDateApplications}
             onBlindDateOpenRequestHandled={() =>
               setBlindDateOpenRequestPending(false)
+            }
+            forceInitialRecommendationPreview={
+              forceInitialRecommendationPreview
             }
           />
         </div>
@@ -2283,21 +2297,8 @@ function DeclinedTicketReview({
           </button>
         </div>
       ) : tickets.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-20 text-center">
-          <X size={28} strokeWidth={1.25} className="text-black/30" aria-hidden />
-          <h2 className="mt-5 text-lg font-bold">거절한 티켓이 없어요.</h2>
-          <p className="mt-2 text-xs leading-5 text-black/42">
-            경험 상세에서 NO를 선택한 티켓을
-            <br />
-            이곳에서 다시 확인할 수 있어요.
-          </p>
-          <button
-            type="button"
-            onClick={onBack}
-            className="mt-6 flex items-center gap-1.5 text-xs font-black text-black/55"
-          >
-            티켓함으로 돌아가기 <ArrowRight size={15} aria-hidden />
-          </button>
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6 pb-20 text-center">
+          <h2 className="text-lg font-bold">거절한 티켓이 없어요.</h2>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 -translate-y-3 flex-col justify-center pb-3 pt-4">
@@ -2476,7 +2477,7 @@ function AssignedApplicationTicketDetailView({
             type="button"
             whileTap={{ scale: 0.985 }}
             onClick={onReapply}
-            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[16px] font-black tracking-[0.14em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
           >
             YES
           </motion.button>

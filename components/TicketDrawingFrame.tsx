@@ -15,6 +15,7 @@ type TicketDrawingFrameProps = {
   remainingSeatCount?: number | null;
   drawn?: boolean;
   imageVisible?: boolean;
+  contentVisible?: boolean;
   reducedMotion?: boolean;
   motionKey?: string;
   className?: string;
@@ -37,6 +38,7 @@ export function TicketDrawingFrame({
   remainingSeatCount,
   drawn = true,
   imageVisible = true,
+  contentVisible,
   reducedMotion = false,
   motionKey,
   className,
@@ -70,7 +72,7 @@ export function TicketDrawingFrame({
               location={location}
               tags={tags}
               remainingSeatCount={remainingSeatCount}
-              contentVisible={drawn}
+              contentVisible={contentVisible ?? drawn}
               imageVisible={imageVisible}
               className={cn(
                 "h-full !aspect-auto !rounded-[24px] shadow-none",
