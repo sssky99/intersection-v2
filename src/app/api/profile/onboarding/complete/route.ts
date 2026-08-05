@@ -54,6 +54,8 @@ export async function POST(request: Request) {
     mbti,
     photo_url: photoUrl,
     profile_completed: true,
+    basic_info_completed_at: new Date().toISOString(),
+    profile_completed_at: new Date().toISOString(),
     ...(profile && usesPreferenceProfile(profile) && !profile.public_emoji
       ? { public_emoji: assignedProfileEmoji(user.id) }
       : {}),

@@ -41,6 +41,12 @@ import {
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
 import type { Gender } from "@/types/user";
+import {
+  activityLabels,
+  interestLabels,
+} from "@/data/recommendationAudience";
+
+export { activityLabels, interestLabels } from "@/data/recommendationAudience";
 
 type ProfileDraft = {
   emoji: string;
@@ -56,15 +62,6 @@ const birthYearOptions = Array.from(
   (_, index) => String(1992 + index),
 );
 
-export const activityLabels: Record<string, string> = {
-  meal: "식사·카페",
-  culture: "문화 콘텐츠",
-  outdoor: "활동·체험",
-  play: "오락",
-  reading: "독서",
-  taste: "취향 탐색",
-};
-
 export const activityIcons: Record<string, string> = {
   meal: "🍽️",
   culture: "🎨",
@@ -72,21 +69,6 @@ export const activityIcons: Record<string, string> = {
   play: "🎲",
   reading: "📚",
   taste: "🛍️",
-};
-
-export const interestLabels: Record<string, string> = {
-  travel: "여행",
-  food: "맛집·요리",
-  coffee: "카페·커피",
-  movie: "영화·드라마",
-  music: "음악",
-  book: "독서",
-  exhibition: "전시·디자인",
-  fitness: "운동",
-  nature: "자연·등산",
-  game: "게임·보드게임",
-  photo: "사진",
-  growth: "심리·성장",
 };
 
 export const interestIcons: Record<string, string> = {

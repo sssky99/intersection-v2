@@ -53,6 +53,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
 
         await clearGuestOnboardingDraft();
         trackEvent("guest_onboarding_import_complete");
+        trackEvent("profile_complete", { mode: "guest_import" });
         router.replace(
           draft.returnMeetingDate
             ? `/meetings?tab=recommend&resumeDate=${encodeURIComponent(draft.returnMeetingDate)}`

@@ -46,7 +46,12 @@ import {
 } from "@/lib/meetingDateApplications";
 import { todayInKst } from "@/lib/ticketDate";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
-import type { GatheringTicket } from "@/types/ticket";
+import { saveGuestTicketInteraction } from "@/lib/ticketInteractions";
+import type {
+  GatheringTicket,
+  TicketInteraction,
+  TicketInteractionStatus,
+} from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
 type DepositMessageRegistration = {
@@ -159,6 +164,7 @@ const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
 const initialRecommendedTicketDate = "2026-08-08";
 const initialRecommendedTicketTitle = "베이킹 클래스";
+const personalizedMaleRecommendedTicketTitle = "향수 공방";
 const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
 const initialRecommendedTicketAudience = {
   preferredActivities: ["meal", "outdoor", "taste"],
@@ -176,6 +182,17 @@ function recommendationAgeGroupFromBirthYear(
   if (age >= 25 && age <= 29) return "20대 중후반";
   if (age >= 30 && age <= 39) return "30대 초반";
   return null;
+}
+
+function shouldRecommendPerfumeWorkshop(
+  profileCompleted: boolean,
+  gender: string | null | undefined,
+  birthYear: string | number | null | undefined,
+) {
+  if (!profileCompleted || gender !== "남성") return false;
+
+  const year = birthYearNumber(birthYear);
+  return year !== null && year >= 1992 && year <= 1999;
 }
 
 function personalizedTicketHeading(name: string | null | undefined) {
@@ -558,6 +575,7 @@ type MeetingRecommendationProps = {
   userId: string;
   profileCompleted?: boolean;
   profileName?: string | null;
+  profileGender?: string | null;
   profileBirthYear?: string | number | null;
   profileMbti?: string | null;
   preferredActivities?: string[];
@@ -568,6 +586,7 @@ type MeetingRecommendationProps = {
   onOpenParticipationRecord?: () => void;
   onFocusModeChange?: (focused: boolean) => void;
   onAvailableTicketsChange?: (tickets: GatheringTicket[]) => void;
+  onTicketInteractionChange?: (interaction: TicketInteraction) => void;
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
@@ -798,6 +817,7 @@ function MeetingDateApplicationFlow({
   userId,
   profileCompleted = true,
   profileName = null,
+  profileGender = null,
   profileBirthYear = null,
   profileMbti = null,
   preferredActivities = [],
@@ -808,6 +828,7 @@ function MeetingDateApplicationFlow({
   onOpenParticipationRecord = () => undefined,
   onFocusModeChange,
   onAvailableTicketsChange,
+  onTicketInteractionChange,
   embedded = false,
   active = true,
   membershipStatus,
@@ -861,6 +882,37 @@ function MeetingDateApplicationFlow({
   const [localPreviewControlsVisible, setLocalPreviewControlsVisible] =
     useState(false);
   const initialRecommendationHandledRef = useRef(false);
+
+  const recordTicketInteraction = async (
+    ticket: GatheringTicket,
+    status: TicketInteractionStatus,
+  ) => {
+    if (guestMode) {
+      const interaction = saveGuestTicketInteraction(ticket, status);
+      onTicketInteractionChange?.(interaction);
+      return interaction;
+    }
+
+    return fetch("/api/meetings/ticket-interactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticketInstanceId: ticket.id, status }),
+    })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json().catch(() => null)) as {
+          interactions?: TicketInteraction[];
+        } | null;
+      })
+      .then((data) => {
+        const interaction = data?.interactions?.find(
+          (row) => row.ticket.id === ticket.id,
+        );
+        if (interaction) onTicketInteractionChange?.(interaction);
+        return interaction ?? null;
+      })
+      .catch(() => null);
+  };
 
   const today = todayInKst();
   const applicationByDate = new Map(
@@ -1124,11 +1176,21 @@ function MeetingDateApplicationFlow({
       return;
     }
 
-    const recommendedTicket = availableTickets.find(
+    const bakingTicket = availableTickets.find(
       (ticket) =>
         ticket.date === initialRecommendedTicketDate &&
         ticket.title.trim() === initialRecommendedTicketTitle,
     );
+    const perfumeWorkshopTicket = shouldRecommendPerfumeWorkshop(
+      profileCompleted,
+      profileGender,
+      profileBirthYear,
+    )
+      ? availableTickets.find((ticket) =>
+          ticket.title.includes(personalizedMaleRecommendedTicketTitle),
+        )
+      : undefined;
+    const recommendedTicket = perfumeWorkshopTicket ?? bakingTicket;
     if (!recommendedTicket) return;
 
     initialRecommendationHandledRef.current = true;
@@ -1149,16 +1211,24 @@ function MeetingDateApplicationFlow({
           personalizedInterestReason || "—",
         ]
       : recommendedTicket.recommendationReasons;
+    const configuredAudience = recommendedTicket.recommendationAudience;
+    const recommendationAudience = {
+      preferredActivities:
+        configuredAudience?.preferredActivities.length
+          ? configuredAudience.preferredActivities
+          : initialRecommendedTicketAudience.preferredActivities,
+      recentInterests: configuredAudience?.recentInterests.length
+        ? configuredAudience.recentInterests
+        : initialRecommendedTicketAudience.recentInterests,
+    };
     const personalizedRecommendedTicket = {
       ...recommendedTicket,
       recommendationReasons,
-      recommendationProfile: profileCompleted
-        ? {
-            preferredActivities,
-            recentInterests,
-          }
-        : undefined,
-      recommendationAudience: initialRecommendedTicketAudience,
+      recommendationProfile: {
+        preferredActivities,
+        recentInterests,
+      },
+      recommendationAudience,
     };
 
     setPurchaseOption("single");
@@ -1183,6 +1253,8 @@ function MeetingDateApplicationFlow({
     personalizedInterestReason,
     preferredActivities,
     profileCompleted,
+    profileGender,
+    profileBirthYear,
     recentInterests,
   ]);
 
@@ -1199,6 +1271,7 @@ function MeetingDateApplicationFlow({
 
   const openInitialTicketDetail = (ticket: GatheringTicket) => {
     completeInitialTicketRecommendation();
+    recordTicketInteraction(ticket, "open");
     setScreen("ticket");
     trackEvent("meeting_ticket_initial_recommendation_select", {
       ticket_instance_id: ticket.id,
@@ -1225,8 +1298,15 @@ function MeetingDateApplicationFlow({
 
   const openTicket = (ticket: GatheringTicket) => {
     if (saving) return;
+    recordTicketInteraction(ticket, "open");
     setPurchaseOption("single");
-    setSelectedTicket(ticket);
+    setSelectedTicket({
+      ...ticket,
+      recommendationProfile: {
+        preferredActivities,
+        recentInterests,
+      },
+    });
     setError(null);
     setScreen("ticket");
     trackEvent("meeting_ticket_detail_open", {
@@ -1238,6 +1318,7 @@ function MeetingDateApplicationFlow({
   const acceptTicket = (ticket: GatheringTicket) => {
     if (saving) return;
 
+    recordTicketInteraction(ticket, "yes");
     setPurchaseOption("single");
     setError(null);
 
@@ -1265,6 +1346,7 @@ function MeetingDateApplicationFlow({
     setSelectedTicket(ticket);
     setPurchaseOption("single");
     setError(null);
+    recordTicketInteraction(ticket, "yes");
 
     if (!profileCompleted) {
       setScreen("ticket");
@@ -1296,6 +1378,7 @@ function MeetingDateApplicationFlow({
 
     try {
       if (guestMode) {
+        recordTicketInteraction(ticket, "no");
         rememberGuestDeclinedTicket(ticket.id);
         setAvailableTickets((current) => {
           const next = current.map((item) =>
@@ -1329,6 +1412,8 @@ function MeetingDateApplicationFlow({
       if (!response.ok || !data?.rejected) {
         throw new Error(data?.error ?? "ticket-rejection-save-failed");
       }
+
+      recordTicketInteraction(ticket, "no");
 
       setAvailableTickets((current) => {
         const next = current.map((item) =>
@@ -1518,6 +1603,7 @@ function MeetingDateApplicationFlow({
           date_count: targetDates.length,
         });
         if (ticket) {
+          await recordTicketInteraction(ticket, "payment_pending");
           trackEvent("meeting_ticket_response", {
             ticket_instance_id: ticket.id,
             meeting_date: ticket.date,
@@ -1589,6 +1675,7 @@ function MeetingDateApplicationFlow({
           date_count: targetDates.length,
         });
         if (ticket) {
+          await recordTicketInteraction(ticket, "payment_pending");
           trackEvent("meeting_ticket_response", {
             ticket_instance_id: ticket.id,
             meeting_date: ticket.date,

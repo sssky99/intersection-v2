@@ -99,9 +99,16 @@ export function TicketDetailContent({
   const courseSteps = cleanCourseSteps(ticket.courseSteps);
   const detailSummary = ticket.detailSummary?.trim();
   const recommendationReasons = cleanList(ticket.recommendationReasons);
+  const hasRecommendationAudience = Boolean(
+    ticket.recommendationProfile &&
+      ticket.recommendationAudience &&
+      (ticket.recommendationAudience.preferredActivities.length > 0 ||
+        ticket.recommendationAudience.recentInterests.length > 0),
+  );
   const hasSummary = Boolean(visibleSections.has("summary") && detailSummary);
   const hasRecommendation = Boolean(
-    visibleSections.has("recommendation") && recommendationReasons.length > 0,
+    visibleSections.has("recommendation") &&
+      (recommendationReasons.length > 0 || hasRecommendationAudience),
   );
   const hasCourse = Boolean(
     visibleSections.has("course") && courseSteps.length >= 2,
@@ -128,7 +135,11 @@ export function TicketDetailContent({
     <div className={cn("mt-5", className)}>
       {hasRecommendation && (
         <TicketDetailSection
-          title="추천 이유"
+          title={
+            recommendationReasons.length > 0
+              ? "추천 이유"
+              : "이런 분들이 신청했어요."
+          }
           startWithBorder={startWithBorder}
           hideTopBorder
         >
@@ -456,28 +467,34 @@ function RecommendationReasons({
   const preferredActivityAudience = matchedAudienceValues(
     audience?.preferredActivities,
     profile?.preferredActivities,
+    items.length > 0,
   );
   const recentInterestAudience = matchedAudienceValues(
     audience?.recentInterests,
     profile?.recentInterests,
+    items.length > 0,
   );
 
   return (
     <div className="space-y-2.5 rounded-3xl border border-black/8 bg-white p-3 shadow-[0_10px_26px_rgba(24,24,20,0.045)]">
-      <div className="rounded-[18px] border border-black/[0.06] bg-white px-4 py-3.5">
-        <p className="text-[11px] font-black tracking-[-0.015em] text-black/38">
-          비슷한 나이대
-        </p>
-        <p className="mt-1 break-keep text-[14px] font-bold leading-6 tracking-[-0.025em] text-black/70">
-          {items[0] ?? "—"}
-        </p>
-      </div>
+      {items.length > 0 && (
+        <div className="rounded-[18px] border border-black/[0.06] bg-white px-4 py-3.5">
+          <p className="text-[11px] font-black tracking-[-0.015em] text-black/38">
+            비슷한 나이대
+          </p>
+          <p className="mt-1 break-keep text-[14px] font-bold leading-6 tracking-[-0.025em] text-black/70">
+            {items[0] ?? "—"}
+          </p>
+        </div>
+      )}
 
       {profile && audience ? (
         <div>
-          <p className="px-1 pb-3 text-[12px] font-black tracking-[-0.025em] text-black/62">
-            이런 분들이 주로 신청했어요.
-          </p>
+          {items.length > 0 && (
+            <p className="px-1 pb-3 text-[12px] font-black tracking-[-0.025em] text-black/62">
+              이런 분들이 주로 신청했어요.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-2.5">
           <SelectionColumn
             label="선호 활동"
@@ -519,12 +536,13 @@ function RecommendationReasons({
 function matchedAudienceValues(
   ticketValues: string[] | undefined,
   userValues: string[] | undefined,
+  ensureMatch: boolean,
 ) {
   const values = Array.from(new Set(ticketValues ?? [])).slice(0, 3);
   const userValueSet = new Set(userValues ?? []);
   let matchedValues = values.filter((value) => userValueSet.has(value));
 
-  if (matchedValues.length === 0 && userValues?.[0]) {
+  if (ensureMatch && matchedValues.length === 0 && userValues?.[0]) {
     const userFirstValue = userValues[0];
     const replacementIndex = Math.min(2, values.length);
 

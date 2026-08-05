@@ -20,6 +20,7 @@ const funnelEvents = [
   "basic_info_mbti_view",
   "basic_info_photo_view",
   "basic_info_complete",
+  "profile_complete",
   "profile_generated",
   "conversation_result_view",
   "recommendation_view",
@@ -68,6 +69,13 @@ type ProfileNameRow = {
   user_id: string;
   name: string | null;
 };
+type CompletedProfileRow = ProfileNameRow & {
+  phone: string | null;
+  profile_completed: boolean | null;
+  questions_completed: boolean | null;
+  basic_info_completed_at: string | null;
+  profile_completed_at: string | null;
+};
 type IdentityLookup = {
   anonymousProfileIds: Map<string, string>;
   profileNames: Map<string, string>;
@@ -77,6 +85,8 @@ const eventSelect =
   "id,anonymous_session_id,profile_id,application_id,event_name,path,referrer,user_agent,metadata,created_at";
 const detailRowsLimit = 2000;
 const maxDetailAnonymousIds = 50;
+const summaryPageSize = 1000;
+const maxSummaryRows = 100000;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -198,6 +208,27 @@ function addTimelineRows(
     rowMap.set(row.id, row);
     if (row.anonymous_session_id) anonymousSessionIds.add(row.anonymous_session_id);
   }
+}
+
+async function fetchSummaryRows(start: string) {
+  const supabase = createAdminClient();
+  const rows: UserEventRow[] = [];
+
+  for (let from = 0; from < maxSummaryRows; from += summaryPageSize) {
+    const { data, error } = await supabase
+      .from("user_events")
+      .select(eventSelect)
+      .gte("created_at", start)
+      .order("created_at", { ascending: false })
+      .range(from, from + summaryPageSize - 1)
+      .returns<UserEventRow[]>();
+
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < summaryPageSize) break;
+  }
+
+  return rows;
 }
 
 async function fetchUserTimeline({
@@ -380,20 +411,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const countResults = await Promise.all(
-      funnelEvents.map(async (eventName) => {
-        const { count, error } = await supabase
-          .from("user_events")
-          .select("id", { count: "exact", head: true })
-          .eq("event_name", eventName)
-          .gte("created_at", start);
-        if (error) throw error;
-        return { eventName, count: count ?? 0 };
-      }),
-    );
-
-    const [{ data: logData, error: logError }, { data: summaryData, error: summaryError }] =
-      await Promise.all([
+    const [{ data: logData, error: logError }, summaryData] = await Promise.all([
         supabase
           .from("user_events")
           .select(eventSelect)
@@ -401,17 +419,53 @@ export async function GET(request: NextRequest) {
           .order("created_at", { ascending: false })
           .limit(200)
           .returns<UserEventRow[]>(),
-        supabase
-          .from("user_events")
-          .select(eventSelect)
-          .gte("created_at", start)
-          .order("created_at", { ascending: false })
-          .limit(5000)
-          .returns<UserEventRow[]>(),
+        fetchSummaryRows(start),
       ]);
     if (logError) throw logError;
-    if (summaryError) throw summaryError;
-    const lookup = await identityLookup([...(logData ?? []), ...(summaryData ?? [])]);
+    const lookup = await identityLookup([...(logData ?? []), ...summaryData]);
+
+    const uniqueUsersByEvent = new Map<string, Set<string>>();
+    for (const row of summaryData) {
+      const users = uniqueUsersByEvent.get(row.event_name) ?? new Set<string>();
+      users.add(userKey(row, lookup));
+      uniqueUsersByEvent.set(row.event_name, users);
+    }
+
+    const { data: completedProfiles, error: completedProfilesError } = await supabase
+      .from("profiles")
+      .select(
+        "user_id,name,phone,profile_completed,questions_completed,basic_info_completed_at,profile_completed_at",
+      )
+      .or(`basic_info_completed_at.gte.${start},profile_completed_at.gte.${start}`)
+      .returns<CompletedProfileRow[]>();
+    if (completedProfilesError) throw completedProfilesError;
+
+    const actualMembers = (completedProfiles ?? []).filter(
+      (profile) =>
+        profile.profile_completed &&
+        Boolean(profile.name?.trim()) &&
+        Boolean(profile.phone?.trim()),
+    );
+    const basicInfoCount = actualMembers.filter(
+      (profile) =>
+        profile.basic_info_completed_at && profile.basic_info_completed_at >= start,
+    ).length;
+    const completedProfileCount = actualMembers.filter(
+      (profile) =>
+        profile.questions_completed &&
+        profile.profile_completed_at &&
+        profile.profile_completed_at >= start,
+    ).length;
+
+    const countResults = funnelEvents.map((eventName) => ({
+      eventName,
+      count:
+        eventName === "basic_info_complete"
+          ? basicInfoCount
+          : eventName === "profile_complete"
+            ? completedProfileCount
+            : uniqueUsersByEvent.get(eventName)?.size ?? 0,
+    }));
 
     const countByEventName = new Map<string, number>(
       countResults.map((item) => [item.eventName, item.count]),
@@ -438,7 +492,7 @@ export async function GET(request: NextRequest) {
       startedAt: start,
       funnel,
       logs: (logData ?? []).map((row) => normalizeEvent(row, lookup)),
-      userSummaries: userSummaries(summaryData ?? [], lookup),
+      userSummaries: userSummaries(summaryData, lookup),
       tableMissing: false,
     });
   } catch (error) {

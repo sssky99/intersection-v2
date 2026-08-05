@@ -45,6 +45,8 @@ type PublicTicketTemplateRow = {
   mood_tags: string[] | null;
   activity_type: string | null;
   recommendation_copy: string | null;
+  recommendation_preferred_activities: string[] | null;
+  recommendation_recent_interests: string[] | null;
   default_region: string | null;
   default_time: string | null;
   atmosphere_gender_mood: string | null;
@@ -91,6 +93,8 @@ const publicTicketTemplateSelect = [
   "mood_tags",
   "activity_type",
   "recommendation_copy",
+  "recommendation_preferred_activities",
+  "recommendation_recent_interests",
   "default_region",
   "default_time",
   "atmosphere_gender_mood",
@@ -171,6 +175,11 @@ function toPublicPreviewTicket(
       instance.max_participant_count ?? MEETING_MAX_PARTICIPANT_COUNT,
     peopleHint: template.recommendation_copy ?? subtitle,
     reason: template.recommendation_copy ?? subtitle,
+    recommendationAudience: {
+      preferredActivities:
+        template.recommendation_preferred_activities ?? [],
+      recentInterests: template.recommendation_recent_interests ?? [],
+    },
     detailSummary: template.detail_summary ?? subtitle,
     detailActivities: template.detail_activities ?? [],
     detailFlow: template.detail_flow ?? [],
@@ -425,6 +434,33 @@ export async function getRejectedMeetingTickets({
 
   const tickets = await previewTicketsFromInstances(instances ?? []);
   return tickets.map((ticket) => ({ ...ticket, rejected: true }));
+}
+
+export async function getMeetingTicketsByInstanceIds({
+  instanceIds,
+  includeTestOnly = false,
+}: {
+  instanceIds: string[];
+  includeTestOnly?: boolean;
+}): Promise<GatheringTicket[]> {
+  const ids = unique(instanceIds);
+  if (ids.length === 0) return [];
+
+  const supabase = createAdminClient();
+  const visibilities = includeTestOnly
+    ? ["public", "test_only"]
+    : ["public"];
+  const { data: instances, error } = await supabase
+    .from("ticket_instances")
+    .select(publicTicketInstanceSelect)
+    .in("id", ids)
+    .in("visibility", visibilities)
+    .order("event_date", { ascending: true, nullsFirst: false })
+    .order("event_time", { ascending: true, nullsFirst: false })
+    .returns<PublicTicketInstanceRow[]>();
+  if (error) throw error;
+
+  return previewTicketsFromInstances(instances ?? []);
 }
 
 export async function getPublicTicketPreviewDate(): Promise<AvailableDate | null> {

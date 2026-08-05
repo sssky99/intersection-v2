@@ -188,9 +188,10 @@ export async function POST(request: Request) {
   const update = isRegeneration
     ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
     : isPreferenceOnboarding
-      ? { questions_completed: true }
+      ? { questions_completed: true, questions_completed_at: new Date().toISOString() }
     : {
         questions_completed: true,
+        questions_completed_at: new Date().toISOString(),
         conversation_result_code: resultCode,
         conversation_result_version: conversationResultVersion,
         conversation_result_calculated_at: new Date().toISOString(),

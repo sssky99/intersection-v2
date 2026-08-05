@@ -561,6 +561,52 @@ export async function PATCH(request: NextRequest) {
         .eq("id", dateApplicationId);
       if (updateError) throw updateError;
 
+      const paymentConfirmed =
+        payload.deposit_status === "confirmed" ||
+        (payload.deposit_status === undefined &&
+          current.deposit_status === "confirmed");
+      if (paymentConfirmed && nextInstanceId) {
+        const { data: confirmedInstance, error: confirmedInstanceError } =
+          await supabase
+            .from("ticket_instances")
+            .select("id,template_id")
+            .eq("id", nextInstanceId)
+            .single<{ id: string; template_id: string }>();
+        if (confirmedInstanceError) throw confirmedInstanceError;
+
+        const { data: existingInteraction, error: existingInteractionError } =
+          await supabase
+            .from("ticket_user_interactions")
+            .select("opened_at,responded_at,payment_started_at")
+            .eq("user_id", current.user_id)
+            .eq("ticket_instance_id", nextInstanceId)
+            .maybeSingle<{
+              opened_at: string | null;
+              responded_at: string | null;
+              payment_started_at: string | null;
+            }>();
+        if (existingInteractionError) throw existingInteractionError;
+
+        const { error: interactionError } = await supabase
+          .from("ticket_user_interactions")
+          .upsert(
+            {
+              user_id: current.user_id,
+              ticket_instance_id: confirmedInstance.id,
+              ticket_template_id: confirmedInstance.template_id,
+              status: "payment_confirmed",
+              opened_at: existingInteraction?.opened_at ?? now,
+              responded_at: existingInteraction?.responded_at ?? now,
+              payment_started_at:
+                existingInteraction?.payment_started_at ?? now,
+              payment_confirmed_at: now,
+              updated_at: now,
+            },
+            { onConflict: "user_id,ticket_instance_id" },
+          );
+        if (interactionError) throw interactionError;
+      }
+
       return NextResponse.json(await loadWaitlistData());
     }
 

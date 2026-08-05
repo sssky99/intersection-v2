@@ -16,6 +16,9 @@ export type ProfileRow = {
   browse_seen_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;
+  questions_completed_at?: string | null;
+  basic_info_completed_at?: string | null;
+  profile_completed_at?: string | null;
   profile_experience_version?: string | null;
   is_test_participant: boolean | null;
   public_intro: string | null;

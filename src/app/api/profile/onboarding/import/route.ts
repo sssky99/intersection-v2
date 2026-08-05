@@ -182,6 +182,9 @@ export async function POST(request: Request) {
       photo_url: photoUrl,
       questions_completed: true,
       profile_completed: true,
+      questions_completed_at: new Date().toISOString(),
+      basic_info_completed_at: new Date().toISOString(),
+      profile_completed_at: new Date().toISOString(),
       ...(isPreferenceOnboarding
         ? { public_emoji: assignedProfileEmoji(user.id) }
         : {}),

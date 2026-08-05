@@ -32,6 +32,7 @@ const allowedEventNames = new Set([
   "basic_info_mbti_view",
   "basic_info_photo_view",
   "basic_info_complete",
+  "profile_complete",
   "profile_generated",
   "conversation_result_view",
   "recommendation_view",

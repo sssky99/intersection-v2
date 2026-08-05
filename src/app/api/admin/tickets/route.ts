@@ -39,6 +39,11 @@ import {
   inferTicketCategory,
   normalizeTicketCategory,
 } from "@/types/ticketCategory";
+import {
+  activityValues,
+  interestValues,
+  normalizeRecommendationAudienceValues,
+} from "@/data/recommendationAudience";
 
 export const dynamic = "force-dynamic";
 
@@ -134,6 +139,8 @@ const templateSelect = [
   "mood_tags",
   "activity_type",
   "recommendation_copy",
+  "recommendation_preferred_activities",
+  "recommendation_recent_interests",
   "default_region",
   "default_time",
   "atmosphere_gender_mood",
@@ -475,6 +482,15 @@ function templatePayload(body: Record<string, unknown>) {
       mainCourseStep?.activityType ?? body.activityType,
     ),
     recommendation_copy: text(body.recommendationCopy),
+    recommendation_preferred_activities:
+      normalizeRecommendationAudienceValues(
+        body.recommendationPreferredActivities,
+        activityValues,
+      ),
+    recommendation_recent_interests: normalizeRecommendationAudienceValues(
+      body.recommendationRecentInterests,
+      interestValues,
+    ),
     default_region: text(body.defaultRegion),
     default_time: timeText(body.defaultTime),
     atmosphere_gender_mood: atmosphereGenderMood(body.atmosphereGenderMood),
@@ -834,6 +850,10 @@ export async function POST(request: NextRequest) {
             shortDescription: sourceTemplate.short_description,
           }),
           recommendation_copy: sourceTemplate.recommendation_copy,
+          recommendation_preferred_activities:
+            sourceTemplate.recommendation_preferred_activities,
+          recommendation_recent_interests:
+            sourceTemplate.recommendation_recent_interests,
           default_region: sourceTemplate.default_region,
           default_time: sourceTemplate.default_time,
           atmosphere_gender_mood: sourceTemplate.atmosphere_gender_mood,

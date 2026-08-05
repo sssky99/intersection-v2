@@ -325,6 +325,9 @@ export function BasicInfoForm({
     trackEvent("basic_info_complete", {
       mode: "onboarding",
     });
+    trackEvent("profile_complete", {
+      mode: "onboarding",
+    });
     router.replace(returnPath);
     router.refresh();
   };

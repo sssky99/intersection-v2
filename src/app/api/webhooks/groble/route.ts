@@ -471,6 +471,46 @@ async function processMembershipPayment({
     .eq("user_id", match.userId);
   if (intentUpdateError) throw intentUpdateError;
 
+  const { data: pendingTicketInteraction, error: pendingTicketInteractionError } =
+    await admin
+      .from("ticket_user_interactions")
+      .select(
+        "ticket_instance_id,ticket_template_id,opened_at,responded_at,payment_started_at",
+      )
+      .eq("user_id", match.userId)
+      .eq("status", "payment_pending")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{
+        ticket_instance_id: string;
+        ticket_template_id: string;
+        opened_at: string | null;
+        responded_at: string | null;
+        payment_started_at: string | null;
+      }>();
+  if (pendingTicketInteractionError) throw pendingTicketInteractionError;
+
+  if (pendingTicketInteraction) {
+    const { error: interactionError } = await admin
+      .from("ticket_user_interactions")
+      .upsert(
+        {
+          user_id: match.userId,
+          ticket_instance_id: pendingTicketInteraction.ticket_instance_id,
+          ticket_template_id: pendingTicketInteraction.ticket_template_id,
+          status: "payment_confirmed",
+          opened_at: pendingTicketInteraction.opened_at ?? paidAt,
+          responded_at: pendingTicketInteraction.responded_at ?? paidAt,
+          payment_started_at:
+            pendingTicketInteraction.payment_started_at ?? paidAt,
+          payment_confirmed_at: paidAt,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,ticket_instance_id" },
+      );
+    if (interactionError) throw interactionError;
+  }
+
   await syncProfileNameFromPayment({
     userId: match.userId,
     buyerName: details.buyerName,
@@ -636,6 +676,74 @@ async function processPaymentCompleted(
     .eq("application_group_id", match.groupId)
     .eq("user_id", match.userId);
   if (updateError) throw updateError;
+
+  const { data: paidApplications, error: paidApplicationsError } = await admin
+    .from("meeting_date_applications")
+    .select("assigned_ticket_instance_id")
+    .eq("application_group_id", match.groupId)
+    .eq("user_id", match.userId)
+    .not("assigned_ticket_instance_id", "is", null)
+    .returns<Array<{ assigned_ticket_instance_id: string | null }>>();
+  if (paidApplicationsError) throw paidApplicationsError;
+
+  const paidTicketIds = Array.from(
+    new Set(
+      (paidApplications ?? [])
+        .map((row) => row.assigned_ticket_instance_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  if (paidTicketIds.length > 0) {
+    const { data: paidTicketInstances, error: paidTicketInstancesError } =
+      await admin
+        .from("ticket_instances")
+        .select("id,template_id")
+        .in("id", paidTicketIds)
+        .returns<Array<{ id: string; template_id: string }>>();
+    if (paidTicketInstancesError) throw paidTicketInstancesError;
+
+    const { data: existingInteractions, error: existingInteractionsError } =
+      await admin
+        .from("ticket_user_interactions")
+        .select(
+          "ticket_instance_id,opened_at,responded_at,payment_started_at",
+        )
+        .eq("user_id", match.userId)
+        .in("ticket_instance_id", paidTicketIds)
+        .returns<
+          Array<{
+            ticket_instance_id: string;
+            opened_at: string | null;
+            responded_at: string | null;
+            payment_started_at: string | null;
+          }>
+        >();
+    if (existingInteractionsError) throw existingInteractionsError;
+    const existingInteractionMap = new Map(
+      (existingInteractions ?? []).map((row) => [row.ticket_instance_id, row]),
+    );
+
+    const { error: interactionError } = await admin
+      .from("ticket_user_interactions")
+      .upsert(
+        (paidTicketInstances ?? []).map((ticket) => {
+          const existing = existingInteractionMap.get(ticket.id);
+          return {
+            user_id: match.userId,
+            ticket_instance_id: ticket.id,
+            ticket_template_id: ticket.template_id,
+            status: "payment_confirmed",
+            opened_at: existing?.opened_at ?? paidAt,
+            responded_at: existing?.responded_at ?? paidAt,
+            payment_started_at: existing?.payment_started_at ?? paidAt,
+            payment_confirmed_at: paidAt,
+            updated_at: new Date().toISOString(),
+          };
+        }),
+        { onConflict: "user_id,ticket_instance_id" },
+      );
+    if (interactionError) throw interactionError;
+  }
 
   await syncProfileNameFromPayment({
     userId: match.userId,

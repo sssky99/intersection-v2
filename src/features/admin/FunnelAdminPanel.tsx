@@ -39,21 +39,18 @@ type FunnelResponse = FunnelAggregate & {
 };
 
 const summaryStageKeys = [
-  "landing",
   "question_start",
   "questions_complete",
-  "conversation_result_view",
-  "application_submit_click",
-  "payment_page_open",
-  "payment_completed",
+  "basic_info_complete",
+  "profile_complete",
 ] as const;
 
 const trendSeries = [
   { key: "landing", label: "방문", color: "#111111" },
+  { key: "question_start", label: "질문 시작", color: "#9b8f80" },
   { key: "questions_complete", label: "질문 완료", color: "#7eb3c7" },
-  { key: "application_submit_click", label: "신청 클릭", color: "#d88a5b" },
-  { key: "payment_page_open", label: "결제 이동", color: "#7d9b76" },
-  { key: "payment_completed", label: "결제 완료", color: "#5b7f65" },
+  { key: "basic_info_complete", label: "기본정보 입력", color: "#d88a5b" },
+  { key: "profile_complete", label: "프로필 완성", color: "#5b7f65" },
 ] as const;
 
 function cn(...values: Array<string | false | null | undefined>) {

@@ -72,6 +72,7 @@ const eventLabels: Record<string, string> = {
   basic_info_mbti_view: "MBTI 선택 도달",
   basic_info_photo_view: "사진 등록 도달",
   basic_info_complete: "기본정보 완료",
+  profile_complete: "프로필 완성",
   profile_generated: "프로필 생성",
   conversation_result_view: "대화 타입 결과 확인",
   recommendation_view: "추천 보기",
@@ -233,7 +234,7 @@ export function VisitorAdminPanel() {
           <div>
             <h2 className="text-lg font-bold">방문자 관리</h2>
             <p className="mt-1 text-xs text-black/45">
-              Supabase user_events 기준 · 표시 로그 {totals.eventTotal.toLocaleString()}건 · 진행 요약{" "}
+              단계별 고유 사용자 기준 · 기본정보·프로필 완료는 관리자 명단과 대조 · 표시 로그 {totals.eventTotal.toLocaleString()}건 · 진행 요약{" "}
               {totals.userTotal.toLocaleString()}명
             </p>
             {data?.tableMissing && (
@@ -312,6 +313,9 @@ export function VisitorAdminPanel() {
         <section className="mt-5 rounded-2xl border border-black/10 bg-white">
           <div className="border-b border-black/10 px-4 py-3">
             <h3 className="text-sm font-bold">사용자별 진행 상태</h3>
+            <p className="mt-1 text-[11px] font-semibold text-black/40">
+              로그인 전 이탈자는 익명 방문으로, 완료자는 관리자 명단의 실제 이름으로 연결해 표시해요.
+            </p>
           </div>
           <div className="max-h-[320px] overflow-auto">
             <table className="min-w-[880px] w-full border-separate border-spacing-0 text-left text-sm">

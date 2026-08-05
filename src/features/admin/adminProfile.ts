@@ -33,6 +33,9 @@ export type AdminProfile = {
   created_at: string | null;
   profile_completed: boolean | null;
   questions_completed: boolean | null;
+  questions_completed_at?: string | null;
+  basic_info_completed_at?: string | null;
+  profile_completed_at?: string | null;
   profile_experience_version?: string | null;
   is_test_participant?: boolean | null;
   membership_status?: MembershipStatus | null;

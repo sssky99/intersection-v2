@@ -167,6 +167,23 @@ export type UserTicketsResponse = {
   nextOffset?: number | null;
 };
 
+export type TicketInteractionStatus =
+  | "open"
+  | "no"
+  | "yes"
+  | "payment_pending"
+  | "payment_confirmed";
+
+export type TicketInteraction = {
+  ticket: GatheringTicket;
+  status: TicketInteractionStatus;
+  openedAt: string | null;
+  respondedAt: string | null;
+  paymentStartedAt: string | null;
+  paymentConfirmedAt: string | null;
+  updatedAt: string;
+};
+
 export type WaitlistRegistration = {
   ticket: GatheringTicket;
   status: "waitlisted" | "payment_pending";

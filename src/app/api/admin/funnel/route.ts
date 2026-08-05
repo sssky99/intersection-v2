@@ -16,6 +16,15 @@ type UserEventRow = {
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
+type ProfileFunnelRow = {
+  user_id: string;
+  name: string | null;
+  phone: string | null;
+  questions_completed: boolean | null;
+  profile_completed: boolean | null;
+  basic_info_completed_at: string | null;
+  profile_completed_at: string | null;
+};
 type FunnelStage = {
   key: string;
   label: string;
@@ -42,6 +51,12 @@ const funnelStages: FunnelStage[] = [
   { key: "basic_info_complete", label: "기본정보 완료", eventNames: ["basic_info_complete"] },
   { key: "kakao_login_click", label: "카카오 로그인 클릭", eventNames: ["kakao_login_click"] },
   { key: "kakao_auth_return", label: "카카오 인증 복귀", eventNames: ["kakao_auth_return"] },
+  {
+    key: "profile_complete",
+    label: "프로필 완성",
+    eventNames: ["profile_complete"],
+    previousKey: "basic_info_complete",
+  },
   {
     key: "conversation_result_view",
     label: "대화 타입 결과 확인",
@@ -221,6 +236,75 @@ async function fetchFunnelRows(start: string, end: string) {
   return rows;
 }
 
+async function fetchCompletedProfiles(start: string, end: string) {
+  const supabase = createAdminClient();
+  const rows: ProfileFunnelRow[] = [];
+
+  for (let from = 0; from < maxFunnelRows; from += pageSize) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "user_id,name,phone,questions_completed,profile_completed,basic_info_completed_at,profile_completed_at",
+      )
+      .or(`basic_info_completed_at.gte.${start},profile_completed_at.gte.${start}`)
+      .order("user_id", { ascending: true })
+      .range(from, from + pageSize - 1)
+      .returns<ProfileFunnelRow[]>();
+
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+
+  const endTime = new Date(end).getTime();
+  return rows.filter((profile) =>
+    [profile.basic_info_completed_at, profile.profile_completed_at].some(
+      (value) => value && new Date(value).getTime() < endTime,
+    ),
+  );
+}
+
+function profileStageRows(profiles: ProfileFunnelRow[]) {
+  const rows: UserEventRow[] = [];
+
+  profiles.forEach((profile) => {
+    const hasBasicInfo = Boolean(
+      profile.profile_completed && profile.name?.trim() && profile.phone?.trim(),
+    );
+    if (hasBasicInfo && profile.basic_info_completed_at) {
+      rows.push({
+        id: `profile-basic:${profile.user_id}`,
+        anonymous_session_id: null,
+        profile_id: profile.user_id,
+        event_name: "basic_info_complete",
+        path: null,
+        referrer: null,
+        metadata: { source: "profiles" },
+        created_at: profile.basic_info_completed_at,
+      });
+    }
+
+    if (
+      hasBasicInfo &&
+      profile.questions_completed &&
+      profile.profile_completed_at
+    ) {
+      rows.push({
+        id: `profile-complete:${profile.user_id}`,
+        anonymous_session_id: null,
+        profile_id: profile.user_id,
+        event_name: "profile_complete",
+        path: null,
+        referrer: null,
+        metadata: { source: "profiles" },
+        created_at: profile.profile_completed_at,
+      });
+    }
+  });
+
+  return rows;
+}
+
 function aggregateFunnel(
   allRows: UserEventRow[],
   range: WindowRange,
@@ -353,7 +437,11 @@ export async function GET(request: NextRequest) {
   const fetchStart = compare ? comparisonRange.start : range.start;
 
   try {
-    const rows = await fetchFunnelRows(fetchStart.toISOString(), range.end.toISOString());
+    const [eventRows, completedProfiles] = await Promise.all([
+      fetchFunnelRows(fetchStart.toISOString(), range.end.toISOString()),
+      fetchCompletedProfiles(fetchStart.toISOString(), range.end.toISOString()),
+    ]);
+    const rows = [...eventRows, ...profileStageRows(completedProfiles)];
     const current = aggregateFunnel(rows, range, basis, source);
     const comparison = compare
       ? {
@@ -368,7 +456,8 @@ export async function GET(request: NextRequest) {
       source,
       startedAt: range.start.toISOString(),
       endedAt: range.end.toISOString(),
-      rowsScanned: rows.length,
+      rowsScanned: eventRows.length,
+      registeredProfilesScanned: completedProfiles.length,
       ...current,
       comparison,
       tableMissing: false,

@@ -30,6 +30,9 @@ const baseProfileFields = [
   "created_at",
   "profile_completed",
   "questions_completed",
+  "questions_completed_at",
+  "basic_info_completed_at",
+  "profile_completed_at",
   "profile_experience_version",
 ];
 

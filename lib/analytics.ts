@@ -19,6 +19,7 @@ const supabaseEventNameAliases: Record<string, string> = {
 const clarityUpgradeEvents = new Set([
   "questions_complete",
   "basic_info_complete",
+  "profile_complete",
   "profile_intro_complete",
   "application_created",
 ]);
@@ -26,7 +27,8 @@ const clarityFunnelStatuses: Record<string, string> = {
   question_start: "question_started",
   questions_complete: "questions_completed",
   basic_info_start: "basic_info_started",
-  basic_info_complete: "profile_completed",
+  basic_info_complete: "basic_info_completed",
+  profile_complete: "profile_completed",
   profile_intro_complete: "profile_generated",
   recommendation_view: "recommendation_viewed",
   application_created: "application_created",

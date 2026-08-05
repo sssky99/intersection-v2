@@ -91,6 +91,8 @@ export type AdminTicketTemplate = {
   mood_tags: string[];
   activity_type: string | null;
   recommendation_copy: string | null;
+  recommendation_preferred_activities: string[];
+  recommendation_recent_interests: string[];
   default_region: string | null;
   default_time: string | null;
   atmosphere_gender_mood: MeetingAtmosphereGenderMood | null;

@@ -93,12 +93,18 @@ import {
 } from "@/lib/ticketStageCopy";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
+import {
+  clearGuestTicketInteractions,
+  loadGuestTicketInteractions,
+  ticketInteractionStatusLabel,
+} from "@/lib/ticketInteractions";
 import type { ProfileRow } from "@/types/profile";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
+  TicketInteraction,
   TicketPlace,
   TicketProgressStep,
   UserTicket,
@@ -550,6 +556,9 @@ export function AppHome({
   const [availableMeetingTickets, setAvailableMeetingTickets] = useState<
     GatheringTicket[]
   >([]);
+  const [ticketInteractions, setTicketInteractions] = useState<
+    TicketInteraction[]
+  >([]);
   const [ticketAcceptRequest, setTicketAcceptRequest] = useState<{
     id: number;
     ticketId: string;
@@ -773,6 +782,55 @@ export function AppHome({
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+    const guestInteractions = loadGuestTicketInteractions();
+
+    if (guestMode) {
+      setTicketInteractions(guestInteractions);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const load = async () => {
+      if (guestInteractions.length > 0) {
+        const importResponse = await fetch("/api/meetings/ticket-interactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            interactions: guestInteractions.map((interaction) => ({
+              ticketInstanceId: interaction.ticket.id,
+              status: interaction.status,
+              openedAt: interaction.openedAt,
+              respondedAt: interaction.respondedAt,
+              paymentStartedAt: interaction.paymentStartedAt,
+              paymentConfirmedAt: interaction.paymentConfirmedAt,
+            })),
+          }),
+        }).catch(() => null);
+        if (importResponse?.ok) clearGuestTicketInteractions();
+      }
+
+      const response = await fetch("/api/meetings/ticket-interactions", {
+        cache: "no-store",
+      }).catch(() => null);
+      const data = response
+        ? ((await response.json().catch(() => null)) as {
+            interactions?: TicketInteraction[];
+          } | null)
+        : null;
+      if (!cancelled && response?.ok && data?.interactions) {
+        setTicketInteractions(data.interactions);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [guestMode, userId]);
+
+  useEffect(() => {
     if (guestMode) return;
     const refreshTickets = () => {
       void loadUserTicketsProgressively({
@@ -825,6 +883,13 @@ export function AppHome({
     setTicketAcceptRequest({ id: Date.now(), ticketId: ticket.id });
     switchTab("recommend");
   };
+
+  const applyTicketInteraction = useCallback((interaction: TicketInteraction) => {
+    setTicketInteractions((current) => [
+      ...current.filter((row) => row.ticket.id !== interaction.ticket.id),
+      interaction,
+    ]);
+  }, []);
 
   const startProfileRegeneration = async () => {
     if (profileRegenerating) return;
@@ -1018,6 +1083,7 @@ export function AppHome({
         >
           <TicketListTab
             tickets={waitlistedTickets}
+            interactions={ticketInteractions}
             dateApplications={dateApplications}
             availableTickets={availableMeetingTickets}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
@@ -1035,6 +1101,7 @@ export function AppHome({
             userId={userId}
             profileCompleted={Boolean(currentProfile.profile_completed)}
             profileName={currentProfile.name ?? currentProfile.nickname}
+            profileGender={currentProfile.gender}
             profileBirthYear={currentProfile.birth_year}
             profileMbti={currentProfile.mbti}
             preferredActivities={
@@ -1052,6 +1119,7 @@ export function AppHome({
             onOpenParticipationRecord={openParticipationRecord}
             onFocusModeChange={setRecommendationFocusMode}
             onAvailableTicketsChange={setAvailableMeetingTickets}
+            onTicketInteractionChange={applyTicketInteraction}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
@@ -1454,7 +1522,12 @@ type TicketListItem =
       application: MeetingDateApplication;
       ticket: GatheringTicket | null;
     }
-  | { kind: "stored-ticket"; id: string; userTicket: UserTicket };
+  | { kind: "stored-ticket"; id: string; userTicket: UserTicket }
+  | {
+      kind: "interaction-ticket";
+      id: string;
+      interaction: TicketInteraction;
+    };
 
 function isVisibleMysteryApplication(
   application: MeetingDateApplication,
@@ -1481,6 +1554,7 @@ function isVisibleMysteryApplication(
 
 function TicketListTab({
   tickets,
+  interactions,
   dateApplications,
   availableTickets,
   totalTicketCount,
@@ -1490,6 +1564,7 @@ function TicketListTab({
   onFocusModeChange,
 }: {
   tickets: UserTicket[];
+  interactions: TicketInteraction[];
   dateApplications: MeetingDateApplication[];
   availableTickets: GatheringTicket[];
   totalTicketCount: number;
@@ -1545,9 +1620,17 @@ function TicketListTab({
     () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
     [availableTickets],
   );
-  const ticketItems = useMemo<TicketListItem[]>(
-    () => [
-      ...mysteryApplications.map((application) => ({
+  const ticketItems = useMemo<TicketListItem[]>(() => {
+    const storedTicketIds = new Set(
+      tickets.map((userTicket) => userTicket.ticket.id),
+    );
+    const applicationTicketIds = new Set(
+      mysteryApplications
+        .map((application) => application.assignedTicketInstanceId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const items: TicketListItem[] = [
+      ...mysteryApplications.map((application): TicketListItem => ({
         kind: "date-application" as const,
         id: `date-application:${application.id}`,
         application,
@@ -1559,14 +1642,45 @@ function TicketListTab({
               ) ?? null
             : null,
       })),
-      ...tickets.map((userTicket) => ({
+      ...tickets.map((userTicket): TicketListItem => ({
         kind: "stored-ticket" as const,
         id: `stored-ticket:${userTicket.id}`,
         userTicket,
       })),
-    ],
-    [availableTicketById, availableTickets, mysteryApplications, tickets],
-  );
+      ...interactions
+        .filter(
+          (interaction) =>
+            !storedTicketIds.has(interaction.ticket.id) &&
+            !applicationTicketIds.has(interaction.ticket.id),
+        )
+        .map((interaction): TicketListItem => ({
+          kind: "interaction-ticket",
+          id: `interaction-ticket:${interaction.ticket.id}`,
+          interaction,
+        })),
+    ];
+    return items.sort((left, right) => {
+      const leftDate =
+        left.kind === "stored-ticket"
+          ? left.userTicket.ticket.date
+          : left.kind === "interaction-ticket"
+            ? left.interaction.ticket.date
+            : left.application.meetingDate;
+      const rightDate =
+        right.kind === "stored-ticket"
+          ? right.userTicket.ticket.date
+          : right.kind === "interaction-ticket"
+            ? right.interaction.ticket.date
+            : right.application.meetingDate;
+      return leftDate.localeCompare(rightDate);
+    });
+  }, [
+    availableTicketById,
+    availableTickets,
+    interactions,
+    mysteryApplications,
+    tickets,
+  ]);
   const itemCount = ticketItems.length;
   const carouselItemCount = itemCount + 1;
 
@@ -1752,6 +1866,18 @@ function TicketListTab({
       return;
     }
 
+    if (
+      !dragState.current.moved &&
+      Math.abs(dragDistance) <= 8 &&
+      tappedItem?.kind === "interaction-ticket"
+    ) {
+      setSelectedApplicationTicketDeclined(
+        tappedItem.interaction.status === "no",
+      );
+      setSelectedApplicationTicket(tappedItem.interaction.ticket);
+      return;
+    }
+
     if (dragState.current.moved) {
       window.setTimeout(() => {
         dragState.current.moved = false;
@@ -1920,7 +2046,7 @@ function TicketListTab({
           >
             <header className="shrink-0 px-5 pr-28">
               <p className="text-[13px] font-bold uppercase italic tracking-wide text-black">
-                tickets {totalTicketCount + mysteryApplications.length}
+                tickets {Math.max(totalTicketCount + mysteryApplications.length, itemCount)}
               </p>
             </header>
 
@@ -1980,6 +2106,16 @@ function TicketListTab({
                         <StoredTicketCard
                           userTicket={item.userTicket}
                           onOpen={() => openStoredTicket(item.userTicket)}
+                        />
+                      ) : item.kind === "interaction-ticket" ? (
+                        <InteractionTicketCard
+                          interaction={item.interaction}
+                          onOpen={() => {
+                            setSelectedApplicationTicketDeclined(
+                              item.interaction.status === "no",
+                            );
+                            setSelectedApplicationTicket(item.interaction.ticket);
+                          }}
                         />
                       ) : (
                         item.ticket ? (
@@ -2524,6 +2660,54 @@ function AssignedApplicationTicketCard({
         tags={ticket.moodTags}
         badgeLabel={meetingDateApplicationStatusLabels[application.status]}
         badgeClassName={dateApplicationBadgeClass(application)}
+        remainingSeatCount={ticket.remainingSeatCount}
+        className="shadow-none"
+      />
+    </motion.div>
+  );
+}
+
+function InteractionTicketCard({
+  interaction,
+  onOpen,
+}: {
+  interaction: TicketInteraction;
+  onOpen: () => void;
+}) {
+  const { ticket, status } = interaction;
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-label={`${ticket.title} 자세히 보기`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      whileTap={{ scale: 0.99 }}
+      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+    >
+      <IntersectionTicketCard
+        title={ticket.title}
+        imageUrl={ticket.imageUrl}
+        imageUrls={ticketBackgroundImageUrls(ticket)}
+        date={ticket.date}
+        time={ticket.time}
+        location={`서울\n${ticket.area}`}
+        tags={ticket.moodTags}
+        badgeLabel={ticketInteractionStatusLabel(status)}
+        badgeClassName={
+          status === "payment_confirmed"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
+            : status === "payment_pending"
+              ? "border-amber-200 bg-amber-50 text-amber-700 shadow-none"
+              : status === "no"
+                ? "border-black/10 bg-black/[0.06] text-black/55 shadow-none"
+                : "border-white/25 bg-white/[0.18] text-white"
+        }
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />

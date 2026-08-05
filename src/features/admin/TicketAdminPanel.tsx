@@ -76,6 +76,12 @@ import {
 } from "@/types/ticketCategory";
 import type { MeetingPlace } from "@/types/place";
 import type { Gender } from "@/types/user";
+import {
+  activityLabels,
+  activityValues,
+  interestLabels,
+  interestValues,
+} from "@/data/recommendationAudience";
 
 type TicketData = {
   templates: AdminTicketTemplate[];
@@ -164,6 +170,8 @@ type TicketDraft = {
   moodTags: string;
   activityType: string;
   recommendationCopy: string;
+  recommendationPreferredActivities: string[];
+  recommendationRecentInterests: string[];
   eventDate: string;
   eventTime: string;
   region: string;
@@ -590,6 +598,10 @@ function draftFromTicket(
       }) ??
         ""),
     recommendationCopy: template.recommendation_copy ?? "",
+    recommendationPreferredActivities:
+      template.recommendation_preferred_activities ?? [],
+    recommendationRecentInterests:
+      template.recommendation_recent_interests ?? [],
     eventDate: instance?.event_date ?? "",
     eventTime: firstNormalizedTimeValue(
       instance?.event_time,
@@ -659,6 +671,9 @@ function ticketRequestBody(draft: TicketDraft) {
     moodTags: tags(syncedDraft.moodTags),
     activityType: normalizeTicketCategory(mainCourseStep.activityType),
     recommendationCopy: syncedDraft.recommendationCopy,
+    recommendationPreferredActivities:
+      syncedDraft.recommendationPreferredActivities,
+    recommendationRecentInterests: syncedDraft.recommendationRecentInterests,
     defaultRegion: syncedDraft.region,
     defaultTime: eventTime,
     eventDate: syncedDraft.eventDate,
@@ -756,6 +771,10 @@ function ticketPreview(
     peopleHint:
       syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
     reason: syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
+    recommendationAudience: {
+      preferredActivities: syncedDraft.recommendationPreferredActivities,
+      recentInterests: syncedDraft.recommendationRecentInterests,
+    },
     detailSummary:
       syncedDraft.detailSummary.trim() || shortDescription || undefined,
     detailActivities: prose(syncedDraft.detailActivities),
@@ -1533,6 +1552,27 @@ export function TicketAdminPanel({
                       }
                       onAgeBandChange={(atmosphereAgeBandId) =>
                         setDraft({ ...draft, atmosphereAgeBandId })
+                      }
+                    />
+
+                    <RecommendationAudienceEditor
+                      preferredActivities={
+                        draft.recommendationPreferredActivities
+                      }
+                      recentInterests={draft.recommendationRecentInterests}
+                      disabled={saving}
+                      onPreferredActivitiesChange={
+                        (recommendationPreferredActivities) =>
+                          setDraft({
+                            ...draft,
+                            recommendationPreferredActivities,
+                          })
+                      }
+                      onRecentInterestsChange={(recommendationRecentInterests) =>
+                        setDraft({
+                          ...draft,
+                          recommendationRecentInterests,
+                        })
                       }
                     />
 
@@ -2368,6 +2408,117 @@ function ContentEditor({
         />
       </div>
     </section>
+  );
+}
+
+function RecommendationAudienceEditor({
+  preferredActivities,
+  recentInterests,
+  disabled,
+  onPreferredActivitiesChange,
+  onRecentInterestsChange,
+}: {
+  preferredActivities: string[];
+  recentInterests: string[];
+  disabled: boolean;
+  onPreferredActivitiesChange: (values: string[]) => void;
+  onRecentInterestsChange: (values: string[]) => void;
+}) {
+  const toggle = (
+    values: string[],
+    value: string,
+    onChange: (nextValues: string[]) => void,
+  ) => {
+    if (values.includes(value)) {
+      onChange(values.filter((item) => item !== value));
+      return;
+    }
+    if (values.length >= 3) return;
+    onChange([...values, value]);
+  };
+
+  return (
+    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
+      <div>
+        <h3 className="font-bold">추천 대상 설정</h3>
+        <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+          추천 이유에 표시할 선호 활동과 최근 관심사를 각각 최대 3개까지
+          선택해주세요.
+        </p>
+      </div>
+
+      <RecommendationAudienceChoices
+        title="선호 활동"
+        values={activityValues}
+        labels={activityLabels}
+        selectedValues={preferredActivities}
+        disabled={disabled}
+        onToggle={(value) =>
+          toggle(preferredActivities, value, onPreferredActivitiesChange)
+        }
+      />
+      <RecommendationAudienceChoices
+        title="최근 관심사"
+        values={interestValues}
+        labels={interestLabels}
+        selectedValues={recentInterests}
+        disabled={disabled}
+        onToggle={(value) =>
+          toggle(recentInterests, value, onRecentInterestsChange)
+        }
+      />
+    </section>
+  );
+}
+
+function RecommendationAudienceChoices({
+  title,
+  values,
+  labels,
+  selectedValues,
+  disabled,
+  onToggle,
+}: {
+  title: string;
+  values: string[];
+  labels: Record<string, string>;
+  selectedValues: string[];
+  disabled: boolean;
+  onToggle: (value: string) => void;
+}) {
+  return (
+    <div className="mt-5">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-bold">{title}</h4>
+        <span className="text-xs font-bold text-black/40">
+          {selectedValues.length}/3 선택
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {values.map((value) => {
+          const selected = selectedValues.includes(value);
+          const selectionFull = selectedValues.length >= 3;
+
+          return (
+            <button
+              key={value}
+              type="button"
+              disabled={disabled || (!selected && selectionFull)}
+              onClick={() => onToggle(value)}
+              className={cn(
+                "inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-xs font-bold transition disabled:cursor-not-allowed",
+                selected
+                  ? "border-black bg-black text-white"
+                  : "border-black/10 bg-[#fbfbfa] text-black/55 hover:border-black/25 hover:text-black disabled:opacity-35",
+              )}
+            >
+              {selected && <Check size={13} strokeWidth={2.5} aria-hidden />}
+              {labels[value] ?? value}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
