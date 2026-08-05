@@ -294,7 +294,7 @@ function ParticipationRecord({
   monochrome?: boolean;
 }) {
   return (
-    <div>
+    <div data-participation-record>
       <div className="flex items-center gap-1.5">
         <h3 className="text-[14px] font-black text-black">참여 기록</h3>
         <ParticipationRecordInfoButton />
@@ -572,16 +572,16 @@ export function ProfileTab({
 
   return (
     <TabMotion>
-      <section className="px-5 pb-7 pt-7">
+      <section className="min-h-full bg-[#f7f4ed] px-5 pb-7 pt-7">
         <header className="pr-16">
           <h1 className="text-[27px] font-bold leading-9 tracking-tight text-black">
             {profileInitial(profile)}님의 프로필
           </h1>
         </header>
 
-        <section className="mt-5 rounded-[24px] border border-accent/25 bg-accent/[0.08] px-5 py-5">
+        <section className="mt-5 rounded-[24px] border border-black/[0.08] bg-[#f1eee6] px-5 py-5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#faf8f2] text-black/55 shadow-sm">
               <span aria-hidden className="text-[15px]">🔔</span>
             </span>
             <p className="text-[16px] font-black tracking-[-0.025em] text-black/82">
@@ -611,7 +611,7 @@ export function ProfileTab({
 
         {usesNewConversationProfile && conversationResult && conversationCode ? (
           <>
-          <section className="mt-7 rounded-[24px] border border-black/[0.08] bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+          <section className="mt-7 rounded-[24px] border border-black/[0.08] bg-[#faf8f2] px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
             <div className="grid grid-cols-[168px_minmax(0,1fr)] items-center gap-2">
               <div className="flex h-[298px] items-center justify-center overflow-hidden">
                 <Image
@@ -645,7 +645,7 @@ export function ProfileTab({
             type="button"
             aria-expanded={showConversationDetails}
             onClick={() => setShowConversationDetails((current) => !current)}
-            className="mt-4 flex h-13 w-full items-center justify-center gap-1.5 rounded-full border border-black/10 bg-white/55 px-5 py-4 text-[14px] font-extrabold text-black/64 transition hover:border-black/20"
+            className="mt-4 flex h-13 w-full items-center justify-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2]/80 px-5 py-4 text-[14px] font-extrabold text-black/64 transition hover:border-black/20"
           >
             {showConversationDetails ? "결과 해설 접기" : "내 결과 자세히 보기"}
             <ChevronRight
@@ -663,7 +663,7 @@ export function ProfileTab({
                 transition={{ duration: 0.38, ease: "easeOut" }}
                 className="overflow-hidden"
               >
-                <div className="mt-4 rounded-[26px] border border-black/[0.08] bg-white/72 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.05)] backdrop-blur-sm">
+                <div className="mt-4 rounded-[26px] border border-black/[0.08] bg-[#faf8f2]/80 p-5 shadow-[0_18px_50px_rgba(18,18,18,0.05)] backdrop-blur-sm">
                   <h2 className="mb-4 text-[19px] font-black tracking-[-0.04em] text-black/82">
                     결과 해설
                   </h2>
@@ -676,7 +676,7 @@ export function ProfileTab({
           </AnimatePresence>
           </>
         ) : (
-          <section className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+          <section className="mt-7 rounded-2xl border border-black/10 bg-[#faf8f2] px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
             <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
               about me
             </p>
@@ -722,7 +722,7 @@ export function ProfileTab({
             <button
               type="button"
               onClick={onOpenQuestionReview}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
             >
               <PenLine size={15} aria-hidden />
               질문 다시보기
@@ -732,7 +732,7 @@ export function ProfileTab({
               onClick={() => {
                 window.location.href = "/onboarding/profile?from=profile";
               }}
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
             >
               <UserRound size={15} aria-hidden />
               기본정보 다시보기
@@ -744,7 +744,7 @@ export function ProfileTab({
           type="button"
           disabled={loggingOut}
           onClick={() => void onLogout()}
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-white text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200/80 bg-[#faf8f2] text-xs font-semibold text-red-500 transition hover:bg-[#f1eee6] disabled:cursor-wait disabled:opacity-50"
         >
           <LogOut size={15} aria-hidden />
           {loggingOut ? "로그아웃 중..." : "로그아웃"}
@@ -754,7 +754,7 @@ export function ProfileTab({
           href="http://pf.kakao.com/_xnweQn/chat"
           target="_blank"
           rel="noreferrer"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
         >
           <MessageCircle size={15} aria-hidden />
           문의하기
@@ -762,7 +762,7 @@ export function ProfileTab({
 
         <a
           href="/privacy"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
         >
           <Info size={15} aria-hidden />
           개인정보 처리방침

@@ -144,7 +144,6 @@ export async function GET(request: Request) {
   const shouldImportGuestDraft = Boolean(
     profile &&
       redirectPath === '/onboarding/import' &&
-      !profile.questions_completed &&
       !profile.profile_completed,
   );
   const finalPath = profile

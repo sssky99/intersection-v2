@@ -20,6 +20,7 @@ export type GuestOnboardingDraft = {
   phase: "questions" | "profile";
   answers: StoredAnswerRow[];
   profile: GuestBasicInfo;
+  returnMeetingDate?: string;
   updatedAt: string;
 };
 
@@ -91,6 +92,10 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
         ? parsed.answers.filter(isStoredAnswerRow)
         : [],
       profile: profileFromUnknown(parsed.profile),
+      returnMeetingDate:
+        typeof parsed.returnMeetingDate === "string"
+          ? parsed.returnMeetingDate
+          : undefined,
       updatedAt:
         typeof parsed.updatedAt === "string"
           ? parsed.updatedAt

@@ -7,6 +7,7 @@ import type { Gender } from "@/types/user";
 type OnboardingProfilePageProps = {
   searchParams?: Promise<{
     from?: string | string[];
+    date?: string | string[];
     regenerate?: string | string[];
   }>;
 };
@@ -39,6 +40,12 @@ export default async function OnboardingProfilePage({
     Boolean(profile.profile_completed) &&
     profile.is_test_participant === true &&
     searchValue(params?.from) === "profile";
+  const applicationDate = searchValue(params?.date);
+  const returnPath =
+    searchValue(params?.from) === "application" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(applicationDate ?? "")
+      ? `/meetings?tab=recommend&resumeDate=${encodeURIComponent(applicationDate!)}`
+      : undefined;
 
   if (profile.profile_completed && !isTestProfileReview && !isRegeneration) {
     redirect("/profile/result");
@@ -49,7 +56,11 @@ export default async function OnboardingProfilePage({
       <BasicInfoForm
         userId={user.id}
         mode={isRegeneration ? "regeneration" : "onboarding"}
-        returnPath={isTestProfileReview ? "/meetings?tab=profile" : undefined}
+        returnPath={
+          isTestProfileReview
+            ? "/meetings?tab=profile"
+            : returnPath
+        }
         initialValues={{
           name: isRegeneration ? "" : profile.name ?? "",
           phone: isRegeneration ? "" : profile.phone ?? profile.phone_normalized ?? "",

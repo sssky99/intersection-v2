@@ -98,11 +98,11 @@ function FixedResultExplanation({ body }: { body: string }) {
   );
 }
 
-const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 const AGE_RANGE_DEFAULT_YEARS = 4;
 const AGE_RANGE_MIN_YEARS = 4;
 const AGE_RANGE_MAX_YEARS = 10;
 const AGE_RANGE_TRACK_MAX = AGE_RANGE_MAX_YEARS * 2;
+const PRIVATE_TEXT_ANSWER = "밝히고 싶지 않아요.";
 
 type AgeRangeYears = {
   down: number;
@@ -329,6 +329,8 @@ export function QuestionFlow({
   userId,
   initialRows,
   mode = "onboarding",
+  questionSet = profileQuestions,
+  hideProgressHeader = false,
   onPreviewComplete,
   onGuestDraftChange,
   onGuestComplete,
@@ -336,7 +338,9 @@ export function QuestionFlow({
   userId?: string;
   initialRows: StoredAnswerRow[];
   mode?: QuestionFlowMode;
-  onPreviewComplete?: () => void;
+  questionSet?: ProfileQuestion[];
+  hideProgressHeader?: boolean;
+  onPreviewComplete?: () => void | Promise<void>;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
 }) {
@@ -345,7 +349,7 @@ export function QuestionFlow({
   const isPreview = mode === "preview";
   const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
-  const questions = profileQuestions;
+  const questions = questionSet;
   const initialAnswers = useMemo(
     () =>
       Object.fromEntries(
@@ -434,14 +438,13 @@ export function QuestionFlow({
   const canContinue = isAgeRange || isComplete(question, answer);
   const scaleOptions =
     question.type === "single_choice"
-      ? SCALE_VALUES.map((value) =>
-          question.options?.find((option) => optionValue(option) === value),
-        ).filter(
-          (option): option is string | QuestionOption => Boolean(option),
+      ? (question.options ?? []).filter((option) =>
+          /^\d+$/.test(optionValue(option)),
         )
       : [];
-  const usesNumericScale = scaleOptions.length === SCALE_VALUES.length;
-  const hideNumericScaleValues = false;
+  const usesNumericScale =
+    scaleOptions.length >= 5 &&
+    scaleOptions.length === (question.options?.length ?? 0);
 
   useEffect(() => {
     if (isPreview || isGuest || isRegeneration) return;
@@ -513,7 +516,7 @@ export function QuestionFlow({
     targetQuestion: ProfileQuestion,
     nextAnswer: QuestionAnswer,
   ) => {
-    if (isPreview) return;
+    if (isPreview && !userId) return;
     if (!userId) throw new Error("QuestionFlow requires userId in onboarding mode.");
 
     const { error: saveError } = await createClient()
@@ -595,15 +598,19 @@ export function QuestionFlow({
     router.replace(
       isRegeneration
         ? "/onboarding/profile?regenerate=1"
-        : "/onboarding/profile",
+        : "/meetings?tab=recommend",
     );
     router.refresh();
   };
 
   const moveToNext = async (nextAnswers: AnswerMap) => {
     if (questionIndex >= questions.length - 1) {
+      if (isPreview) {
+        await onPreviewComplete?.();
+        return;
+      }
+
       setResultAnswers(nextAnswers);
-      if (isPreview) onPreviewComplete?.();
       return;
     }
 
@@ -653,11 +660,6 @@ export function QuestionFlow({
 
     updateLocalAnswer(nextAnswer);
     setError(null);
-
-    if (isPreview) {
-      scheduleAutoAdvance(nextAnswers, nextDelay);
-      return;
-    }
 
     if (isGuest) {
       trackQuestionAnswered(question);
@@ -904,7 +906,7 @@ export function QuestionFlow({
             }}
             className="flex h-14 w-full items-center justify-center rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98] disabled:opacity-45"
           >
-            {saving ? "프로필로 이동하는 중..." : "프로필 작성하기"}
+            {saving ? "모임으로 이동하는 중..." : "모임 둘러보기"}
           </button>
         </div>
       </section>
@@ -915,6 +917,7 @@ export function QuestionFlow({
     <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
       <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
       <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+      {!hideProgressHeader && (
       <header className="relative z-10 shrink-0">
         <div className="grid grid-cols-[42px_1fr_42px] items-center">
           <button
@@ -955,6 +958,7 @@ export function QuestionFlow({
           />
         </div>
       </header>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -965,11 +969,20 @@ export function QuestionFlow({
           transition={{ duration: 0.24, ease: "easeOut" }}
           className="relative z-10 flex flex-1 flex-col"
         >
-          <div className={cn("text-center", isConversationQuestion ? "mt-[12vh]" : "mt-10")}>
+          <div
+            className={cn(
+              "text-center",
+              hideProgressHeader
+                ? "mt-[14vh]"
+                : isConversationQuestion
+                  ? "mt-[12vh]"
+                  : "mt-10",
+            )}
+          >
             <h1 className="mx-auto max-w-[350px] whitespace-pre-line break-keep text-[25px] font-black leading-[1.34] tracking-[-0.055em] text-black/86">
               {question.question}
             </h1>
-            {question.prompt && (
+            {question.prompt && !usesNumericScale && (
               <p className="mx-auto mt-3 max-w-[330px] whitespace-pre-line text-[13px] font-semibold leading-5 text-black/42">
                 {question.prompt}
               </p>
@@ -982,8 +995,58 @@ export function QuestionFlow({
           </div>
 
           {question.type === "single_choice" && (
-            <div className="my-auto space-y-4 pb-10 pt-10">
-              {(question.options ?? []).map((option, index) => {
+            usesNumericScale ? (
+              <div className="my-auto pb-14 pt-10">
+                <div
+                  className="grid border-t border-black/20 pt-5"
+                  style={{
+                    gridTemplateColumns: `repeat(${scaleOptions.length}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {scaleOptions.map((option, index) => {
+                    const value = optionValue(option);
+                    const selected = answer?.value === value;
+                    return (
+                      <motion.button
+                        key={value}
+                        type="button"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.06 + index * 0.035 }}
+                        whileTap={!saving ? { scale: 0.94 } : undefined}
+                        disabled={saving}
+                        onClick={() => void selectSingle(value)}
+                        className={cn(
+                          "flex h-14 min-w-0 items-center justify-center bg-transparent text-[24px] font-medium tabular-nums transition disabled:cursor-wait",
+                          selected
+                            ? "scale-110 font-black text-black"
+                            : "text-black/38 hover:text-black/70",
+                        )}
+                      >
+                        {optionLabel(option)}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-start justify-between gap-6 px-1 text-[12px] font-semibold leading-5 text-black/48">
+                  <span className="max-w-[42%] text-left">
+                    {question.scaleMinLabel ?? "전혀 그렇지 않다"}
+                  </span>
+                  <span className="max-w-[42%] text-right">
+                    {question.scaleMaxLabel ?? "매우 그렇다"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "my-auto pb-8 pt-8",
+                  question.optionColumns === 2
+                    ? "grid grid-cols-2 gap-3"
+                    : "space-y-3",
+                )}
+              >
+                {(question.options ?? []).map((option, index) => {
                 const value = optionValue(option);
                 const selected = answer?.value === value;
                 return (
@@ -997,7 +1060,11 @@ export function QuestionFlow({
                     disabled={saving}
                     onClick={() => void selectSingle(value)}
                     className={cn(
-                      "flex min-h-[84px] w-full items-center justify-center rounded-[24px] border px-5 py-4 text-center text-[14px] font-semibold leading-[1.55] tracking-[-0.02em] backdrop-blur transition disabled:cursor-wait",
+                      "flex min-h-[72px] w-full items-center justify-center rounded-[22px] border py-3 text-center text-[14px] font-semibold leading-[1.5] tracking-[-0.02em] backdrop-blur transition disabled:cursor-wait",
+                      question.optionColumns === 2 ? "px-3" : "px-5",
+                      typeof option !== "string" &&
+                        option.fullWidth &&
+                        "col-span-2",
                       selected
                         ? "border-black bg-black font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)]"
                         : "border-black/[0.07] bg-white/68 text-black/68 shadow-[0_12px_35px_rgba(18,18,18,0.045)] hover:border-black/15",
@@ -1006,61 +1073,132 @@ export function QuestionFlow({
                     <span className="max-w-[310px]">{optionLabel(option)}</span>
                   </motion.button>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            )
           )}
 
           {question.type === "multi_choice" && (
-            <div className="mt-8 grid grid-cols-2 gap-3 pb-24">
-              {(question.options ?? []).map((option) => {
-                const value = optionValue(option);
-                const priorityIndex = selectedValues.indexOf(value);
-                const selected = priorityIndex !== -1;
-                const exclusive = optionMeta(question, value)?.exclusive;
-                return (
-                  <motion.button
-                    key={value}
-                    type="button"
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() => toggleMultiple(value)}
-                    className={cn(
-                      "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center text-[13px] font-bold leading-5 backdrop-blur transition",
-                      exclusive && "col-span-2 min-h-[58px]",
-                      selected
-                        ? "border-black bg-black font-extrabold text-white shadow-[0_14px_32px_rgba(18,18,18,0.14)]"
-                        : "border-black/[0.07] bg-white/65 text-black/65 shadow-[0_10px_28px_rgba(18,18,18,0.04)]",
-                    )}
-                  >
-                    {optionLabel(option)}
-                    {selected && !exclusive && (
-                      <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/18 px-1 text-[9px] font-black text-white">
-                        {priorityIndex + 1}
-                      </span>
-                    )}
-                    {selected && exclusive && <Check className="ml-2" size={15} />}
-                  </motion.button>
-                );
-              })}
+            <div className="mt-8 pb-24">
+              <div className="grid grid-cols-2 gap-3">
+                {(question.options ?? []).map((option) => {
+                  const value = optionValue(option);
+                  const priorityIndex = selectedValues.indexOf(value);
+                  const selected = priorityIndex !== -1;
+                  const exclusive = optionMeta(question, value)?.exclusive;
+                  return (
+                    <motion.button
+                      key={value}
+                      type="button"
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => toggleMultiple(value)}
+                      className={cn(
+                        "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center text-[13px] font-bold leading-5 backdrop-blur transition",
+                        exclusive && "col-span-2 min-h-[58px]",
+                        selected
+                          ? "border-black bg-black font-extrabold text-white shadow-[0_14px_32px_rgba(18,18,18,0.14)]"
+                          : "border-black/[0.07] bg-white/65 text-black/65 shadow-[0_10px_28px_rgba(18,18,18,0.04)]",
+                      )}
+                    >
+                      {optionLabel(option)}
+                      {selected && !exclusive && (
+                        <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/18 px-1 text-[9px] font-black text-white">
+                          {priorityIndex + 1}
+                        </span>
+                      )}
+                      {selected && exclusive && <Check className="ml-2" size={15} />}
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              {selectedValues.some(
+                (value) => optionMeta(question, value)?.hasTextInput,
+              ) && (
+                <input
+                  value={answer?.otherText ?? ""}
+                  maxLength={80}
+                  placeholder="직접 입력해주세요"
+                  onChange={(event) =>
+                    updateLocalAnswer({
+                      questionId: question.id,
+                      value: selectedValues,
+                      otherText: event.target.value,
+                    })
+                  }
+                  className="mt-3 h-14 w-full rounded-[20px] border border-black/[0.09] bg-white/72 px-5 text-[13px] font-semibold text-black/72 outline-none placeholder:text-black/28 focus:border-black/25"
+                />
+              )}
             </div>
           )}
 
           {question.type === "text" && (
             <div className="mt-8 pb-24">
               <textarea
-                value={typeof answer?.value === "string" ? answer.value : ""}
+                value={
+                  answer?.value === PRIVATE_TEXT_ANSWER
+                    ? ""
+                    : typeof answer?.value === "string"
+                      ? answer.value
+                      : ""
+                }
                 placeholder={question.placeholder ?? "편하게 적어주세요."}
                 maxLength={300}
+                disabled={answer?.value === PRIVATE_TEXT_ANSWER}
                 onChange={(event) =>
                   updateLocalAnswer({
                     questionId: question.id,
                     value: event.target.value,
                   })
                 }
-                className="min-h-[210px] w-full resize-none rounded-[28px] border border-black/[0.07] bg-white/68 px-5 py-5 text-[14px] font-medium leading-6 text-black/75 shadow-[0_18px_50px_rgba(18,18,18,0.055)] backdrop-blur outline-none placeholder:text-black/28 focus:border-black/20"
+                className="min-h-[210px] w-full resize-none rounded-[28px] border border-black/[0.07] bg-white/68 px-5 py-5 text-[14px] font-medium leading-6 text-black/75 shadow-[0_18px_50px_rgba(18,18,18,0.055)] backdrop-blur outline-none placeholder:text-black/28 focus:border-black/20 disabled:bg-black/[0.025] disabled:text-black/30"
               />
-              <p className="mt-2 pr-1 text-right text-[10px] font-semibold text-black/30">
-                {typeof answer?.value === "string" ? answer.value.length : 0}/300
-              </p>
+              <div className="mt-2 flex items-center justify-between gap-4 px-1">
+                {question.allowPrivate ? (
+                  <button
+                    type="button"
+                    aria-pressed={answer?.value === PRIVATE_TEXT_ANSWER}
+                    onClick={() =>
+                      updateLocalAnswer({
+                        questionId: question.id,
+                        value:
+                          answer?.value === PRIVATE_TEXT_ANSWER
+                            ? ""
+                            : PRIVATE_TEXT_ANSWER,
+                      })
+                    }
+                    className={cn(
+                      "flex items-center gap-1.5 text-[11px] font-semibold transition",
+                      answer?.value === PRIVATE_TEXT_ANSWER
+                        ? "text-black/70"
+                        : "text-black/38 hover:text-black/60",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 items-center justify-center rounded-full border transition",
+                        answer?.value === PRIVATE_TEXT_ANSWER
+                          ? "border-black bg-black text-white"
+                          : "border-black/20 bg-transparent",
+                      )}
+                    >
+                      {answer?.value === PRIVATE_TEXT_ANSWER && (
+                        <Check size={10} strokeWidth={3} aria-hidden />
+                      )}
+                    </span>
+                    밝히고 싶지 않아요.
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <p className="shrink-0 text-[10px] font-semibold text-black/30">
+                  {typeof answer?.value === "string" &&
+                  answer.value !== PRIVATE_TEXT_ANSWER
+                    ? answer.value.length
+                    : 0}
+                  /300
+                </p>
+              </div>
             </div>
           )}
         </motion.div>
@@ -1072,6 +1210,45 @@ export function QuestionFlow({
         </p>
       )}
 
+      <AnimatePresence>
+        {saving && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="fixed inset-0 z-30 mx-auto flex w-full max-w-[430px] items-center justify-center bg-[#f7f7f5]/76 px-6 backdrop-blur-[2px]"
+            role="status"
+            aria-live="polite"
+            aria-label="답변 저장 중"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="flex min-w-[154px] flex-col items-center rounded-[24px] border border-black/[0.08] bg-[#faf8f2]/95 px-6 py-5 shadow-[0_18px_48px_rgba(18,18,18,0.09)]"
+            >
+              <span className="relative h-7 w-7" aria-hidden>
+                <span className="absolute inset-0 rounded-full border-2 border-black/10" />
+                <motion.span
+                  className="absolute inset-0 rounded-full border-2 border-transparent border-t-black/75"
+                  animate={{ rotate: 360 }}
+                  transition={{
+                    duration: 0.8,
+                    ease: "linear",
+                    repeat: Infinity,
+                  }}
+                />
+              </span>
+              <span className="mt-3 text-[13px] font-bold tracking-[-0.02em] text-black/65">
+                답변 저장 중
+              </span>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {question.type !== "single_choice" && (
         <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
           <button
@@ -1080,7 +1257,13 @@ export function QuestionFlow({
             onClick={() => void continueQuestion()}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98] disabled:bg-black/10 disabled:text-black/30 disabled:shadow-none"
           >
-            {saving ? "답변을 저장하고 있어요" : questionIndex === questions.length - 1 ? "결과 확인하기" : "다음"}
+            {saving
+              ? "답변을 저장하고 있어요"
+              : questionIndex === questions.length - 1
+                ? isPreview
+                  ? "답변 저장하기"
+                  : "결과 확인하기"
+                : "다음"}
             {!saving && <ChevronRight size={17} aria-hidden />}
           </button>
         </div>

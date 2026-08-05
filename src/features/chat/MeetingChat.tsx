@@ -542,7 +542,7 @@ export function MeetingChat({
 
   if (selectedRoom) {
     return (
-      <section className="relative flex h-full min-h-0 flex-col bg-white text-black">
+      <section className="relative flex h-full min-h-0 flex-col bg-[#f7f4ed] text-black">
         <header className="shrink-0 border-b border-black/[0.07] px-4 pb-3 pt-[calc(16px+env(safe-area-inset-top))]">
           <div className="flex items-center gap-3">
             <button
@@ -576,7 +576,7 @@ export function MeetingChat({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f7f8] px-4 py-5 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[#f1eee6] px-4 py-5 scrollbar-none">
           <p className="mx-auto mb-5 max-w-[290px] text-center text-[11px] font-semibold leading-5 text-black/38">
             언제까지 도착할 예정인지, 어디서 모일지 이야기 나눠보세요.
             <br />
@@ -627,7 +627,7 @@ export function MeetingChat({
                         className={cn(
                           "inline-block rounded-2xl px-3.5 py-2.5 text-left text-[15px] font-semibold leading-5 shadow-sm",
                           own
-                            ? "rounded-tr-[5px] bg-[#e5e7ea] text-black/85"
+                            ? "rounded-tr-[5px] bg-[#e5dfd3] text-black/85"
                             : "rounded-tl-[5px] bg-white text-black/78",
                           deleted &&
                             "border border-dashed border-black/15 bg-transparent italic text-black/42 shadow-none",
@@ -680,7 +680,7 @@ export function MeetingChat({
           <div ref={messageEndRef} />
         </div>
 
-        <div className="shrink-0 border-t border-black/[0.07] bg-white px-3 pb-[calc(12px+env(safe-area-inset-bottom))] pt-3">
+        <div className="shrink-0 border-t border-black/[0.07] bg-[#faf8f2] px-3 pb-[calc(12px+env(safe-area-inset-bottom))] pt-3">
           {error && (
             <p className="mb-2 px-2 text-[11px] font-semibold text-red-500">
               {error}
@@ -692,7 +692,7 @@ export function MeetingChat({
             </p>
           ) : (
             <div className="flex items-end gap-2">
-              <div className="min-w-0 flex-1 rounded-[20px] border border-black/10 bg-black/[0.025] px-4 py-2">
+              <div className="min-w-0 flex-1 rounded-[20px] border border-black/10 bg-[#f1eee6] px-4 py-2">
                 <textarea
                   value={draft}
                   maxLength={100}
@@ -735,7 +735,7 @@ export function MeetingChat({
               aria-modal="true"
               aria-labelledby="delete-message-title"
               aria-describedby="delete-message-description"
-              className="w-full max-w-[310px] rounded-[20px] bg-white px-5 pb-4 pt-5 text-center shadow-[0_20px_60px_rgba(0,0,0,0.2)]"
+              className="w-full max-w-[310px] rounded-[20px] bg-[#faf8f2] px-5 pb-4 pt-5 text-center shadow-[0_20px_60px_rgba(0,0,0,0.2)]"
             >
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-500">
                 <Trash2 size={17} aria-hidden />
@@ -776,7 +776,7 @@ export function MeetingChat({
   }
 
   return (
-    <section className="h-full overflow-y-auto bg-white px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black scrollbar-none">
+    <section className="h-full overflow-y-auto bg-[#f7f4ed] px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black scrollbar-none">
       <header className="pr-16">
         <h1 className="text-[27px] font-bold leading-9">채팅</h1>
       </header>
@@ -823,7 +823,7 @@ export function MeetingChat({
                     <span
                       key={member.id}
                       aria-hidden
-                      className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-black/[0.045] text-base"
+                      className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#faf8f2] bg-black/[0.045] text-base"
                     >
                       {member.emoji}
                     </span>

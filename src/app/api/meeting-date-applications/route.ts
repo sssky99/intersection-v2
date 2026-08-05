@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
+  isMeetingDateClosed,
   meetingDateApplicationDates,
   meetingDateSchedule,
   type MeetingDateApplication,
@@ -15,6 +16,16 @@ export const dynamic = "force-dynamic";
 type DateApplicationRequest = {
   dates?: unknown;
   openPayment?: unknown;
+  waitlist?: unknown;
+  ticketInstanceId?: unknown;
+};
+
+type SelectedTicketInstance = {
+  id: string;
+  event_date: string | null;
+  event_time: string | null;
+  region: string | null;
+  visibility: string;
 };
 
 type DateApplicationRow = {
@@ -187,17 +198,82 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const admin = createAdminClient();
+  const { data: applicantProfile, error: applicantProfileError } = await admin
+    .from("profiles")
+    .select("profile_completed,is_test_participant")
+    .eq("user_id", user.id)
+    .maybeSingle<{
+      profile_completed: boolean | null;
+      is_test_participant: boolean | null;
+    }>();
+  if (applicantProfileError) {
+    return NextResponse.json(
+      { error: "프로필 정보를 확인하지 못했어요." },
+      { status: 500 },
+    );
+  }
+  if (!applicantProfile?.profile_completed) {
+    return NextResponse.json(
+      { error: "간단한 정보를 입력하고 프로필을 완성해주세요." },
+      { status: 409 },
+    );
+  }
+
   const body = (await request.json().catch(() => ({}))) as DateApplicationRequest;
   const dates = requestedDates(body.dates);
   const openPayment = body.openPayment === true;
+  const joinWaitlist = body.waitlist === true;
+  const ticketInstanceId =
+    typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
+      ? body.ticketInstanceId.trim()
+      : null;
   if (dates.length !== 1) {
     return NextResponse.json(
       { error: "신청할 날짜를 하나만 선택해주세요." },
       { status: 400 },
     );
   }
+  let selectedTicket: SelectedTicketInstance | null = null;
+  if (ticketInstanceId) {
+    const allowedVisibilities =
+      applicantProfile.is_test_participant === true
+        ? ["public", "test_only"]
+        : ["public"];
+    const { data, error } = await admin
+      .from("ticket_instances")
+      .select("id,event_date,event_time,region,visibility")
+      .eq("id", ticketInstanceId)
+      .in("visibility", allowedVisibilities)
+      .maybeSingle<SelectedTicketInstance>();
+    if (error) {
+      return NextResponse.json(
+        { error: "선택한 티켓을 확인하지 못했어요." },
+        { status: 500 },
+      );
+    }
+    if (!data || data.event_date !== dates[0]) {
+      return NextResponse.json(
+        { error: "선택한 티켓과 날짜가 일치하지 않아요." },
+        { status: 409 },
+      );
+    }
+    selectedTicket = data;
+  }
 
-  const admin = createAdminClient();
+  const closed = selectedTicket ? false : isMeetingDateClosed(dates[0]);
+  if (closed && !joinWaitlist) {
+    return NextResponse.json(
+      { error: "마감된 날짜예요. 빈 자리 대기를 신청해주세요." },
+      { status: 409 },
+    );
+  }
+  if (!closed && joinWaitlist) {
+    return NextResponse.json(
+      { error: "현재 마감된 날짜가 아니에요." },
+      { status: 409 },
+    );
+  }
 
   try {
     const { data: existingRows, error: existingError } = await admin
@@ -226,22 +302,29 @@ export async function POST(request: Request) {
     const groupId = crypto.randomUUID();
     const now = new Date().toISOString();
     const rowsToSave = dates
-      .filter((date) => !protectedRows.some((row) => row.meeting_date === date))
+      .filter((date) => {
+        const existing = existingByDate.get(date);
+        if (!existing) return true;
+        return (
+          existing.status === "payment_pending" &&
+          existing.deposit_status === "payment_pending"
+        );
+      })
       .map((date) => {
         const schedule = meetingDateSchedule(date)!;
         return {
           application_group_id: groupId,
           user_id: user.id,
           meeting_date: date,
-          meeting_time: schedule.time,
-          region: MEETING_DATE_REGION,
-          status: "payment_pending",
-          deposit_amount: MEETING_DATE_DEPOSIT_AMOUNT,
+          meeting_time: selectedTicket?.event_time?.slice(0, 5) ?? schedule.time,
+          region: selectedTicket?.region ?? MEETING_DATE_REGION,
+          status: joinWaitlist ? "waitlisted" : "payment_pending",
+          deposit_amount: joinWaitlist ? 0 : MEETING_DATE_DEPOSIT_AMOUNT,
           deposit_status: "payment_pending",
-          deposit_requested_at: now,
+          deposit_requested_at: joinWaitlist ? null : now,
           deposit_confirmed_at: null,
           refund_completed_at: null,
-          assigned_ticket_instance_id: null,
+          assigned_ticket_instance_id: selectedTicket?.id ?? null,
           ticket_participation_id: null,
           assigned_at: null,
           confirmed_at: null,
@@ -273,7 +356,7 @@ export async function POST(request: Request) {
       .filter((row): row is DateApplicationRow => Boolean(row));
 
     let paymentIntentCreated = false;
-    if (openPayment) {
+    if (openPayment && !joinWaitlist) {
       const application = rows[0];
       if (
         !application ||
@@ -314,7 +397,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       applications: rows.map((row) => toApplication(row)),
       duplicateDates: protectedRows.map((row) => row.meeting_date),
-      totalDepositAmount: dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      totalDepositAmount: joinWaitlist
+        ? 0
+        : dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       paymentIntentCreated,
     });
   } catch (error) {

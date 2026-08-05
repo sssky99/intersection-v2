@@ -2,22 +2,44 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  Brain,
   Check,
+  ChevronRight,
+  Footprints,
+  Gem,
   Gift,
+  Heart,
   Info,
+  LockKeyhole,
   Loader2,
   LogOut,
+  MapPin,
   MessageCircle,
   PenLine,
+  Scale,
+  Sparkles,
+  UserRound,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import { preferenceQuestions } from "@/data/preferenceQuestions";
+import {
+  activityQuestions,
+  backgroundQuestions,
+  interestQuestions,
+  preferenceDetailQuestions,
+  selfQuestions,
+  traitsQuestions,
+  valueQuestions,
+  valuesQuestions,
+} from "@/data/profileDetailQuestions";
 import {
   resolvedProfileEmoji,
   singleEmojiFromInput,
 } from "@/lib/profileEmoji";
 import type { ProfileRow } from "@/types/profile";
+import type { QuestionAnswer } from "@/types/question";
 import type { Gender } from "@/types/user";
 
 type ProfileDraft = {
@@ -206,7 +228,10 @@ function ParticipationRecord({ precisionCount }: { precisionCount: number }) {
   const currentStep = level < 5 ? level + 1 : null;
 
   return (
-    <section className="mt-5 rounded-[24px] border border-black/[0.07] bg-white px-5 py-5 shadow-[0_14px_40px_rgba(24,24,20,0.05)]">
+    <section
+      data-participation-record
+      className="mt-5 rounded-[24px] border border-black/[0.07] bg-[#faf8f2] px-5 py-5 shadow-[0_14px_40px_rgba(24,24,20,0.05)]"
+    >
       <h2 className="text-[14px] font-black text-black">참여 기록</h2>
       <p className="mt-1 text-xs font-semibold leading-5 text-black/40">
         참여할수록 추천이 더 정교해져요.
@@ -219,7 +244,7 @@ function ParticipationRecord({ precisionCount }: { precisionCount: number }) {
           const step = index + 1;
           const reached = step <= level;
           const current = step === currentStep;
-          const fill = reached ? "#121212" : "#FFFFFF";
+          const fill = reached ? "#121212" : "#F1EEE6";
           const stroke =
             reached || current ? "#121212" : "rgba(0,0,0,0.16)";
           const textFill = reached
@@ -265,6 +290,327 @@ function ParticipationRecord({ precisionCount }: { precisionCount: number }) {
             </span>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function BasicQuestionsSection({
+  answers,
+  backgroundAnsweredCount,
+  activityAnsweredCount,
+  interestAnsweredCount,
+  valuesAnsweredCount,
+  preferenceAnsweredCount,
+  valueAnsweredCount,
+  traitsAnsweredCount,
+  selfAnsweredCount,
+  onOpenBasic,
+  onOpenBackground,
+  onOpenActivity,
+  onOpenInterest,
+  onOpenValues,
+  onOpenPreference,
+  onOpenValue,
+  onOpenTraits,
+  onOpenSelf,
+}: {
+  answers: Record<number, QuestionAnswer>;
+  backgroundAnsweredCount: number;
+  activityAnsweredCount: number;
+  interestAnsweredCount: number;
+  valuesAnsweredCount: number;
+  preferenceAnsweredCount: number;
+  valueAnsweredCount: number;
+  traitsAnsweredCount: number;
+  selfAnsweredCount: number;
+  onOpenBasic: () => void;
+  onOpenBackground: () => void;
+  onOpenActivity: () => void;
+  onOpenInterest: () => void;
+  onOpenValues: () => void;
+  onOpenPreference: () => void;
+  onOpenValue: () => void;
+  onOpenTraits: () => void;
+  onOpenSelf: () => void;
+}) {
+  const answeredCount = preferenceQuestions.filter((question) => {
+    const value = answers[question.id]?.value;
+    return Array.isArray(value)
+      ? value.length > 0
+      : value !== undefined && value !== "";
+  }).length;
+  const backgroundPercent = Math.round(
+    (backgroundAnsweredCount / backgroundQuestions.length) * 100,
+  );
+  const activityPercent = Math.round(
+    (activityAnsweredCount / activityQuestions.length) * 100,
+  );
+  const interestPercent = Math.round(
+    (interestAnsweredCount / interestQuestions.length) * 100,
+  );
+  const valuesPercent = Math.round(
+    (valuesAnsweredCount / valuesQuestions.length) * 100,
+  );
+  const preferencePercent = Math.round(
+    (preferenceAnsweredCount / preferenceDetailQuestions.length) * 100,
+  );
+  const valuePercent = Math.round(
+    (valueAnsweredCount / valueQuestions.length) * 100,
+  );
+  const traitsPercent = Math.round(
+    (traitsAnsweredCount / traitsQuestions.length) * 100,
+  );
+  const selfPercent = Math.round(
+    (selfAnsweredCount / selfQuestions.length) * 100,
+  );
+  const detailQuestionCount =
+    backgroundQuestions.length +
+    activityQuestions.length +
+    interestQuestions.length +
+    valuesQuestions.length +
+    preferenceDetailQuestions.length +
+    valueQuestions.length +
+    traitsQuestions.length +
+    selfQuestions.length;
+  const profilePercent = Math.round(
+    ((backgroundAnsweredCount +
+      activityAnsweredCount +
+      interestAnsweredCount +
+      valuesAnsweredCount +
+      preferenceAnsweredCount +
+      valueAnsweredCount +
+      traitsAnsweredCount +
+      selfAnsweredCount) /
+      detailQuestionCount) *
+      100,
+  );
+
+  return (
+    <section className="mt-5 space-y-8">
+      <div>
+        <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/42">
+          코어 질문
+        </p>
+        <button
+          type="button"
+          onClick={onOpenBasic}
+          className="flex w-full items-center gap-4 rounded-[24px] border border-black/[0.09] bg-[#faf8f2] px-5 py-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+        >
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/70">
+            <PenLine size={18} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-black text-black">코어 질문</span>
+            <span className="mt-1 block text-xs font-semibold text-black/40">
+              {answeredCount}/5 답변 완료
+            </span>
+          </span>
+          <ChevronRight size={20} aria-hidden className="shrink-0 text-black/42" />
+        </button>
+      </div>
+
+      <div>
+        <div className="mb-4 flex items-end justify-between px-1">
+          <div>
+            <p className="text-[12px] font-black uppercase tracking-[0.12em] text-black/42">
+              질문 프로필
+            </p>
+            <p className="mt-1 text-[10px] font-semibold text-black/30">
+              나를 더 알려줄수록, 더 잘 맞는 사람을 만날 수 있어요.
+            </p>
+          </div>
+          <span className="text-[17px] font-black text-black">
+            {profilePercent}%
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={onOpenBackground}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {backgroundPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <MapPin size={19} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  배경
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {backgroundQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenActivity}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {activityPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Footprints size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  활동성
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {activityQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenInterest}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {interestPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Sparkles size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  흥미
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {interestQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenValues}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {valuesPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Scale size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  관점
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {valuesQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenPreference}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {preferencePercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Heart size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  선호
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {preferenceDetailQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenTraits}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {traitsPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Brain size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  성향
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {traitsQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenValue}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {valuePercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <Gem size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  가치
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {valueQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenSelf}
+            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+          >
+            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
+              {selfPercent}%
+            </span>
+            <span className="flex h-full flex-col justify-between">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
+                <UserRound size={20} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+                  자기정보
+                </span>
+                <span className="mt-1 block text-[11px] font-semibold text-black/38">
+                  {selfQuestions.length}개 질문
+                </span>
+              </span>
+            </span>
+          </button>
+
+        </div>
       </div>
     </section>
   );
@@ -349,8 +695,27 @@ export function PreferenceProfileTab({
   logoutError,
   preferredActivities = [],
   recentInterests = [],
+  answers = {},
+  backgroundAnsweredCount = 0,
+  activityAnsweredCount = 0,
+  interestAnsweredCount = 0,
+  valuesAnsweredCount = 0,
+  preferenceAnsweredCount = 0,
+  valueAnsweredCount = 0,
+  traitsAnsweredCount = 0,
+  selfAnsweredCount = 0,
   participationCount = 0,
   onProfileUpdated,
+  onOpenBasicQuestions = () => undefined,
+  onOpenBackgroundQuestions = () => undefined,
+  onOpenActivityQuestions = () => undefined,
+  onOpenInterestQuestions = () => undefined,
+  onOpenValuesQuestions = () => undefined,
+  onOpenPreferenceQuestions = () => undefined,
+  onOpenValueQuestions = () => undefined,
+  onOpenTraitsQuestions = () => undefined,
+  onOpenSelfQuestions = () => undefined,
+  onRequestBasicInfo,
   onLogout,
   previewMode = false,
 }: {
@@ -359,8 +724,27 @@ export function PreferenceProfileTab({
   logoutError: string | null;
   preferredActivities?: string[];
   recentInterests?: string[];
+  answers?: Record<number, QuestionAnswer>;
+  backgroundAnsweredCount?: number;
+  activityAnsweredCount?: number;
+  interestAnsweredCount?: number;
+  valuesAnsweredCount?: number;
+  preferenceAnsweredCount?: number;
+  valueAnsweredCount?: number;
+  traitsAnsweredCount?: number;
+  selfAnsweredCount?: number;
   participationCount?: number;
   onProfileUpdated: (profile: ProfileRow) => void;
+  onOpenBasicQuestions?: () => void;
+  onOpenBackgroundQuestions?: () => void;
+  onOpenActivityQuestions?: () => void;
+  onOpenInterestQuestions?: () => void;
+  onOpenValuesQuestions?: () => void;
+  onOpenPreferenceQuestions?: () => void;
+  onOpenValueQuestions?: () => void;
+  onOpenTraitsQuestions?: () => void;
+  onOpenSelfQuestions?: () => void;
+  onRequestBasicInfo?: () => void;
   onLogout: () => Promise<void>;
   previewMode?: boolean;
 }) {
@@ -459,7 +843,7 @@ export function PreferenceProfileTab({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className="min-h-full"
+      className="min-h-full bg-[#f7f4ed]"
     >
       <section className="px-5 pb-7 pt-7">
         <header className="pr-16">
@@ -468,11 +852,38 @@ export function PreferenceProfileTab({
           </h1>
         </header>
 
-        <section className="mt-7 overflow-hidden rounded-[30px] border border-black/[0.07] bg-white shadow-[0_24px_70px_rgba(24,24,20,0.09)]">
+        <section className="mt-7 overflow-hidden rounded-[30px] border border-black/[0.07] bg-[#faf8f2] shadow-[0_24px_70px_rgba(24,24,20,0.09)]">
           <div className="relative overflow-hidden bg-[#171714] px-5 pb-6 pt-5 text-white">
-            <div className="absolute -right-12 -top-20 h-48 w-48 rounded-full bg-[#7CAFC0]/30 blur-3xl" />
-            <div className="absolute -bottom-24 -left-10 h-48 w-48 rounded-full bg-[#B78EA8]/20 blur-3xl" />
+            <div className="absolute -right-12 -top-20 h-48 w-48 rounded-full bg-[#e8dfcf]/20 blur-3xl" />
+            <div className="absolute -bottom-24 -left-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
 
+            {!profile.profile_completed ? (
+              <div className="relative flex min-h-[220px] flex-col items-center justify-center py-5 text-center">
+                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/[0.07] text-white/76">
+                  <LockKeyhole size={22} strokeWidth={1.8} aria-hidden />
+                </span>
+                <h2 className="mt-5 text-[18px] font-black tracking-[-0.035em] text-white">
+                  프로필이 잠겨 있어요
+                </h2>
+                <p className="mt-2 break-keep text-[12px] font-semibold leading-5 text-white/52">
+                  간단한 정보를 입력하고 프로필을 완성하세요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRequestBasicInfo) {
+                      onRequestBasicInfo();
+                      return;
+                    }
+                    window.location.assign("/onboarding/profile?from=profile");
+                  }}
+                  className="mt-5 h-11 rounded-full bg-[#faf8f2] px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)] transition active:scale-[0.98]"
+                >
+                  기본정보 입력하기
+                </button>
+              </div>
+            ) : (
+              <>
             <div className="relative flex items-center justify-end">
               {editing ? (
                 <button
@@ -521,6 +932,8 @@ export function PreferenceProfileTab({
                 ),
               )}
             </div>
+              </>
+            )}
           </div>
 
           <div className="p-5">
@@ -691,21 +1104,44 @@ export function PreferenceProfileTab({
           }
         />
 
-        <button
-          type="button"
-          disabled={loggingOut}
-          onClick={() => void onLogout()}
-          className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200 bg-white text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-50"
-        >
-          <LogOut size={15} aria-hidden />
-          {loggingOut ? "로그아웃 중..." : "로그아웃"}
-        </button>
+        <BasicQuestionsSection
+          answers={answers}
+          backgroundAnsweredCount={backgroundAnsweredCount}
+          activityAnsweredCount={activityAnsweredCount}
+          interestAnsweredCount={interestAnsweredCount}
+          valuesAnsweredCount={valuesAnsweredCount}
+          preferenceAnsweredCount={preferenceAnsweredCount}
+          valueAnsweredCount={valueAnsweredCount}
+          traitsAnsweredCount={traitsAnsweredCount}
+          selfAnsweredCount={selfAnsweredCount}
+          onOpenBasic={onOpenBasicQuestions}
+          onOpenBackground={onOpenBackgroundQuestions}
+          onOpenActivity={onOpenActivityQuestions}
+          onOpenInterest={onOpenInterestQuestions}
+          onOpenValues={onOpenValuesQuestions}
+          onOpenPreference={onOpenPreferenceQuestions}
+          onOpenValue={onOpenValueQuestions}
+          onOpenTraits={onOpenTraitsQuestions}
+          onOpenSelf={onOpenSelfQuestions}
+        />
+
+        {!previewMode && (
+          <button
+            type="button"
+            disabled={loggingOut}
+            onClick={() => void onLogout()}
+            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200/80 bg-[#faf8f2] text-xs font-semibold text-red-500 transition hover:bg-[#f1eee6] disabled:cursor-wait disabled:opacity-50"
+          >
+            <LogOut size={15} aria-hidden />
+            {loggingOut ? "로그아웃 중..." : "로그아웃"}
+          </button>
+        )}
 
         <a
           href="http://pf.kakao.com/_xnweQn/chat"
           target="_blank"
           rel="noreferrer"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          className={`${previewMode ? "mt-8" : "mt-3"} flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70`}
         >
           <MessageCircle size={15} aria-hidden />
           문의하기
@@ -713,7 +1149,7 @@ export function PreferenceProfileTab({
 
         <a
           href="/privacy"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-white text-xs font-semibold text-black/55 transition hover:border-black/18 hover:text-black/70"
+          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
         >
           <Info size={15} aria-hidden />
           개인정보 처리방침

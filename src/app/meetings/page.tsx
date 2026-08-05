@@ -40,7 +40,6 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
 
   if (!user || !profile) redirect("/");
   if (!profile.questions_completed) redirect("/onboarding/questions");
-  if (!profile.profile_completed) redirect("/onboarding/profile");
   const legacyPreviewParam = Array.isArray(params?.legacyPreview)
     ? params?.legacyPreview[0]
     : params?.legacyPreview;

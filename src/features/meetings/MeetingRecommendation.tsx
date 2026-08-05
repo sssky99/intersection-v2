@@ -1,11 +1,15 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Copy,
+  Gift,
   Landmark,
   MapPin,
   X,
@@ -16,19 +20,22 @@ import {
 } from "react";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
+import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
+  isMeetingDateClosed,
   meetingDateApplicationDates,
   meetingDateLabel,
   meetingDateSchedule,
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
 import { todayInKst } from "@/lib/ticketDate";
-import type { AvailableDate } from "@/types/ticket";
+import type { GatheringTicket } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 
 type DepositMessageRegistration = {
@@ -43,6 +50,67 @@ type DepositMessageRegistrationSummary = Pick<
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
+}
+
+function CompactParticipationRecord({
+  count,
+  onOpen,
+}: {
+  count: number;
+  onOpen: () => void;
+}) {
+  const level = Number.isFinite(count)
+    ? Math.min(5, Math.max(0, Math.floor(count)))
+    : 0;
+  const currentStep = level < 5 ? level + 1 : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="inline-grid h-12 grid-cols-5 place-items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-4 shadow-[0_8px_24px_rgba(24,24,20,0.035)]"
+      title="참여할수록 추천이 더 정교해져요."
+      aria-label={`참여 기록 ${level}/5단계`}
+    >
+      {Array.from({ length: 5 }, (_, index) => {
+        const step = index + 1;
+        const reached = step <= level;
+        const current = step === currentStep;
+        const fill = reached ? "#121212" : "#F1EEE6";
+        const stroke =
+          reached || current ? "#121212" : "rgba(0,0,0,0.16)";
+
+        return (
+          <span
+            key={step}
+            className="relative inline-flex h-6 w-[18px] items-center justify-center"
+          >
+            <svg
+              viewBox="0 0 32 42"
+              className={cn(
+                "h-6 w-[18px] overflow-visible",
+                current && "drop-shadow-[0_3px_6px_rgba(18,18,18,0.16)]",
+              )}
+              aria-hidden
+            >
+              <path
+                d="M16 2.5 29 21 16 39.5 3 21Z"
+                fill={fill}
+                stroke={stroke}
+                strokeLinejoin="round"
+                strokeWidth={current ? 2.6 : 2}
+              />
+            </svg>
+            {step === 5 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-black/25 bg-[#faf8f2] text-black/65 shadow-[0_2px_6px_rgba(18,18,18,0.14)]">
+                <Gift size={9} strokeWidth={2.5} aria-hidden />
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </button>
+  );
 }
 
 const noShowDepositBankName = "카카오뱅크";
@@ -274,6 +342,13 @@ async function fetchDepositMessageRegistrationSummary() {
 
 type MeetingRecommendationProps = {
   userId: string;
+  profileCompleted?: boolean;
+  guestMode?: boolean;
+  onRequestBasicInfo?: (meetingDate?: string) => void;
+  participationPrecisionCount?: number;
+  onOpenParticipationRecord?: () => void;
+  onFocusModeChange?: (focused: boolean) => void;
+  onAvailableTicketsChange?: (tickets: GatheringTicket[]) => void;
   embedded?: boolean;
   active?: boolean;
   membershipStatus: MembershipStatus | null;
@@ -285,13 +360,23 @@ type MeetingRecommendationProps = {
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
 };
 
-type DateApplicationScreen = "dates" | "submitted" | "blindDate";
+type DateApplicationScreen =
+  | "dates"
+  | "ticket"
+  | "purchase"
+  | "submitted"
+  | "blindDate";
 type DateApplicationPurchaseOption = "single" | "membership";
 
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
   paymentIntentCreated?: boolean;
+  error?: string;
+};
+
+type AvailableTicketsResponse = {
+  tickets?: GatheringTicket[];
   error?: string;
 };
 
@@ -310,84 +395,163 @@ async function fetchDateApplications() {
   return data.applications ?? [];
 }
 
+async function fetchAvailableTickets() {
+  const response = await fetch("/api/meetings/available-tickets", {
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as
+    | AvailableTicketsResponse
+    | null;
+
+  if (!response.ok || !data) {
+    throw new Error(data?.error ?? "available-tickets-load-failed");
+  }
+
+  return data.tickets ?? [];
+}
+
 function DateApplicationOption({
-  date,
+  ticket,
   selected,
   application,
   closed,
+  waitlistAvailable,
   disabled,
   onToggle,
+  onWaitlist,
 }: {
-  date: AvailableDate;
+  ticket: GatheringTicket;
   selected: boolean;
   application: MeetingDateApplication | null;
   closed: boolean;
+  waitlistAvailable: boolean;
   disabled: boolean;
   onToggle: () => void;
+  onWaitlist: () => void;
 }) {
-  const schedule = meetingDateSchedule(date.date)!;
+  const schedule = meetingDateSchedule(ticket.date);
   const canResumePayment =
     application?.status === "payment_pending" &&
     application.depositStatus === "payment_pending";
-  const hasLockedApplication = Boolean(application) && !canResumePayment;
+  const canJoinWaitlist = waitlistAvailable && !application;
+  const isWaitingForSeat = application?.status === "waitlisted";
 
   return (
     <motion.button
       type="button"
-      data-testid={`meeting-date-${date.date}`}
+      data-testid={`meeting-ticket-${ticket.id}`}
       aria-pressed={selected}
-      disabled={disabled || closed || hasLockedApplication}
+      disabled={
+        disabled ||
+        (closed && !canJoinWaitlist && !canResumePayment)
+      }
       whileTap={
-        !disabled && !closed && !hasLockedApplication
+        !disabled &&
+        (!closed || canJoinWaitlist || canResumePayment)
           ? { scale: 0.98 }
           : undefined
       }
-      onClick={onToggle}
+      onClick={canJoinWaitlist ? onWaitlist : onToggle}
       className={cn(
-        "relative flex min-h-[64px] min-w-0 items-center rounded-[17px] border px-3 py-2.5 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-black/20",
+        "relative flex min-h-[96px] w-full min-w-0 items-center gap-3 border-b border-black/[0.07] px-3 py-3 text-left outline-none transition last:border-b-0 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/20",
         closed
-          ? "border-black/5 bg-black/[0.035] text-black/32"
+          ? "bg-black/[0.02] text-black/32"
           : selected
-              ? "border-black bg-black/[0.035] text-black shadow-[inset_0_0_0_1px_#111]"
+              ? "bg-black/[0.045] text-black"
             : canResumePayment
-              ? "border-amber-200 bg-amber-50/60 text-black hover:border-amber-300"
+              ? "bg-amber-50/50 text-black"
             : application
-              ? "border-black/10 bg-white text-black"
-              : "border-black/10 bg-white text-black hover:border-black/25",
-        (disabled || closed || hasLockedApplication) && "cursor-default",
+              ? "bg-transparent text-black"
+              : "bg-transparent text-black hover:bg-black/[0.025]",
+        disabled && "cursor-default",
       )}
     >
-      <span className="min-w-0 pr-7">
-        <span className="block text-[13px] font-bold leading-5">
-          {schedule.month}월 {schedule.day}일 {schedule.weekdayLabel}
+      <span
+        aria-hidden
+        className={cn(
+          "relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[17px] border border-black/[0.06] bg-[#f1eee6] shadow-[0_5px_16px_rgba(24,24,20,0.05)]",
+        )}
+      >
+        {ticket.imageUrl && (
+          <span
+            className={cn(
+              "absolute inset-0 bg-cover",
+              closed && "grayscale opacity-55",
+            )}
+            style={{
+              backgroundImage: `url(${ticket.imageUrl})`,
+              backgroundPosition: "center",
+            }}
+          />
+        )}
+        {closed && (
+          <span className="relative z-10 rounded-full bg-black/82 px-2.5 py-1.5 text-[10px] font-black tracking-[-0.02em] text-white shadow-sm">
+            마감
+          </span>
+        )}
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1",
+          canJoinWaitlist ? "pr-[108px]" : "pr-20",
+        )}
+      >
+        <span className="block text-[12px] font-extrabold leading-5 tracking-[-0.025em] text-black/72">
+          {schedule
+            ? `${schedule.month}월 ${schedule.day}일 ${schedule.weekdayLabel}`
+            : ticket.date}
         </span>
-        <span className="mt-0.5 block text-[10px] font-medium text-black/42">
-          {schedule.timeLabel} · {MEETING_DATE_REGION}
+        <span className="mt-0.5 block truncate text-[15px] font-black leading-5 tracking-[-0.035em] text-black">
+          {ticket.title}
+        </span>
+        <span
+          className={cn(
+            "block font-bold tracking-[-0.035em] text-black",
+            "mt-1 text-[13px] leading-5 text-black/58",
+          )}
+        >
+          {schedule?.timeLabel ?? ticket.time} · {application?.region || ticket.area}
         </span>
       </span>
       {closed || application ? (
-        <span
-          className={cn(
-            "absolute right-2.5 top-2.5 rounded-full border px-1.5 py-0.5 text-[9px] font-bold",
-            closed
-              ? "border-red-200 bg-red-50 text-red-600"
-              : canResumePayment
-                ? "border-amber-200 bg-amber-50 text-amber-700"
-              : "border-blue-200 bg-blue-50 text-blue-700",
-          )}
-        >
-          {closed ? "마감" : canResumePayment ? "결제 대기" : "신청 완료"}
-        </span>
+        canJoinWaitlist ? (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full border border-black/15 bg-[#faf8f2] px-2.5 py-2 text-[11px] font-black text-black/68 shadow-sm">
+            빈 자리 대기하기
+          </span>
+        ) : (
+          <span
+            className={cn(
+              "absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium",
+              closed
+                ? "text-black/28"
+                : canResumePayment
+                  ? "text-amber-700"
+                  : "text-black/44",
+            )}
+          >
+            {application
+              ? isWaitingForSeat
+                ? "빈 자리 대기 중"
+                : canResumePayment
+                  ? "결제 대기"
+                  : "신청 완료"
+              : "마감"}
+          </span>
+        )
       ) : (
         <span
           className={cn(
-            "absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border",
+            "absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center",
             selected
-              ? "border-black bg-black text-white"
-              : "border-black/15 bg-white text-transparent",
+              ? "text-black"
+              : "text-black/48",
           )}
         >
-          <Check size={12} strokeWidth={3} aria-hidden />
+          {selected ? (
+            <Check size={16} strokeWidth={2.4} aria-hidden />
+          ) : (
+            <ChevronRight size={20} strokeWidth={1.8} aria-hidden />
+          )}
         </span>
       )}
     </motion.button>
@@ -400,6 +564,13 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 
 function MeetingDateApplicationFlow({
   userId,
+  profileCompleted = true,
+  guestMode = false,
+  onRequestBasicInfo,
+  participationPrecisionCount = 0,
+  onOpenParticipationRecord = () => undefined,
+  onFocusModeChange,
+  onAvailableTicketsChange,
   embedded = false,
   active = true,
   membershipStatus,
@@ -410,8 +581,14 @@ function MeetingDateApplicationFlow({
   onBlindDateOpenRequestHandled,
   onDateApplicationsChange,
 }: MeetingRecommendationProps) {
+  const searchParams = useSearchParams();
   const [screen, setScreen] = useState<DateApplicationScreen>("dates");
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
+  const [availableTickets, setAvailableTickets] = useState<GatheringTicket[]>([]);
+  const [availableTicketsLoading, setAvailableTicketsLoading] = useState(true);
+  const [selectedTicket, setSelectedTicket] = useState<GatheringTicket | null>(
+    null,
+  );
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [purchaseOption, setPurchaseOption] =
     useState<DateApplicationPurchaseOption>("single");
@@ -430,18 +607,10 @@ function MeetingDateApplicationFlow({
     useState<string | null>(null);
 
   const today = todayInKst();
-  const availableDates = meetingDateApplicationDates(today).map(
-    (date): AvailableDate => ({
-      id: `meeting-date-${date}`,
-      date,
-      label: date,
-      tickets: [],
-      ticketCount: 0,
-    }),
-  );
   const applicationByDate = new Map(
     applications.map((application) => [application.meetingDate, application]),
   );
+  const resumeDate = searchParams.get("resumeDate");
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -460,6 +629,13 @@ function MeetingDateApplicationFlow({
     activeBlindDateOffers[0] ??
     null;
 
+  const focusMode = screen === "ticket" || screen === "purchase";
+
+  useEffect(() => {
+    onFocusModeChange?.(focusMode);
+    return () => onFocusModeChange?.(false);
+  }, [focusMode, onFocusModeChange]);
+
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
       return;
@@ -476,6 +652,7 @@ function MeetingDateApplicationFlow({
   ]);
 
   useEffect(() => {
+    if (guestMode) return;
     let alive = true;
     const load = async () => {
       const localApplications = loadLocalDateApplications(userId);
@@ -500,7 +677,57 @@ function MeetingDateApplicationFlow({
       alive = false;
       window.removeEventListener("focus", load);
     };
-  }, [active, userId]);
+  }, [active, guestMode, userId]);
+
+  useEffect(() => {
+    if (guestMode) {
+      setAvailableTickets([]);
+      onAvailableTicketsChange?.([]);
+      setAvailableTicketsLoading(false);
+      return;
+    }
+
+    let alive = true;
+    const load = async () => {
+      if (alive) setAvailableTicketsLoading(true);
+      try {
+        const tickets = await fetchAvailableTickets();
+        if (!alive) return;
+        setAvailableTickets(tickets);
+        onAvailableTicketsChange?.(tickets);
+      } catch (loadError) {
+        if (!alive) return;
+        setError(
+          loadError instanceof Error &&
+            loadError.message !== "available-tickets-load-failed"
+            ? loadError.message
+            : "티켓을 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+      } finally {
+        if (alive) setAvailableTicketsLoading(false);
+      }
+    };
+
+    void load();
+    if (active) window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", load);
+    };
+  }, [active, guestMode, onAvailableTicketsChange]);
+
+  useEffect(() => {
+    if (
+      !profileCompleted ||
+      !resumeDate ||
+      isMeetingDateClosed(resumeDate) ||
+      !meetingDateApplicationDates(today).includes(resumeDate)
+    ) {
+      return;
+    }
+
+    setSelectedDates([resumeDate]);
+  }, [profileCompleted, resumeDate, today]);
 
   useEffect(() => {
     onDateApplicationsChange?.(applications);
@@ -521,6 +748,61 @@ function MeetingDateApplicationFlow({
       return [date];
     });
     setError(null);
+  };
+
+  const openTicket = (ticket: GatheringTicket) => {
+    if (saving) return;
+    setPurchaseOption("single");
+    setSelectedTicket(ticket);
+    setError(null);
+    setScreen("ticket");
+    trackEvent("meeting_ticket_detail_open", {
+      ticket_instance_id: ticket.id,
+      meeting_date: ticket.date,
+    });
+  };
+
+  const declineTicket = async (ticket: GatheringTicket) => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/meetings/available-tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "no",
+          ticketInstanceId: ticket.id,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { rejected?: boolean; error?: string }
+        | null;
+      if (!response.ok || !data?.rejected) {
+        throw new Error(data?.error ?? "ticket-rejection-save-failed");
+      }
+
+      setAvailableTickets((current) =>
+        current.filter((item) => item.id !== ticket.id),
+      );
+      setSelectedTicket(null);
+      setScreen("dates");
+      trackEvent("meeting_ticket_response", {
+        ticket_instance_id: ticket.id,
+        meeting_date: ticket.date,
+        response: "no",
+      });
+    } catch (declineError) {
+      setError(
+        declineError instanceof Error &&
+          declineError.message !== "ticket-rejection-save-failed"
+          ? declineError.message
+          : "선택을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const copyDepositAccount = async () => {
@@ -544,10 +826,24 @@ function MeetingDateApplicationFlow({
     selectedApplication?.status === "payment_pending" &&
     selectedApplication.depositStatus === "payment_pending";
 
-  const submitDateApplications = async (openStoreAfterSave = false) => {
-    if (selectedDates.length !== 1 || saving) return;
+  const submitDateApplications = async (
+    openStoreAfterSave = false,
+    ticket: GatheringTicket | null = null,
+  ) => {
+    const targetDates = ticket ? [ticket.date] : [...selectedDates];
+    if (targetDates.length !== 1 || saving) return;
 
-    const targetDates = [...selectedDates];
+    if (!profileCompleted) {
+      if (onRequestBasicInfo) {
+        onRequestBasicInfo(targetDates[0]);
+      } else {
+        window.location.assign(
+          `/onboarding/profile?from=application&date=${encodeURIComponent(targetDates[0])}`,
+        );
+      }
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setDepositCopyError(null);
@@ -569,6 +865,7 @@ function MeetingDateApplicationFlow({
               body: JSON.stringify({
                 dates: targetDates,
                 openPayment: false,
+                ticketInstanceId: ticket?.id,
               }),
             },
           );
@@ -651,6 +948,7 @@ function MeetingDateApplicationFlow({
           depositAmount: MEETING_DATE_DEPOSIT_AMOUNT,
           depositStatus: "payment_pending",
           assignedTicketInstanceId: null,
+          ...(ticket ? { assignedTicketInstanceId: ticket.id } : {}),
           createdAt: now,
         }),
       );
@@ -668,6 +966,13 @@ function MeetingDateApplicationFlow({
           payment_provider: "groble",
           date_count: targetDates.length,
         });
+        if (ticket) {
+          trackEvent("meeting_ticket_response", {
+            ticket_instance_id: ticket.id,
+            meeting_date: ticket.date,
+            response: "yes",
+          });
+        }
         window.location.assign(meetingApplicationPaymentUrl);
         return;
       }
@@ -690,6 +995,7 @@ function MeetingDateApplicationFlow({
         body: JSON.stringify({
           dates: targetDates,
           openPayment: openStoreAfterSave,
+          ticketInstanceId: ticket?.id,
         }),
       });
       const data = (await response.json().catch(() => null)) as
@@ -731,6 +1037,13 @@ function MeetingDateApplicationFlow({
           payment_provider: "groble",
           date_count: targetDates.length,
         });
+        if (ticket) {
+          trackEvent("meeting_ticket_response", {
+            ticket_instance_id: ticket.id,
+            meeting_date: ticket.date,
+            response: "yes",
+          });
+        }
         window.location.assign(meetingApplicationPaymentUrl);
         return;
       }
@@ -750,6 +1063,319 @@ function MeetingDateApplicationFlow({
       setSaving(false);
     }
   };
+
+  const joinClosedDateWaitlist = async (date: string) => {
+    if (saving || applicationByDate.has(date) || !isMeetingDateClosed(date)) {
+      return;
+    }
+
+    if (!profileCompleted) {
+      if (onRequestBasicInfo) {
+        onRequestBasicInfo(date);
+      } else {
+        window.location.assign(
+          `/onboarding/profile?from=application&date=${encodeURIComponent(date)}`,
+        );
+      }
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      let waitlistApplications: MeetingDateApplication[];
+
+      if (isLocalTestHost()) {
+        const now = new Date().toISOString();
+        waitlistApplications = [
+          {
+            id: `local-waitlist:${date}`,
+            meetingDate: date,
+            meetingTime: meetingDateSchedule(date)?.time ?? "",
+            region: MEETING_DATE_REGION,
+            status: "waitlisted",
+            depositAmount: 0,
+            depositStatus: "payment_pending",
+            assignedTicketInstanceId: null,
+            createdAt: now,
+          },
+        ];
+      } else {
+        const response = await fetch("/api/meeting-date-applications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dates: [date], waitlist: true }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | DateApplicationsResponse
+          | null;
+        if (!response.ok || !data?.applications) {
+          throw new Error(data?.error ?? "waitlist-save-failed");
+        }
+        waitlistApplications = data.applications;
+      }
+
+      setApplications((current) => {
+        const nextApplications = mergeDateApplications(
+          current,
+          waitlistApplications,
+        );
+        saveLocalDateApplications(userId, nextApplications);
+        return nextApplications;
+      });
+      trackEvent("application_created", {
+        application_type: "closed_date_waitlist",
+        meeting_date: date,
+        deposit_amount: 0,
+      });
+    } catch (waitlistError) {
+      setError(
+        waitlistError instanceof Error &&
+          waitlistError.message !== "waitlist-save-failed"
+          ? waitlistError.message
+          : "빈 자리 대기를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (screen === "ticket" && selectedTicket) {
+    return (
+      <motion.section
+        key={`meeting-ticket-detail-${selectedTicket.id}`}
+        initial={{ opacity: 0, x: 16 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -12 }}
+        transition={ticketFadeTransition}
+        className={cn(
+          "min-h-full bg-[#f7f4ed] px-5 pb-[calc(88px+env(safe-area-inset-bottom))] pt-7",
+          embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (saving) return;
+            setSelectedTicket(null);
+            setScreen("dates");
+            setError(null);
+          }}
+          disabled={saving}
+          className="mb-4 flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm disabled:opacity-40"
+        >
+          <ChevronLeft size={17} aria-hidden />
+          목록으로
+        </button>
+
+        <div className="overflow-hidden rounded-[28px] border border-black/10 bg-[#faf8f2] shadow-[0_18px_44px_rgba(24,24,20,0.06)]">
+          <TicketDetailHero
+            ticket={selectedTicket}
+            backgroundImageUrls={selectedTicket.imageUrl ? undefined : []}
+          />
+          <TicketDetailContent
+            ticket={selectedTicket}
+            sections={["summary", "vibe", "activities", "notice"]}
+            className="px-4 pb-2"
+          />
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+            {error}
+          </p>
+        )}
+
+        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+          <motion.button
+            type="button"
+            whileTap={!saving ? { scale: 0.98 } : undefined}
+            disabled={saving}
+            onClick={() => void declineTicket(selectedTicket)}
+            className="flex h-[56px] items-center justify-center rounded-full bg-transparent font-serif text-[17px] font-semibold tracking-[0.16em] text-black/42 disabled:opacity-40"
+          >
+            NO
+          </motion.button>
+          <motion.button
+            type="button"
+            whileTap={!saving ? { scale: 0.98 } : undefined}
+            disabled={saving}
+            onClick={() => {
+              setPurchaseOption("single");
+              setError(null);
+              setScreen("purchase");
+            }}
+            className="flex h-[56px] items-center justify-center rounded-full bg-black font-serif text-[17px] font-semibold tracking-[0.16em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+          >
+            YES
+          </motion.button>
+        </div>
+      </motion.section>
+    );
+  }
+
+  if (screen === "purchase" && selectedTicket) {
+    const singleSelected = purchaseOption === "single";
+
+    return (
+      <motion.section
+        key={`meeting-ticket-purchase-${selectedTicket.id}`}
+        initial={{ opacity: 0, x: 16 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -12 }}
+        transition={ticketFadeTransition}
+        className={cn(
+          "min-h-full bg-[#f7f4ed] px-5 pb-32 pt-7",
+          embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (saving) return;
+            setError(null);
+            setScreen("ticket");
+          }}
+          disabled={saving}
+          className="flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm disabled:opacity-40"
+        >
+          <ChevronLeft size={17} aria-hidden />
+          경험으로
+        </button>
+
+        <header className="mt-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-black/34">
+            READY TO APPLY
+          </p>
+          <h1 className="mt-2 text-[28px] font-black leading-[1.18] tracking-[-0.055em] text-black">
+            참여 방식을
+            <br />
+            선택해주세요.
+          </h1>
+          <p className="mt-3 text-[13px] font-medium leading-5 text-black/48">
+            결제 방식을 선택한 다음 신청을 완료할 수 있어요.
+          </p>
+        </header>
+
+        <div className="mt-6 rounded-[22px] border border-black/[0.08] bg-[#faf8f2] px-4 py-4">
+          <p className="text-[11px] font-bold text-black/42">
+            {meetingDateLabel(selectedTicket.date)}
+          </p>
+          <h2 className="mt-1 text-[18px] font-black tracking-[-0.04em] text-black">
+            {selectedTicket.title}
+          </h2>
+          <p className="mt-1 text-[12px] font-semibold text-black/48">
+            {meetingDateSchedule(selectedTicket.date)?.timeLabel ??
+              selectedTicket.time} · {selectedTicket.area}
+          </p>
+        </div>
+
+        <div className="mt-7 space-y-2.5">
+          <button
+            type="button"
+            aria-pressed={singleSelected}
+            onClick={() => setPurchaseOption("single")}
+            className={cn(
+              "relative flex min-h-[88px] w-full items-center justify-between gap-4 rounded-[20px] border px-4 py-4 text-left transition",
+              singleSelected
+                ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
+                : "border-black/10 bg-[#faf8f2] hover:border-black/25",
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <span
+                className={cn(
+                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                  singleSelected
+                    ? "border-black bg-black text-white"
+                    : "border-black/15 bg-[#f1eee6] text-transparent",
+                )}
+              >
+                <Check size={12} strokeWidth={3} aria-hidden />
+              </span>
+              <span>
+                <span className="block text-[15px] font-black text-black">
+                  1회권 결제
+                </span>
+                <span className="mt-1 block text-[11px] font-medium text-black/46">
+                  이번 경험에 한 번 참여해요
+                </span>
+              </span>
+            </span>
+            <strong className="whitespace-nowrap text-[20px] font-black tracking-[-0.045em] text-black">
+              10,000원
+            </strong>
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={!singleSelected}
+            onClick={() => setPurchaseOption("membership")}
+            className={cn(
+              "relative flex min-h-[112px] w-full items-start justify-between gap-3 rounded-[20px] border px-4 py-4 text-left transition",
+              !singleSelected
+                ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
+                : "border-black/10 bg-[#faf8f2] hover:border-black/25",
+            )}
+          >
+            <span className="flex min-w-0 items-start gap-3">
+              <span
+                className={cn(
+                  "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
+                  !singleSelected
+                    ? "border-black bg-black text-white"
+                    : "border-black/15 bg-[#f1eee6] text-transparent",
+                )}
+              >
+                <Check size={12} strokeWidth={3} aria-hidden />
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-2">
+                  <span className="text-[15px] font-black text-black">
+                    1개월 멤버십
+                  </span>
+                  <span className="rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
+                    추천
+                  </span>
+                </span>
+                <span className="mt-2 block text-[11px] font-medium leading-[1.55] text-black/46">
+                  30일 동안 참여 횟수와 관계없이
+                  <br />
+                  모임 참가비가 면제돼요
+                </span>
+              </span>
+            </span>
+            <strong className="whitespace-nowrap pt-0.5 text-[20px] font-black tracking-[-0.045em] text-black">
+              20,000원
+            </strong>
+          </button>
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+            {error}
+          </p>
+        )}
+
+        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+          <motion.button
+            type="button"
+            whileTap={!saving ? { scale: 0.985 } : undefined}
+            disabled={saving}
+            onClick={() => void submitDateApplications(true, selectedTicket)}
+            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
+          >
+            {saving
+              ? "결제창을 준비하는 중..."
+              : singleSelected
+                ? "10,000원 결제하기"
+                : "20,000원 결제하고 멤버십 시작하기"}
+          </motion.button>
+        </div>
+      </motion.section>
+    );
+  }
 
   if (screen === "blindDate" && selectedBlindDateOffer) {
     return (
@@ -771,7 +1397,7 @@ function MeetingDateApplicationFlow({
   return (
     <section
       className={cn(
-        "px-5 pb-8 pt-7",
+        "min-h-full bg-[#f7f4ed] px-5 pb-8 pt-7",
         embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
       )}
     >
@@ -829,6 +1455,48 @@ function MeetingDateApplicationFlow({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
           >
+            <div className="rounded-[26px] border border-black/10 bg-[#f1eee6] p-2.5 shadow-[0_18px_42px_rgba(39,33,24,0.04)]">
+              <div className="flex h-14 items-center gap-3 px-3">
+                <h1 className="flex-1 text-[18px] font-bold tracking-[-0.035em] text-black">
+                  경험을 선택하세요.
+                </h1>
+                <CompactParticipationRecord
+                  count={participationPrecisionCount}
+                  onOpen={onOpenParticipationRecord}
+                />
+              </div>
+
+              <div className="overflow-hidden rounded-[21px] border border-black/[0.07] bg-[#faf8f2]">
+                {availableTickets.map((ticket) => (
+                  <DateApplicationOption
+                    key={ticket.id}
+                    ticket={ticket}
+                    selected={false}
+                    application={applicationByDate.get(ticket.date) ?? null}
+                    closed={
+                      ticket.date < today || isMeetingDateClosed(ticket.date)
+                    }
+                    waitlistAvailable={isMeetingDateClosed(ticket.date)}
+                    disabled={saving}
+                    onToggle={() => openTicket(ticket)}
+                    onWaitlist={() => undefined}
+                  />
+                ))}
+                {availableTicketsLoading && (
+                  <div className="flex min-h-28 items-center justify-center gap-2 text-xs font-bold text-black/38">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/15 border-t-black/55" />
+                    티켓을 불러오는 중...
+                  </div>
+                )}
+                {!availableTicketsLoading && availableTickets.length === 0 && (
+                  <p className="px-5 py-10 text-center text-sm font-semibold leading-6 text-black/42">
+                    지금 확인할 수 있는 티켓이 없어요.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="hidden">
             <header className="pr-12">
               <h1 className="whitespace-nowrap text-[28px] font-extrabold leading-9 tracking-[-0.05em] text-black">
                 가능한 날짜를 골라주세요.
@@ -875,17 +1543,23 @@ function MeetingDateApplicationFlow({
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2.5 overflow-hidden">
-              {availableDates.map((date) => (
+              {availableTickets.map((ticket) => (
                 <DateApplicationOption
-                  key={date.date}
-                  date={date}
-                  selected={selectedDates.includes(date.date)}
-                  application={applicationByDate.get(date.date) ?? null}
-                  closed={date.date < today}
+                  key={ticket.id}
+                  ticket={ticket}
+                  selected={false}
+                  application={applicationByDate.get(ticket.date) ?? null}
+                  closed={
+                    ticket.date < today || isMeetingDateClosed(ticket.date)
+                  }
+                  waitlistAvailable={isMeetingDateClosed(ticket.date)}
                   disabled={saving}
-                  onToggle={() => toggleDate(date.date)}
+                  onToggle={() => openTicket(ticket)}
+                  onWaitlist={() => undefined}
                 />
               ))}
+            </div>
+
             </div>
 
             {error && (
@@ -918,7 +1592,7 @@ function MeetingDateApplicationFlow({
                       "relative flex min-h-[82px] w-full items-center justify-between gap-4 rounded-[18px] border px-4 py-3.5 text-left transition",
                       purchaseOption === "single"
                         ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                        : "border-black/10 bg-white hover:border-black/25",
+                        : "border-black/10 bg-[#faf8f2] hover:border-black/25 hover:bg-[#f1eee6]",
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-3">
@@ -927,7 +1601,7 @@ function MeetingDateApplicationFlow({
                           "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
                           purchaseOption === "single"
                             ? "border-black bg-black text-white"
-                            : "border-black/15 bg-white text-transparent",
+                            : "border-black/15 bg-[#f1eee6] text-transparent",
                         )}
                       >
                         <Check size={12} strokeWidth={3} aria-hidden />
@@ -949,7 +1623,7 @@ function MeetingDateApplicationFlow({
                       "relative w-full rounded-[18px] border px-4 py-4 text-left transition",
                       purchaseOption === "membership"
                         ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                        : "border-black/10 bg-white hover:border-black/25",
+                        : "border-black/10 bg-[#faf8f2] hover:border-black/25 hover:bg-[#f1eee6]",
                     )}
                   >
                     <span className="flex items-start gap-3">
@@ -958,7 +1632,7 @@ function MeetingDateApplicationFlow({
                           "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
                           purchaseOption === "membership"
                             ? "border-black bg-black text-white"
-                            : "border-black/15 bg-white text-transparent",
+                            : "border-black/15 bg-[#f1eee6] text-transparent",
                         )}
                       >
                         <Check size={12} strokeWidth={3} aria-hidden />

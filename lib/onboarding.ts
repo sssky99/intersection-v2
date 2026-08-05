@@ -31,7 +31,6 @@ export function nextOnboardingPathAfterDetails(
       : "/onboarding/questions";
   }
 
-  if (!profile.profile_completed) return "/onboarding/profile";
   return "/meetings?tab=recommend";
 }
 

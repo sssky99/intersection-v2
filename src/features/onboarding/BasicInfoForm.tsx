@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Camera, Check } from "lucide-react";
+import { Camera, Check, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
@@ -92,6 +92,8 @@ export function BasicInfoForm({
   onGuestDraftChange,
   onGuestPhotoChange,
   onGuestComplete,
+  presentation = "page",
+  onClose,
 }: {
   userId?: string;
   initialValues: BasicInfoValues;
@@ -100,10 +102,13 @@ export function BasicInfoForm({
   onGuestDraftChange?: (values: BasicInfoValues) => void;
   onGuestPhotoChange?: (file: File) => Promise<void>;
   onGuestComplete?: (values: BasicInfoValues) => Promise<void>;
+  presentation?: "page" | "modal";
+  onClose?: () => void;
 }) {
   const router = useRouter();
   const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
+  const isModal = presentation === "modal";
   const [draft, setDraft] = useState(initialValues);
   const [visibleStepCount, setVisibleStepCount] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -140,7 +145,7 @@ export function BasicInfoForm({
       ? "사진 업로드 중..."
       : canSave
         ? isGuest
-          ? "카카오로 계속하기"
+          ? "카카오로 로그인하고 저장하기"
           : isRegeneration
           ? "새 프로필 완성하기"
           : "프로필 완성하기"
@@ -482,10 +487,28 @@ export function BasicInfoForm({
   };
 
   return (
-    <section className="flex min-h-dvh flex-col bg-[#F7F5EF] px-5 pb-6 pt-5 md:min-h-[calc(100dvh-32px)]">
-      <header>
+    <section
+      className={`flex flex-col bg-[#F7F5EF] px-5 pb-6 pt-5 ${
+        isModal
+          ? "h-full min-h-0 overflow-y-auto"
+          : "min-h-dvh md:min-h-[calc(100dvh-32px)]"
+      }`}
+    >
+      <header className={isModal ? "relative pr-11" : undefined}>
+        {isModal && onClose && (
+          <button
+            type="button"
+            aria-label="기본정보 입력 닫기"
+            onClick={onClose}
+            className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#faf8f2] text-black/55 transition hover:bg-[#f1eee6] hover:text-black"
+          >
+            <X size={18} aria-hidden />
+          </button>
+        )}
         <h1 className="mt-2 text-[27px] font-extrabold leading-[1.25] tracking-[-0.055em] text-[#171714]">
-          마지막으로 기본 정보를 입력하면
+          마지막으로
+          <br />
+          기본 정보를 입력하면
           <br />
           프로필이 완성돼요.
         </h1>
@@ -516,11 +539,6 @@ export function BasicInfoForm({
 
       {finalButtonVisible ? (
         <div className="mt-auto">
-          {isGuest && (
-            <p className="mb-3 text-center text-[13px] font-semibold text-black/50">
-              답변 저장 후 바로 추천을 확인할 수 있어요.
-            </p>
-          )}
           <motion.button
             type="button"
             whileTap={canSave && !saving ? { scale: 0.98 } : undefined}

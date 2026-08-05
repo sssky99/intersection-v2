@@ -410,7 +410,7 @@ export function PreferenceQuestionFlow({
       router.replace(
         mode === "regeneration" || mode === "upgrade"
           ? "/meetings?tab=profile"
-          : "/onboarding/profile",
+          : "/meetings?tab=recommend",
       );
       router.refresh();
     } catch (completionError) {

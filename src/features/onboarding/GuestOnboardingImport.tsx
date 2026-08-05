@@ -53,7 +53,11 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
 
         await clearGuestOnboardingDraft();
         trackEvent("guest_onboarding_import_complete");
-        router.replace("/meetings?tab=profile");
+        router.replace(
+          draft.returnMeetingDate
+            ? `/meetings?tab=recommend&resumeDate=${encodeURIComponent(draft.returnMeetingDate)}`
+            : "/meetings?tab=recommend",
+        );
         router.refresh();
       } catch (importError) {
         console.error("Guest onboarding import failed:", importError);

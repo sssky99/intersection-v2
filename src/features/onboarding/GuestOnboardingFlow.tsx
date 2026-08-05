@@ -1,8 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BasicInfoForm, type BasicInfoValues } from "@/features/onboarding/BasicInfoForm";
+import { AnimatePresence, motion } from "framer-motion";
+import { AppHome } from "@/features/app/AppHome";
+import {
+  BasicInfoForm,
+  type BasicInfoValues,
+} from "@/features/onboarding/BasicInfoForm";
 import { PreferenceQuestionFlow } from "@/features/onboarding/TableCardSurveyPreview";
+import { preferenceProfileVersion } from "@/data/preferenceQuestions";
 import {
   loadGuestOnboardingDraft,
   loadGuestProfilePhoto,
@@ -13,10 +19,55 @@ import {
 import { trackEvent } from "@/lib/analytics";
 import { createOAuthRedirectUrl } from "@/lib/authRedirect";
 import { createClient } from "@/lib/supabase/client";
+import type { ProfileRow } from "@/types/profile";
 import type { StoredAnswerRow } from "@/types/question";
+
+type GuestScreen = "app" | "basic-info";
+
+function guestProfile(): ProfileRow {
+  return {
+    user_id: "guest-preview",
+    provider: null,
+    kakao_id: null,
+    name: null,
+    nickname: null,
+    phone: null,
+    phone_normalized: null,
+    gender: null,
+    birth_year: null,
+    mbti: null,
+    photo_url: null,
+    details_seen_at: null,
+    browse_seen_at: null,
+    profile_completed: false,
+    questions_completed: true,
+    profile_experience_version: preferenceProfileVersion,
+    is_test_participant: false,
+    public_intro: null,
+    public_emoji: "✦",
+    public_intro_generated_at: null,
+    public_intro_revealed_generated_at: null,
+    public_intro_model: null,
+    last_profile_regenerated_at: null,
+    profile_regeneration_started_at: null,
+    profile_regeneration_questions_completed_at: null,
+    meeting_guidelines_agreed: false,
+    meeting_guidelines_agreed_at: null,
+    membership_status: null,
+    membership_plan: null,
+    membership_start_date: null,
+    membership_end_date: null,
+    membership_purchase_clicked_at: null,
+    membership_updated_at: null,
+    matching_precision_bonus: 0,
+    community_guidelines_agreed: false,
+    community_guidelines_agreed_at: null,
+  };
+}
 
 export function GuestOnboardingFlow() {
   const [draft, setDraft] = useState<GuestOnboardingDraft | null>(null);
+  const [screen, setScreen] = useState<GuestScreen>("app");
   const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
@@ -60,15 +111,20 @@ export function GuestOnboardingFlow() {
 
   const handleQuestionsComplete = useCallback(
     (answers: StoredAnswerRow[]) => {
-      updateDraft((current) => ({
-        ...current,
-        answers,
-        phase: "profile",
-      }));
+      updateDraft((current) => ({ ...current, answers, phase: "profile" }));
+      setScreen("app");
       trackEvent("questions_complete", {
         question_count: answers.length,
         mode: "guest",
       });
+    },
+    [updateDraft],
+  );
+
+  const requestBasicInfo = useCallback(
+    (meetingDate?: string) => {
+      updateDraft((current) => ({ ...current, returnMeetingDate: meetingDate }));
+      setScreen("basic-info");
     },
     [updateDraft],
   );
@@ -122,7 +178,7 @@ export function GuestOnboardingFlow() {
       trackEvent("kakao_login_click", {
         next_path: "/onboarding/import",
         provider: "kakao",
-        source: "guest_onboarding_complete",
+        source: "guest_basic_info_complete",
       });
 
       const { error } = await createClient().auth.signInWithOAuth({
@@ -139,21 +195,8 @@ export function GuestOnboardingFlow() {
   );
 
   const initialProfileValues = useMemo(
-    () =>
-      draft
-        ? {
-            ...draft.profile,
-            photoUrl,
-          }
-        : null,
-    [
-      draft?.profile.birthYear,
-      draft?.profile.gender,
-      draft?.profile.mbti,
-      draft?.profile.name,
-      draft?.profile.phone,
-      photoUrl,
-    ],
+    () => (draft ? { ...draft.profile, photoUrl } : null),
+    [draft, photoUrl],
   );
 
   if (!draft) {
@@ -177,13 +220,50 @@ export function GuestOnboardingFlow() {
     );
   }
 
-  return initialProfileValues ? (
-    <BasicInfoForm
-      mode="guest"
-      initialValues={initialProfileValues}
-      onGuestDraftChange={handleProfileDraftChange}
-      onGuestPhotoChange={handlePhotoChange}
-      onGuestComplete={handleProfileComplete}
-    />
-  ) : null;
+  return (
+    <div className="relative h-dvh overflow-hidden md:h-[calc(100dvh-32px)]">
+      <AppHome
+        userId="guest-preview"
+        profile={guestProfile()}
+        initialTab="recommend"
+        guestMode
+        initialAnswerRows={draft.answers}
+        onRequestBasicInfo={requestBasicInfo}
+      />
+
+      <AnimatePresence>
+        {screen === "basic-info" && initialProfileValues && (
+          <motion.div
+            key="guest-basic-info-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="absolute inset-0 z-[80] flex items-center justify-center bg-black/30 p-4 backdrop-blur-[3px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="기본정보 입력"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 24, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              className="h-[min(760px,calc(100dvh-32px))] w-full max-w-[390px] overflow-hidden rounded-[30px] border border-white/45 bg-[#F7F5EF] shadow-[0_28px_90px_rgba(0,0,0,0.28)]"
+            >
+              <BasicInfoForm
+                mode="guest"
+                presentation="modal"
+                initialValues={initialProfileValues}
+                onClose={() => setScreen("app")}
+                onGuestDraftChange={handleProfileDraftChange}
+                onGuestPhotoChange={handlePhotoChange}
+                onGuestComplete={handleProfileComplete}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }

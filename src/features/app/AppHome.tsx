@@ -46,12 +46,24 @@ import {
   preferenceQuestions,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
+import {
+  activityQuestions,
+  backgroundQuestions,
+  interestQuestions,
+  preferenceDetailQuestions,
+  selfQuestions,
+  traitsQuestions,
+  valueQuestions,
+  valuesQuestions,
+} from "@/data/profileDetailQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
 import { useDragScroll } from "@/features/app/useDragScroll";
+import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
+import { ProfileQuestionSectionOverlay } from "@/features/app/ProfileQuestionSectionOverlay";
 import {
   TicketDetailContent,
   type TicketDetailSectionKey,
@@ -105,17 +117,6 @@ const LazyMeetingChat = dynamic(
 
 const LazyProfileTab = dynamic(
   () => import("@/features/app/ProfileTab").then((module) => module.ProfileTab),
-  {
-    ssr: false,
-    loading: () => <ProfileTabLoading />,
-  },
-);
-
-const LazyPreferenceProfileTab = dynamic(
-  () =>
-    import("@/features/app/PreferenceProfileTab").then(
-      (module) => module.PreferenceProfileTab,
-    ),
   {
     ssr: false,
     loading: () => <ProfileTabLoading />,
@@ -342,6 +343,30 @@ function setTabUrl(tab: AppTab) {
   window.history.replaceState(null, "", url.toString());
 }
 
+function animateParticipationRecordGlow(element: HTMLElement) {
+  const computedStyle = window.getComputedStyle(element);
+  const restingShadow =
+    computedStyle.boxShadow === "none"
+      ? "0 0 0 0 rgba(18,18,18,0)"
+      : computedStyle.boxShadow;
+  const activeShadow =
+    "0 0 0 7px rgba(18,18,18,0.16), 0 18px 46px rgba(18,18,18,0.22)";
+
+  element.animate(
+    [
+      { transform: "scale(1)", boxShadow: restingShadow, offset: 0 },
+      { transform: "scale(1.008)", boxShadow: activeShadow, offset: 0.2 },
+      { transform: "scale(1)", boxShadow: restingShadow, offset: 0.42 },
+      { transform: "scale(1.008)", boxShadow: activeShadow, offset: 0.65 },
+      { transform: "scale(1)", boxShadow: restingShadow, offset: 1 },
+    ],
+    {
+      duration: 2800,
+      easing: "ease-in-out",
+    },
+  );
+}
+
 const userTicketsCacheTtlMs = 20_000;
 const initialUserTicketsLimit = 3;
 const userTicketsCache = new Map<
@@ -451,12 +476,18 @@ export function AppHome({
   initialTab = "recommend",
   initialLegacyResultPreview = false,
   operatorAccountSwitcher = null,
+  guestMode = false,
+  initialAnswerRows = [],
+  onRequestBasicInfo,
 }: {
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
   initialLegacyResultPreview?: boolean;
   operatorAccountSwitcher?: OperatorAccountSwitcher;
+  guestMode?: boolean;
+  initialAnswerRows?: AnswerRow[];
+  onRequestBasicInfo?: (meetingDate?: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
@@ -472,13 +503,31 @@ export function AppHome({
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
-  const [answerRows, setAnswerRows] = useState<AnswerRow[]>([]);
-  const [answers, setAnswers] = useState<AnswerMap>({});
+  const [answerRows, setAnswerRows] = useState<AnswerRow[]>(initialAnswerRows);
+  const [answers, setAnswers] = useState<AnswerMap>(() =>
+    Object.fromEntries(
+      initialAnswerRows.map((row) => {
+        const answer = rowToAnswer(row, preferenceQuestions);
+        return [answer.questionId, answer];
+      }),
+    ) as AnswerMap,
+  );
   const [currentProfile, setCurrentProfile] = useState(profile);
   const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
-  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
+  const [profileQuestionSection, setProfileQuestionSection] = useState<
+    | "basic"
+    | "background"
+    | "activity"
+    | "interest"
+    | "values"
+    | "preference"
+    | "value"
+    | "traits"
+    | "self"
+    | null
+  >(null);
   const [profileRegenerating, setProfileRegenerating] = useState(false);
   const [profileRegenerationError, setProfileRegenerationError] = useState<
     string | null
@@ -493,6 +542,10 @@ export function AppHome({
   );
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
+  const [recommendationFocusMode, setRecommendationFocusMode] = useState(false);
+  const [availableMeetingTickets, setAvailableMeetingTickets] = useState<
+    GatheringTicket[]
+  >([]);
   const recommendTabTrackedRef = useRef(false);
   const profileTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -584,17 +637,51 @@ export function AppHome({
     [applyUserTicketsResponse, loadRemainingUserTickets],
   );
 
+  const refreshAnswers = useCallback(async () => {
+    if (guestMode) return;
+    const answerQuestions = usesPreferenceProfile(currentProfile)
+      ? preferenceQuestions
+      : profileQuestions;
+    const { data, error } = await createClient()
+      .from("user_answers")
+      .select("question_order,answer_value,answer_values,answer_text,other_text")
+      .eq("user_id", userId)
+      .order("question_order")
+      .returns<AnswerRow[]>();
+
+    if (error || !data) return;
+
+    setAnswerRows(data);
+    setAnswers(
+      Object.fromEntries(
+        data
+          .filter((row) =>
+            answerQuestions.some(
+              (question) =>
+                (question.order ?? question.id) === row.question_order,
+            ),
+          )
+          .map((row) => {
+            const answer = rowToAnswer(row, answerQuestions);
+            return [answer.questionId, answer];
+          }),
+      ) as AnswerMap,
+    );
+  }, [currentProfile, guestMode, userId]);
+
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
 
   useEffect(() => {
+    if (guestMode) return;
     trackLoginSuccessFromUrl("existing");
-  }, []);
+  }, [guestMode]);
 
   useEffect(() => {
+    if (guestMode) return;
     identifyAnalyticsUser(userId);
-  }, [userId]);
+  }, [guestMode, userId]);
 
   useEffect(() => {
     if (activeTab !== "recommend" || recommendTabTrackedRef.current) return;
@@ -624,6 +711,7 @@ export function AppHome({
   ]);
 
   useEffect(() => {
+    if (guestMode) return;
     let cancelled = false;
 
     void loadUserTicketsProgressively({
@@ -670,12 +758,14 @@ export function AppHome({
       cancelled = true;
     };
   }, [
+    guestMode,
     loadUserTicketsProgressively,
     profile.profile_experience_version,
     userId,
   ]);
 
   useEffect(() => {
+    if (guestMode) return;
     const refreshTickets = () => {
       void loadUserTicketsProgressively({
         force: true,
@@ -684,7 +774,7 @@ export function AppHome({
 
     const intervalId = window.setInterval(refreshTickets, 30_000);
     return () => window.clearInterval(intervalId);
-  }, [loadUserTicketsProgressively]);
+  }, [guestMode, loadUserTicketsProgressively]);
 
   const switchTab = (tab: AppTab) => {
     if (tab === "profile") {
@@ -692,14 +782,31 @@ export function AppHome({
     }
 
     setActiveTab(tab);
-    setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
+    setProfileQuestionSection(null);
     setTabUrl(tab);
+  };
+
+  const openParticipationRecord = () => {
+    switchTab("profile");
+    window.setTimeout(() => {
+      const participationRecord =
+        document.querySelector<HTMLElement>("[data-participation-record]");
+      if (!participationRecord) return;
+
+      participationRecord.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        animateParticipationRecordGlow(participationRecord);
+      }, 360);
+    }, 80);
   };
 
   const openBlindDateStatus = () => {
     setActiveTab("recommend");
-    setProfilePanelOpen(false);
     setQuestionReviewOpen(false);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
@@ -857,7 +964,7 @@ export function AppHome({
 
   return (
     <section
-      className="relative flex h-dvh flex-col overflow-hidden bg-white md:h-[calc(100dvh-32px)]"
+      className="relative flex h-dvh flex-col overflow-hidden bg-[#f7f4ed] md:h-[calc(100dvh-32px)]"
     >
       {activeBlindDateOfferCount > 0 && (
         <button
@@ -882,67 +989,11 @@ export function AppHome({
         </button>
       )}
 
-      {(!preferenceProfileEnabled || operatorAccountSwitcher) && (
-        <>
-          <button
-            type="button"
-            onClick={() => {
-              setProfilePanelOpen((open) => !open);
-            }}
-            aria-label={
-              operatorAccountSwitcher
-                ? "테스트 계정 전환 카드 열기"
-                : "기본정보 카드 열기"
-            }
-            aria-expanded={profilePanelOpen}
-            className={cn(
-              "absolute right-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border bg-white text-xs font-bold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]",
-              profilePanelOpen
-                ? "border-black text-black shadow-md"
-                : "border-black/15 text-black/70 hover:text-black",
-            )}
-          >
-            {profileInitial(currentProfile)}
-          </button>
-
-          <AnimatePresence>
-            {profilePanelOpen && (
-              <>
-                <motion.button
-                  type="button"
-                  aria-label={
-                    operatorAccountSwitcher
-                      ? "테스트 계정 전환 카드 닫기"
-                      : "기본정보 카드 닫기"
-                  }
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setProfilePanelOpen(false)}
-                  className="absolute inset-0 z-20 bg-black/10"
-                />
-                <BasicInfoPanel
-                  key="basic-info-panel"
-                  profile={currentProfile}
-                  operatorAccountSwitcher={operatorAccountSwitcher}
-                  switchingAccountId={switchingAccountId}
-                  accountSwitchError={accountSwitchError}
-                  onProfileUpdated={setCurrentProfile}
-                  onClose={() => setProfilePanelOpen(false)}
-                  onSwitchAccount={switchToTestAccount}
-                  onReturnToOperator={returnToOperatorAccount}
-                />
-              </>
-            )}
-          </AnimatePresence>
-        </>
-      )}
-
       <div
         ref={scrollAreaRef}
         className={cn(
           "min-h-0 flex-1 touch-pan-y scrollbar-none",
-          chatRoomOpen
+          chatRoomOpen || recommendationFocusMode
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
           activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
@@ -955,6 +1006,7 @@ export function AppHome({
           <TicketListTab
             tickets={waitlistedTickets}
             dateApplications={dateApplications}
+            availableTickets={availableMeetingTickets}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
             onGoRecommend={() => switchTab("recommend")}
@@ -966,6 +1018,16 @@ export function AppHome({
         >
           <MeetingRecommendation
             userId={userId}
+            profileCompleted={Boolean(currentProfile.profile_completed)}
+            guestMode={guestMode}
+            onRequestBasicInfo={onRequestBasicInfo}
+            participationPrecisionCount={
+              participationCount +
+              (currentProfile.matching_precision_bonus ?? 0)
+            }
+            onOpenParticipationRecord={openParticipationRecord}
+            onFocusModeChange={setRecommendationFocusMode}
+            onAvailableTicketsChange={setAvailableMeetingTickets}
             embedded
             active={activeTab === "recommend"}
             membershipStatus={recommendationMembershipStatus}
@@ -983,14 +1045,24 @@ export function AppHome({
           aria-hidden={activeTab !== "chat"}
           className={cn(activeTab === "chat" ? "block h-full" : "hidden")}
         >
-          {activeTab === "chat" && (
+          {activeTab === "chat" && guestMode ? (
+            <section className="flex h-full min-h-[520px] flex-col items-center justify-center bg-[#f7f4ed] px-8 pb-24 text-center">
+              <MessageCircle size={28} strokeWidth={1.6} className="text-black/35" aria-hidden />
+              <h2 className="mt-5 text-[20px] font-black tracking-[-0.04em] text-black">
+                채팅은 신청 후 열려요
+              </h2>
+              <p className="mt-2 break-keep text-[13px] font-semibold leading-6 text-black/45">
+                모임 신청을 완료하면 참여자와 대화할 수 있어요.
+              </p>
+            </section>
+          ) : activeTab === "chat" ? (
             <LazyMeetingChat
               userId={userId}
               active
               onUnreadCountChange={setChatUnreadCount}
               onRoomOpenChange={setChatRoomOpen}
             />
-          )}
+          ) : null}
         </div>
         <div
           aria-hidden={activeTab !== "profile"}
@@ -998,7 +1070,7 @@ export function AppHome({
         >
           {activeTab === "profile" && (
             preferenceProfileEnabled ? (
-              <LazyPreferenceProfileTab
+              <PreferenceProfileTab
                 profile={currentProfile}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
@@ -1008,9 +1080,141 @@ export function AppHome({
                 recentInterests={
                   Array.isArray(answers[2]?.value) ? answers[2].value : []
                 }
+                answers={answers}
+                backgroundAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 101 || row.question_order > 104) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                activityAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 201 || row.question_order > 204) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                interestAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 301 || row.question_order > 306) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                valuesAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 401 || row.question_order > 406) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                preferenceAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 501 || row.question_order > 508) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                valueAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (
+                      !valueQuestions.some(
+                        (question) =>
+                          (question.order ?? question.id) === row.question_order,
+                      )
+                    ) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                traitsAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (row.question_order < 601 || row.question_order > 630) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
+                selfAnsweredCount={
+                  answerRows.filter((row) => {
+                    if (
+                      !selfQuestions.some(
+                        (question) =>
+                          (question.order ?? question.id) === row.question_order,
+                      )
+                    ) {
+                      return false;
+                    }
+                    return Boolean(
+                      row.answer_text ||
+                        row.answer_value ||
+                        row.answer_values?.length,
+                    );
+                  }).length
+                }
                 participationCount={participationCount}
                 onProfileUpdated={setCurrentProfile}
+                onRequestBasicInfo={() => onRequestBasicInfo?.()}
+                onOpenBasicQuestions={() => setProfileQuestionSection("basic")}
+                onOpenBackgroundQuestions={() =>
+                  setProfileQuestionSection("background")
+                }
+                onOpenActivityQuestions={() =>
+                  setProfileQuestionSection("activity")
+                }
+                onOpenInterestQuestions={() =>
+                  setProfileQuestionSection("interest")
+                }
+                onOpenValuesQuestions={() =>
+                  setProfileQuestionSection("values")
+                }
+                onOpenPreferenceQuestions={() =>
+                  setProfileQuestionSection("preference")
+                }
+                onOpenValueQuestions={() =>
+                  setProfileQuestionSection("value")
+                }
+                onOpenTraitsQuestions={() =>
+                  setProfileQuestionSection("traits")
+                }
+                onOpenSelfQuestions={() => setProfileQuestionSection("self")}
                 onLogout={logout}
+                previewMode={guestMode}
               />
             ) : (
               <LazyProfileTab
@@ -1037,7 +1241,7 @@ export function AppHome({
         </div>
       </div>
 
-      {!chatRoomOpen && (
+      {!chatRoomOpen && !recommendationFocusMode && (
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
@@ -1078,7 +1282,7 @@ export function AppHome({
                   {selected && (
                     <motion.div
                       layoutId="active-tab-bg"
-                      className="absolute inset-0 -z-10 rounded-full bg-white"
+                      className="absolute inset-0 -z-10 rounded-full bg-[#f7f4ed]"
                       transition={{ type: "spring", stiffness: 350, damping: 24 }}
                     />
                   )}
@@ -1088,6 +1292,56 @@ export function AppHome({
           </div>
         </nav>
       )}
+
+      <AnimatePresence>
+        {preferenceProfileEnabled && profileQuestionSection && (
+          <ProfileQuestionSectionOverlay
+            key={profileQuestionSection}
+            userId={userId}
+            title={
+              profileQuestionSection === "basic"
+                ? "코어 질문"
+                : profileQuestionSection === "background"
+                  ? "배경"
+                  : profileQuestionSection === "activity"
+                    ? "활동성"
+                    : profileQuestionSection === "interest"
+                      ? "흥미"
+                      : profileQuestionSection === "values"
+                        ? "관점"
+                        : profileQuestionSection === "preference"
+                          ? "선호"
+                          : profileQuestionSection === "value"
+                            ? "가치"
+                          : profileQuestionSection === "traits"
+                            ? "성향"
+                            : "자기정보"
+            }
+            questions={
+              profileQuestionSection === "basic"
+                ? preferenceQuestions
+                : profileQuestionSection === "background"
+                  ? backgroundQuestions
+                  : profileQuestionSection === "activity"
+                    ? activityQuestions
+                    : profileQuestionSection === "interest"
+                      ? interestQuestions
+                      : profileQuestionSection === "values"
+                        ? valuesQuestions
+                        : profileQuestionSection === "preference"
+                          ? preferenceDetailQuestions
+                          : profileQuestionSection === "value"
+                            ? valueQuestions
+                          : profileQuestionSection === "traits"
+                            ? traitsQuestions
+                          : selfQuestions
+            }
+            answerRows={answerRows}
+            onClose={() => setProfileQuestionSection(null)}
+            onAnswersChanged={refreshAnswers}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {questionReviewOpen && (
@@ -1109,9 +1363,18 @@ export function AppHome({
               <X size={17} aria-hidden />
             </button>
             <QuestionFlow
+              userId={userId}
               mode="preview"
               initialRows={answerRows}
-              onPreviewComplete={() => setQuestionReviewOpen(false)}
+              questionSet={
+                preferenceProfileEnabled
+                  ? preferenceQuestions
+                  : profileQuestions
+              }
+              onPreviewComplete={() => {
+                setQuestionReviewOpen(false);
+                void refreshAnswers();
+              }}
             />
           </motion.div>
         )}
@@ -1122,13 +1385,13 @@ export function AppHome({
 
 function ChatTabLoading() {
   return (
-    <section className="flex h-full min-h-[420px] flex-col bg-[#f7f7f5] px-5 pb-6 pt-[calc(72px+env(safe-area-inset-top))]">
+    <section className="flex h-full min-h-[420px] flex-col bg-[#f7f4ed] px-5 pb-6 pt-[calc(72px+env(safe-area-inset-top))]">
       <div className="h-6 w-28 animate-pulse rounded-full bg-black/10" />
       <div className="mt-5 space-y-3">
         {[0, 1, 2].map((item) => (
           <div
             key={item}
-            className="h-20 animate-pulse rounded-[24px] border border-black/5 bg-white"
+            className="h-20 animate-pulse rounded-[24px] border border-black/5 bg-[#faf8f2]"
           />
         ))}
       </div>
@@ -1138,10 +1401,10 @@ function ChatTabLoading() {
 
 function ProfileTabLoading() {
   return (
-    <div className="h-full min-h-full px-5 pb-7 pt-7">
+    <div className="h-full min-h-full bg-[#f7f4ed] px-5 pb-7 pt-7">
       <div className="h-3 w-14 animate-pulse rounded-full bg-accent/20" />
       <div className="mt-3 h-8 w-40 animate-pulse rounded-full bg-black/[0.06]" />
-      <div className="mt-7 rounded-2xl border border-black/10 bg-white px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
+      <div className="mt-7 rounded-2xl border border-black/10 bg-[#faf8f2] px-5 py-5 shadow-[0_10px_28px_rgba(0,0,0,0.035)]">
         <div className="h-3 w-20 animate-pulse rounded-full bg-accent/15" />
         <div className="mt-4 h-6 w-24 animate-pulse rounded-full bg-black/[0.06]" />
         <div className="mt-5 space-y-2">
@@ -1149,7 +1412,7 @@ function ProfileTabLoading() {
           <div className="h-3 w-4/5 animate-pulse rounded-full bg-black/[0.05]" />
         </div>
       </div>
-      <div className="mt-5 h-48 animate-pulse rounded-2xl border border-black/10 bg-white shadow-[0_10px_28px_rgba(0,0,0,0.035)]" />
+      <div className="mt-5 h-48 animate-pulse rounded-2xl border border-black/10 bg-[#faf8f2] shadow-[0_10px_28px_rgba(0,0,0,0.035)]" />
     </div>
   );
 }
@@ -1159,6 +1422,7 @@ type TicketListItem =
       kind: "date-application";
       id: string;
       application: MeetingDateApplication;
+      ticket: GatheringTicket | null;
     }
   | { kind: "stored-ticket"; id: string; userTicket: UserTicket };
 
@@ -1188,18 +1452,22 @@ function isVisibleMysteryApplication(
 function TicketListTab({
   tickets,
   dateApplications,
+  availableTickets,
   totalTicketCount,
   loadingMore,
   onGoRecommend,
 }: {
   tickets: UserTicket[];
   dateApplications: MeetingDateApplication[];
+  availableTickets: GatheringTicket[];
   totalTicketCount: number;
   loadingMore: boolean;
   onGoRecommend: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
+  const [selectedApplicationTicket, setSelectedApplicationTicket] =
+    useState<GatheringTicket | null>(null);
   const [nowMs, setNowMs] = useState<number | null>(null);
   const [forceReveal, setForceReveal] = useState(false);
   const dragState = useRef({
@@ -1221,12 +1489,23 @@ function TicketListTab({
         .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
     [dateApplications, forceReveal, nowMs],
   );
+  const availableTicketById = useMemo(
+    () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
+    [availableTickets],
+  );
   const ticketItems = useMemo<TicketListItem[]>(
     () => [
       ...mysteryApplications.map((application) => ({
         kind: "date-application" as const,
         id: `date-application:${application.id}`,
         application,
+        ticket: application.assignedTicketInstanceId
+          ? availableTicketById.get(application.assignedTicketInstanceId) ?? null
+          : application.status === "payment_pending"
+            ? availableTickets.find(
+                (ticket) => ticket.date === application.meetingDate,
+              ) ?? null
+            : null,
       })),
       ...tickets.map((userTicket) => ({
         kind: "stored-ticket" as const,
@@ -1234,7 +1513,7 @@ function TicketListTab({
         userTicket,
       })),
     ],
-    [mysteryApplications, tickets],
+    [availableTicketById, availableTickets, mysteryApplications, tickets],
   );
   const itemCount = ticketItems.length;
 
@@ -1404,6 +1683,16 @@ function TicketListTab({
       return;
     }
 
+    if (
+      !dragState.current.moved &&
+      Math.abs(dragDistance) <= 8 &&
+      tappedItem?.kind === "date-application" &&
+      tappedItem.ticket
+    ) {
+      setSelectedApplicationTicket(tappedItem.ticket);
+      return;
+    }
+
     if (dragState.current.moved) {
       window.setTimeout(() => {
         dragState.current.moved = false;
@@ -1489,13 +1778,19 @@ function TicketListTab({
             userTicket={selectedTicket}
             onClose={() => setSelectedTicket(null)}
           />
+        ) : selectedApplicationTicket ? (
+          <AssignedApplicationTicketDetailView
+            key={`assigned-application-ticket-${selectedApplicationTicket.id}`}
+            ticket={selectedApplicationTicket}
+            onClose={() => setSelectedApplicationTicket(null)}
+          />
         ) : (
           <motion.section
             key="stored-ticket-list"
             aria-busy={loadingMore}
             exit={{ opacity: 0, y: -8 }}
             transition={ticketFadeTransition}
-            className="flex h-full min-h-0 flex-col overflow-hidden bg-white pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
+            className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
           >
             <header className="shrink-0 px-5 pr-28">
               <p className="text-[13px] font-bold uppercase italic tracking-wide text-black">
@@ -1504,7 +1799,7 @@ function TicketListTab({
             </header>
 
             {itemCount === 0 ? (
-              <div className="mx-5 mt-16 rounded-[28px] border border-black/10 bg-white p-6 text-center shadow-[0_16px_44px_rgba(0,0,0,0.04)]">
+              <div className="mx-5 mt-16 rounded-[28px] border border-black/10 bg-[#faf8f2] p-6 text-center shadow-[0_16px_44px_rgba(0,0,0,0.04)]">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
                   <CalendarDays size={20} aria-hidden />
                 </div>
@@ -1554,9 +1849,19 @@ function TicketListTab({
                           onOpen={() => openStoredTicket(item.userTicket)}
                         />
                       ) : (
-                        <MysteryApplicationTicketCard
-                          application={item.application}
-                        />
+                        item.ticket ? (
+                          <AssignedApplicationTicketCard
+                            application={item.application}
+                            ticket={item.ticket}
+                            onOpen={() =>
+                              setSelectedApplicationTicket(item.ticket)
+                            }
+                          />
+                        ) : (
+                          <MysteryApplicationTicketCard
+                            application={item.application}
+                          />
+                        )
                       )}
                     </div>
                   ))}
@@ -1621,6 +1926,89 @@ function StoredTicketCard({
         tags={ticket.moodTags}
         badgeLabel={userTicket.statusLabel}
         badgeClassName={statusBadgeClass(userTicket.status)}
+        remainingSeatCount={ticket.remainingSeatCount}
+        className="shadow-none"
+      />
+    </motion.div>
+  );
+}
+
+function AssignedApplicationTicketDetailView({
+  ticket,
+  onClose,
+}: {
+  ticket: GatheringTicket;
+  onClose: () => void;
+}) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, x: 16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -12 }}
+      transition={ticketFadeTransition}
+      className="min-h-full bg-[#f7f4ed] px-5 pb-28 pt-7 text-black"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="mb-4 flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm"
+      >
+        <ChevronLeft size={17} aria-hidden />
+        티켓함으로
+      </button>
+
+      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-[#faf8f2] shadow-[0_18px_44px_rgba(24,24,20,0.06)]">
+        <TicketDetailHero
+          ticket={ticket}
+          backgroundImageUrls={ticket.imageUrl ? undefined : []}
+        />
+        <TicketDetailContent
+          ticket={ticket}
+          sections={["summary", "vibe", "activities", "notice"]}
+          className="px-4 pb-5"
+        />
+      </div>
+    </motion.section>
+  );
+}
+
+function AssignedApplicationTicketCard({
+  application,
+  ticket,
+  onOpen,
+}: {
+  application: MeetingDateApplication;
+  ticket: GatheringTicket;
+  onOpen: () => void;
+}) {
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-label={`${ticket.title} 자세히 보기`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileTap={{ scale: 0.99 }}
+      transition={{ duration: 0.28, ease: "easeOut" }}
+      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+    >
+      <IntersectionTicketCard
+        title={ticket.title}
+        imageUrl={ticket.imageUrl}
+        imageUrls={ticketBackgroundImageUrls(ticket)}
+        date={application.meetingDate || ticket.date}
+        time={application.meetingTime || ticket.time}
+        location={`서울\n${ticket.area || application.region}`}
+        tags={ticket.moodTags}
+        badgeLabel={meetingDateApplicationStatusLabels[application.status]}
+        badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className="shadow-none"
       />
@@ -1859,7 +2247,7 @@ export function StoredTicketDetailView({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
       transition={ticketFadeTransition}
-      className="min-h-full bg-white px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-black"
+      className="min-h-full bg-[#f7f4ed] px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-black"
     >
       <button
         type="button"
@@ -1874,7 +2262,7 @@ export function StoredTicketDetailView({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.04, duration: 0.22, ease: "easeOut" }}
-        className="overflow-hidden rounded-[28px] border border-black/12 bg-white shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
+        className="overflow-hidden rounded-[28px] border border-black/12 bg-[#faf8f2] shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
       >
         <TicketDetailHero
           ticket={ticket}
@@ -1888,7 +2276,7 @@ export function StoredTicketDetailView({
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.08, duration: 0.22, ease: "easeOut" }}
-          className="bg-white px-5 pb-5 pt-1"
+          className="bg-[#faf8f2] px-5 pb-5 pt-1"
         >
           <TicketStatusOverview
             userTicket={userTicket}

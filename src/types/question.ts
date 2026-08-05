@@ -25,13 +25,22 @@ export type QuestionCategory =
   | "최근 관심사"
   | "관계 가치"
   | "선호 활동"
-  | "비선호 활동";
+  | "비선호 활동"
+  | "배경"
+  | "활동성"
+  | "흥미"
+  | "관점"
+  | "선호"
+  | "가치"
+  | "성향"
+  | "자기정보";
 
 export type QuestionOption = {
   value: string;
   label: string;
   exclusive?: boolean;
   hasTextInput?: boolean;
+  fullWidth?: boolean;
 };
 
 export type TicketRatingAnswer = {
@@ -51,9 +60,12 @@ export type ProfileQuestion = {
   examples?: string[];
   type: QuestionType;
   options?: Array<string | QuestionOption>;
+  optionColumns?: 1 | 2;
   minSelections?: number;
   maxSelections?: number;
   scaleLabel?: string;
+  scaleMinLabel?: string;
+  scaleMaxLabel?: string;
   prompt?: string;
   allowPrivate?: boolean;
   allowOther?: boolean;

@@ -130,7 +130,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (existingProfile.questions_completed || existingProfile.profile_completed) {
+  if (existingProfile.profile_completed) {
     return NextResponse.json(
       { error: "Existing profile must not be overwritten.", existing: true },
       { status: 409 },

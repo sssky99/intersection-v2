@@ -1,5 +1,6 @@
 export const MEETING_DATE_DEPOSIT_AMOUNT = 10_000;
 export const MEETING_DATE_REGION = "서울";
+const CLOSED_MEETING_DATES = new Set(["2026-08-05", "2026-08-07"]);
 export type MeetingDateApplicationStatus =
   | "payment_pending"
   | "waitlisted"
@@ -64,18 +65,27 @@ export function meetingDateApplicationDates(today: string) {
 
   const dayMs = 24 * 60 * 60 * 1000;
   const currentDateMs = Date.UTC(current.year, current.month - 1, current.day);
-  const daysUntilVisibleFriday =
-    current.weekday === 6 ? 6 : (5 - current.weekday + 7) % 7;
-  const visibleFridayMs = currentDateMs + daysUntilVisibleFriday * dayMs;
+  const daysUntilVisibleWednesday = (3 - current.weekday + 7) % 7;
+  const visibleWednesdayMs =
+    currentDateMs + daysUntilVisibleWednesday * dayMs;
 
-  return [0, 1, 7, 8].map((offset) =>
-    formatUtcDate(visibleFridayMs + offset * dayMs),
+  return [0, 2, 3, 7, 9, 10].map((offset) =>
+    formatUtcDate(visibleWednesdayMs + offset * dayMs),
   );
 }
 
 export function meetingDateSchedule(value: string) {
   const parts = dateParts(value);
   if (!parts) return null;
+
+  if (parts.weekday === 3) {
+    return {
+      ...parts,
+      weekdayLabel: "수요일",
+      time: "19:00",
+      timeLabel: "오후 7시",
+    };
+  }
 
   if (parts.weekday === 5) {
     return {
@@ -100,6 +110,10 @@ export function meetingDateSchedule(value: string) {
 
 export function isMeetingDateApplicationDate(value: string) {
   return Boolean(meetingDateSchedule(value));
+}
+
+export function isMeetingDateClosed(value: string) {
+  return CLOSED_MEETING_DATES.has(value);
 }
 
 export function meetingDateLabel(value: string) {

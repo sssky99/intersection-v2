@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function GuestOnboardingImportPage() {
   const { user, profile } = await getAuthenticatedProfile();
   if (!user || !profile) redirect("/");
-  if (profile.questions_completed || profile.profile_completed) {
+  if (profile.profile_completed) {
     redirect(nextOnboardingPath(profile));
   }
 
