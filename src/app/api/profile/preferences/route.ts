@@ -67,7 +67,7 @@ export async function PATCH(request: Request) {
       phoneNormalized.length !== 11 ||
       (gender !== "여성" && gender !== "남성") ||
       !/^\d{4}$/.test(birthYear) ||
-      year < 1992 ||
+      year < 1980 ||
       year > 2007 ||
       !mbti ||
       mbti.length > 20

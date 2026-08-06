@@ -163,12 +163,11 @@ const localDateApplicationsStoragePrefix =
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
 const initialRecommendedTicketDate = "2026-08-08";
-const initialRecommendedTicketTitle = "베이킹 클래스";
-const personalizedMaleRecommendedTicketTitle = "향수 공방";
+const initialRecommendedTicketTitle = "향수 공방";
 const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
 const initialRecommendedTicketAudience = {
-  preferredActivities: ["meal", "outdoor", "taste"],
-  recentInterests: ["food", "coffee", "photo"],
+  preferredActivities: ["culture", "outdoor", "taste"],
+  recentInterests: ["exhibition", "growth", "photo"],
 };
 
 function recommendationAgeGroupFromBirthYear(
@@ -182,17 +181,6 @@ function recommendationAgeGroupFromBirthYear(
   if (age >= 25 && age <= 29) return "20대 중후반";
   if (age >= 30 && age <= 39) return "30대 초반";
   return null;
-}
-
-function shouldRecommendPerfumeWorkshop(
-  profileCompleted: boolean,
-  gender: string | null | undefined,
-  birthYear: string | number | null | undefined,
-) {
-  if (!profileCompleted || gender !== "남성") return false;
-
-  const year = birthYearNumber(birthYear);
-  return year !== null && year >= 1992 && year <= 1999;
 }
 
 function personalizedTicketHeading(name: string | null | undefined) {
@@ -343,7 +331,7 @@ function ProfileCurationOrbit({
 }
 
 function initialRecommendedTicketStorageKey(userId: string) {
-  return `intersection:initial-recommended-ticket:v3:${userId || "guest"}`;
+  return `intersection:initial-recommended-ticket:v4:${userId || "guest"}`;
 }
 
 function loadGuestDeclinedTicketIds() {
@@ -1176,21 +1164,12 @@ function MeetingDateApplicationFlow({
       return;
     }
 
-    const bakingTicket = availableTickets.find(
+    const perfumeWorkshopTicket = availableTickets.find(
       (ticket) =>
         ticket.date === initialRecommendedTicketDate &&
-        ticket.title.trim() === initialRecommendedTicketTitle,
+        ticket.title.includes(initialRecommendedTicketTitle),
     );
-    const perfumeWorkshopTicket = shouldRecommendPerfumeWorkshop(
-      profileCompleted,
-      profileGender,
-      profileBirthYear,
-    )
-      ? availableTickets.find((ticket) =>
-          ticket.title.includes(personalizedMaleRecommendedTicketTitle),
-        )
-      : undefined;
-    const recommendedTicket = perfumeWorkshopTicket ?? bakingTicket;
+    const recommendedTicket = perfumeWorkshopTicket;
     if (!recommendedTicket) return;
 
     initialRecommendationHandledRef.current = true;

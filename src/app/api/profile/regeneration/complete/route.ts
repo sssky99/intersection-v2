@@ -10,7 +10,7 @@ import type { ProfileRow } from "@/types/profile";
 import type { Gender } from "@/types/user";
 
 const REGENERATION_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
-const BIRTH_YEAR_MIN = 1992;
+const BIRTH_YEAR_MIN = 1980;
 const BIRTH_YEAR_MAX = 2007;
 
 type DraftAnswerRow = {
@@ -80,10 +80,10 @@ function scoreFromAnswer(answers: DraftAnswerRow[], order: number) {
 
 function profileScoresFromAnswers(answers: DraftAnswerRow[]) {
   return {
-    score_temperature: scoreFromAnswer(answers, 1),
-    score_texture: scoreFromAnswer(answers, 2),
-    score_tone: scoreFromAnswer(answers, 3),
-    score_rhythm: scoreFromAnswer(answers, 4),
+    score_temperature: scoreFromAnswer(answers, 6),
+    score_texture: scoreFromAnswer(answers, 7),
+    score_tone: scoreFromAnswer(answers, 8),
+    score_rhythm: scoreFromAnswer(answers, 9),
   };
 }
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  preferenceProfileVersion,
   preferenceQuestions,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
@@ -16,6 +17,7 @@ type AnswerRow = {
   question_order: number;
   answer_value: string | null;
   answer_values: string[] | null;
+  answer_text: string | null;
 };
 
 function validPreferenceAnswer(
@@ -31,6 +33,10 @@ function validPreferenceAnswer(
 
   if (question.type === "single_choice") {
     return Boolean(answer.answer_value && allowedValues.has(answer.answer_value));
+  }
+
+  if (question.type === "text") {
+    return Boolean(answer.answer_text?.trim());
   }
 
   const values = answer.answer_values ?? [];
@@ -75,7 +81,7 @@ export async function POST(request: Request) {
     : profileQuestions;
   const { data, error } = await admin
     .from(answerTable)
-    .select("question_order,answer_value,answer_values")
+    .select("question_order,answer_value,answer_values,answer_text")
     .eq("user_id", user.id)
     .returns<AnswerRow[]>();
 
@@ -155,7 +161,7 @@ export async function POST(request: Request) {
       .from("profiles")
       .update({
         ...(isPreferenceUpgrade
-          ? { profile_experience_version: "preferences-v2" }
+          ? { profile_experience_version: preferenceProfileVersion }
           : {}),
         conversation_result_code: null,
         conversation_result_version: null,

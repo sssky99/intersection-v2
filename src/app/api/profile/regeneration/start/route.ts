@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { usesPreferenceProfile } from "@/data/preferenceQuestions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
 
   if (
     isPreferenceUpgrade &&
-    profile.profile_experience_version === "preferences-v2"
+    usesPreferenceProfile(profile)
   ) {
     return NextResponse.json(
       { error: "Profile already uses the updated questions." },

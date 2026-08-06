@@ -25,14 +25,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import {
-  activityQuestions,
-  backgroundQuestions,
-  interestQuestions,
-  preferenceDetailQuestions,
-  selfQuestions,
-  traitsQuestions,
-  valueQuestions,
-  valuesQuestions,
+  profileSectionActivityQuestions,
+  profileSectionBackgroundQuestions,
+  profileSectionInterestQuestions,
+  profileSectionPreferenceQuestions,
+  profileSectionSelfQuestions,
+  profileSectionTraitsQuestions,
+  profileSectionValueQuestions,
+  profileSectionValuesQuestions,
 } from "@/data/profileDetailQuestions";
 import {
   resolvedProfileEmoji,
@@ -58,8 +58,8 @@ type ProfileDraft = {
 };
 
 const birthYearOptions = Array.from(
-  { length: 2007 - 1992 + 1 },
-  (_, index) => String(1992 + index),
+  { length: 2007 - 1980 + 1 },
+  (_, index) => String(1980 + index),
 );
 
 export const activityIcons: Record<string, string> = {
@@ -323,38 +323,38 @@ function BasicQuestionsSection({
       : value !== undefined && value !== "";
   }).length;
   const backgroundPercent = Math.round(
-    (backgroundAnsweredCount / backgroundQuestions.length) * 100,
+    (backgroundAnsweredCount / profileSectionBackgroundQuestions.length) * 100,
   );
   const activityPercent = Math.round(
-    (activityAnsweredCount / activityQuestions.length) * 100,
+    (activityAnsweredCount / profileSectionActivityQuestions.length) * 100,
   );
   const interestPercent = Math.round(
-    (interestAnsweredCount / interestQuestions.length) * 100,
+    (interestAnsweredCount / profileSectionInterestQuestions.length) * 100,
   );
   const valuesPercent = Math.round(
-    (valuesAnsweredCount / valuesQuestions.length) * 100,
+    (valuesAnsweredCount / profileSectionValuesQuestions.length) * 100,
   );
   const preferencePercent = Math.round(
-    (preferenceAnsweredCount / preferenceDetailQuestions.length) * 100,
+    (preferenceAnsweredCount / profileSectionPreferenceQuestions.length) * 100,
   );
   const valuePercent = Math.round(
-    (valueAnsweredCount / valueQuestions.length) * 100,
+    (valueAnsweredCount / profileSectionValueQuestions.length) * 100,
   );
   const traitsPercent = Math.round(
-    (traitsAnsweredCount / traitsQuestions.length) * 100,
+    (traitsAnsweredCount / profileSectionTraitsQuestions.length) * 100,
   );
   const selfPercent = Math.round(
-    (selfAnsweredCount / selfQuestions.length) * 100,
+    (selfAnsweredCount / profileSectionSelfQuestions.length) * 100,
   );
   const detailQuestionCount =
-    backgroundQuestions.length +
-    activityQuestions.length +
-    interestQuestions.length +
-    valuesQuestions.length +
-    preferenceDetailQuestions.length +
-    valueQuestions.length +
-    traitsQuestions.length +
-    selfQuestions.length;
+    profileSectionBackgroundQuestions.length +
+    profileSectionActivityQuestions.length +
+    profileSectionInterestQuestions.length +
+    profileSectionValuesQuestions.length +
+    profileSectionPreferenceQuestions.length +
+    profileSectionValueQuestions.length +
+    profileSectionTraitsQuestions.length +
+    profileSectionSelfQuestions.length;
   const profilePercent = Math.round(
     ((backgroundAnsweredCount +
       activityAnsweredCount +
@@ -385,7 +385,7 @@ function BasicQuestionsSection({
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-black text-black">코어 질문</span>
             <span className="mt-1 block text-xs font-semibold text-black/40">
-              {answeredCount}/5 답변 완료
+              {answeredCount}/{preferenceQuestions.length} 답변 완료
             </span>
           </span>
           <ChevronRight size={20} aria-hidden className="shrink-0 text-black/42" />
@@ -425,7 +425,7 @@ function BasicQuestionsSection({
                   배경
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {backgroundQuestions.length}개 질문
+                  {profileSectionBackgroundQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -448,7 +448,7 @@ function BasicQuestionsSection({
                   활동성
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {activityQuestions.length}개 질문
+                  {profileSectionActivityQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -471,7 +471,7 @@ function BasicQuestionsSection({
                   흥미
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {interestQuestions.length}개 질문
+                  {profileSectionInterestQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -494,7 +494,7 @@ function BasicQuestionsSection({
                   관점
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {valuesQuestions.length}개 질문
+                  {profileSectionValuesQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -517,7 +517,7 @@ function BasicQuestionsSection({
                   선호
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {preferenceDetailQuestions.length}개 질문
+                  {profileSectionPreferenceQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -540,7 +540,7 @@ function BasicQuestionsSection({
                   성향
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {traitsQuestions.length}개 질문
+                  {profileSectionTraitsQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -563,7 +563,7 @@ function BasicQuestionsSection({
                   가치
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {valueQuestions.length}개 질문
+                  {profileSectionValueQuestions.length}개 질문
                 </span>
               </span>
             </span>
@@ -586,7 +586,7 @@ function BasicQuestionsSection({
                   자기정보
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {selfQuestions.length}개 질문
+                  {profileSectionSelfQuestions.length}개 질문
                 </span>
               </span>
             </span>

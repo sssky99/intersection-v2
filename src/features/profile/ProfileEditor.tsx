@@ -12,7 +12,7 @@ function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
-const BIRTH_YEAR_MIN = 1992;
+const BIRTH_YEAR_MIN = 1980;
 const BIRTH_YEAR_MAX = 2007;
 const birthYearOptions = Array.from(
   { length: BIRTH_YEAR_MAX - BIRTH_YEAR_MIN + 1 },

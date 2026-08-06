@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   const year = Number(birthYear);
 
   if (name.length <= 1 || phoneNormalized.length !== 11 || !gender ||
-      !/^\d{4}$/.test(birthYear) || year < 1992 || year > 2007 ||
+      !/^\d{4}$/.test(birthYear) || year < 1980 || year > 2007 ||
       !mbti || mbti.length > 20 || !photoUrl) {
     return NextResponse.json({ error: "Profile information is incomplete." }, { status: 400 });
   }

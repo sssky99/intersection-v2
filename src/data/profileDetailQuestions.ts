@@ -1,16 +1,7 @@
 import type { ProfileQuestion } from "@/types/question";
+import { preferenceQuestions } from "@/data/preferenceQuestions";
 
 export const backgroundQuestions: ProfileQuestion[] = [
-  {
-    id: 101,
-    order: 101,
-    category: "배경",
-    type: "text",
-    question: "당신의 고향은 어디인가요?",
-    prompt: "어릴 적 추억이 가장 많이 담긴 곳을 알려주세요.",
-    placeholder: "예: 서울 성동구",
-    allowPrivate: true,
-  },
   {
     id: 102,
     order: 102,
@@ -60,18 +51,6 @@ export const activityQuestions: ProfileQuestion[] = [
     ],
   },
   {
-    id: 202,
-    order: 202,
-    category: "활동성",
-    type: "single_choice",
-    question: "나는 시끄러운 사회적 자리를 즐긴다",
-    prompt: "1은 전혀 그렇지 않다, 7은 매우 그렇다예요.",
-    scaleLabel: "사회적 자리 선호도",
-    scaleMinLabel: "전혀 그렇지 않다",
-    scaleMaxLabel: "매우 그렇다",
-    options: ["1", "2", "3", "4", "5", "6", "7"],
-  },
-  {
     id: 203,
     order: 203,
     category: "활동성",
@@ -111,29 +90,6 @@ export const activityQuestions: ProfileQuestion[] = [
 ];
 
 export const interestQuestions: ProfileQuestion[] = [
-  {
-    id: 301,
-    order: 301,
-    category: "흥미",
-    type: "multi_choice",
-    maxSelections: 3,
-    question: "요즘 즐기고 있는\n취미는 무엇인가요?",
-    prompt: "나를 가장 잘 보여주는 취미를 최대 3개 골라주세요.",
-    options: [
-      { value: "exercise", label: "운동" },
-      { value: "reading", label: "독서" },
-      { value: "music", label: "음악" },
-      { value: "movie", label: "영화·드라마" },
-      { value: "game", label: "게임·보드게임" },
-      { value: "cooking", label: "요리·베이킹" },
-      { value: "photo", label: "사진" },
-      { value: "travel", label: "여행" },
-      { value: "culture", label: "전시·공연" },
-      { value: "craft", label: "공예·만들기" },
-      { value: "pet", label: "반려동물" },
-      { value: "other", label: "직접 입력", hasTextInput: true },
-    ],
-  },
   {
     id: 302,
     order: 302,
@@ -185,37 +141,6 @@ export const interestQuestions: ProfileQuestion[] = [
       { value: "home", label: "집에서 편하게 쉬기" },
       { value: "other", label: "직접 입력", hasTextInput: true },
     ],
-  },
-  {
-    id: 305,
-    order: 305,
-    category: "흥미",
-    type: "multi_choice",
-    maxSelections: 4,
-    question: "어떤 스포츠를\n즐겨 보시나요?",
-    prompt: "관심 있게 보는 종목을 골라주세요.",
-    options: [
-      { value: "football", label: "축구" },
-      { value: "baseball", label: "야구" },
-      { value: "basketball", label: "농구" },
-      { value: "volleyball", label: "배구" },
-      { value: "tennis", label: "테니스" },
-      { value: "golf", label: "골프" },
-      { value: "motorsport", label: "모터스포츠" },
-      { value: "esports", label: "e스포츠" },
-      { value: "combat", label: "격투기" },
-      { value: "other", label: "직접 입력", hasTextInput: true },
-      { value: "none", label: "딱히 보지 않아요", exclusive: true },
-    ],
-  },
-  {
-    id: 306,
-    order: 306,
-    category: "흥미",
-    type: "text",
-    question: "서울에서 해보고 싶은 활동이나\n가보고 싶은 장소가 있나요?",
-    prompt: "구체적인 장소나 막연한 아이디어 모두 좋아요.",
-    placeholder: "예: 한강에서 야간 러닝을 해보고 싶어요.",
   },
 ];
 
@@ -282,49 +207,6 @@ export const valuesQuestions: ProfileQuestion[] = [
     scaleMaxLabel: "매우 동의한다",
     options: ["1", "2", "3", "4", "5", "6", "7"],
   },
-  {
-    id: 405,
-    order: 405,
-    category: "관점",
-    type: "single_choice",
-    question: "나와 다른 정치적 성향의\n사람을 만나는 걸 즐기시나요?",
-    prompt: "평소 생각과 가장 가까운 답을 골라주세요.",
-    options: [
-      {
-        value: "enjoy_different_views",
-        label: "나와 다른 관점의 사람과 이야기 나누는 걸 좋아한다.",
-      },
-      {
-        value: "not_interested",
-        label: "정치에 별로 관심이 없다.",
-      },
-      {
-        value: "prefer_similar_views",
-        label: "나와 다른 관점의 사람을 선호하지 않는다.",
-      },
-      {
-        value: "strongly_dislike_different_views",
-        label: "나와 다른 정치적 관점을 가진 사람을 극도로 싫어한다.",
-      },
-    ],
-  },
-  {
-    id: 406,
-    order: 406,
-    category: "관점",
-    type: "single_choice",
-    question: "나는 정치적으로\n어떠한 성향의 사람인가요?",
-    prompt: "가장 가깝다고 느끼는 답을 골라주세요.",
-    options: [
-      { value: "progressive", label: "진보" },
-      { value: "center_progressive", label: "중도 진보" },
-      { value: "center", label: "중도" },
-      { value: "center_conservative", label: "중도 보수" },
-      { value: "conservative", label: "보수" },
-      { value: "not_interested", label: "정치에 관심이 적어요" },
-      { value: "prefer_not_to_say", label: "답하고 싶지 않아요" },
-    ],
-  },
 ];
 
 export const preferenceDetailQuestions: ProfileQuestion[] = [
@@ -335,17 +217,6 @@ export const preferenceDetailQuestions: ProfileQuestion[] = [
     type: "single_choice",
     question: "나는 정치적으로 부적절한\n유머를 즐긴다",
     scaleLabel: "정치적으로 부적절한 유머에 대한 선호",
-    scaleMinLabel: "전혀 동의하지 않는다",
-    scaleMaxLabel: "매우 동의한다",
-    options: ["1", "2", "3", "4", "5", "6", "7"],
-  },
-  {
-    id: 502,
-    order: 502,
-    category: "선호",
-    type: "single_choice",
-    question: "나는 정치 토론과 뉴스를 즐긴다",
-    scaleLabel: "정치 토론과 뉴스에 대한 선호",
     scaleMinLabel: "전혀 동의하지 않는다",
     scaleMaxLabel: "매우 동의한다",
     options: ["1", "2", "3", "4", "5", "6", "7"],
@@ -390,15 +261,6 @@ export const preferenceDetailQuestions: ProfileQuestion[] = [
       { value: "other", label: "기타", hasTextInput: true },
       { value: "none", label: "기르고 싶지 않아요", exclusive: true },
     ],
-  },
-  {
-    id: 506,
-    order: 506,
-    category: "선호",
-    type: "text",
-    question: "당신이 만나고 싶은 사람의\n특성에 대해서 적어주세요",
-    prompt: "함께 시간을 보내고 싶은 사람의 모습을 자유롭게 적어주세요.",
-    placeholder: "예: 자신의 이야기를 솔직하게 나누고 새로운 관점을 존중하는 사람",
   },
   {
     id: 507,
@@ -503,26 +365,6 @@ export const traitsQuestions: ProfileQuestion[] = [
     options: sevenPointScale,
   },
   {
-    id: 608,
-    order: 608,
-    category: "성향",
-    type: "single_choice",
-    question: "친구들과 불편한 대화를 나눌 의향이 있다",
-    scaleMinLabel: "전혀 동의하지 않음",
-    scaleMaxLabel: "매우 동의함",
-    options: sevenPointScale,
-  },
-  {
-    id: 609,
-    order: 609,
-    category: "성향",
-    type: "single_choice",
-    question: "나는 얼마나 외향적인 사람인가요?",
-    scaleMinLabel: "매우 내향적",
-    scaleMaxLabel: "매우 외향적",
-    options: sevenPointScale,
-  },
-  {
     id: 610,
     order: 610,
     category: "성향",
@@ -543,16 +385,6 @@ export const traitsQuestions: ProfileQuestion[] = [
     options: fivePointAgreement,
   },
   {
-    id: 612,
-    order: 612,
-    category: "성향",
-    type: "single_choice",
-    question: "나는 예술적인 사람이라고 생각한다",
-    scaleMinLabel: "전혀 동의하지 않음",
-    scaleMaxLabel: "매우 동의함",
-    options: fivePointAgreement,
-  },
-  {
     id: 613,
     order: 613,
     category: "성향",
@@ -560,26 +392,6 @@ export const traitsQuestions: ProfileQuestion[] = [
     question: "친구를 돕기 위해 희생을 할 수도 있다.",
     scaleMinLabel: "전혀 동의하지 않음",
     scaleMaxLabel: "매우 동의함",
-    options: sevenPointScale,
-  },
-  {
-    id: 614,
-    order: 614,
-    category: "성향",
-    type: "single_choice",
-    question: "새로운 것을 배우려는 욕구는\n내 핵심 성격 중 하나다",
-    scaleMinLabel: "전혀 동의하지 않음",
-    scaleMaxLabel: "매우 동의함",
-    options: sevenPointScale,
-  },
-  {
-    id: 615,
-    order: 615,
-    category: "성향",
-    type: "single_choice",
-    question: "나는 사람들과 쉽게 가까워지는 편이다.",
-    scaleMinLabel: "매우 어렵다.",
-    scaleMaxLabel: "매우 쉽다",
     options: sevenPointScale,
   },
   {
@@ -630,26 +442,6 @@ export const traitsQuestions: ProfileQuestion[] = [
     question: "얼마나 자주 외로움을 느끼나요?",
     scaleMinLabel: "전혀 느끼지 않음",
     scaleMaxLabel: "매일",
-    options: sevenPointScale,
-  },
-  {
-    id: 621,
-    order: 621,
-    category: "성향",
-    type: "single_choice",
-    question: "올빼미형인가요, 아침형인가요?",
-    scaleMinLabel: "새벽 5시 취침형",
-    scaleMaxLabel: "새벽 5시 기상형",
-    options: sevenPointScale,
-  },
-  {
-    id: 622,
-    order: 622,
-    category: "성향",
-    type: "single_choice",
-    question: "조언할 때 논리적인 편인가요,\n감정적인 편인가요?",
-    scaleMinLabel: "논리적인 문제 해결 우선",
-    scaleMaxLabel: "감정적인 공감과 위로 우선",
     options: sevenPointScale,
   },
   {
@@ -742,26 +534,6 @@ export const traitsQuestions: ProfileQuestion[] = [
 
 export const selfQuestions: ProfileQuestion[] = [
   {
-    id: 701,
-    order: 701,
-    category: "자기정보",
-    type: "single_choice",
-    question: "자신이 얼마나 매력적이라고 생각하나요?",
-    scaleMinLabel: "전혀 매력적이지 않음",
-    scaleMaxLabel: "매우 매력적",
-    options: tenPointScale,
-  },
-  {
-    id: 702,
-    order: 702,
-    category: "자기정보",
-    type: "single_choice",
-    question: "자신이 얼마나 지적이라고 생각하나요?",
-    scaleMinLabel: "그다지 영리하지 않음",
-    scaleMaxLabel: "아인슈타인",
-    options: tenPointScale,
-  },
-  {
     id: 703,
     order: 703,
     category: "자기정보",
@@ -841,29 +613,6 @@ export const selfQuestions: ProfileQuestion[] = [
     placeholder: "@username",
     allowPrivate: true,
   },
-  {
-    id: 805,
-    order: 805,
-    category: "자기정보",
-    type: "single_choice",
-    question: "어떤 업계에서 일하나요?",
-    optionColumns: 2,
-    options: [
-      { value: "not_working", label: "현재 일하지 않음" },
-      { value: "healthcare", label: "의료·보건" },
-      { value: "technology", label: "기술·IT" },
-      { value: "manual_labor", label: "기능·현장직" },
-      { value: "retail", label: "유통·판매" },
-      { value: "food", label: "요식업" },
-      { value: "arts", label: "예술·문화" },
-      { value: "politics", label: "정치·공공" },
-      { value: "social_services", label: "사회 서비스" },
-      { value: "academia", label: "학계·연구" },
-      { value: "real_estate", label: "부동산" },
-      { value: "business_owner", label: "사업 운영" },
-      { value: "other", label: "기타", hasTextInput: true },
-    ],
-  },
 ];
 
 const importanceOptions = [
@@ -911,4 +660,50 @@ export const valueQuestions: ProfileQuestion[] = [
     question: question as string,
     options: importanceOptions,
   })),
+];
+
+function coreQuestionsFor(...categories: string[]) {
+  return preferenceQuestions.filter((question) =>
+    categories.includes(question.category),
+  );
+}
+
+export const profileSectionBackgroundQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("배경"),
+  ...backgroundQuestions,
+];
+
+export const profileSectionActivityQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("활동성"),
+  ...activityQuestions,
+];
+
+export const profileSectionInterestQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("흥미"),
+  ...interestQuestions,
+];
+
+export const profileSectionValuesQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("관점"),
+  ...valuesQuestions,
+];
+
+export const profileSectionPreferenceQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("관계 기대"),
+  ...preferenceDetailQuestions,
+];
+
+export const profileSectionValueQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("가치"),
+  ...valueQuestions,
+];
+
+export const profileSectionTraitsQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("성향"),
+  ...traitsQuestions,
+];
+
+export const profileSectionSelfQuestions: ProfileQuestion[] = [
+  ...coreQuestionsFor("자기정보"),
+  ...selfQuestions,
 ];

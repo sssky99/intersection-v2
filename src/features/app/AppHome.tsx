@@ -44,18 +44,20 @@ import {
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 import {
+  preferencePreferredActivities,
   preferenceQuestions,
+  preferenceRecentInterests,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
 import {
-  activityQuestions,
-  backgroundQuestions,
-  interestQuestions,
-  preferenceDetailQuestions,
-  selfQuestions,
-  traitsQuestions,
-  valueQuestions,
-  valuesQuestions,
+  profileSectionActivityQuestions,
+  profileSectionBackgroundQuestions,
+  profileSectionInterestQuestions,
+  profileSectionPreferenceQuestions,
+  profileSectionSelfQuestions,
+  profileSectionTraitsQuestions,
+  profileSectionValueQuestions,
+  profileSectionValuesQuestions,
 } from "@/data/profileDetailQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
@@ -162,8 +164,8 @@ type BasicInfoDraft = {
 };
 
 const basicInfoBirthYearOptions = Array.from(
-  { length: 2007 - 1992 + 1 },
-  (_, index) => String(1992 + index),
+  { length: 2007 - 1980 + 1 },
+  (_, index) => String(1980 + index),
 );
 
 const profileVibeAxes = [
@@ -298,10 +300,10 @@ function profileAxisScore(
 
 function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores {
   return {
-    temperature: profileAxisScore(profile, answers, "temperature", 1),
-    texture: profileAxisScore(profile, answers, "texture", 2),
-    tone: profileAxisScore(profile, answers, "tone", 3),
-    rhythm: profileAxisScore(profile, answers, "rhythm", 4),
+    temperature: profileAxisScore(profile, answers, "temperature", 6),
+    texture: profileAxisScore(profile, answers, "texture", 7),
+    tone: profileAxisScore(profile, answers, "tone", 8),
+    rhythm: profileAxisScore(profile, answers, "rhythm", 9),
   };
 }
 
@@ -348,6 +350,24 @@ function setTabUrl(tab: AppTab) {
     url.searchParams.set("tab", tab);
   }
   window.history.replaceState(null, "", url.toString());
+}
+
+function hasStoredAnswer(row: AnswerRow) {
+  return Boolean(
+    row.answer_text || row.answer_value || row.answer_values?.length,
+  );
+}
+
+function answeredQuestionCount(
+  rows: AnswerRow[],
+  questions: ProfileQuestion[],
+) {
+  const questionOrders = new Set(
+    questions.map((question) => question.order ?? question.id),
+  );
+  return rows.filter(
+    (row) => questionOrders.has(row.question_order) && hasStoredAnswer(row),
+  ).length;
 }
 
 function animateParticipationRecordGlow(element: HTMLElement) {
@@ -1105,10 +1125,10 @@ export function AppHome({
             profileBirthYear={currentProfile.birth_year}
             profileMbti={currentProfile.mbti}
             preferredActivities={
-              Array.isArray(answers[4]?.value) ? answers[4].value : []
+              preferencePreferredActivities(answers)
             }
             recentInterests={
-              Array.isArray(answers[2]?.value) ? answers[2].value : []
+              preferenceRecentInterests(answers)
             }
             guestMode={guestMode}
             onRequestBasicInfo={onRequestBasicInfo}
@@ -1173,117 +1193,59 @@ export function AppHome({
                 loggingOut={loggingOut}
                 logoutError={logoutError}
                 preferredActivities={
-                  Array.isArray(answers[4]?.value) ? answers[4].value : []
+                  preferencePreferredActivities(answers)
                 }
                 recentInterests={
-                  Array.isArray(answers[2]?.value) ? answers[2].value : []
+                  preferenceRecentInterests(answers)
                 }
                 answers={answers}
                 backgroundAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 101 || row.question_order > 104) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionBackgroundQuestions,
+                  )
                 }
                 activityAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 201 || row.question_order > 204) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionActivityQuestions,
+                  )
                 }
                 interestAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 301 || row.question_order > 306) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionInterestQuestions,
+                  )
                 }
                 valuesAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 401 || row.question_order > 406) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionValuesQuestions,
+                  )
                 }
                 preferenceAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 501 || row.question_order > 508) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionPreferenceQuestions,
+                  )
                 }
                 valueAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (
-                      !valueQuestions.some(
-                        (question) =>
-                          (question.order ?? question.id) === row.question_order,
-                      )
-                    ) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionValueQuestions,
+                  )
                 }
                 traitsAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (row.question_order < 601 || row.question_order > 630) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionTraitsQuestions,
+                  )
                 }
                 selfAnsweredCount={
-                  answerRows.filter((row) => {
-                    if (
-                      !selfQuestions.some(
-                        (question) =>
-                          (question.order ?? question.id) === row.question_order,
-                      )
-                    ) {
-                      return false;
-                    }
-                    return Boolean(
-                      row.answer_text ||
-                        row.answer_value ||
-                        row.answer_values?.length,
-                    );
-                  }).length
+                  answeredQuestionCount(
+                    answerRows,
+                    profileSectionSelfQuestions,
+                  )
                 }
                 participationCount={participationCount}
                 onProfileUpdated={setCurrentProfile}
@@ -1419,20 +1381,20 @@ export function AppHome({
               profileQuestionSection === "basic"
                 ? preferenceQuestions
                 : profileQuestionSection === "background"
-                  ? backgroundQuestions
+                  ? profileSectionBackgroundQuestions
                   : profileQuestionSection === "activity"
-                    ? activityQuestions
+                    ? profileSectionActivityQuestions
                     : profileQuestionSection === "interest"
-                      ? interestQuestions
+                      ? profileSectionInterestQuestions
                       : profileQuestionSection === "values"
-                        ? valuesQuestions
+                        ? profileSectionValuesQuestions
                         : profileQuestionSection === "preference"
-                          ? preferenceDetailQuestions
+                          ? profileSectionPreferenceQuestions
                           : profileQuestionSection === "value"
-                            ? valueQuestions
+                            ? profileSectionValueQuestions
                           : profileQuestionSection === "traits"
-                            ? traitsQuestions
-                          : selfQuestions
+                            ? profileSectionTraitsQuestions
+                          : profileSectionSelfQuestions
             }
             answerRows={answerRows}
             onClose={() => setProfileQuestionSection(null)}

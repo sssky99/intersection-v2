@@ -308,8 +308,11 @@ const progressAnchors = [
   { completed: 20, percent: 100 },
 ] as const;
 
-function perceivedProgress(completedQuestionCount: number) {
-  const completed = clamp(completedQuestionCount, 0, 20);
+function perceivedProgress(completedQuestionCount: number, questionCount: number) {
+  const completed =
+    (clamp(completedQuestionCount, 0, questionCount) /
+      Math.max(questionCount, 1)) *
+    20;
   const nextAnchorIndex = progressAnchors.findIndex(
     (anchor) => anchor.completed >= completed,
   );
@@ -331,6 +334,9 @@ export function QuestionFlow({
   mode = "onboarding",
   questionSet = profileQuestions,
   hideProgressHeader = false,
+  completionRequestMode,
+  skipConversationResult = false,
+  conversationQuestionCount = 16,
   onPreviewComplete,
   onGuestDraftChange,
   onGuestComplete,
@@ -340,6 +346,14 @@ export function QuestionFlow({
   mode?: QuestionFlowMode;
   questionSet?: ProfileQuestion[];
   hideProgressHeader?: boolean;
+  completionRequestMode?:
+    | "onboarding"
+    | "regeneration"
+    | "preferences-v2"
+    | "preferences-v2-regeneration"
+    | "preferences-v2-upgrade";
+  skipConversationResult?: boolean;
+  conversationQuestionCount?: number;
   onPreviewComplete?: () => void | Promise<void>;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
@@ -416,7 +430,7 @@ export function QuestionFlow({
   const question = questions[questionIndex];
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
-  const progressPercent = perceivedProgress(questionIndex);
+  const progressPercent = perceivedProgress(questionIndex, questions.length);
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
   const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
@@ -581,7 +595,11 @@ export function QuestionFlow({
     const response = await fetch("/api/profile/questions/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: isRegeneration ? "regeneration" : "onboarding" }),
+      body: JSON.stringify({
+        mode:
+          completionRequestMode ??
+          (isRegeneration ? "regeneration" : "onboarding"),
+      }),
     }).catch(() => null);
 
     if (!response?.ok) {
@@ -607,6 +625,11 @@ export function QuestionFlow({
     if (questionIndex >= questions.length - 1) {
       if (isPreview) {
         await onPreviewComplete?.();
+        return;
+      }
+
+      if (skipConversationResult) {
+        await completeOrMoveNext(nextAnswers);
         return;
       }
 
@@ -702,7 +725,7 @@ export function QuestionFlow({
         )
         .map(optionValue) ?? [];
 
-    const pairedQuestionId = question.id === 17 ? 18 : question.id === 18 ? 17 : null;
+    const pairedQuestionId = question.id === 4 ? 5 : question.id === 5 ? 4 : null;
     const pairedValues = pairedQuestionId
       ? answers[pairedQuestionId]?.value
       : undefined;
@@ -713,7 +736,7 @@ export function QuestionFlow({
       !selectedValues.includes(value)
     ) {
       setError(
-        question.id === 17
+        question.id === 4
           ? "피하고 싶은 활동으로도 선택한 항목이에요. 한쪽 선택을 먼저 해제해주세요."
           : "하고 싶은 활동으로도 선택한 항목이에요. 한쪽 선택을 먼저 해제해주세요.",
       );
@@ -789,7 +812,8 @@ export function QuestionFlow({
     }
   };
 
-  const isConversationQuestion = (question.order ?? question.id) <= 16;
+  const isConversationQuestion =
+    (question.order ?? question.id) <= conversationQuestionCount;
 
   if (resultAnswers) {
     const resultCode = conversationResultCode(resultAnswers);

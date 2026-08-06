@@ -45,7 +45,7 @@ const basicInfoStepViewEvents: Record<BasicInfoStepKey, string> = {
   photo: "basic_info_photo_view",
 };
 
-const BIRTH_YEAR_MIN = 1992;
+const BIRTH_YEAR_MIN = 1980;
 const BIRTH_YEAR_MAX = 2007;
 const birthYearOptions = Array.from(
   { length: BIRTH_YEAR_MAX - BIRTH_YEAR_MIN + 1 },
@@ -130,7 +130,7 @@ export function BasicInfoForm({
   const birthYearOutOfRange =
     birthYearHasFourDigits && !isStepComplete("birthYear", draft);
   const finalIncompleteLabel = birthYearOutOfRange
-    ? "1992~2007년생만 가능해요"
+    ? "1980~2007년생만 가능해요"
     : !isStepComplete("photo", draft)
       ? "사진을 선택해주세요"
       : "입력 정보를 확인해주세요";
@@ -405,8 +405,8 @@ export function BasicInfoForm({
           value={draft.birthYear}
           helperText={
             birthYearOutOfRange
-              ? "1992년생부터 2007년생까지만 가능해요."
-              : "1992년생부터 2007년생까지 선택할 수 있어요."
+              ? "1980년생부터 2007년생까지만 가능해요."
+              : "1980년생부터 2007년생까지 선택할 수 있어요."
           }
           helperTone={birthYearOutOfRange ? "error" : "default"}
           onChange={(birthYear) =>

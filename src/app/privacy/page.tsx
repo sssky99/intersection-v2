@@ -174,7 +174,7 @@ export default function PrivacyPage() {
           <section className={sectionClass}>
             <h2 className={headingClass}>9. 가입 연령 기준</h2>
             <p className={paragraphClass}>
-              교집합은 현재 1992년생부터 2007년생까지의 이용자를 대상으로 합니다. 가입
+              교집합은 현재 1980년생부터 2007년생까지의 이용자를 대상으로 합니다. 가입
               화면에서 정한 출생연도 기준에 맞지 않는 가입이 확인되면 이용 제한과 개인정보
               삭제 절차를 진행할 수 있습니다.
             </p>
