@@ -293,10 +293,7 @@ function cleanCourseSteps(steps: GatheringTicket["courseSteps"]) {
     Boolean(
       step.title?.trim() ||
         step.activityType?.trim() ||
-        step.imageUrl?.trim() ||
-        step.placeName?.trim() ||
-        step.address?.trim() ||
-        step.place,
+        step.imageUrl?.trim(),
     ),
   );
 }
@@ -340,8 +337,6 @@ function TicketCoursePanel({ ticket, steps }: {
 
         <ol className="space-y-3">
       {steps.map((step, index) => {
-        const placeName = step.place?.name ?? step.placeName;
-        const address = step.place?.address ?? step.address;
         const openOffsetMinutes = courseStepOpenOffsetMinutes(
           step.openOffsetMinutes,
           index,
@@ -373,23 +368,6 @@ function TicketCoursePanel({ ticket, steps }: {
                 <p className="mt-2.5 break-keep text-[19px] font-black leading-6 tracking-[-0.035em] text-black">
                   {step.title || step.activityType || "활동"}
                 </p>
-
-                {(placeName || ticket.area) && (
-                  <p className="mt-2 flex items-start gap-1.5 text-[12px] font-bold leading-5 text-black/52">
-                    <MapPin
-                      size={13}
-                      strokeWidth={2.1}
-                      className="mt-0.5 shrink-0 text-black/32"
-                      aria-hidden
-                    />
-                    <span>{placeName || ticket.area}</span>
-                  </p>
-                )}
-                {address && (
-                  <p className="mt-1 pl-[19px] text-[10px] font-semibold leading-4 text-black/34">
-                    {address}
-                  </p>
-                )}
               </div>
             </div>
 
