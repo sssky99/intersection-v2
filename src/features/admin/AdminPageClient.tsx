@@ -83,7 +83,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
   { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
-  { id: "tickets", label: "티켓 관리" },
+  { id: "tickets", label: "코스 관리" },
   { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },

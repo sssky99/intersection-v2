@@ -1147,7 +1147,7 @@ export function TicketAdminPanel({
       {
         action: "create_ticket",
         templateKind,
-        title: sampleOnly ? "새 샘플 티켓" : "새 초대장",
+        title: sampleOnly ? "새 샘플 티켓" : "새 코스",
         visibility: sampleOnly ? "question" : "draft",
         questionOrder: sampleOnly ? "1" : null,
         placeVisibility: "confirmed_only",
@@ -1157,7 +1157,7 @@ export function TicketAdminPanel({
         eventTime: "19:00",
         region: "",
       },
-      "새 초대장을 만들었습니다.",
+      sampleOnly ? "새 샘플 티켓을 만들었습니다." : "새 코스를 만들었습니다.",
     );
     if (data?.templates[0]) setSelectedTicketId(data.templates[0].id);
   };
@@ -1396,9 +1396,9 @@ export function TicketAdminPanel({
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold">티켓 관리</h2>
+            <h2 className="text-lg font-bold">코스 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
-              모임 정보, 일정, 좌석을 관리합니다.
+              저녁부터 다음 활동까지 이어지는 여정과 일정, 좌석을 관리합니다.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1422,7 +1422,7 @@ export function TicketAdminPanel({
               onClick={() => void createTicket("experience")}
               icon={Plus}
             >
-              초대장 만들기
+              새 코스 만들기
             </IconButton>
           </div>
         </div>
@@ -1457,7 +1457,7 @@ export function TicketAdminPanel({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
             {loading && templates.length === 0 ? (
-              <PanelMessage>티켓 정보를 불러오는 중입니다.</PanelMessage>
+              <PanelMessage>코스 정보를 불러오는 중입니다.</PanelMessage>
             ) : filteredTickets.length ? (
               <div className="space-y-3">
                 {filteredTickets.map((template) => (
@@ -1470,14 +1470,14 @@ export function TicketAdminPanel({
                 ))}
               </div>
             ) : (
-              <PanelMessage>등록된 초대장이 없습니다.</PanelMessage>
+              <PanelMessage>등록된 코스가 없습니다.</PanelMessage>
             )}
           </div>
         </aside>
 
         <main className="min-h-0 overflow-y-auto bg-[#fbfbfa] p-5">
           {!selectedTicket || !draft ? (
-            <PanelMessage>초대장을 선택하거나 새로 만들어주세요.</PanelMessage>
+            <PanelMessage>코스를 선택하거나 새로 만들어주세요.</PanelMessage>
           ) : (
             <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_390px] gap-5">
               <div className="min-w-0 space-y-5">
