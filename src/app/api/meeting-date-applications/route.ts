@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
@@ -201,10 +202,14 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: applicantProfile, error: applicantProfileError } = await admin
     .from("profiles")
-    .select("profile_completed,is_test_participant")
+    .select(
+      "profile_completed,questions_completed,profile_experience_version,is_test_participant",
+    )
     .eq("user_id", user.id)
     .maybeSingle<{
       profile_completed: boolean | null;
+      questions_completed: boolean | null;
+      profile_experience_version: string | null;
       is_test_participant: boolean | null;
     }>();
   if (applicantProfileError) {
@@ -213,7 +218,7 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
-  if (!applicantProfile?.profile_completed) {
+  if (!applicantProfile || !hasCompletedPreferenceProfile(applicantProfile)) {
     return NextResponse.json(
       { error: "간단한 정보를 입력하고 프로필을 완성해주세요." },
       { status: 409 },

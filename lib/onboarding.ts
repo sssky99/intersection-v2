@@ -1,6 +1,16 @@
 import { createClient } from "@/lib/supabase/server";
-import { preferenceProfileVersion } from "@/data/preferenceQuestions";
+import {
+  preferenceProfileVersion,
+  usesPreferenceProfile,
+} from "@/data/preferenceQuestions";
+import {
+  classifyLegacyProfileArchetype,
+  classifyProfileArchetype,
+  isProfileArchetypeId,
+  profileArchetypeVersion,
+} from "@/data/profileArchetypes";
 import type { ProfileRow } from "@/types/profile";
+import type { StoredAnswerRow } from "@/types/question";
 
 type OnboardingPathOptions = {
   startQuestions?: boolean;
@@ -51,6 +61,44 @@ export async function getAuthenticatedProfile() {
     .maybeSingle<ProfileRow>();
 
   if (existingProfile) {
+    if (
+      existingProfile.questions_completed === true &&
+      !isProfileArchetypeId(existingProfile.profile_archetype_id)
+    ) {
+      const { data: storedAnswers } = await supabase
+        .from("user_answers")
+        .select(
+          "question_order,answer_value,answer_values,answer_text,other_text",
+        )
+        .eq("user_id", user.id)
+        .order("question_order")
+        .returns<StoredAnswerRow[]>();
+      const rows = storedAnswers ?? [];
+      const profileArchetypeId = usesPreferenceProfile(existingProfile)
+        ? classifyProfileArchetype(rows, user.id)
+        : classifyLegacyProfileArchetype(rows, user.id);
+      const assignedAt = new Date().toISOString();
+      const assignment = {
+        profile_archetype_id: profileArchetypeId,
+        profile_archetype_version: profileArchetypeVersion,
+        profile_archetype_assigned_at: assignedAt,
+      };
+
+      const { error: assignmentError } = await supabase
+        .from("profiles")
+        .update(assignment)
+        .eq("user_id", user.id);
+      if (assignmentError) {
+        console.error("Profile archetype assignment failed:", assignmentError.message);
+      }
+
+      return {
+        supabase,
+        user,
+        profile: { ...existingProfile, ...assignment },
+      };
+    }
+
     return { supabase, user, profile: existingProfile };
   }
 

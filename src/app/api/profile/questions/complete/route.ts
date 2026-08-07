@@ -6,6 +6,10 @@ import {
 } from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
+  classifyProfileArchetype,
+  profileArchetypeVersion,
+} from "@/data/profileArchetypes";
+import {
   calculateConversationResultCode,
   conversationResultVersion,
 } from "@/lib/conversationResult";
@@ -18,6 +22,7 @@ type AnswerRow = {
   answer_value: string | null;
   answer_values: string[] | null;
   answer_text: string | null;
+  other_text: string | null;
 };
 
 function validPreferenceAnswer(
@@ -81,7 +86,7 @@ export async function POST(request: Request) {
     : profileQuestions;
   const { data, error } = await admin
     .from(answerTable)
-    .select("question_order,answer_value,answer_values,answer_text")
+    .select("question_order,answer_value,answer_values,answer_text,other_text")
     .eq("user_id", user.id)
     .returns<AnswerRow[]>();
 
@@ -110,6 +115,10 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json({ error: "Answers are invalid." }, { status: 409 });
   }
+
+  const profileArchetypeId = isPreferenceFlow
+    ? classifyProfileArchetype(answers, user.id)
+    : null;
 
   if (isPreferenceRegeneration || isPreferenceUpgrade) {
     if (!profile?.profile_regeneration_started_at) {
@@ -168,6 +177,13 @@ export async function POST(request: Request) {
         conversation_result_calculated_at: null,
         conversation_result_source: null,
         conversation_result_confidence: null,
+        profile_archetype_id: profileArchetypeId,
+        profile_archetype_version: profileArchetypeId
+          ? profileArchetypeVersion
+          : null,
+        profile_archetype_assigned_at: profileArchetypeId
+          ? new Date().toISOString()
+          : null,
       })
       .eq("user_id", user.id);
 
@@ -178,7 +194,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, profileArchetypeId });
   }
 
   const resultCode = isRegeneration || isPreferenceOnboarding
@@ -194,7 +210,13 @@ export async function POST(request: Request) {
   const update = isRegeneration
     ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
     : isPreferenceOnboarding
-      ? { questions_completed: true, questions_completed_at: new Date().toISOString() }
+      ? {
+          questions_completed: true,
+          questions_completed_at: new Date().toISOString(),
+          profile_archetype_id: profileArchetypeId,
+          profile_archetype_version: profileArchetypeVersion,
+          profile_archetype_assigned_at: new Date().toISOString(),
+        }
     : {
         questions_completed: true,
         questions_completed_at: new Date().toISOString(),
@@ -211,5 +233,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Completion could not be saved." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, profileArchetypeId });
 }

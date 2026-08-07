@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import { blindDateSelectableDatesFrom } from "@/lib/blindDateDates";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -14,6 +15,12 @@ import type {
 export const dynamic = "force-dynamic";
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
+
+type RecommendationProfileRow = {
+  profile_experience_version: string | null;
+  questions_completed: boolean | null;
+  profile_completed: boolean | null;
+};
 
 type BlindDateOfferRow = {
   id: string;
@@ -227,6 +234,19 @@ async function loadUserOffers(supabase: SupabaseAdminClient, userId: string) {
   return offers.map((offer) => sanitizeOffer(offer, userId, templateMap));
 }
 
+async function recommendationProfileReady(
+  supabase: SupabaseAdminClient,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("profile_experience_version,questions_completed,profile_completed")
+    .eq("user_id", userId)
+    .maybeSingle<RecommendationProfileRow>();
+  if (error) throw error;
+  return Boolean(data && hasCompletedPreferenceProfile(data));
+}
+
 async function loadOfferForUser(
   supabase: SupabaseAdminClient,
   offerId: string,
@@ -273,6 +293,12 @@ export async function GET() {
 
   try {
     const supabase = createAdminClient();
+    if (!(await recommendationProfileReady(supabase, user.id))) {
+      return NextResponse.json(
+        { error: "프로필을 완성한 후 추천을 확인할 수 있어요." },
+        { status: 403 },
+      );
+    }
     return NextResponse.json({ offers: await loadUserOffers(supabase, user.id) });
   } catch (error) {
     console.error("[meetings blind dates GET]", error);
@@ -307,6 +333,12 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createAdminClient();
+    if (!(await recommendationProfileReady(supabase, user.id))) {
+      return NextResponse.json(
+        { error: "프로필을 완성한 후 추천에 응답할 수 있어요." },
+        { status: 403 },
+      );
+    }
     await expireOldOffers(supabase);
 
     const offer = await loadOfferForUser(supabase, offerId, user.id);

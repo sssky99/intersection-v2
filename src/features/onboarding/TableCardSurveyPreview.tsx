@@ -43,6 +43,7 @@ export function PreferenceQuestionFlow({
       questionSet={preferenceQuestions}
       completionRequestMode={completionRequestMode}
       skipConversationResult
+      showProfileArchetypeResult
       conversationQuestionCount={0}
       onGuestDraftChange={onGuestDraftChange}
       onGuestComplete={onGuestComplete}

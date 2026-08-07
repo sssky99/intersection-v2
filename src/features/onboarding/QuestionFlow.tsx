@@ -12,8 +12,13 @@ import {
   type ConversationResultCode,
 } from "@/data/conversationResults";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
+import {
+  classifyProfileArchetype,
+  type ProfileArchetypeId,
+} from "@/data/profileArchetypes";
 import { profileQuestions } from "@/data/profileQuestions";
 import { LegacyPreferenceQuestion } from "@/features/onboarding/LegacyPreferenceQuestion";
+import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
 import {
   identifyAnalyticsUser,
   trackEvent,
@@ -338,6 +343,7 @@ export function QuestionFlow({
   hideProgressHeader = false,
   completionRequestMode,
   skipConversationResult = false,
+  showProfileArchetypeResult = false,
   conversationQuestionCount = 16,
   onPreviewComplete,
   onGuestDraftChange,
@@ -355,6 +361,7 @@ export function QuestionFlow({
     | "preferences-v2-regeneration"
     | "preferences-v2-upgrade";
   skipConversationResult?: boolean;
+  showProfileArchetypeResult?: boolean;
   conversationQuestionCount?: number;
   onPreviewComplete?: () => void | Promise<void>;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
@@ -423,6 +430,10 @@ export function QuestionFlow({
   const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(
     previewResultAnswers,
   );
+  const [profileArchetypeResultId, setProfileArchetypeResultId] =
+    useState<ProfileArchetypeId | null>(null);
+  const [completedProfileRows, setCompletedProfileRows] =
+    useState<StoredAnswerRow[] | null>(null);
   const [showResultDetails, setShowResultDetails] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
   const savingRef = useRef(false);
@@ -584,8 +595,15 @@ export function QuestionFlow({
     if (completionSubmittedRef.current) return;
     completionSubmittedRef.current = true;
 
+    const completedRows = answersToStoredRows(nextAnswers, questions);
+
     if (isGuest) {
-      onGuestComplete?.(answersToStoredRows(nextAnswers, questions));
+      if (showProfileArchetypeResult) {
+        setCompletedProfileRows(completedRows);
+        setProfileArchetypeResultId(classifyProfileArchetype(completedRows));
+        return;
+      }
+      onGuestComplete?.(completedRows);
       return;
     }
 
@@ -609,10 +627,23 @@ export function QuestionFlow({
       throw new Error("Profile question completion failed.");
     }
 
+    const responseBody = (await response.json().catch(() => null)) as
+      | { profileArchetypeId?: ProfileArchetypeId }
+      | null;
+
     if (!isRegeneration) {
       trackEvent("questions_complete", {
         question_count: questions.length,
       });
+    }
+
+    if (showProfileArchetypeResult) {
+      setCompletedProfileRows(completedRows);
+      setProfileArchetypeResultId(
+        responseBody?.profileArchetypeId ??
+          classifyProfileArchetype(completedRows),
+      );
+      return;
     }
 
     router.replace(
@@ -626,6 +657,12 @@ export function QuestionFlow({
   const moveToNext = async (nextAnswers: AnswerMap) => {
     if (questionIndex >= questions.length - 1) {
       if (isPreview) {
+        if (showProfileArchetypeResult) {
+          const completedRows = answersToStoredRows(nextAnswers, questions);
+          setCompletedProfileRows(completedRows);
+          setProfileArchetypeResultId(classifyProfileArchetype(completedRows));
+          return;
+        }
         await onPreviewComplete?.();
         return;
       }
@@ -845,6 +882,28 @@ export function QuestionFlow({
           updateLocalAnswer({ questionId: question.id, value });
         }}
         onToggleMultiple={toggleMultiple}
+      />
+    );
+  }
+
+  if (profileArchetypeResultId) {
+    return (
+      <ProfileArchetypeResult
+        archetypeId={profileArchetypeResultId}
+        onContinue={() => {
+          if (isPreview) {
+            void onPreviewComplete?.();
+            return;
+          }
+          if (isGuest) {
+            if (completedProfileRows) onGuestComplete?.(completedProfileRows);
+            return;
+          }
+          router.replace(
+            isRegeneration ? "/meetings?tab=profile" : "/onboarding/profile",
+          );
+          router.refresh();
+        }}
       />
     );
   }

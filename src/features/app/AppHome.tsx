@@ -63,8 +63,10 @@ import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
+import { RecommendationProfileLocked } from "@/features/meetings/RecommendationProfileLocked";
 import { useDragScroll } from "@/features/app/useDragScroll";
 import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
+import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import { ProfileQuestionSectionOverlay } from "@/features/app/ProfileQuestionSectionOverlay";
 import {
@@ -543,6 +545,8 @@ export function AppHome({
   );
   const [currentProfile, setCurrentProfile] = useState(profile);
   const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
+  const profileQuestionsReady = currentProfile.questions_completed === true;
+  const recommendationProfileReady = profileQuestionsReady;
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
   const [profileQuestionSection, setProfileQuestionSection] = useState<
@@ -754,11 +758,15 @@ export function AppHome({
     void loadUserTicketsProgressively({
       isCancelled: () => cancelled,
     });
-    void fetchBlindDateOffers().then((offers) => {
-      if (cancelled || !offers) return;
+    if (recommendationProfileReady && currentProfile.profile_completed) {
+      void fetchBlindDateOffers().then((offers) => {
+        if (cancelled || !offers) return;
 
-      setBlindDateOffers(offers);
-    });
+        setBlindDateOffers(offers);
+      });
+    } else {
+      setBlindDateOffers([]);
+    }
     const supabase = createClient();
     const answerQuestions = usesPreferenceProfile(profile)
       ? preferenceQuestions
@@ -797,7 +805,9 @@ export function AppHome({
   }, [
     guestMode,
     loadUserTicketsProgressively,
+    currentProfile.profile_completed,
     profile.profile_experience_version,
+    recommendationProfileReady,
     userId,
   ]);
 
@@ -949,6 +959,25 @@ export function AppHome({
     window.location.href = preferenceProfileEnabled
       ? "/onboarding/questions?regenerate=1&start=1"
       : "/onboarding/questions?upgrade=preferences-v2";
+  };
+
+  const openProfileQuestionSection = (
+    section:
+      | "basic"
+      | "background"
+      | "activity"
+      | "interest"
+      | "values"
+      | "preference"
+      | "value"
+      | "traits"
+      | "self",
+  ) => {
+    if (section === "basic" && !preferenceProfileEnabled) {
+      void startProfileRegeneration();
+      return;
+    }
+    setProfileQuestionSection(section);
   };
 
   const applyAccountSession = async ({
@@ -1117,47 +1146,57 @@ export function AppHome({
           aria-hidden={activeTab !== "recommend"}
           className={cn(activeTab === "recommend" ? "block min-h-full" : "hidden")}
         >
-          <MeetingRecommendation
-            userId={userId}
-            profileCompleted={Boolean(currentProfile.profile_completed)}
-            profileName={currentProfile.name ?? currentProfile.nickname}
-            profileGender={currentProfile.gender}
-            profileBirthYear={currentProfile.birth_year}
-            profileMbti={currentProfile.mbti}
-            preferredActivities={
-              preferencePreferredActivities(answers)
-            }
-            recentInterests={
-              preferenceRecentInterests(answers)
-            }
-            guestMode={guestMode}
-            onRequestBasicInfo={onRequestBasicInfo}
-            participationPrecisionCount={
-              participationCount +
-              (currentProfile.matching_precision_bonus ?? 0)
-            }
-            onOpenParticipationRecord={openParticipationRecord}
-            onFocusModeChange={setRecommendationFocusMode}
-            onAvailableTicketsChange={setAvailableMeetingTickets}
-            onTicketInteractionChange={applyTicketInteraction}
-            embedded
-            active={activeTab === "recommend"}
-            membershipStatus={recommendationMembershipStatus}
-            blindDateOffers={blindDateOffers}
-            onBlindDateOffersChange={setBlindDateOffers}
-            blindDateOpenRequestId={blindDateOpenRequestId}
-            blindDateOpenRequestPending={blindDateOpenRequestPending}
-            ticketAcceptRequestId={ticketAcceptRequest?.id ?? 0}
-            ticketAcceptRequestTicketId={ticketAcceptRequest?.ticketId ?? null}
-            onTicketAcceptRequestHandled={() => setTicketAcceptRequest(null)}
-            onDateApplicationsChange={setDateApplications}
-            onBlindDateOpenRequestHandled={() =>
-              setBlindDateOpenRequestPending(false)
-            }
-            forceInitialRecommendationPreview={
-              forceInitialRecommendationPreview
-            }
-          />
+          {recommendationProfileReady ? (
+            <MeetingRecommendation
+              userId={userId}
+              profileCompleted={Boolean(currentProfile.profile_completed)}
+              profileName={currentProfile.name ?? currentProfile.nickname}
+              profileGender={currentProfile.gender}
+              profileBirthYear={currentProfile.birth_year}
+              profileMbti={currentProfile.mbti}
+              preferredActivities={preferencePreferredActivities(answers)}
+              recentInterests={preferenceRecentInterests(answers)}
+              guestMode={guestMode}
+              onRequestBasicInfo={onRequestBasicInfo}
+              participationPrecisionCount={
+                participationCount +
+                (currentProfile.matching_precision_bonus ?? 0)
+              }
+              onOpenParticipationRecord={openParticipationRecord}
+              onFocusModeChange={setRecommendationFocusMode}
+              onAvailableTicketsChange={setAvailableMeetingTickets}
+              onTicketInteractionChange={applyTicketInteraction}
+              embedded
+              active={activeTab === "recommend"}
+              membershipStatus={recommendationMembershipStatus}
+              blindDateOffers={blindDateOffers}
+              onBlindDateOffersChange={setBlindDateOffers}
+              blindDateOpenRequestId={blindDateOpenRequestId}
+              blindDateOpenRequestPending={blindDateOpenRequestPending}
+              ticketAcceptRequestId={ticketAcceptRequest?.id ?? 0}
+              ticketAcceptRequestTicketId={
+                ticketAcceptRequest?.ticketId ?? null
+              }
+              onTicketAcceptRequestHandled={() => setTicketAcceptRequest(null)}
+              onDateApplicationsChange={setDateApplications}
+              onBlindDateOpenRequestHandled={() =>
+                setBlindDateOpenRequestPending(false)
+              }
+              forceInitialRecommendationPreview={
+                forceInitialRecommendationPreview
+              }
+            />
+          ) : (
+            <RecommendationProfileLocked
+              onCompleteProfile={() => {
+                if (guestMode && onRequestBasicInfo) {
+                  onRequestBasicInfo();
+                  return;
+                }
+                switchTab("profile");
+              }}
+            />
+          )}
         </div>
         <div
           aria-hidden={activeTab !== "chat"}
@@ -1187,18 +1226,22 @@ export function AppHome({
           className={cn(activeTab === "profile" ? "block min-h-full" : "hidden")}
         >
           {activeTab === "profile" && (
-            preferenceProfileEnabled ? (
+            profileQuestionsReady ? (
               <PreferenceProfileTab
                 profile={currentProfile}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
                 preferredActivities={
-                  preferencePreferredActivities(answers)
+                  preferenceProfileEnabled
+                    ? preferencePreferredActivities(answers)
+                    : []
                 }
                 recentInterests={
-                  preferenceRecentInterests(answers)
+                  preferenceProfileEnabled
+                    ? preferenceRecentInterests(answers)
+                    : []
                 }
-                answers={answers}
+                answers={preferenceProfileEnabled ? answers : {}}
                 backgroundAnsweredCount={
                   answeredQuestionCount(
                     answerRows,
@@ -1250,33 +1293,33 @@ export function AppHome({
                 participationCount={participationCount}
                 onProfileUpdated={setCurrentProfile}
                 onRequestBasicInfo={() => onRequestBasicInfo?.()}
-                onOpenBasicQuestions={() => setProfileQuestionSection("basic")}
+                onOpenBasicQuestions={() => openProfileQuestionSection("basic")}
                 onOpenBackgroundQuestions={() =>
-                  setProfileQuestionSection("background")
+                  openProfileQuestionSection("background")
                 }
                 onOpenActivityQuestions={() =>
-                  setProfileQuestionSection("activity")
+                  openProfileQuestionSection("activity")
                 }
                 onOpenInterestQuestions={() =>
-                  setProfileQuestionSection("interest")
+                  openProfileQuestionSection("interest")
                 }
                 onOpenValuesQuestions={() =>
-                  setProfileQuestionSection("values")
+                  openProfileQuestionSection("values")
                 }
                 onOpenPreferenceQuestions={() =>
-                  setProfileQuestionSection("preference")
+                  openProfileQuestionSection("preference")
                 }
                 onOpenValueQuestions={() =>
-                  setProfileQuestionSection("value")
+                  openProfileQuestionSection("value")
                 }
                 onOpenTraitsQuestions={() =>
-                  setProfileQuestionSection("traits")
+                  openProfileQuestionSection("traits")
                 }
-                onOpenSelfQuestions={() => setProfileQuestionSection("self")}
+                onOpenSelfQuestions={() => openProfileQuestionSection("self")}
                 onLogout={logout}
                 previewMode={guestMode}
               />
-            ) : (
+            ) : initialLegacyResultPreview ? (
               <LazyProfileTab
                 profile={currentProfile}
                 answers={answers}
@@ -1295,6 +1338,17 @@ export function AppHome({
                 operatorConversationPreview={
                   operatorAccountSwitcher?.mode === "operator"
                 }
+              />
+            ) : (
+              <ProfileUpgradeLockedTab
+                profile={currentProfile}
+                questionCount={preferenceQuestions.length}
+                upgrading={profileRegenerating}
+                upgradeError={profileRegenerationError}
+                loggingOut={loggingOut}
+                logoutError={logoutError}
+                onUpgrade={() => void startProfileRegeneration()}
+                onLogout={logout}
               />
             )
           )}
@@ -1354,7 +1408,7 @@ export function AppHome({
       )}
 
       <AnimatePresence>
-        {preferenceProfileEnabled && profileQuestionSection && (
+        {recommendationProfileReady && profileQuestionSection && (
           <ProfileQuestionSectionOverlay
             key={profileQuestionSection}
             userId={userId}

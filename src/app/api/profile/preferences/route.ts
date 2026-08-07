@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { usesPreferenceProfile } from "@/data/preferenceQuestions";
+import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
@@ -37,7 +37,7 @@ export async function PATCH(request: Request) {
     .eq("user_id", user.id)
     .maybeSingle<ProfileRow>();
 
-  if (!profile || !usesPreferenceProfile(profile)) {
+  if (!profile || !hasCompletedPreferenceProfile(profile)) {
     return NextResponse.json(
       { error: "Preference profile is unavailable." },
       { status: 409 },

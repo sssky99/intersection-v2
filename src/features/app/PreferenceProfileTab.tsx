@@ -22,8 +22,14 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
+import {
+  isProfileArchetypeId,
+  profileArchetypeBackgrounds,
+  profileArchetypes,
+} from "@/data/profileArchetypes";
 import {
   profileSectionActivityQuestions,
   profileSectionBackgroundQuestions,
@@ -753,6 +759,10 @@ export function PreferenceProfileTab({
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const displayEmoji = resolvedProfileEmoji(profile);
+  const archetypeId = isProfileArchetypeId(profile.profile_archetype_id)
+    ? profile.profile_archetype_id
+    : null;
+  const archetype = archetypeId ? profileArchetypes[archetypeId] : null;
 
   useEffect(() => {
     if (!editing) setDraft(initialDraft);
@@ -852,11 +862,29 @@ export function PreferenceProfileTab({
 
         <section className="mt-7 overflow-hidden rounded-[30px] border border-black/[0.07] bg-[#faf8f2] shadow-[0_24px_70px_rgba(24,24,20,0.09)]">
           <div className="relative overflow-hidden bg-[#171714] px-5 pb-6 pt-5 text-white">
-            <div className="absolute -right-12 -top-20 h-48 w-48 rounded-full bg-[#e8dfcf]/20 blur-3xl" />
-            <div className="absolute -bottom-24 -left-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+            {archetypeId && archetype ? (
+              <>
+                <Image
+                  src={profileArchetypeBackgrounds[archetypeId]}
+                  alt=""
+                  fill
+                  priority
+                  sizes="(max-width: 430px) calc(100vw - 40px), 390px"
+                  className="object-cover"
+                />
+                <div className="absolute inset-0 bg-black/28" />
+                <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/15 to-black/80" />
+              </>
+            ) : (
+              <>
+                <div className="absolute -right-12 -top-20 h-48 w-48 rounded-full bg-[#e8dfcf]/20 blur-3xl" />
+                <div className="absolute -bottom-24 -left-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+              </>
+            )}
 
             {!profile.profile_completed ? (
-              <div className="relative flex min-h-[220px] flex-col items-center justify-center py-5 text-center">
+              <>
+              <div className="hidden">
                 <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/[0.07] text-white/76">
                   <LockKeyhole size={22} strokeWidth={1.8} aria-hidden />
                 </span>
@@ -880,6 +908,35 @@ export function PreferenceProfileTab({
                   기본정보 입력하기
                 </button>
               </div>
+              <div className="relative flex min-h-[280px] flex-col items-center justify-center px-4 py-7 text-center">
+                <p className="text-[17px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
+                  이름을 알려주세요
+                </p>
+                {archetype && (
+                  <>
+                    <p className="mt-4 font-serif text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
+                      {archetype.englishName.toUpperCase()}
+                    </p>
+                    <p className="mt-3 text-[20px] font-black tracking-[-0.05em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.5)]">
+                      {archetype.koreanName}
+                    </p>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRequestBasicInfo) {
+                      onRequestBasicInfo();
+                      return;
+                    }
+                    window.location.assign("/onboarding/profile?from=profile");
+                  }}
+                  className="mt-7 h-11 rounded-full border border-white/25 bg-white/92 px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.22)] transition active:scale-[0.98]"
+                >
+                  기본정보 입력하기
+                </button>
+              </div>
+              </>
             ) : (
               <>
             <div className="relative flex items-center justify-end">
@@ -907,18 +964,28 @@ export function PreferenceProfileTab({
               )}
             </div>
 
-            <div className="relative mt-6 flex items-center gap-4">
-              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-white/80 bg-white text-[24px] font-black shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
+            <div className="relative mt-3 flex min-h-[210px] flex-col items-center justify-center gap-3 text-center">
+              <span className="hidden h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-white/80 bg-white text-[24px] font-black shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
                 {editing ? draft.emoji : displayEmoji}
               </span>
-              <div className="min-w-0">
-                <p className="truncate text-[22px] font-black tracking-[-0.04em]">
+              <div className="min-w-0 max-w-full">
+                <p className="truncate text-[17px] font-black tracking-[-0.04em] drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
                   {profile.name?.trim() || "이름 미입력"}
                 </p>
               </div>
+              {archetype && (
+                <>
+                  <p className="mt-1 font-serif text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
+                    {archetype.englishName.toUpperCase()}
+                  </p>
+                  <p className="text-[20px] font-black tracking-[-0.05em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.5)]">
+                    {archetype.koreanName}
+                  </p>
+                </>
+              )}
             </div>
 
-            <div className="relative mt-5 flex flex-wrap gap-2">
+            <div className="relative mt-1 flex flex-wrap justify-center gap-2">
               {[profile.mbti || "MBTI 미입력", profile.gender || "성별 미입력", profile.birth_year ? `${profile.birth_year}년생` : "출생연도 미입력"].map(
                 (value) => (
                   <span

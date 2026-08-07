@@ -20,6 +20,9 @@ export type ProfileRow = {
   basic_info_completed_at?: string | null;
   profile_completed_at?: string | null;
   profile_experience_version?: string | null;
+  profile_archetype_id?: string | null;
+  profile_archetype_version?: string | null;
+  profile_archetype_assigned_at?: string | null;
   is_test_participant: boolean | null;
   public_intro: string | null;
   public_emoji: string | null;

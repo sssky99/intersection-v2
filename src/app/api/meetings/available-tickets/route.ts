@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasCompletedPreferenceQuestions } from "@/data/preferenceQuestions";
 import {
   getAvailableMeetingTickets,
   getRejectedMeetingTickets,
@@ -10,6 +11,9 @@ export const dynamic = "force-dynamic";
 
 type ProfileAccessRow = {
   is_test_participant: boolean | null;
+  profile_experience_version: string | null;
+  questions_completed: boolean | null;
+  profile_completed: boolean | null;
 };
 
 async function requestContext(allowAnonymous = false) {
@@ -23,6 +27,7 @@ async function requestContext(allowAnonymous = false) {
           admin: createAdminClient(),
           userId: null,
           includeTestOnly: false,
+          recommendationProfileReady: false,
         }
       : null;
   }
@@ -30,7 +35,9 @@ async function requestContext(allowAnonymous = false) {
   const admin = createAdminClient();
   const { data: profile, error } = await admin
     .from("profiles")
-    .select("is_test_participant")
+    .select(
+      "is_test_participant,profile_experience_version,questions_completed,profile_completed",
+    )
     .eq("user_id", user.id)
     .maybeSingle<ProfileAccessRow>();
   if (error) throw error;
@@ -39,6 +46,9 @@ async function requestContext(allowAnonymous = false) {
     admin,
     userId: user.id,
     includeTestOnly: profile?.is_test_participant === true,
+    recommendationProfileReady: Boolean(
+      profile && hasCompletedPreferenceQuestions(profile),
+    ),
   };
 }
 
@@ -47,6 +57,12 @@ export async function GET(request: Request) {
     const context = await requestContext(true);
     if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (context.userId && !context.recommendationProfileReady) {
+      return NextResponse.json(
+        { error: "프로필을 완성한 후 추천을 확인할 수 있어요." },
+        { status: 403 },
+      );
     }
 
     const view = new URL(request.url).searchParams.get("view");
@@ -79,6 +95,12 @@ export async function POST(request: Request) {
     const context = await requestContext();
     if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!context.recommendationProfileReady) {
+      return NextResponse.json(
+        { error: "프로필을 완성한 후 추천에 응답할 수 있어요." },
+        { status: 403 },
+      );
     }
 
     const body = (await request.json().catch(() => ({}))) as {

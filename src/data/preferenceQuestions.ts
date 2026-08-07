@@ -1114,3 +1114,22 @@ export function usesPreferenceProfile(
 ) {
   return profile.profile_experience_version === preferenceProfileVersion;
 }
+
+export function hasCompletedPreferenceProfile(
+  profile: {
+    profile_experience_version?: string | null;
+    questions_completed?: boolean | null;
+    profile_completed?: boolean | null;
+  },
+) {
+  return (
+    profile.questions_completed === true &&
+    profile.profile_completed === true
+  );
+}
+
+export function hasCompletedPreferenceQuestions(profile: {
+  questions_completed?: boolean | null;
+}) {
+  return profile.questions_completed === true;
+}
