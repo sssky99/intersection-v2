@@ -162,6 +162,7 @@ const localDateApplicationsStoragePrefix =
   "intersection:local-date-applications";
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
+const initialTicketRecommendationEnabled = false;
 const initialRecommendedTicketDate = "2026-08-08";
 const initialRecommendedTicketTitle = "향수 공방";
 const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
@@ -1154,6 +1155,8 @@ function MeetingDateApplicationFlow({
 
   useEffect(() => {
     if (
+      (!initialTicketRecommendationEnabled &&
+        !forceInitialRecommendationPreview) ||
       !active ||
       availableTicketsLoading ||
       screen !== "dates" ||
