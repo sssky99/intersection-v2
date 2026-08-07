@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Clock3, LockKeyhole, MapPin, Navigation, UserRound, X } from "lucide-react";
+import { formatTicketDateLabel } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
 import {
   SelectionColumn,
@@ -31,9 +33,83 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+type JourneyStationMapPlace = {
+  name: string;
+  mapx: number;
+  mapy: number;
+};
+
+const journeyAreaStations: Array<{
+  keywords: string[];
+  place: JourneyStationMapPlace;
+}> = [
+  {
+    keywords: ["성수"],
+    place: { name: "성수역", mapx: 1270559610, mapy: 375445810 },
+  },
+  {
+    keywords: ["건대", "광진"],
+    place: { name: "건대입구역", mapx: 1270692310, mapy: 375404080 },
+  },
+  {
+    keywords: ["강남", "서초"],
+    place: { name: "강남역", mapx: 1270276210, mapy: 374979420 },
+  },
+  {
+    keywords: ["잠실", "송파"],
+    place: { name: "잠실역", mapx: 1271001590, mapy: 375132620 },
+  },
+  {
+    keywords: ["을지로", "종로", "중구"],
+    place: { name: "을지로입구역", mapx: 1269826180, mapy: 375660140 },
+  },
+  {
+    keywords: ["홍대", "연남", "마포"],
+    place: { name: "홍대입구역", mapx: 1269253810, mapy: 375571920 },
+  },
+  {
+    keywords: ["용산"],
+    place: { name: "용산역", mapx: 1269645610, mapy: 375298490 },
+  },
+  {
+    keywords: ["이태원"],
+    place: { name: "이태원역", mapx: 1269943020, mapy: 375344880 },
+  },
+  {
+    keywords: ["여의도", "영등포"],
+    place: { name: "여의도역", mapx: 1269241910, mapy: 375216240 },
+  },
+  {
+    keywords: ["노원", "강북", "도봉", "성북"],
+    place: { name: "노원역", mapx: 1270613680, mapy: 376551280 },
+  },
+  {
+    keywords: ["강서", "양천"],
+    place: { name: "발산역", mapx: 1268376680, mapy: 375585980 },
+  },
+  {
+    keywords: ["관악", "동작"],
+    place: { name: "서울대입구역", mapx: 1269527390, mapy: 374812470 },
+  },
+  {
+    keywords: ["동대문", "중랑", "동북"],
+    place: { name: "청량리역", mapx: 1270468350, mapy: 375801780 },
+  },
+];
+
+function journeyStationMapPlace(area: string) {
+  const normalizedArea = area.replace(/\s/g, "");
+  return (
+    journeyAreaStations.find(({ keywords }) =>
+      keywords.some((keyword) => normalizedArea.includes(keyword)),
+    )?.place ?? null
+  );
+}
+
 const defaultSections: TicketDetailSectionKey[] = [
   "summary",
   "recommendation",
+  "course",
   "vibe",
   "place",
   "activities",
@@ -113,21 +189,22 @@ export function TicketDetailContent({
   const hasCourse = Boolean(
     visibleSections.has("course") && courseSteps.length >= 2,
   );
+  const showSummary = hasSummary && !hasCourse;
   const hasPlace = Boolean(
     ticket.place?.name?.trim() || ticket.place?.address?.trim(),
   );
   const firstSectionAfterSummary =
-    hasSummary && hasCourse
+    showSummary && hasCourse
       ? "course"
-      : hasSummary && visibleSections.has("vibe")
+      : showSummary && visibleSections.has("vibe")
       ? "vibe"
-      : hasSummary && visibleSections.has("place") && hasPlace
+      : showSummary && visibleSections.has("place") && hasPlace
         ? "place"
-        : hasSummary &&
+        : showSummary &&
             visibleSections.has("activities") &&
             activities.length > 0
           ? "activities"
-          : hasSummary && visibleSections.has("notice")
+          : showSummary && visibleSections.has("notice")
             ? "notice"
             : null;
 
@@ -151,15 +228,15 @@ export function TicketDetailContent({
         </TicketDetailSection>
       )}
 
-      {hasSummary && <TypingSummary text={detailSummary!} />}
+      {showSummary && <TypingSummary text={detailSummary!} />}
 
       {hasCourse && (
         <TicketDetailSection
-          title="코스"
+          title="여정"
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "course"}
         >
-          <TicketCoursePanel steps={courseSteps} />
+          <TicketCoursePanel ticket={ticket} steps={courseSteps} />
         </TicketDetailSection>
       )}
 
@@ -224,13 +301,44 @@ function cleanCourseSteps(steps: GatheringTicket["courseSteps"]) {
   );
 }
 
-function TicketCoursePanel({
-  steps,
-}: {
+function TicketCoursePanel({ ticket, steps }: {
+  ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
 }) {
+  const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
+  const selectedStep = mapStepIndex === null ? null : steps[mapStepIndex];
+  const selectedMapPlace = journeyStationMapPlace(ticket.area);
+
+  useEffect(() => {
+    if (mapStepIndex === null) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMapStepIndex(null);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mapStepIndex]);
+
   return (
-    <ol className="space-y-3">
+    <div className="relative">
+      <div className="relative pl-5 before:absolute before:bottom-8 before:left-[5px] before:top-[7px] before:block before:w-px before:bg-[#c9c4ba] before:content-['']">
+        <div className="relative mb-5">
+          <span
+            aria-hidden
+            className="absolute -left-[20px] top-[5px] z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f7f4ed] bg-[#9f988c] shadow-[0_0_0_1px_rgba(78,72,64,0.22)]"
+          />
+          <p className="text-[12px] font-black tracking-[0.04em] text-black/48">
+            {formatTicketDateLabel(ticket.date)}
+          </p>
+        </div>
+
+        <ol className="space-y-3">
       {steps.map((step, index) => {
         const placeName = step.place?.name ?? step.placeName;
         const address = step.place?.address ?? step.address;
@@ -238,64 +346,229 @@ function TicketCoursePanel({
           step.openOffsetMinutes,
           index,
         );
+        const timeLabel = courseStepTimeLabel(ticket.time, openOffsetMinutes);
 
         return (
           <li
             key={step.id}
-            className="grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-3xl border border-black/8 bg-white p-3"
+            className="relative overflow-hidden rounded-[26px] border border-black/[0.08] bg-white shadow-[0_12px_28px_rgba(24,24,20,0.045)]"
           >
-            <div className="relative h-20 overflow-hidden rounded-2xl bg-black/[0.05]">
-              {step.imageUrl ? (
-                <img
-                  src={step.imageUrl}
-                  alt=""
-                  draggable={false}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs font-black text-black/25">
-                  {index + 1}차
+            <button
+              type="button"
+              onClick={() => setMapStepIndex(index)}
+              aria-label={`${step.title || step.activityType || "활동"} 지도 보기`}
+              className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#f7f7f2] text-black/58 shadow-[0_5px_14px_rgba(0,0,0,0.08)] transition hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
+            >
+              <Navigation size={17} fill="currentColor" strokeWidth={1.8} aria-hidden />
+            </button>
+
+            <div className="p-5 pb-4 pr-16">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1 text-[12px] font-black text-black/48">
+                    {timeLabel}
+                  </span>
                 </div>
-              )}
-            </div>
-            <div className="min-w-0 py-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="rounded-full bg-black/[0.05] px-2 py-1 text-[10px] font-black text-black/45">
-                  {index + 1}차
-                </span>
-                <span className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700">
-                  시작 +{openOffsetMinutes}분
-                </span>
-                {step.isMainActivity && (
-                  <span className="rounded-full bg-accent/14 px-2 py-1 text-[10px] font-black text-accent">
-                    메인
-                  </span>
+
+                <p className="mt-2.5 break-keep text-[19px] font-black leading-6 tracking-[-0.035em] text-black">
+                  {step.title || step.activityType || "활동"}
+                </p>
+
+                {(placeName || ticket.area) && (
+                  <p className="mt-2 flex items-start gap-1.5 text-[12px] font-bold leading-5 text-black/52">
+                    <MapPin
+                      size={13}
+                      strokeWidth={2.1}
+                      className="mt-0.5 shrink-0 text-black/32"
+                      aria-hidden
+                    />
+                    <span>{placeName || ticket.area}</span>
+                  </p>
                 )}
-                {step.activityType && (
-                  <span className="rounded-full bg-black/[0.04] px-2 py-1 text-[10px] font-bold text-black/42">
-                    {step.activityType}
-                  </span>
+                {address && (
+                  <p className="mt-1 pl-[19px] text-[10px] font-semibold leading-4 text-black/34">
+                    {address}
+                  </p>
                 )}
               </div>
-              <p className="mt-2 text-sm font-black leading-5 text-black">
-                {step.title || step.activityType || `${index + 1}차 활동`}
-              </p>
-              {placeName && (
-                <p className="mt-1 text-xs font-bold leading-5 text-black/58">
-                  {placeName}
-                </p>
-              )}
-              {address && (
-                <p className="mt-0.5 text-[11px] font-semibold leading-5 text-black/40">
-                  {address}
-                </p>
-              )}
             </div>
+
+            <JourneyPeoplePanel stepIndex={index} />
           </li>
         );
       })}
-    </ol>
+        </ol>
+      </div>
+
+      <AnimatePresence>
+        {selectedStep && (
+          <UnreleasedMapSheet
+            title={selectedStep.title || selectedStep.activityType || "활동"}
+            timeLabel={courseStepTimeLabel(
+              ticket.time,
+              courseStepOpenOffsetMinutes(
+                selectedStep.openOffsetMinutes,
+                mapStepIndex ?? 0,
+              ),
+            )}
+            place={selectedMapPlace}
+            onClose={() => setMapStepIndex(null)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
+}
+
+function UnreleasedMapSheet({
+  title,
+  timeLabel,
+  place,
+  onClose,
+}: {
+  title: string;
+  timeLabel: string;
+  place: { name: string; mapx: number; mapy: number } | null;
+  onClose: () => void;
+}) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-[120] flex justify-center bg-black/25"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${title} 지도`}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 340, damping: 34 }}
+        className="relative flex h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-[#f7f4ed] shadow-[0_-24px_80px_rgba(0,0,0,0.22)]"
+      >
+        <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-black/[0.08] bg-[#f7f4ed]/95 px-5 pb-4 pt-[calc(14px+env(safe-area-inset-top))] backdrop-blur-xl">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-black/40">{timeLabel}</p>
+            <h2 className="mt-1 truncate text-[18px] font-black tracking-[-0.03em] text-black">
+              {title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="지도 닫기"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/58 shadow-sm"
+          >
+            <X size={18} strokeWidth={2} aria-hidden />
+          </button>
+        </header>
+
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-[#e7e5df]">
+          {place && (
+            <NaverMapPreview
+              place={place}
+              heightClassName="h-full"
+              className="pointer-events-none absolute inset-[-8px] scale-[1.03] rounded-none border-0 saturate-[0.88] blur-[1.5px]"
+            />
+          )}
+
+          <div className="absolute inset-0 flex items-center justify-center px-8">
+            <div className="flex max-w-[280px] flex-col items-center rounded-[28px] border border-white/70 bg-[#f7f4ed]/92 px-7 py-7 text-center shadow-[0_22px_60px_rgba(36,45,38,0.18)] backdrop-blur-md">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-lg">
+                <LockKeyhole size={20} strokeWidth={2} aria-hidden />
+              </span>
+              <p className="mt-4 break-keep text-[14px] font-black leading-6 tracking-[-0.025em] text-black">
+                정확한 장소는 모임 시작 24시간 전에 공개돼요.
+              </p>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
+  if (stepIndex === 0) {
+    return (
+      <div className="mx-3 mb-3 overflow-hidden rounded-[22px] border border-black/[0.07] bg-black/[0.018]">
+        <div className="flex min-h-[62px] items-center justify-between gap-3 px-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/44">
+              <UserRound size={15} strokeWidth={2} aria-hidden />
+            </span>
+            <span className="text-[13px] font-black text-black/68">나</span>
+          </div>
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-black/36">
+            응답 대기
+            <Clock3 size={14} strokeWidth={1.9} aria-hidden />
+          </span>
+        </div>
+        <div className="flex min-h-[62px] items-center gap-3 border-t border-black/[0.06] px-4">
+          <JourneyAvatarStack tone="warm" />
+          <p className="text-[12px] font-bold text-black/44">
+            나와 <strong className="font-black text-black/72">잘 맞는 5명</strong>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-3 mb-3 overflow-hidden rounded-[22px] border border-black/[0.07] bg-black/[0.018]">
+      <div className="flex min-h-[62px] items-center gap-3 px-4">
+        <JourneyAvatarStack tone="warm" />
+        <p className="text-[12px] font-bold text-black/44">
+          <strong className="font-black text-black/72">저녁을 함께한 멤버</strong>
+        </p>
+      </div>
+      <div className="flex min-h-[62px] items-center gap-3 border-t border-black/[0.06] px-4">
+        <JourneyAvatarStack tone="cool" />
+        <p className="text-[12px] font-bold text-black/44">
+          다른 <strong className="font-black text-black/72">교집합 멤버들</strong>도 함께해요
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function JourneyAvatarStack({ tone }: { tone: "warm" | "cool" }) {
+  const colors =
+    tone === "warm"
+      ? ["bg-[#d8b49b]", "bg-[#b9c7b0]", "bg-[#a9bbc9]"]
+      : ["bg-[#d7aab7]", "bg-[#b5c8d7]", "bg-[#c6b6d4]"];
+
+  return (
+    <span className="flex w-[62px] shrink-0 items-center" aria-hidden>
+      {colors.map((color, index) => (
+        <span
+          key={color}
+          className={cn(
+            "h-8 w-8 rounded-full border-2 border-[#f8f7f3] shadow-sm",
+            color,
+            index > 0 && "-ml-3",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
+function courseStepTimeLabel(startTime: string, offsetMinutes: number) {
+  const matched = startTime.match(/(\d{1,2}):(\d{2})/);
+  if (!matched) return offsetMinutes === 0 ? startTime : `시작 +${offsetMinutes}분`;
+
+  const totalMinutes =
+    (Number(matched[1]) * 60 + Number(matched[2]) + offsetMinutes) % (24 * 60);
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const period = hour < 12 ? "오전" : "오후";
+  const displayHour = hour % 12 || 12;
+
+  return `${period} ${displayHour}:${String(minute).padStart(2, "0")}`;
 }
 
 export function TypingSummary({

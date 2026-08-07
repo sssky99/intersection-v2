@@ -1303,7 +1303,7 @@ export function TicketAdminPanel({
     if (!selectedInstance || selectedInstance.ticket_reveal_override_at) return;
     if (
       !window.confirm(
-        "배정된 확정 참가자에게 이 티켓을 지금 공개할까요?\n코스별 활동과 장소의 순차 공개 시점은 그대로 유지됩니다.",
+        "배정된 확정 참가자에게 이 티켓을 지금 공개할까요?\n여정별 활동과 장소의 순차 공개 시점은 그대로 유지됩니다.",
       )
     ) {
       return;
@@ -1697,7 +1697,7 @@ function TicketListCard({
           <VisibilityBadge visibility={instance?.visibility ?? template.visibility} />
           {!isSampleTicket && (
             <span className="rounded-full bg-black/[0.045] px-2 py-1 text-[10px] font-bold text-black/45">
-              {courseCount}차 코스
+              {courseCount}단계 여정
             </span>
           )}
           {template.instance_count > 1 && (
@@ -1972,7 +1972,7 @@ function ImmediateRevealControl({
             <h3 className="font-bold">참가자 티켓 공개</h3>
             <p className="mt-1 text-xs font-semibold leading-5 text-black/52">
               확정 참가자의 물음표 티켓을 24시간 공개 시점보다 먼저 열 수
-              있습니다. 코스별 활동과 장소의 순차 공개 시간은 바뀌지 않습니다.
+              있습니다. 여정별 활동과 장소의 순차 공개 시간은 바뀌지 않습니다.
             </p>
             {revealedAt && (
               <p className="mt-2 text-[11px] font-semibold text-accent">
@@ -2181,9 +2181,10 @@ function CourseStepsEditor({
     <div className="col-span-2 space-y-3 rounded-2xl border border-black/8 bg-black/[0.025] p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h4 className="text-sm font-bold">코스 구성</h4>
+          <h4 className="text-sm font-bold">여정 구성</h4>
           <p className="mt-1 text-xs font-semibold text-black/42">
-            기본 2차 코스이며, 필요하면 3차까지 추가할 수 있어요.
+            향수 공방을 제외하고 1차 저녁 식사, 2차 활동으로 구성해요.
+            필요하면 3차까지 추가할 수 있어요.
           </p>
         </div>
         <button
@@ -2193,7 +2194,7 @@ function CourseStepsEditor({
           className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
         >
           <Plus size={14} aria-hidden />
-          3차 코스 추가
+          3차 여정 추가
         </button>
       </div>
 
@@ -2238,7 +2239,7 @@ function CourseStepsEditor({
                     disabled={saving}
                     onClick={() => removeStep(step.id)}
                     className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-red-500 transition hover:bg-red-50 disabled:opacity-40"
-                    aria-label={`${stepLabel} 코스 삭제`}
+                    aria-label={`${stepLabel} 여정 삭제`}
                   >
                     <Trash2 size={14} aria-hidden />
                   </button>
@@ -2250,7 +2251,7 @@ function CourseStepsEditor({
               <FormField
                 label={`${stepLabel} 활동명`}
                 value={step.title}
-                placeholder={index === 0 ? "전시 보기" : "카페에서 대화"}
+                placeholder={index === 0 ? "저녁 식사" : "볼링 · 전시 · 보드게임"}
                 onChange={(title) =>
                   updateStep(step.id, (current) => ({ ...current, title }))
                 }
@@ -2296,7 +2297,7 @@ function CourseStepsEditor({
                     {step.imageUrl
                       ? step.isMainActivity
                         ? "대표 이미지로 사용돼요."
-                        : "코스 이미지로 저장돼요."
+                        : "여정 이미지로 저장돼요."
                       : "이미지 없음"}
                   </p>
                 </div>

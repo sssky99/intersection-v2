@@ -1927,6 +1927,7 @@ function MeetingDateApplicationFlow({
             sections={[
               "summary",
               "recommendation",
+              "course",
               "vibe",
               "activities",
               "notice",

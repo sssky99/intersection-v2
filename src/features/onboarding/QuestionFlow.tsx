@@ -11,7 +11,9 @@ import {
   conversationResults,
   type ConversationResultCode,
 } from "@/data/conversationResults";
+import { preferenceQuestions } from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
+import { LegacyPreferenceQuestion } from "@/features/onboarding/LegacyPreferenceQuestion";
 import {
   identifyAnalyticsUser,
   trackEvent,
@@ -814,6 +816,38 @@ export function QuestionFlow({
 
   const isConversationQuestion =
     (question.order ?? question.id) <= conversationQuestionCount;
+  const usesLegacyPreferenceStyle =
+    questionSet === preferenceQuestions &&
+    (question.order ?? question.id) <= 5;
+
+  if (usesLegacyPreferenceStyle) {
+    const preferredAnswer = answers[4]?.value;
+    return (
+      <LegacyPreferenceQuestion
+        question={question}
+        questionIndex={questionIndex}
+        questionCount={questions.length}
+        answer={answer}
+        preferredValues={Array.isArray(preferredAnswer) ? preferredAnswer : []}
+        saving={saving}
+        canContinue={canContinue}
+        onBack={() => {
+          setError(null);
+          if (questionIndex > 0) {
+            setQuestionIndex((current) => current - 1);
+            return;
+          }
+          router.push(isRegeneration ? "/meetings?tab=profile" : "/");
+        }}
+        onContinue={() => void continueQuestion()}
+        onSelectSingle={(value) => {
+          setError(null);
+          updateLocalAnswer({ questionId: question.id, value });
+        }}
+        onToggleMultiple={toggleMultiple}
+      />
+    );
+  }
 
   if (resultAnswers) {
     const resultCode = conversationResultCode(resultAnswers);
@@ -1234,45 +1268,6 @@ export function QuestionFlow({
         </p>
       )}
 
-      <AnimatePresence>
-        {saving && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
-            className="fixed inset-0 z-30 mx-auto flex w-full max-w-[430px] items-center justify-center bg-[#f7f7f5]/76 px-6 backdrop-blur-[2px]"
-            role="status"
-            aria-live="polite"
-            aria-label="답변 저장 중"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -4, scale: 0.98 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="flex min-w-[154px] flex-col items-center rounded-[24px] border border-black/[0.08] bg-[#faf8f2]/95 px-6 py-5 shadow-[0_18px_48px_rgba(18,18,18,0.09)]"
-            >
-              <span className="relative h-7 w-7" aria-hidden>
-                <span className="absolute inset-0 rounded-full border-2 border-black/10" />
-                <motion.span
-                  className="absolute inset-0 rounded-full border-2 border-transparent border-t-black/75"
-                  animate={{ rotate: 360 }}
-                  transition={{
-                    duration: 0.8,
-                    ease: "linear",
-                    repeat: Infinity,
-                  }}
-                />
-              </span>
-              <span className="mt-3 text-[13px] font-bold tracking-[-0.02em] text-black/65">
-                답변 저장 중
-              </span>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {question.type !== "single_choice" && (
         <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
           <button
@@ -1281,14 +1276,12 @@ export function QuestionFlow({
             onClick={() => void continueQuestion()}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black text-[16px] font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition active:scale-[0.98] disabled:bg-black/10 disabled:text-black/30 disabled:shadow-none"
           >
-            {saving
-              ? "답변을 저장하고 있어요"
-              : questionIndex === questions.length - 1
-                ? isPreview
-                  ? "답변 저장하기"
-                  : "결과 확인하기"
-                : "다음"}
-            {!saving && <ChevronRight size={17} aria-hidden />}
+            {questionIndex === questions.length - 1
+              ? isPreview
+                ? "답변 저장하기"
+                : "결과 확인하기"
+              : "다음"}
+            <ChevronRight size={17} aria-hidden />
           </button>
         </div>
       )}
