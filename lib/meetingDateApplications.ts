@@ -1,6 +1,10 @@
 export const MEETING_DATE_DEPOSIT_AMOUNT = 10_000;
 export const MEETING_DATE_REGION = "서울";
-const CLOSED_MEETING_DATES = new Set(["2026-08-05", "2026-08-07"]);
+const CLOSED_MEETING_DATES = new Set([
+  "2026-08-05",
+  "2026-08-07",
+  "2026-08-08",
+]);
 export type MeetingDateApplicationStatus =
   | "payment_pending"
   | "waitlisted"

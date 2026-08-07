@@ -266,7 +266,7 @@ export async function POST(request: Request) {
     selectedTicket = data;
   }
 
-  const closed = selectedTicket ? false : isMeetingDateClosed(dates[0]);
+  const closed = isMeetingDateClosed(dates[0]);
   if (closed && !joinWaitlist) {
     return NextResponse.json(
       { error: "마감된 날짜예요. 빈 자리 대기를 신청해주세요." },
