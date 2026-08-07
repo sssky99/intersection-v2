@@ -1492,6 +1492,17 @@ export function TicketAdminPanel({
                 />
 
                 {!isSampleTicket && (
+                  <CourseStepsEditor
+                    draft={draft}
+                    saving={saving}
+                    onDraftChange={setDraft}
+                    onUploadImage={(file, stepId) =>
+                      void uploadImage(file, stepId)
+                    }
+                  />
+                )}
+
+                {!isSampleTicket && (
                   <OccurrenceManager
                     instances={selectedTicket.instances}
                     selectedInstanceId={selectedInstance?.id ?? null}
@@ -1738,9 +1749,11 @@ function TicketEditorHeader({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-            invitation
+            {isSampleTicket ? "sample ticket" : "course"}
           </p>
-          <h3 className="mt-1 text-xl font-bold">{draft.title || "새 초대장"}</h3>
+          <h3 className="mt-1 text-xl font-bold">
+            {draft.title || (isSampleTicket ? "새 샘플 티켓" : "새 코스")}
+          </h3>
           <p className="mt-1 text-xs font-semibold text-black/42">
             {ticketVisibilityLabels[draft.visibility]} ·{" "}
             수정 {updatedDate(ticket.updated_at)}
@@ -1762,10 +1775,10 @@ function TicketEditorHeader({
       <div className="mt-5 grid gap-4 md:grid-cols-[220px_220px]">
         <div>
           <span className="text-xs font-semibold text-black/50">
-            초대장 유형
+            {isSampleTicket ? "티켓 유형" : "코스 유형"}
           </span>
           <div className="mt-1.5 flex h-10 items-center rounded-xl border border-black/10 bg-black/[0.025] px-3 text-sm font-bold text-black/55">
-            {isSampleTicket ? "샘플 티켓" : "운영 모임"}
+            {isSampleTicket ? "샘플 티켓" : "운영 코스"}
           </div>
         </div>
         {isSampleTicket ? (
@@ -2013,7 +2026,7 @@ function BasicEditor({
       <h3 className="font-bold">기본 정보</h3>
       <div className="mt-4 grid grid-cols-2 gap-4">
         <TextAreaField
-          label="초대장 제목"
+          label={sampleOnly ? "샘플 티켓 제목" : "코스 이름"}
           className="col-span-2"
           value={draft.title}
           onChange={(title) => onDraftChange({ ...draft, title })}
@@ -2027,12 +2040,14 @@ function BasicEditor({
             onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
           }
         />
-        <CourseStepsEditor
-          draft={draft}
-          saving={saving}
-          onDraftChange={onDraftChange}
-          onUploadImage={onUploadImage}
-        />
+        {sampleOnly && (
+          <CourseStepsEditor
+            draft={draft}
+            saving={saving}
+            onDraftChange={onDraftChange}
+            onUploadImage={onUploadImage}
+          />
+        )}
         {!sampleOnly && (
           <>
             <SelectField
