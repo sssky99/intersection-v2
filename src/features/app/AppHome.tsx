@@ -100,6 +100,7 @@ import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import {
   clearGuestTicketInteractions,
   loadGuestTicketInteractions,
+  saveGuestTicketInteraction,
   ticketInteractionStatusLabel,
 } from "@/lib/ticketInteractions";
 import type { ProfileRow } from "@/types/profile";
@@ -921,6 +922,37 @@ export function AppHome({
     ]);
   }, []);
 
+  const declineTicketFromInbox = useCallback(
+    async (ticket: GatheringTicket) => {
+      if (guestMode) {
+        applyTicketInteraction(saveGuestTicketInteraction(ticket, "no"));
+        return true;
+      }
+
+      const response = await fetch("/api/meetings/ticket-interactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketInstanceId: ticket.id, status: "no" }),
+      }).catch(() => null);
+      const data = response
+        ? ((await response.json().catch(() => null)) as {
+            interactions?: TicketInteraction[];
+          } | null)
+        : null;
+      const interaction = data?.interactions?.find(
+        (row) => row.ticket.id === ticket.id,
+      );
+
+      if (!response?.ok || !interaction || interaction.status !== "no") {
+        return false;
+      }
+
+      applyTicketInteraction(interaction);
+      return true;
+    },
+    [applyTicketInteraction, guestMode],
+  );
+
   const startProfileRegeneration = async () => {
     if (profileRegenerating) return;
 
@@ -1139,6 +1171,7 @@ export function AppHome({
             loadingMore={loadingRemainingTickets}
             onGoRecommend={() => switchTab("recommend")}
             onReapplyTicket={requestDeclinedTicketApplication}
+            onDeclineTicket={declineTicketFromInbox}
             onFocusModeChange={setTicketTabFocusMode}
           />
         </div>
@@ -1577,6 +1610,7 @@ function TicketListTab({
   loadingMore,
   onGoRecommend,
   onReapplyTicket,
+  onDeclineTicket,
   onFocusModeChange,
 }: {
   tickets: UserTicket[];
@@ -1587,6 +1621,7 @@ function TicketListTab({
   loadingMore: boolean;
   onGoRecommend: () => void;
   onReapplyTicket: (ticket: GatheringTicket) => void;
+  onDeclineTicket: (ticket: GatheringTicket) => Promise<boolean>;
   onFocusModeChange: (focused: boolean) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -1594,6 +1629,8 @@ function TicketListTab({
   const [selectedApplicationTicket, setSelectedApplicationTicket] =
     useState<GatheringTicket | null>(null);
   const [selectedApplicationTicketDeclined, setSelectedApplicationTicketDeclined] =
+    useState(false);
+  const [selectedApplicationTicketOpen, setSelectedApplicationTicketOpen] =
     useState(false);
   const [declinedViewOpen, setDeclinedViewOpen] = useState(false);
   const [declinedTickets, setDeclinedTickets] = useState<GatheringTicket[]>([]);
@@ -1623,7 +1660,8 @@ function TicketListTab({
 
   useEffect(() => {
     const focused = Boolean(
-      selectedApplicationTicket && selectedApplicationTicketDeclined,
+      selectedApplicationTicket &&
+        (selectedApplicationTicketDeclined || selectedApplicationTicketOpen),
     );
     onFocusModeChange(focused);
     return () => onFocusModeChange(false);
@@ -1631,6 +1669,7 @@ function TicketListTab({
     onFocusModeChange,
     selectedApplicationTicket,
     selectedApplicationTicketDeclined,
+    selectedApplicationTicketOpen,
   ]);
   const availableTicketById = useMemo(
     () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
@@ -1878,6 +1917,7 @@ function TicketListTab({
       tappedItem.ticket
     ) {
       setSelectedApplicationTicketDeclined(false);
+      setSelectedApplicationTicketOpen(false);
       setSelectedApplicationTicket(tappedItem.ticket);
       return;
     }
@@ -1889,6 +1929,9 @@ function TicketListTab({
     ) {
       setSelectedApplicationTicketDeclined(
         tappedItem.interaction.status === "no",
+      );
+      setSelectedApplicationTicketOpen(
+        tappedItem.interaction.status === "open",
       );
       setSelectedApplicationTicket(tappedItem.interaction.ticket);
       return;
@@ -2028,14 +2071,39 @@ function TicketListTab({
             onClose={() => {
               setSelectedApplicationTicket(null);
               setSelectedApplicationTicketDeclined(false);
+              setSelectedApplicationTicketOpen(false);
             }}
             onReapply={
               selectedApplicationTicketDeclined
                 ? () => {
+                  const ticket = selectedApplicationTicket;
+                  setSelectedApplicationTicket(null);
+                  setSelectedApplicationTicketDeclined(false);
+                  setSelectedApplicationTicketOpen(false);
+                  onReapplyTicket(ticket);
+                }
+                : undefined
+            }
+            onAccept={
+              selectedApplicationTicketOpen
+                ? () => {
                     const ticket = selectedApplicationTicket;
                     setSelectedApplicationTicket(null);
-                    setSelectedApplicationTicketDeclined(false);
+                    setSelectedApplicationTicketOpen(false);
                     onReapplyTicket(ticket);
+                  }
+                : undefined
+            }
+            onDecline={
+              selectedApplicationTicketOpen
+                ? async () => {
+                    const declined = await onDeclineTicket(
+                      selectedApplicationTicket,
+                    );
+                    if (!declined) return false;
+                    setSelectedApplicationTicket(null);
+                    setSelectedApplicationTicketOpen(false);
+                    return true;
                   }
                 : undefined
             }
@@ -2049,6 +2117,7 @@ function TicketListTab({
             onBack={() => setDeclinedViewOpen(false)}
             onOpen={(ticket) => {
               setSelectedApplicationTicketDeclined(true);
+              setSelectedApplicationTicketOpen(false);
               setSelectedApplicationTicket(ticket);
             }}
           />
@@ -2130,6 +2199,9 @@ function TicketListTab({
                             setSelectedApplicationTicketDeclined(
                               item.interaction.status === "no",
                             );
+                            setSelectedApplicationTicketOpen(
+                              item.interaction.status === "open",
+                            );
                             setSelectedApplicationTicket(item.interaction.ticket);
                           }}
                         />
@@ -2140,6 +2212,7 @@ function TicketListTab({
                             ticket={item.ticket}
                             onOpen={() => {
                               setSelectedApplicationTicketDeclined(false);
+                              setSelectedApplicationTicketOpen(false);
                               setSelectedApplicationTicket(item.ticket);
                             }}
                           />
@@ -2590,11 +2663,29 @@ function AssignedApplicationTicketDetailView({
   ticket,
   onClose,
   onReapply,
+  onAccept,
+  onDecline,
 }: {
   ticket: GatheringTicket;
   onClose: () => void;
   onReapply?: () => void;
+  onAccept?: () => void;
+  onDecline?: () => Promise<boolean>;
 }) {
+  const [responding, setResponding] = useState(false);
+  const [responseError, setResponseError] = useState<string | null>(null);
+
+  const decline = async () => {
+    if (!onDecline || responding) return;
+    setResponding(true);
+    setResponseError(null);
+    const declined = await onDecline().catch(() => false);
+    if (!declined) {
+      setResponseError("선택을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+      setResponding(false);
+    }
+  };
+
   return (
     <motion.section
       initial={{ opacity: 0, x: 16 }}
@@ -2606,6 +2697,7 @@ function AssignedApplicationTicketDetailView({
       <button
         type="button"
         onClick={onClose}
+        disabled={responding}
         className="mb-4 flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm"
       >
         <ChevronLeft size={17} aria-hidden />
@@ -2623,7 +2715,33 @@ function AssignedApplicationTicketDetailView({
           className="px-4 pb-5"
         />
       </div>
-      {onReapply && (
+      {responseError && (
+        <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+          {responseError}
+        </p>
+      )}
+      {onAccept && onDecline ? (
+        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+          <motion.button
+            type="button"
+            whileTap={!responding ? { scale: 0.98 } : undefined}
+            disabled={responding}
+            onClick={() => void decline()}
+            className="flex h-[56px] items-center justify-center rounded-full bg-transparent text-[15px] font-black tracking-[0.04em] text-black/42 disabled:opacity-40"
+          >
+            NO
+          </motion.button>
+          <motion.button
+            type="button"
+            whileTap={!responding ? { scale: 0.98 } : undefined}
+            disabled={responding}
+            onClick={onAccept}
+            className="flex h-[56px] items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+          >
+            YES
+          </motion.button>
+        </div>
+      ) : onReapply ? (
         <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
           <motion.button
             type="button"
@@ -2634,7 +2752,7 @@ function AssignedApplicationTicketDetailView({
             YES
           </motion.button>
         </div>
-      )}
+      ) : null}
     </motion.section>
   );
 }
