@@ -639,6 +639,16 @@ function deriveStatus(
     };
   }
 
+  if (startAt && now >= startAt && !confirmedStatuses.has(rawStatus)) {
+    return {
+      status: null,
+      statusLabel: "",
+      progressStep: "applied",
+      progressIndex: 0,
+      canSetArrival: false,
+    };
+  }
+
   if (rawStatus === "payment_pending") {
     return {
       status: "payment_pending",

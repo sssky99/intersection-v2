@@ -16,3 +16,23 @@ export function isPastTicketDate(
 ) {
   return Boolean(value && ticketDatePattern.test(value) && value < todayInKst(now));
 }
+
+export function ticketStartAtInKst(
+  date: string | null | undefined,
+  time: string | null | undefined,
+) {
+  if (!date || !ticketDatePattern.test(date)) return null;
+
+  const normalizedTime = time?.slice(0, 5) || "00:00";
+  const startAt = new Date(`${date}T${normalizedTime}:00+09:00`);
+  return Number.isFinite(startAt.getTime()) ? startAt : null;
+}
+
+export function hasTicketStarted(
+  date: string | null | undefined,
+  time: string | null | undefined,
+  now = new Date(),
+) {
+  const startAt = ticketStartAtInKst(date, time);
+  return Boolean(startAt && now >= startAt);
+}

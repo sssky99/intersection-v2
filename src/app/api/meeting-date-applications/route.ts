@@ -10,7 +10,7 @@ import {
 } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { todayInKst } from "@/lib/ticketDate";
+import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
 
 export const dynamic = "force-dynamic";
 
@@ -148,7 +148,9 @@ export async function GET() {
 
     if (error) throw error;
 
-    const rows = data ?? [];
+    const rows = (data ?? []).filter(
+      (row) => !hasTicketStarted(row.meeting_date, row.meeting_time),
+    );
     const assignedInstanceIds = Array.from(
       new Set(
         rows

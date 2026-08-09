@@ -3,6 +3,7 @@ import { getMeetingTicketsByInstanceIds } from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { nextTicketInteractionStatus } from "@/lib/ticketInteractions";
+import { hasTicketStarted } from "@/lib/ticketDate";
 import type {
   TicketInteraction,
   TicketInteractionStatus,
@@ -83,7 +84,11 @@ async function interactionResponse(
     instanceIds: (data ?? []).map((row) => row.ticket_instance_id),
     includeTestOnly: context.includeTestOnly,
   });
-  const ticketMap = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  const ticketMap = new Map(
+    tickets
+      .filter((ticket) => !hasTicketStarted(ticket.date, ticket.time))
+      .map((ticket) => [ticket.id, ticket]),
+  );
   const interactions = (data ?? [])
     .map((row): TicketInteraction | null => {
       const ticket = ticketMap.get(row.ticket_instance_id);
@@ -136,6 +141,7 @@ async function saveInteraction(
     }>();
   if (instanceError) throw instanceError;
   if (!instance) return false;
+  if (hasTicketStarted(instance.event_date, instance.event_time)) return false;
 
   const { data: existing, error: existingError } = await context.admin
     .from("ticket_user_interactions")

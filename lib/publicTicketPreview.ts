@@ -11,7 +11,7 @@ import {
   legacyStoredTicketCourseSteps,
   normalizeStoredTicketCourseSteps,
 } from "@/lib/ticketCourse";
-import { todayInKst } from "@/lib/ticketDate";
+import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
@@ -379,7 +379,12 @@ export async function getAvailableMeetingTickets({
 
   if (instancesError) throw instancesError;
 
-  const tickets = await previewTicketsFromInstances(instances ?? []);
+  const tickets = await previewTicketsFromInstances(
+    (instances ?? []).filter(
+      (instance) =>
+        !hasTicketStarted(instance.event_date, instance.event_time),
+    ),
+  );
   if (!userId) return tickets;
 
   const rejectionResult = await supabase
