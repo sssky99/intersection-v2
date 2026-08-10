@@ -4,7 +4,7 @@ import {
   profileArchetypeIds,
   type ProfileArchetypeId,
 } from "@/data/profileArchetypes";
-import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
+import { ProfileTypeInvitationPreview } from "./ProfileTypeInvitationPreview";
 
 export default async function ProfileTypePreviewPage({
   searchParams,
@@ -21,7 +21,7 @@ export default async function ProfileTypePreviewPage({
 
   return (
     <MobileFrame>
-      <ProfileArchetypeResult archetypeId={archetypeId} />
+      <ProfileTypeInvitationPreview archetypeId={archetypeId} />
     </MobileFrame>
   );
 }
