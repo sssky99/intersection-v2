@@ -2711,7 +2711,7 @@ function AssignedApplicationTicketDetailView({
         />
         <TicketDetailContent
           ticket={ticket}
-          sections={["summary", "vibe", "activities", "notice"]}
+          sections={["summary", "course", "vibe", "activities", "notice"]}
           className="px-4 pb-5"
         />
       </div>
@@ -3353,11 +3353,13 @@ function ticketProgressHeroImageUrl(
 
 const introDetailSections: TicketDetailSectionKey[] = [
   "summary",
+  "course",
   "vibe",
   "activities",
 ];
 const appliedDetailSections: TicketDetailSectionKey[] = [
   "summary",
+  "course",
   "vibe",
   "activities",
   "notice",
