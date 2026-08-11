@@ -24,6 +24,10 @@ import {
   conversationResults,
   type ConversationResultCode,
 } from "@/data/conversationResults";
+import {
+  isProfileArchetypeId,
+  profileArchetypes,
+} from "@/data/profileArchetypes";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
@@ -109,6 +113,18 @@ function cn(...values: Array<string | false | null | undefined>) {
 function display(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return "-";
   return String(value);
+}
+
+function adminProfileArchetype(profile: AdminProfile) {
+  if (!isProfileArchetypeId(profile.profile_archetype_id)) return null;
+  return profileArchetypes[profile.profile_archetype_id];
+}
+
+function adminProfileArchetypeLabel(profile: AdminProfile) {
+  const archetype = adminProfileArchetype(profile);
+  return archetype
+    ? `${archetype.koreanName} · ${archetype.englishName}`
+    : "미배정";
 }
 
 function isDropoffProfile(profile: Pick<AdminProfile, "name">) {
@@ -272,6 +288,7 @@ function downloadApplicantAnswersTsv(profiles: AdminProfile[]) {
     "성별",
     "출생연도",
     "MBTI",
+    "성향 유형",
     "프로필 완료",
     "질문 완료",
     "멤버십 상태",
@@ -295,6 +312,7 @@ function downloadApplicantAnswersTsv(profiles: AdminProfile[]) {
       profile.gender,
       profile.birth_year,
       profile.mbti,
+      adminProfileArchetypeLabel(profile),
       completionText(profile.profile_completed),
       completionText(profile.questions_completed),
       membershipStatusLabels[membershipStatusValue(profile)],
@@ -641,7 +659,7 @@ export function AdminPageClient({
     return baseProfiles.filter((profile) => {
       const matchesSearch =
         query.length === 0 ||
-        `${profile.name ?? ""} ${profile.phone ?? ""}`
+        `${profile.name ?? ""} ${profile.phone ?? ""} ${adminProfileArchetypeLabel(profile)}`
           .toLowerCase()
           .includes(query);
       const matchesGender =
@@ -1213,13 +1231,14 @@ function ApplicantTable({
 }) {
   return (
     <div className="h-full overflow-auto">
-      <table className="min-w-[1120px] w-full border-separate border-spacing-0 text-left text-sm">
+      <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
           <tr>
             <TableHead className="w-[120px] px-3">이름</TableHead>
             <TableHead className="w-20 px-3">성별</TableHead>
             <TableHead className="w-24">출생연도</TableHead>
             <TableHead className="w-20">MBTI</TableHead>
+            <TableHead className="w-36">성향 유형</TableHead>
             <TableHead className="w-40">배정 타입</TableHead>
             <TableHead className="w-32">전화번호</TableHead>
             <TableHead className="w-28">가입일</TableHead>
@@ -1250,6 +1269,11 @@ function ApplicantTable({
                 </TableCell>
                 <TableCell>{display(profile.birth_year)}</TableCell>
                 <TableCell>{display(profile.mbti)}</TableCell>
+                <TableCell className="w-36">
+                  <span className="block truncate font-bold text-black/70">
+                    {adminProfileArchetypeLabel(profile)}
+                  </span>
+                </TableCell>
                 <TableCell className="w-40">
                   {conversationResult ? (
                     <div className="min-w-0">
@@ -1327,6 +1351,10 @@ function ApplicantCards({
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-black/50">
                   <InfoPill label="MBTI" value={display(profile.mbti)} />
+                  <InfoPill
+                    label="성향 유형"
+                    value={adminProfileArchetypeLabel(profile)}
+                  />
                   <InfoPill
                     label="배정 타입"
                     value={conversationResult?.title ?? "미배정"}
@@ -1456,6 +1484,10 @@ function ProfileDetailPanel({
           <DetailItem label="성별" value={display(profile.gender)} />
           <DetailItem label="출생연도" value={display(profile.birth_year)} />
           <DetailItem label="MBTI" value={display(profile.mbti)} />
+          <DetailItem
+            label="성향 유형"
+            value={adminProfileArchetypeLabel(profile)}
+          />
           <DetailItem label="전화번호" value={display(profile.phone)} />
           <DetailItem label="가입일" value={formatCreatedAt(profile.created_at)} />
           <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">

@@ -37,6 +37,9 @@ export type AdminProfile = {
   basic_info_completed_at?: string | null;
   profile_completed_at?: string | null;
   profile_experience_version?: string | null;
+  profile_archetype_id?: string | null;
+  profile_archetype_version?: string | null;
+  profile_archetype_assigned_at?: string | null;
   is_test_participant?: boolean | null;
   membership_status?: MembershipStatus | null;
   membership_plan?: string | null;

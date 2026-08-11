@@ -34,6 +34,9 @@ const baseProfileFields = [
   "basic_info_completed_at",
   "profile_completed_at",
   "profile_experience_version",
+  "profile_archetype_id",
+  "profile_archetype_version",
+  "profile_archetype_assigned_at",
 ];
 
 const precisionProfileFields = ["matching_precision_bonus"];
