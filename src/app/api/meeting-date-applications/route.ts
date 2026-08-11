@@ -222,7 +222,7 @@ export async function POST(request: Request) {
   }
   if (!applicantProfile || !hasCompletedPreferenceProfile(applicantProfile)) {
     return NextResponse.json(
-      { error: "간단한 정보를 입력하고 프로필을 완성해주세요." },
+      { error: "질문을 완료한 후 신청해주세요." },
       { status: 409 },
     );
   }

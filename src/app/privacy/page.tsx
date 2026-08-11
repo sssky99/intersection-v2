@@ -63,7 +63,7 @@ export default function PrivacyPage() {
                 </thead>
                 <tbody className="font-medium leading-6 text-black/65">
                   <PolicyRow label="계정" value="Supabase 사용자 ID, 로그인 제공자, 카카오 식별자" />
-                  <PolicyRow label="프로필" value="이름, 닉네임, 전화번호, 성별, 출생연도, MBTI, 프로필 사진, 공개 이모지·자기소개" />
+                  <PolicyRow label="프로필" value="이름, 닉네임, 전화번호, 성별, 출생연도, MBTI, 프로필 사진, 자기소개" />
                   <PolicyRow label="설문·추천" value="객관식·주관식 답변, 관심사, 직업·대화 성향, 추천 관련 점수" />
                   <PolicyRow label="모임 이용" value="신청 날짜, 티켓, 대기·배정·참가·도착 상태, 운영 메모, 멤버십 상태" />
                   <PolicyRow label="채팅·피드백" value="메시지 내용과 시각, 열람·삭제 상태, 별점, 추천 대상, 다시 만나고 싶은 사람, 부정 피드백과 사유" />
@@ -102,7 +102,7 @@ export default function PrivacyPage() {
               공개할 수 있습니다.
             </p>
             <ul className={listClass}>
-              <li>채팅 및 일반 모임 화면: 닉네임, 이름 일부를 가공한 표시명, 공개 이모지</li>
+              <li>채팅 및 일반 모임 화면: 닉네임, 이름 일부를 가공한 표시명</li>
               <li>모임 종료 후 피드백 화면: 정확한 대상 확인을 위한 같은 모임 참가자의 실명</li>
               <li>공개 기간: 해당 모임 진행 및 피드백 작성에 필요한 기간</li>
             </ul>

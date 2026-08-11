@@ -295,7 +295,7 @@ export async function GET() {
     const supabase = createAdminClient();
     if (!(await recommendationProfileReady(supabase, user.id))) {
       return NextResponse.json(
-        { error: "프로필을 완성한 후 추천을 확인할 수 있어요." },
+        { error: "질문을 완료한 후 추천을 확인할 수 있어요." },
         { status: 403 },
       );
     }
@@ -335,7 +335,7 @@ export async function POST(request: Request) {
     const supabase = createAdminClient();
     if (!(await recommendationProfileReady(supabase, user.id))) {
       return NextResponse.json(
-        { error: "프로필을 완성한 후 추천에 응답할 수 있어요." },
+        { error: "질문을 완료한 후 추천에 응답할 수 있어요." },
         { status: 403 },
       );
     }

@@ -24,10 +24,10 @@ export function RecommendationProfileLocked({
             <LockKeyhole size={25} strokeWidth={2} aria-hidden />
           </div>
           <h2 className="mt-7 break-keep text-[23px] font-black leading-[1.35] tracking-[-0.055em] text-black">
-            프로필을 먼저 완성해주세요
+            질문을 먼저 완료해주세요
           </h2>
           <p className="mx-auto mt-3 max-w-[280px] break-keep text-[14px] font-semibold leading-6 tracking-[-0.025em] text-black/50">
-            프로필을 완성하면 답변을 바탕으로 잘 맞는 여정을 추천해드려요.
+            질문을 완료하면 답변을 바탕으로 잘 맞는 여정을 추천해드려요.
           </p>
 
           <button
@@ -36,7 +36,7 @@ export function RecommendationProfileLocked({
             className="mt-7 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-black px-5 text-[14px] font-black tracking-[-0.025em] text-white transition hover:bg-black/85"
           >
             <UserRound size={17} aria-hidden />
-            프로필 완성하기
+            질문 이어가기
           </button>
         </section>
       </div>

@@ -1,164 +1,378 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { onboardingGuides } from "@/data/onboardingGuides";
+import { createClient } from "@/lib/supabase/client";
 
-const headline = "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
-const headlineLead = "아무나 만나지 않도록,\n";
+const introVideoCookie = "intro_video_seen_v1";
+const introVideoCookieMaxAge = 60 * 60 * 24 * 365;
+const phonePrompt = "전화번호를 입력해주세요.";
+const otpPrompt = "6자리 인증 번호를 입력해주세요.";
+type AuthStep = "phone" | "otp";
 
-const KakaoLoginButton = dynamic(
-  () => import("@/components/KakaoLoginButton"),
-  {
-    ssr: false,
-    loading: () => <span className="font-bold text-black/75">카카오로 로그인</span>,
-  },
-);
+type FiftyQLandingClientProps = {
+  initialHasSeenIntro: boolean;
+};
 
-export function FiftyQLandingClient() {
-  const [typedHeadline, setTypedHeadline] = useState(headlineLead);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isContentVisible, setIsContentVisible] = useState(false);
-  const [isCtaVisible, setIsCtaVisible] = useState(false);
-  const [hasReachedContentCue, setHasReachedContentCue] = useState(false);
+function useTypedText(text: string, active: boolean, interval = 58) {
+  const [value, setValue] = useState("");
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!reduceMotion) return;
-
-    const cueTimer = window.setTimeout(() => setHasReachedContentCue(true), 1000);
-    return () => window.clearTimeout(cueTimer);
-  }, []);
-
-  useEffect(() => {
-    if (!hasReachedContentCue) return;
-
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setTypedHeadline(headline);
-      setIsContentVisible(true);
-      setIsCtaVisible(true);
+    if (!active) {
+      setValue("");
       return;
     }
 
-    let interval: number | undefined;
-    let length = headlineLead.length;
-    setIsContentVisible(true);
-    interval = window.setInterval(() => {
+    setValue("");
+    let length = 0;
+    const timer = window.setInterval(() => {
       length += 1;
-      setTypedHeadline(headline.slice(0, length));
-      if (length >= headline.length && interval) {
-        window.clearInterval(interval);
-        setIsCtaVisible(true);
-      }
-    }, 1300 / (headline.length - headlineLead.length));
+      setValue(text.slice(0, length));
+      if (length >= text.length) window.clearInterval(timer);
+    }, interval);
 
-    return () => {
-      if (interval) window.clearInterval(interval);
-    };
-  }, [hasReachedContentCue]);
+    return () => window.clearInterval(timer);
+  }, [active, interval, text]);
+
+  return value;
+}
+
+function phoneDigits(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function formatPhone(value: string) {
+  const digits = phoneDigits(value);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function internationalPhone(value: string) {
+  const digits = phoneDigits(value);
+  return digits.startsWith("0") ? `+82${digits.slice(1)}` : `+82${digits}`;
+}
+
+function authErrorMessage(message: string, step: AuthStep) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("rate") || normalized.includes("seconds")) {
+    return "잠시 후 다시 시도해주세요.";
+  }
+  if (normalized.includes("expired")) return "인증 시간이 지났어요. 다시 요청해주세요.";
+  if (step === "otp") return "인증 번호가 맞지 않아요. 다시 확인해주세요.";
+  return "인증 번호를 보내지 못했어요. 잠시 후 다시 시도해주세요.";
+}
+
+export function FiftyQLandingClient({
+  initialHasSeenIntro,
+}: FiftyQLandingClientProps) {
+  const introVideoRef = useRef<HTMLVideoElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const otpInputRef = useRef<HTMLInputElement>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isIntroFinished, setIsIntroFinished] = useState(initialHasSeenIntro);
+  const [isAuthVisible, setIsAuthVisible] = useState(initialHasSeenIntro);
+  const [isAuthContentVisible, setIsAuthContentVisible] = useState(initialHasSeenIntro);
+  const [isIntroMuted, setIsIntroMuted] = useState(true);
+  const [step, setStep] = useState<AuthStep>("phone");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [promptKey, setPromptKey] = useState(0);
+  const [guidePage, setGuidePage] = useState<0 | 1 | null>(null);
+  const [nextPath, setNextPath] = useState("");
+  const prompt = step === "phone" ? phonePrompt : otpPrompt;
+  const typedPrompt = useTypedText(prompt, isAuthContentVisible, 55);
+  const guideText = guidePage === null ? "" : onboardingGuides[guidePage];
+  const typedGuide = useTypedText(guideText, guidePage !== null, 32);
+  const isGuideTypingComplete = typedGuide.length === guideText.length;
+  const isPhoneValid = /^010\d{8}$/.test(phoneDigits(phone));
+  const isOtpValid = /^\d{6}$/.test(otp);
+  const canContinue = step === "phone" ? isPhoneValid : isOtpValid;
+  const isPromptTypingComplete =
+    isAuthContentVisible && typedPrompt.length === prompt.length;
 
   useEffect(() => {
     let mounted = true;
-    let finished = false;
-    const revealAnonymous = () => {
-      if (!mounted || finished) return;
-      finished = true;
-      window.clearTimeout(fallbackTimer);
-      void import("@/lib/analytics").then(({ trackEvent }) => {
-        trackEvent("landing_view");
+    const timer = window.setTimeout(() => {
+      void createClient().auth.getUser().then(({ data }) => {
+        if (!mounted) return;
+        if (data.user) {
+          setIsAuthenticated(true);
+          window.location.replace("/meetings?tab=recommend");
+          return;
+        }
+        void import("@/lib/analytics").then(({ trackEvent }) => {
+          trackEvent("landing_view");
+        });
       });
-    };
-    const fallbackTimer = window.setTimeout(revealAnonymous, 4000);
-    const authTimer = window.setTimeout(() => {
-      void import("@/lib/supabase/client")
-        .then(({ createClient }) => createClient().auth.getUser())
-        .then(({ data }) => {
-          if (!mounted || finished) return;
-          if (data.user) {
-            finished = true;
-            window.clearTimeout(fallbackTimer);
-            setIsAuthenticated(true);
-            window.location.replace("/meetings?tab=recommend");
-            return;
-          }
-          revealAnonymous();
-        })
-        .catch(revealAnonymous);
-    }, 1800);
+    }, 500);
 
     return () => {
       mounted = false;
-      window.clearTimeout(authTimer);
-      window.clearTimeout(fallbackTimer);
+      window.clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isPromptTypingComplete || guidePage !== null) return;
+    const timer = window.setTimeout(() => {
+      (step === "phone" ? phoneInputRef.current : otpInputRef.current)?.focus();
+    }, 320);
+    return () => window.clearTimeout(timer);
+  }, [guidePage, isPromptTypingComplete, promptKey, step]);
+
+  const finishIntro = () => {
+    document.cookie = `${introVideoCookie}=1; Max-Age=${introVideoCookieMaxAge}; Path=/; SameSite=Lax`;
+    setIsIntroFinished(true);
+    setIsAuthVisible(true);
+    window.setTimeout(() => setIsAuthContentVisible(true), 1450);
+  };
+
+  const toggleIntroSound = () => {
+    const video = introVideoRef.current;
+    if (!video) return;
+    const nextMuted = !video.muted;
+    video.muted = nextMuted;
+    setIsIntroMuted(nextMuted);
+    if (video.paused) void video.play();
+  };
+
+  const displayPhone = useMemo(() => formatPhone(phone), [phone]);
+
+  const requestOtp = async () => {
+    const localPhone = phoneDigits(phone);
+    const prepareResponse = await fetch("/api/auth/phone/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: localPhone }),
+    });
+    if (!prepareResponse.ok) throw new Error("prepare-failed");
+
+    const { error: sendError } = await createClient().auth.signInWithOtp({
+      phone: internationalPhone(localPhone),
+      options: { shouldCreateUser: true },
+    });
+    if (sendError) throw sendError;
+
+    setError("");
+    setOtp("");
+    setStep("otp");
+    setPromptKey((value) => value + 1);
+  };
+
+  const verifyOtp = async () => {
+    const supabase = createClient();
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      phone: internationalPhone(phone),
+      token: otp,
+      type: "sms",
+    });
+    if (verifyError) throw verifyError;
+
+    const response = await fetch("/api/auth/phone/complete", { method: "POST" });
+    const body = (await response.json().catch(() => null)) as
+      | { nextPath?: string; loginType?: "new" | "existing" }
+      | null;
+    if (!response.ok || !body?.nextPath) throw new Error("profile-bootstrap-failed");
+
+    if (body.nextPath.startsWith("/onboarding/questions")) {
+      setNextPath(body.nextPath);
+      setGuidePage(0);
+      setError("");
+      return;
+    }
+
+    window.location.replace(body.nextPath);
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canContinue || isSubmitting || isAuthenticated) return;
+    setIsSubmitting(true);
+    setError("");
+    try {
+      if (step === "phone") await requestOtp();
+      else await verifyOtp();
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : "";
+      setError(authErrorMessage(message, step));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const returnToPhone = () => {
+    if (isSubmitting) return;
+    setStep("phone");
+    setOtp("");
+    setError("");
+    setPromptKey((value) => value + 1);
+  };
+
+  const continueGuide = () => {
+    if (!isGuideTypingComplete) return;
+    if (guidePage === 0) {
+      setGuidePage(1);
+      return;
+    }
+    if (guidePage === 1 && nextPath) window.location.replace(nextPath);
+  };
 
   return (
     <main className="flex h-dvh min-h-[640px] justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4">
       <section
-        aria-label="교집합 시작"
-        className="relative h-full w-full max-w-[430px] overflow-hidden bg-[#f7f7f5] md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
+        aria-label="교집합 전화번호 로그인"
+        className={`relative h-full w-full max-w-[430px] overflow-hidden transition-colors duration-[1400ms] md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame ${
+          isAuthVisible ? "bg-[#F5F1E8]" : "bg-black"
+        }`}
       >
-        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <div className="absolute inset-0 bg-[url('/videos/details-preview-poster.webp')] bg-cover bg-center motion-safe:hidden" />
+        {!initialHasSeenIntro && (
           <video
+            ref={introVideoRef}
             autoPlay
             muted
-            loop
             playsInline
-            preload="metadata"
-            poster="/videos/details-preview-poster.webp"
-            className="absolute inset-0 h-full w-full object-cover motion-reduce:hidden"
-            onTimeUpdate={(event) => {
-              if (event.currentTarget.currentTime >= 1) {
-                setHasReachedContentCue(true);
-              }
-            }}
+            preload="auto"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[900ms] ${
+              isIntroFinished ? "opacity-0" : "opacity-100"
+            }`}
+            onEnded={finishIntro}
           >
-            <source src="/videos/details-preview.mp4" type="video/mp4" />
+            <source src="/videos/landing-intro-v1.mp4" type="video/mp4" />
           </video>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-black/15 to-black/60" />
-        </div>
+        )}
+
+        {!initialHasSeenIntro && !isIntroFinished && (
+          <button
+            type="button"
+            onClick={toggleIntroSound}
+            aria-label={isIntroMuted ? "영상 소리 켜기" : "영상 음소거"}
+            className="absolute right-5 top-5 z-10 flex h-11 items-center gap-2 rounded-full border border-white/35 bg-black/35 px-4 text-[13px] font-semibold text-white shadow-sm backdrop-blur-md transition active:scale-[0.98]"
+          >
+            {isIntroMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+            {isIntroMuted ? "소리 켜기" : "음소거"}
+          </button>
+        )}
 
         <div
-          className={`absolute inset-x-6 top-[56%] -translate-y-1/2 text-center transition-opacity duration-500 ${
-            isContentVisible ? "opacity-100" : "opacity-0"
+          className={`absolute inset-0 flex items-center px-8 transition-all duration-700 ${
+            isAuthContentVisible
+              ? "translate-y-0 opacity-100"
+              : "pointer-events-none translate-y-5 opacity-0"
           }`}
         >
-          <h1
-            aria-label={headline.replace("\n", " ")}
-            className="mx-auto min-h-[76px] whitespace-pre-line break-keep text-[22px] font-bold leading-[1.42] tracking-[-0.045em] text-white [text-shadow:0_2px_4px_rgba(0,0,0,0.95),0_6px_24px_rgba(0,0,0,0.75)]"
-          >
-            {typedHeadline}
-            {typedHeadline.length < headline.length && (
-              <span className="ml-0.5 inline-block h-[1em] w-px animate-pulse bg-white/70 align-[-0.12em]" />
-            )}
-          </h1>
-        </div>
+          {guidePage === null ? (
+            <form className="mx-auto w-full max-w-[340px]" onSubmit={handleSubmit}>
+            <div className="mb-14 min-h-[74px]">
+              <p
+                key={`${step}-${promptKey}`}
+                className="break-keep text-[22px] font-semibold leading-[1.42] tracking-[-0.045em] text-[#171714]"
+              >
+                {typedPrompt}
+                {typedPrompt.length < prompt.length && (
+                  <span className="ml-1 inline-block h-[0.9em] w-px animate-pulse bg-black/55 align-[-0.05em]" />
+                )}
+              </p>
+            </div>
 
-        <div
-          className={`absolute inset-x-6 top-[72%] transition-all duration-500 ${
-            isCtaVisible ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
-          }`}
-        >
-          <a
-            href={isAuthenticated ? "/meetings?tab=recommend" : "/onboarding/start"}
-            className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)] transition-transform active:scale-[0.98]"
-          >
-            {isAuthenticated ? "내 추천 보러가기" : "나와 맞는 사람들 추천받기"}
-            <span aria-hidden="true" className="absolute right-6 text-[22px] font-bold leading-none">
-              →
-            </span>
-          </a>
-          {!isAuthenticated && (
-            <p className="mt-3 text-center text-[14px] font-bold leading-5 text-white/75 [text-shadow:0_1px_10px_rgba(0,0,0,0.45)]">
-              이미 교집합을 이용 중인가요?{" "}
-              <KakaoLoginButton variant="text" className="font-bold text-white">
-                {(loading) => (loading ? "카카오로 이동 중..." : "카카오로 로그인")}
-              </KakaoLoginButton>
-            </p>
+            <div
+              className={`transition-all duration-500 ${
+                isPromptTypingComplete
+                  ? "translate-y-0 opacity-100"
+                  : "pointer-events-none translate-y-5 opacity-0"
+              }`}
+            >
+              {step === "phone" ? (
+                <input
+                  ref={phoneInputRef}
+                  value={displayPhone}
+                  onChange={(event) => setPhone(phoneDigits(event.target.value))}
+                  inputMode="tel"
+                  autoComplete="tel"
+                  aria-label="전화 번호"
+                  placeholder="010-0000-0000"
+                  className="h-16 w-full border-b border-black/25 bg-transparent px-1 text-[24px] font-medium tracking-[-0.025em] text-black outline-none placeholder:text-black/18 focus:border-black"
+                />
+              ) : (
+                <input
+                  ref={otpInputRef}
+                  value={otp}
+                  onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-label="6자리 인증 번호"
+                  placeholder="000000"
+                  className="h-16 w-full border-b border-black/25 bg-transparent px-1 text-[24px] font-semibold tracking-[0.18em] text-black outline-none placeholder:text-black/15 focus:border-black"
+                />
+              )}
+            </div>
+
+            <div className="mt-4 flex min-h-6 items-center justify-between">
+              {step === "otp" ? (
+                <button
+                  type="button"
+                  onClick={returnToPhone}
+                  className="flex items-center gap-1 text-[13px] font-medium text-black/45 transition hover:text-black"
+                >
+                  <ArrowLeft size={14} /> 번호 다시 입력
+                </button>
+              ) : (
+                <span />
+              )}
+              {error && <p className="text-right text-[13px] font-medium text-red-600">{error}</p>}
+            </div>
+
+            <button
+              type="submit"
+              disabled={!canContinue || isSubmitting}
+              aria-label={step === "phone" ? "인증 번호 받기" : "인증하고 계속하기"}
+              className={`ml-auto mt-10 flex h-12 w-12 items-center justify-center transition-all duration-300 ${
+                canContinue && !isSubmitting
+                  ? "text-black active:translate-x-0.5"
+                  : "cursor-not-allowed text-black/20"
+              }`}
+            >
+              <ArrowRight size={28} strokeWidth={1.8} />
+            </button>
+            </form>
+          ) : (
+            <div
+              key={guidePage}
+              className="mx-auto flex w-full max-w-[340px] flex-col"
+            >
+              <div className={guidePage === 0 ? "min-h-[190px]" : "min-h-[390px]"}>
+                <p className="whitespace-pre-line break-keep text-[16px] font-medium leading-[1.9] tracking-[-0.035em] text-[#171714]">
+                  {typedGuide}
+                  {!isGuideTypingComplete && (
+                    <span className="ml-1 inline-block h-[0.9em] w-px animate-pulse bg-black/55 align-[-0.05em]" />
+                  )}
+                </p>
+              </div>
+
+              <div className="mt-10 flex items-center justify-between border-t border-black/15 pt-5">
+                <span className="text-[12px] font-semibold tracking-[0.16em] text-black/35">
+                  0{guidePage + 1} / 02
+                </span>
+                <button
+                  type="button"
+                  onClick={continueGuide}
+                  disabled={!isGuideTypingComplete}
+                  aria-label={guidePage === 0 ? "다음 안내 보기" : "질문 시작하기"}
+                  className={`flex h-12 w-12 items-center justify-center transition-all duration-300 ${
+                    isGuideTypingComplete
+                      ? "text-black active:translate-x-0.5"
+                      : "cursor-not-allowed text-black/20"
+                  }`}
+                >
+                  <ArrowRight size={28} strokeWidth={1.8} />
+                </button>
+              </div>
+            </div>
           )}
         </div>
-
       </section>
     </main>
   );

@@ -25,6 +25,21 @@ type AnswerRow = {
   other_text: string | null;
 };
 
+function validBirthDate(value: string | null | undefined) {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1980 || year > new Date().getFullYear() - 19) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 function validPreferenceAnswer(
   question: (typeof preferenceQuestions)[number],
   answer: AnswerRow | undefined,
@@ -41,6 +56,7 @@ function validPreferenceAnswer(
   }
 
   if (question.type === "text") {
+    if (question.id === 17) return validBirthDate(answer.answer_text);
     return Boolean(answer.answer_text?.trim());
   }
 
@@ -80,6 +96,20 @@ export async function POST(request: Request) {
     isPreferenceOnboarding ||
     isPreferenceUpgrade ||
     isPreferenceRegeneration;
+  if (
+    isPreferenceFlow &&
+    (!profile?.name?.trim() ||
+      !profile.phone?.trim() ||
+      (profile.gender !== "여성" && profile.gender !== "남성") ||
+      !profile.birth_date ||
+      !profile.mbti?.trim() ||
+      !profile.photo_url)
+  ) {
+    return NextResponse.json(
+      { error: "Required profile details are incomplete." },
+      { status: 409 },
+    );
+  }
   const questions = isPreferenceFlow
     ? preferenceQuestions
     : profileQuestions;
@@ -212,6 +242,9 @@ export async function POST(request: Request) {
       ? {
           questions_completed: true,
           questions_completed_at: new Date().toISOString(),
+          profile_completed: true,
+          basic_info_completed_at: new Date().toISOString(),
+          profile_completed_at: new Date().toISOString(),
           profile_archetype_id: profileArchetypeId,
           profile_archetype_version: profileArchetypeVersion,
           profile_archetype_assigned_at: new Date().toISOString(),

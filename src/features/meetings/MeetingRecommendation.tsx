@@ -609,7 +609,6 @@ type MeetingRecommendationProps = {
   profileName?: string | null;
   profileMbti?: string | null;
   guestMode?: boolean;
-  onRequestBasicInfo?: (meetingDate?: string) => void;
   participationPrecisionCount?: number;
   onOpenParticipationRecord?: () => void;
   onFocusModeChange?: (focused: boolean) => void;
@@ -848,7 +847,6 @@ function MeetingDateApplicationFlow({
   profileName = null,
   profileMbti = null,
   guestMode = false,
-  onRequestBasicInfo,
   participationPrecisionCount = 0,
   onOpenParticipationRecord = () => undefined,
   onFocusModeChange,
@@ -902,9 +900,7 @@ function MeetingDateApplicationFlow({
     useState(false);
   const [ticketPreviewCurationComplete, setTicketPreviewCurationComplete] =
     useState(false);
-  const [waitlistDialog, setWaitlistDialog] = useState<
-    "profile" | "success" | null
-  >(null);
+  const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
   const [localPreviewControlsVisible, setLocalPreviewControlsVisible] =
     useState(false);
   const [invitationClockMs, setInvitationClockMs] = useState(() => Date.now());
@@ -1344,17 +1340,6 @@ function MeetingDateApplicationFlow({
     setPurchaseOption("single");
     setError(null);
 
-    if (!profileCompleted) {
-      if (onRequestBasicInfo) {
-        onRequestBasicInfo(ticket.date);
-      } else {
-        window.location.assign(
-          `/onboarding/profile?from=application&date=${encodeURIComponent(ticket.date)}`,
-        );
-      }
-      return;
-    }
-
     setScreen("purchase");
   };
 
@@ -1370,25 +1355,12 @@ function MeetingDateApplicationFlow({
     setError(null);
     recordTicketInteraction(ticket, "yes");
 
-    if (!profileCompleted) {
-      setScreen("ticket");
-      if (onRequestBasicInfo) {
-        onRequestBasicInfo(ticket.date);
-      } else {
-        window.location.assign(
-          `/onboarding/profile?from=application&date=${encodeURIComponent(ticket.date)}`,
-        );
-      }
-    } else {
-      setScreen("purchase");
-    }
+    setScreen("purchase");
 
     onTicketAcceptRequestHandled?.();
   }, [
     availableTickets,
-    onRequestBasicInfo,
     onTicketAcceptRequestHandled,
-    profileCompleted,
     ticketAcceptRequestId,
     ticketAcceptRequestTicketId,
   ]);
@@ -1490,17 +1462,6 @@ function MeetingDateApplicationFlow({
   ) => {
     const targetDates = ticket ? [ticket.date] : [...selectedDates];
     if (targetDates.length !== 1 || saving) return;
-
-    if (!profileCompleted) {
-      if (onRequestBasicInfo) {
-        onRequestBasicInfo(targetDates[0]);
-      } else {
-        window.location.assign(
-          `/onboarding/profile?from=application&date=${encodeURIComponent(targetDates[0])}`,
-        );
-      }
-      return;
-    }
 
     setSaving(true);
     setError(null);
@@ -1730,17 +1691,6 @@ function MeetingDateApplicationFlow({
       return existingApplication.status === "waitlisted";
     }
     if (saving || !isMeetingDateClosed(date)) {
-      return false;
-    }
-
-    if (!profileCompleted) {
-      if (onRequestBasicInfo) {
-        onRequestBasicInfo(date);
-      } else {
-        window.location.assign(
-          `/onboarding/profile?from=application&date=${encodeURIComponent(date)}`,
-        );
-      }
       return false;
     }
 
@@ -1992,11 +1942,6 @@ function MeetingDateApplicationFlow({
               whileTap={!saving ? { scale: 0.98 } : undefined}
               disabled={saving}
               onClick={() => {
-                if (!profileCompleted) {
-                  setWaitlistDialog("profile");
-                  return;
-                }
-
                 void (async () => {
                   const joined = await joinClosedDateWaitlist(selectedTicket.date);
                   if (joined) setWaitlistDialog("success");
@@ -2052,51 +1997,19 @@ function MeetingDateApplicationFlow({
                   id="waitlist-dialog-title"
                   className="text-[20px] font-black tracking-[-0.04em] text-black"
                 >
-                  {waitlistDialog === "profile"
-                    ? "프로필을 완성해주세요."
-                    : "알림 신청이 완료됐어요."}
+                  알림 신청이 완료됐어요.
                 </h2>
                 <p className="mt-3 break-keep text-[13px] font-semibold leading-6 text-black/50">
-                  {waitlistDialog === "profile"
-                    ? "빈자리 알림을 보내드리려면 기본정보가 필요해요."
-                    : "빈자리가 생기면 알림을 보내드릴게요."}
+                  빈자리가 생기면 알림을 보내드릴게요.
                 </p>
 
-                {waitlistDialog === "profile" ? (
-                  <div className="mt-6 grid grid-cols-[0.8fr_1.6fr] gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setWaitlistDialog(null)}
-                      className="h-12 rounded-full border border-black/10 text-[13px] font-black text-black/45"
-                    >
-                      나중에
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setWaitlistDialog(null);
-                        if (onRequestBasicInfo) {
-                          onRequestBasicInfo(selectedTicket.date);
-                        } else {
-                          window.location.assign(
-                            `/onboarding/profile?from=application&date=${encodeURIComponent(selectedTicket.date)}`,
-                          );
-                        }
-                      }}
-                      className="h-12 rounded-full bg-black text-[13px] font-black text-white"
-                    >
-                      프로필 완성하기
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setWaitlistDialog(null)}
-                    className="mt-6 h-12 w-full rounded-full bg-black text-[13px] font-black text-white"
-                  >
-                    확인
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setWaitlistDialog(null)}
+                  className="mt-6 h-12 w-full rounded-full bg-black text-[13px] font-black text-white"
+                >
+                  확인
+                </button>
               </motion.div>
             </motion.div>
           )}

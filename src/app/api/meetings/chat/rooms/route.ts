@@ -34,7 +34,6 @@ type ProfileRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
-  public_emoji: string | null;
 };
 
 const CHAT_MEMBER_STATUSES = new Set([
@@ -52,13 +51,8 @@ function fallbackNickname(name: string | null | undefined) {
   return korean.length >= 2 ? korean.slice(-2) : korean || "멤버";
 }
 
-function profileEmoji(userId: string) {
-  const emojis = ["🌿", "☀️", "🌙", "🍀", "🌊", "⭐", "☕", "🎧"];
-  const sum = Array.from(userId).reduce(
-    (total, character) => total + character.charCodeAt(0),
-    0,
-  );
-  return emojis[sum % emojis.length];
+function avatarText(value: string) {
+  return Array.from(value.trim()).slice(0, 2).join("") || "멤버";
 }
 
 function eventStartAt(instance: InstanceRow) {
@@ -183,7 +177,7 @@ export async function GET() {
     if (activeProfileIds.length > 0) {
       const { data, error: profilesError } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,public_emoji")
+        .select("user_id,name,nickname")
         .in("user_id", activeProfileIds)
         .returns<ProfileRow[]>();
       if (profilesError) throw profilesError;
@@ -224,11 +218,12 @@ export async function GET() {
 
         const members: MeetingChatMember[] = memberIds.map((memberId) => {
           const profile = profileMap.get(memberId);
+          const nickname =
+            profile?.nickname?.trim() || fallbackNickname(profile?.name);
           return {
             id: memberId,
-            nickname:
-              profile?.nickname?.trim() || fallbackNickname(profile?.name),
-            emoji: profile?.public_emoji?.trim() || profileEmoji(memberId),
+            nickname,
+            avatarText: avatarText(profile?.name?.trim() || nickname),
             isSelf: memberId === user.id,
             role: "member",
           };

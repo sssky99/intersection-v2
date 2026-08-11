@@ -35,7 +35,7 @@ export function nextOnboardingPathAfterDetails(
     return "/onboarding/profile?regenerate=1";
   }
 
-  if (!profile.questions_completed) {
+  if (!profile.questions_completed || !profile.profile_completed) {
     return options.startQuestions
       ? "/onboarding/questions?start=1"
       : "/onboarding/questions";
@@ -105,12 +105,17 @@ export async function getAuthenticatedProfile() {
   const kakaoIdentity = user.identities?.find(
     (identity) => identity.provider === "kakao",
   );
+  const normalizedPhone =
+    user.phone?.replace(/\D/g, "").replace(/^82/, "0") ?? null;
+  const provider = user.phone ? "phone" : kakaoIdentity ? "kakao" : null;
   const { data: createdProfile, error } = await supabase
     .from("profiles")
     .insert({
       user_id: user.id,
-      provider: "kakao",
+      provider,
       kakao_id: kakaoIdentity?.id ?? null,
+      phone: normalizedPhone,
+      phone_normalized: normalizedPhone,
       questions_completed: false,
       profile_completed: false,
       meeting_guidelines_agreed: false,

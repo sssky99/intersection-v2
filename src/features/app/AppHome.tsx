@@ -65,6 +65,7 @@ import { useDragScroll } from "@/features/app/useDragScroll";
 import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
 import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
+import { OnboardingGuidePreview } from "@/features/onboarding/OnboardingGuidePreview";
 import { ProfileQuestionSectionOverlay } from "@/features/app/ProfileQuestionSectionOverlay";
 import {
   TicketDetailContent,
@@ -547,6 +548,9 @@ export function AppHome({
   const recommendationProfileReady = profileQuestionsReady;
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
+  const [questionReviewStartIndex, setQuestionReviewStartIndex] = useState<
+    number | "photo" | "guide" | null
+  >(null);
   const [profileQuestionSection, setProfileQuestionSection] = useState<
     | "basic"
     | "background"
@@ -683,13 +687,34 @@ export function AppHome({
     const answerQuestions = usesPreferenceProfile(currentProfile)
       ? preferenceQuestions
       : profileQuestions;
-    const { data, error } = await createClient()
-      .from("user_answers")
-      .select("question_order,answer_value,answer_values,answer_text,other_text")
-      .eq("user_id", userId)
-      .order("question_order")
-      .returns<AnswerRow[]>();
+    const supabase = createClient();
+    const [answerResult, profileResult] = await Promise.all([
+      supabase
+        .from("user_answers")
+        .select("question_order,answer_value,answer_values,answer_text,other_text")
+        .eq("user_id", userId)
+        .order("question_order")
+        .returns<AnswerRow[]>(),
+      supabase
+        .from("profiles")
+        .select("name,gender,birth_year,birth_date,mbti,photo_url")
+        .eq("user_id", userId)
+        .maybeSingle<
+          Pick<
+            ProfileRow,
+            "name" | "gender" | "birth_year" | "birth_date" | "mbti" | "photo_url"
+          >
+        >(),
+    ]);
 
+    if (profileResult.data) {
+      setCurrentProfile((current) => ({
+        ...current,
+        ...profileResult.data,
+      }));
+    }
+
+    const { data, error } = answerResult;
     if (error || !data) return;
 
     setAnswerRows(data);
@@ -879,6 +904,7 @@ export function AppHome({
 
     setActiveTab(tab);
     setQuestionReviewOpen(false);
+    setQuestionReviewStartIndex(null);
     setProfileQuestionSection(null);
     setTabUrl(tab);
   };
@@ -904,6 +930,7 @@ export function AppHome({
   const openBlindDateStatus = () => {
     setActiveTab("recommend");
     setQuestionReviewOpen(false);
+    setQuestionReviewStartIndex(null);
     setTabUrl("recommend");
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
@@ -1185,7 +1212,6 @@ export function AppHome({
               profileName={currentProfile.name ?? currentProfile.nickname}
               profileMbti={currentProfile.mbti}
               guestMode={guestMode}
-              onRequestBasicInfo={onRequestBasicInfo}
               participationPrecisionCount={
                 participationCount +
                 (currentProfile.matching_precision_bonus ?? 0)
@@ -1222,7 +1248,7 @@ export function AppHome({
                   onRequestBasicInfo();
                   return;
                 }
-                switchTab("profile");
+                window.location.assign("/onboarding/questions");
               }}
             />
           )}
@@ -1311,7 +1337,6 @@ export function AppHome({
                 }
                 participationCount={participationCount}
                 onProfileUpdated={setCurrentProfile}
-                onRequestBasicInfo={() => onRequestBasicInfo?.()}
                 onOpenBasicQuestions={() => openProfileQuestionSection("basic")}
                 onOpenBackgroundQuestions={() =>
                   openProfileQuestionSection("background")
@@ -1335,6 +1360,13 @@ export function AppHome({
                   openProfileQuestionSection("traits")
                 }
                 onOpenSelfQuestions={() => openProfileQuestionSection("self")}
+                onOpenQuestionReview={() => {
+                  setQuestionReviewStartIndex(null);
+                  setQuestionReviewOpen(true);
+                }}
+                showOperatorQuestionReview={
+                  operatorAccountSwitcher?.mode === "operator"
+                }
                 onLogout={logout}
                 previewMode={guestMode}
               />
@@ -1490,8 +1522,13 @@ export function AppHome({
                           : profileSectionSelfQuestions
             }
             answerRows={answerRows}
+            includePhoto={profileQuestionSection === "basic"}
+            photoUrl={currentProfile.photo_url ?? ""}
             onClose={() => setProfileQuestionSection(null)}
             onAnswersChanged={refreshAnswers}
+            onPhotoChanged={(photoUrl) =>
+              setCurrentProfile((current) => ({ ...current, photo_url: photoUrl }))
+            }
           />
         )}
       </AnimatePresence>
@@ -1504,31 +1541,172 @@ export function AppHome({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="absolute inset-0 z-50 overflow-y-auto overscroll-contain bg-white"
+            className="absolute inset-0 z-50 overflow-y-auto overscroll-contain bg-[#F5F1E8]"
           >
-            <button
-              type="button"
-              title="질문 다시보기 닫기"
-              aria-label="질문 다시보기 닫기"
-              onClick={() => setQuestionReviewOpen(false)}
-              className="absolute right-4 top-[calc(44px+env(safe-area-inset-top))] z-10 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/92 text-black/55 shadow-sm backdrop-blur"
-            >
-              <X size={17} aria-hidden />
-            </button>
-            <QuestionFlow
-              userId={userId}
-              mode="preview"
-              initialRows={answerRows}
-              questionSet={
-                preferenceProfileEnabled
-                  ? preferenceQuestions
-                  : profileQuestions
-              }
-              onPreviewComplete={() => {
-                setQuestionReviewOpen(false);
-                void refreshAnswers();
-              }}
-            />
+            {questionReviewStartIndex === null ? (
+              <section className="min-h-full bg-[#F5F1E8] px-5 pb-12 pt-[calc(28px+env(safe-area-inset-top))] text-[#171714]">
+                <header className="sticky top-0 z-10 -mx-5 flex items-center justify-between bg-[#F5F1E8]/95 px-5 pb-5 backdrop-blur">
+                  <div>
+                    <p className="text-[11px] font-bold tracking-[0.16em] text-black/35">
+                      OPERATOR ONLY
+                    </p>
+                    <h1 className="mt-1 text-[26px] font-black tracking-[-0.055em]">
+                      질문 다시보기
+                    </h1>
+                  </div>
+                  <button
+                    type="button"
+                    title="질문 다시보기 닫기"
+                    aria-label="질문 다시보기 닫기"
+                    onClick={() => setQuestionReviewOpen(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/80 text-black/55 shadow-sm"
+                  >
+                    <X size={18} aria-hidden />
+                  </button>
+                </header>
+                <p className="mb-5 break-keep text-[13px] font-semibold leading-6 text-black/45">
+                  확인할 질문을 누르면 해당 질문부터 이어서 볼 수 있어요.
+                </p>
+                <ol className="space-y-2.5">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => setQuestionReviewStartIndex("guide")}
+                      className="flex w-full items-center gap-4 rounded-[20px] border border-black/[0.07] bg-white/65 px-4 py-4 text-left shadow-[0_8px_24px_rgba(18,18,18,0.035)] transition active:scale-[0.99]"
+                    >
+                      <span className="flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-black px-2 text-[9px] font-black tracking-[0.08em] text-white">
+                        GUIDE
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-bold text-black/32">
+                          가입 안내
+                        </span>
+                        <span className="mt-1 block break-keep text-[14px] font-bold leading-5 tracking-[-0.025em] text-black/72">
+                          전화번호 인증 후 안내문
+                        </span>
+                        <span className="mt-1 block text-[11px] font-semibold text-black/35">
+                          2페이지 · 타이핑 미리보기
+                        </span>
+                      </span>
+                      <ChevronRight
+                        size={17}
+                        className="shrink-0 text-black/28"
+                        aria-hidden
+                      />
+                    </button>
+                  </li>
+                  {(preferenceProfileEnabled
+                    ? preferenceQuestions
+                    : profileQuestions
+                  ).map((question, index) => (
+                    <li key={question.id}>
+                      <button
+                        type="button"
+                        onClick={() => setQuestionReviewStartIndex(index)}
+                        className="flex w-full items-center gap-4 rounded-[20px] border border-black/[0.07] bg-white/65 px-4 py-4 text-left shadow-[0_8px_24px_rgba(18,18,18,0.035)] transition active:scale-[0.99]"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-[11px] font-black tabular-nums text-white">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[10px] font-bold text-black/32">
+                            {question.category}
+                          </span>
+                          <span className="mt-1 block whitespace-pre-line break-keep text-[14px] font-bold leading-5 tracking-[-0.025em] text-black/72">
+                            {question.question}
+                          </span>
+                        </span>
+                        <ChevronRight
+                          size={17}
+                          className="shrink-0 text-black/28"
+                          aria-hidden
+                        />
+                      </button>
+                    </li>
+                  ))}
+                  {preferenceProfileEnabled && (
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => setQuestionReviewStartIndex("photo")}
+                        className="flex w-full items-center gap-4 rounded-[20px] border border-black/[0.07] bg-white/65 px-4 py-4 text-left shadow-[0_8px_24px_rgba(18,18,18,0.035)] transition active:scale-[0.99]"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black text-[11px] font-black tabular-nums text-white">
+                          {String(preferenceQuestions.length + 1).padStart(2, "0")}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[10px] font-bold text-black/32">
+                            자기정보
+                          </span>
+                          <span className="mt-1 block break-keep text-[14px] font-bold leading-5 tracking-[-0.025em] text-black/72">
+                            당신의 사진을 등록해주세요.
+                          </span>
+                        </span>
+                        <ChevronRight
+                          size={17}
+                          className="shrink-0 text-black/28"
+                          aria-hidden
+                        />
+                      </button>
+                    </li>
+                  )}
+                </ol>
+              </section>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  title="질문 목록으로 돌아가기"
+                  aria-label="질문 목록으로 돌아가기"
+                  onClick={() => setQuestionReviewStartIndex(null)}
+                  className="absolute left-4 top-[calc(44px+env(safe-area-inset-top))] z-20 flex h-9 items-center gap-1 rounded-full border border-black/10 bg-white/92 px-3 text-[11px] font-bold text-black/55 shadow-sm backdrop-blur"
+                >
+                  <ChevronLeft size={15} aria-hidden />
+                  목록
+                </button>
+                <button
+                  type="button"
+                  title="질문 다시보기 닫기"
+                  aria-label="질문 다시보기 닫기"
+                  onClick={() => {
+                    setQuestionReviewOpen(false);
+                    setQuestionReviewStartIndex(null);
+                  }}
+                  className="absolute right-4 top-[calc(44px+env(safe-area-inset-top))] z-20 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/92 text-black/55 shadow-sm backdrop-blur"
+                >
+                  <X size={17} aria-hidden />
+                </button>
+                {questionReviewStartIndex === "guide" ? (
+                  <OnboardingGuidePreview
+                    onComplete={() => setQuestionReviewStartIndex(null)}
+                  />
+                ) : (
+                  <QuestionFlow
+                    key={questionReviewStartIndex}
+                    userId={userId}
+                    mode="preview"
+                    initialRows={answerRows}
+                    initialPhotoUrl={currentProfile.photo_url ?? ""}
+                    initialQuestionIndex={
+                      typeof questionReviewStartIndex === "number"
+                        ? questionReviewStartIndex
+                        : undefined
+                    }
+                    initialPhotoStep={questionReviewStartIndex === "photo"}
+                    questionSet={
+                      preferenceProfileEnabled
+                        ? preferenceQuestions
+                        : profileQuestions
+                    }
+                    onPreviewComplete={() => {
+                      setQuestionReviewOpen(false);
+                      setQuestionReviewStartIndex(null);
+                      void refreshAnswers();
+                    }}
+                  />
+                )}
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

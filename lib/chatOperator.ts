@@ -11,7 +11,7 @@ export function chatOperatorMember(isSelf = false): MeetingChatMember | null {
   return {
     id,
     nickname: process.env.CHAT_OPERATOR_NICKNAME?.trim() || "교집합",
-    emoji: process.env.CHAT_OPERATOR_EMOJI?.trim() || "교",
+    avatarText: "교집",
     isSelf,
     role: "operator",
   };

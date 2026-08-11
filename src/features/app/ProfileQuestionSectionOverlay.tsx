@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import type {
@@ -47,18 +47,25 @@ export function ProfileQuestionSectionOverlay({
   title,
   questions,
   answerRows,
+  includePhoto = false,
+  photoUrl = "",
   onClose,
   onAnswersChanged,
+  onPhotoChanged,
 }: {
   userId: string;
   title: string;
   questions: ProfileQuestion[];
   answerRows: StoredAnswerRow[];
+  includePhoto?: boolean;
+  photoUrl?: string;
   onClose: () => void;
   onAnswersChanged: () => void | Promise<void>;
+  onPhotoChanged?: (photoUrl: string) => void;
 }) {
   const [selectedQuestion, setSelectedQuestion] =
     useState<ProfileQuestion | null>(null);
+  const [photoSelected, setPhotoSelected] = useState(false);
   const questionListScrollRef = useRef<HTMLDivElement | null>(null);
   const savedScrollTopRef = useRef(0);
   const answeredCount = useMemo(
@@ -67,8 +74,10 @@ export function ProfileQuestionSectionOverlay({
         .length,
     [answerRows, questions],
   );
+  const totalCount = questions.length + (includePhoto ? 1 : 0);
+  const totalAnsweredCount = answeredCount + (includePhoto && photoUrl ? 1 : 0);
   const completionPercent = Math.round(
-    (answeredCount / Math.max(questions.length, 1)) * 100,
+    (totalAnsweredCount / Math.max(totalCount, 1)) * 100,
   );
 
   return (
@@ -80,9 +89,9 @@ export function ProfileQuestionSectionOverlay({
       className="absolute inset-0 z-50 overflow-hidden bg-[#f7f4ed]"
     >
       <AnimatePresence mode="wait" initial={false}>
-        {selectedQuestion ? (
+        {selectedQuestion || photoSelected ? (
           <motion.div
-            key={`edit-${selectedQuestion.id}`}
+            key={photoSelected ? "edit-photo" : `edit-${selectedQuestion?.id}`}
             initial={{ opacity: 0, x: 18 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 18 }}
@@ -92,7 +101,10 @@ export function ProfileQuestionSectionOverlay({
             <button
               type="button"
               aria-label={`${title} 질문 목록으로 돌아가기`}
-              onClick={() => setSelectedQuestion(null)}
+              onClick={() => {
+                setSelectedQuestion(null);
+                setPhotoSelected(false);
+              }}
               className="absolute left-4 top-[calc(22px+env(safe-area-inset-top))] z-20 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#faf8f2]/95 text-black/65 shadow-sm backdrop-blur"
             >
               <ChevronLeft size={20} aria-hidden />
@@ -100,13 +112,17 @@ export function ProfileQuestionSectionOverlay({
             <QuestionFlow
               userId={userId}
               mode="preview"
-              questionSet={[selectedQuestion]}
+              questionSet={photoSelected ? questions : [selectedQuestion!]}
               hideProgressHeader
               initialRows={answerRows}
+              initialPhotoUrl={photoUrl}
+              initialPhotoStep={photoSelected}
+              onPhotoChanged={onPhotoChanged}
               onPreviewComplete={() =>
-                Promise.resolve(onAnswersChanged()).then(() =>
-                  setSelectedQuestion(null),
-                )
+                Promise.resolve(onAnswersChanged()).then(() => {
+                  setSelectedQuestion(null);
+                  setPhotoSelected(false);
+                })
               }
             />
           </motion.div>
@@ -151,7 +167,7 @@ export function ProfileQuestionSectionOverlay({
                   </h2>
                 </div>
                 <p className="pb-1 text-[11px] font-semibold text-black/36">
-                  {answeredCount}/{questions.length} 완료
+                  {totalAnsweredCount}/{totalCount} 완료
                 </p>
               </div>
 
@@ -182,6 +198,32 @@ export function ProfileQuestionSectionOverlay({
                     />
                   </button>
                 ))}
+                {includePhoto && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      savedScrollTopRef.current =
+                        questionListScrollRef.current?.scrollTop ?? 0;
+                      setPhotoSelected(true);
+                    }}
+                    className="flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition last:border-b-0 hover:bg-[#f1eee6]"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2 text-[15px] font-extrabold leading-6 tracking-[-0.025em] text-black/78">
+                        <Camera size={16} aria-hidden />
+                        당신의 사진을 등록해주세요.
+                      </span>
+                      <span className="mt-1 block truncate text-[12px] font-semibold text-black/38">
+                        {photoUrl ? "사진 등록 완료" : "아직 등록하지 않았어요"}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      size={18}
+                      aria-hidden
+                      className="shrink-0 text-black/36"
+                    />
+                  </button>
+                )}
               </section>
             </main>
           </motion.div>

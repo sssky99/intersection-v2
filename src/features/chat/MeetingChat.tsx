@@ -100,8 +100,8 @@ function memberName(room: MeetingChatRoom, userId: string) {
   return room.members.find((member) => member.id === userId)?.nickname ?? "멤버";
 }
 
-function memberEmoji(room: MeetingChatRoom, userId: string) {
-  return room.members.find((member) => member.id === userId)?.emoji ?? "💬";
+function memberAvatarText(room: MeetingChatRoom, userId: string) {
+  return room.members.find((member) => member.id === userId)?.avatarText ?? "멤버";
 }
 
 function latestMessageByRoom(messages: MeetingChatMessage[]) {
@@ -612,9 +612,9 @@ export function MeetingChat({
                     {!own && (
                       <span
                         aria-hidden
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm shadow-sm"
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black tracking-[-0.04em] text-black/60 shadow-sm"
                       >
-                        {memberEmoji(selectedRoom, message.sender_id)}
+                        {memberAvatarText(selectedRoom, message.sender_id)}
                       </span>
                     )}
                     <div className={cn("max-w-[76%]", own && "text-right")}>
@@ -819,9 +819,9 @@ export function MeetingChat({
                     <span
                       key={member.id}
                       aria-hidden
-                      className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#faf8f2] bg-black/[0.045] text-base"
+                      className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#faf8f2] bg-black/[0.045] text-[11px] font-black tracking-[-0.04em] text-black/55"
                     >
-                      {member.emoji}
+                      {member.avatarText}
                     </span>
                   ))}
                 </div>

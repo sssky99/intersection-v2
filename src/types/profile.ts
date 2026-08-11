@@ -10,6 +10,7 @@ export type ProfileRow = {
   phone_normalized: string | null;
   gender: Gender | null;
   birth_year: string | number | null;
+  birth_date?: string | null;
   mbti: string | null;
   photo_url: string | null;
   details_seen_at: string | null;

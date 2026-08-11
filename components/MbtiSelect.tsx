@@ -3,28 +3,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
-
-export const MBTI_UNKNOWN_VALUE = "모르겠어요";
-
-export const mbtiOptions = [
-  "ISTJ",
-  "ISFJ",
-  "INFJ",
-  "INTJ",
-  "ISTP",
-  "ISFP",
-  "INFP",
-  "INTP",
-  "ESTP",
-  "ESFP",
-  "ENFP",
-  "ENTP",
-  "ESTJ",
-  "ESFJ",
-  "ENFJ",
-  "ENTJ",
+import {
   MBTI_UNKNOWN_VALUE,
-];
+  mbtiOptions,
+} from "@/data/mbti";
+
+export { MBTI_UNKNOWN_VALUE, mbtiOptions } from "@/data/mbti";
 
 export function MbtiSelect({
   value,

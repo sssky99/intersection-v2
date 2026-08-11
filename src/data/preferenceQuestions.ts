@@ -1,4 +1,5 @@
 import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
+import { mbtiOptions } from "@/data/mbti";
 
 export const preferenceProfileVersion = "preferences-v13";
 
@@ -569,25 +570,10 @@ const allPreferenceQuestions: ProfileQuestion[] = [
   {
     "id": 17,
     "order": 17,
-    "category": "관계 기대",
-    "type": "single_choice",
-    "question": "기본 나이 범위를 벗어나더라도,\n같은 자리에 함께해도 괜찮은 쪽을 알려주세요.",
-    "prompt": "(교집합은 기본적으로\n나와 3~4살 차이 안쪽의 사람들과 만날 수 있도록 준비합니다.)",
-    "options": [
-      {
-        "value": "age_range_choice_1",
-        "label": "나보다 3살 이상 연상도 괜찮아요"
-      },
-      {
-        "value": "age_range_choice_2",
-        "label": "나보다 3살 이상 연하도 괜찮아요"
-      },
-      {
-        "value": "age_range_prefer_not_to_say",
-        "label": "밝히고 싶지 않아요",
-        "exclusive": true
-      }
-    ]
+    "category": "자기정보",
+    "type": "text",
+    "question": "생년월일을 입력해주세요.",
+    "prompt": "교집합은 기본적으로 4살차이 이내 사람들과 만날 수 있도록 준비합니다"
   },
   {
     "id": 18,
@@ -1052,6 +1038,14 @@ const allPreferenceQuestions: ProfileQuestion[] = [
     "type": "text",
     "question": "살아봤거나 여행해본 나라가 있다면\n알려주세요.",
     "placeholder": "예: 일본, 프랑스, 태국 / 아직 해외여행 경험은 없어요"
+  },
+  {
+    "id": 31,
+    "order": 31,
+    "category": "자기정보",
+    "type": "single_choice",
+    "question": "MBTI를 알려주세요.",
+    "options": [...mbtiOptions]
   }
 ];
 

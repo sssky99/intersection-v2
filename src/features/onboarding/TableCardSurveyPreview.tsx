@@ -3,6 +3,7 @@
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import type { StoredAnswerRow } from "@/types/question";
+import type { Gender } from "@/types/user";
 
 type PreferenceQuestionFlowMode =
   | "preview"
@@ -13,12 +14,20 @@ type PreferenceQuestionFlowMode =
 
 export function PreferenceQuestionFlow({
   userId,
+  initialName = "",
+  initialGender = "",
+  initialPhotoUrl = "",
+  namePreview = false,
   initialRows = [],
   mode = "preview",
   onGuestDraftChange,
   onGuestComplete,
 }: {
   userId?: string;
+  initialName?: string;
+  initialGender?: Gender;
+  initialPhotoUrl?: string;
+  namePreview?: boolean;
   initialRows?: StoredAnswerRow[];
   mode?: PreferenceQuestionFlowMode;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
@@ -38,6 +47,10 @@ export function PreferenceQuestionFlow({
   return (
     <QuestionFlow
       userId={userId}
+      initialName={initialName}
+      initialGender={initialGender}
+      initialPhotoUrl={initialPhotoUrl}
+      namePreview={namePreview}
       initialRows={initialRows}
       mode={questionFlowMode}
       questionSet={preferenceQuestions}

@@ -10,6 +10,7 @@ type QuestionsPageProps = {
   searchParams?: Promise<{
     regenerate?: string | string[];
     upgrade?: string | string[];
+    namePreview?: string | string[];
   }>;
 };
 
@@ -23,16 +24,21 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
   const isRegeneration = searchValue(params?.regenerate) === "1";
   const isPreferenceUpgrade =
     searchValue(params?.upgrade) === "preferences-v2";
+  const isNamePreview =
+    process.env.NODE_ENV === "development" &&
+    searchValue(params?.namePreview) === "1";
 
   if (!user || !profile) redirect("/");
   if (
     (isRegeneration || isPreferenceUpgrade) &&
-    !profile.profile_regeneration_started_at
+    !profile.profile_regeneration_started_at &&
+    !isNamePreview
   ) {
     redirect("/meetings?tab=profile");
   }
   if (
     profile.questions_completed &&
+    profile.profile_completed &&
     !isRegeneration &&
     !isPreferenceUpgrade
   ) {
@@ -54,6 +60,10 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
     <MobileFrame>
       <PreferenceQuestionFlow
         userId={user.id}
+        initialName={profile.name ?? ""}
+        initialGender={profile.gender ?? ""}
+        initialPhotoUrl={profile.photo_url ?? ""}
+        namePreview={isNamePreview}
         initialRows={(data ?? []) as StoredAnswerRow[]}
         mode={
           isPreferenceUpgrade

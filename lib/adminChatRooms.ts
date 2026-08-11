@@ -29,7 +29,6 @@ type ProfileRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
-  public_emoji: string | null;
 };
 
 const instanceSelect = [
@@ -65,13 +64,8 @@ function fallbackNickname(name: string | null | undefined) {
   return "멤버";
 }
 
-function profileEmoji(userId: string) {
-  const labels = ["봄", "별", "숲", "잔", "결", "빛"];
-  const sum = Array.from(userId).reduce(
-    (total, character) => total + character.charCodeAt(0),
-    0,
-  );
-  return labels[sum % labels.length];
+function avatarText(value: string) {
+  return Array.from(value.trim()).slice(0, 2).join("") || "멤버";
 }
 
 function eventStartAt(instance: InstanceRow) {
@@ -163,7 +157,7 @@ export async function loadAdminChatRooms({
   if (profileIds.length > 0) {
     const { data, error: profileError } = await supabase
       .from("profiles")
-      .select("user_id,name,nickname,public_emoji")
+      .select("user_id,name,nickname")
       .in("user_id", profileIds)
       .returns<ProfileRow[]>();
     if (profileError) throw profileError;
@@ -198,10 +192,12 @@ export async function loadAdminChatRooms({
 
       const members: MeetingChatMember[] = memberIds.map((memberId) => {
         const profile = profileMap.get(memberId);
+        const nickname =
+          profile?.nickname?.trim() || fallbackNickname(profile?.name);
         return {
           id: memberId,
-          nickname: profile?.nickname?.trim() || fallbackNickname(profile?.name),
-          emoji: profile?.public_emoji?.trim() || profileEmoji(memberId),
+          nickname,
+          avatarText: avatarText(profile?.name?.trim() || nickname),
           isSelf: false,
           role: "member",
         };

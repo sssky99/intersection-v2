@@ -101,8 +101,8 @@ function senderName(room: AdminChatRoom | null, senderId: string) {
   return senderMember(room, senderId)?.nickname ?? "알 수 없음";
 }
 
-function senderEmoji(room: AdminChatRoom | null, senderId: string) {
-  return senderMember(room, senderId)?.emoji ?? "·";
+function senderAvatarText(room: AdminChatRoom | null, senderId: string) {
+  return senderMember(room, senderId)?.avatarText ?? "·";
 }
 
 function operatorId(room: AdminChatRoom | null) {
@@ -490,7 +490,7 @@ export function RoomChatAdminPanel() {
                               aria-hidden
                               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm shadow-sm"
                             >
-                              {senderEmoji(selectedRoom, message.sender_id)}
+                              {senderAvatarText(selectedRoom, message.sender_id)}
                             </span>
                           )}
                           <div

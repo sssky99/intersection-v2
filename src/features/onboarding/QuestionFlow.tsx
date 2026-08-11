@@ -1,10 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, Camera, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { MbtiSelect } from "@/components/MbtiSelect";
 import {
   conversationResultImageSrc,
   conversationResultOverview,
@@ -24,12 +32,14 @@ import {
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
+import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import type {
   ProfileQuestion,
   QuestionAnswer,
   QuestionOption,
   StoredAnswerRow,
 } from "@/types/question";
+import type { Gender } from "@/types/user";
 
 type AnswerMap = Record<number, QuestionAnswer>;
 type QuestionFlowMode = "guest" | "onboarding" | "preview" | "regeneration";
@@ -109,6 +119,11 @@ const AGE_RANGE_MIN_YEARS = 4;
 const AGE_RANGE_MAX_YEARS = 10;
 const AGE_RANGE_TRACK_MAX = AGE_RANGE_MAX_YEARS * 2;
 const PRIVATE_TEXT_ANSWER = "밝히고 싶지 않아요.";
+const NAME_PROMPT = "당신의 이름을 알려주세요.";
+const GENDER_PROMPT = "성별을 알려주세요.";
+const BIRTH_YEAR_MIN = 1980;
+const BIRTH_YEAR_MAX = new Date().getFullYear() - 19;
+const WHEEL_ITEM_HEIGHT = 48;
 
 type AgeRangeYears = {
   down: number;
@@ -182,6 +197,253 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+function useTypedText(text: string, active: boolean, interval = 55) {
+  const [value, setValue] = useState(active ? "" : text);
+
+  useEffect(() => {
+    if (!active) {
+      setValue(text);
+      return;
+    }
+
+    setValue("");
+    let length = 0;
+    const timer = window.setInterval(() => {
+      length += 1;
+      setValue(text.slice(0, length));
+      if (length >= text.length) window.clearInterval(timer);
+    }, interval);
+
+    return () => window.clearInterval(timer);
+  }, [active, interval, text]);
+
+  return value;
+}
+
+function isBirthDateQuestion(question: ProfileQuestion) {
+  return question.id === 17 && question.question === "생년월일을 입력해주세요.";
+}
+
+function isMbtiQuestion(question: ProfileQuestion) {
+  return question.id === 31 && question.question === "MBTI를 알려주세요.";
+}
+
+function birthDateParts(value: unknown) {
+  const match =
+    typeof value === "string"
+      ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+      : null;
+  return match
+    ? { year: match[1], month: match[2], day: match[3] }
+    : { year: "1995", month: "01", day: "01" };
+}
+
+function validBirthDate(value: unknown) {
+  if (typeof value !== "string") return false;
+  const parts = birthDateParts(value);
+  if (`${parts.year}-${parts.month}-${parts.day}` !== value) return false;
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  if (year < BIRTH_YEAR_MIN || year > BIRTH_YEAR_MAX) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function WheelColumn({
+  values,
+  selected,
+  suffix,
+  onChange,
+}: {
+  values: string[];
+  selected: string;
+  suffix: string;
+  onChange: (value: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollTimerRef = useRef<number | null>(null);
+  const dragRef = useRef({
+    pointerId: -1,
+    startY: 0,
+    startScrollTop: 0,
+    moved: false,
+  });
+  const [dragging, setDragging] = useState(false);
+
+  const finishMouseDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current.pointerId = -1;
+    setDragging(false);
+  };
+
+  useEffect(() => {
+    const index = Math.max(0, values.indexOf(selected));
+    containerRef.current?.scrollTo({
+      top: index * WHEEL_ITEM_HEIGHT,
+      behavior: "auto",
+    });
+  }, [selected, values]);
+
+  useEffect(
+    () => () => {
+      if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
+    },
+    [],
+  );
+
+  return (
+    <div className="relative min-w-0 flex-1">
+      <div className="pointer-events-none absolute inset-x-1 top-1/2 h-12 -translate-y-1/2 rounded-[16px] border border-black/10 bg-white/60" />
+      <div
+        ref={containerRef}
+        onPointerDown={(event) => {
+          if (event.pointerType !== "mouse" || event.button !== 0) return;
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startY: event.clientY,
+            startScrollTop: event.currentTarget.scrollTop,
+            moved: false,
+          };
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDragging(true);
+        }}
+        onPointerMove={(event) => {
+          if (dragRef.current.pointerId !== event.pointerId) return;
+          const distance = event.clientY - dragRef.current.startY;
+          if (Math.abs(distance) > 3) dragRef.current.moved = true;
+          event.currentTarget.scrollTop =
+            dragRef.current.startScrollTop - distance;
+          event.preventDefault();
+        }}
+        onPointerUp={finishMouseDrag}
+        onPointerCancel={finishMouseDrag}
+        onClickCapture={(event) => {
+          if (!dragRef.current.moved) return;
+          event.preventDefault();
+          event.stopPropagation();
+          dragRef.current.moved = false;
+        }}
+        onDragStart={(event) => event.preventDefault()}
+        onScroll={(event) => {
+          if (scrollTimerRef.current) window.clearTimeout(scrollTimerRef.current);
+          const scrollTop = event.currentTarget.scrollTop;
+          scrollTimerRef.current = window.setTimeout(() => {
+            const index = clamp(
+              Math.round(scrollTop / WHEEL_ITEM_HEIGHT),
+              0,
+              values.length - 1,
+            );
+            onChange(values[index]);
+          }, 90);
+        }}
+        className={`relative z-10 h-36 overflow-y-auto overscroll-contain select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          dragging
+            ? "cursor-grabbing snap-none"
+            : "cursor-grab snap-y snap-mandatory"
+        }`}
+      >
+        <div className="h-12" aria-hidden />
+        {values.map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() =>
+              containerRef.current?.scrollTo({
+                top: values.indexOf(value) * WHEEL_ITEM_HEIGHT,
+                behavior: "smooth",
+              })
+            }
+            className={`flex h-12 w-full snap-center items-center justify-center text-[18px] tabular-nums transition ${
+              value === selected
+                ? "font-extrabold text-black"
+                : "font-medium text-black/28"
+            }`}
+          >
+            {Number(value)}{suffix}
+          </button>
+        ))}
+        <div className="h-12" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
+function BirthDateWheel({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const parts = birthDateParts(value);
+  const years = useMemo(
+    () =>
+      Array.from(
+        { length: BIRTH_YEAR_MAX - BIRTH_YEAR_MIN + 1 },
+        (_, index) => String(BIRTH_YEAR_MAX - index),
+      ),
+    [],
+  );
+  const months = useMemo(
+    () => Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")),
+    [],
+  );
+  const daysInMonth = new Date(
+    Number(parts.year),
+    Number(parts.month),
+    0,
+  ).getDate();
+  const days = useMemo(
+    () =>
+      Array.from({ length: daysInMonth }, (_, index) =>
+        String(index + 1).padStart(2, "0"),
+      ),
+    [daysInMonth],
+  );
+
+  const update = (part: "year" | "month" | "day", nextValue: string) => {
+    const next = { ...parts, [part]: nextValue };
+    const maximumDay = new Date(
+      Number(next.year),
+      Number(next.month),
+      0,
+    ).getDate();
+    next.day = String(Math.min(Number(next.day), maximumDay)).padStart(2, "0");
+    onChange(`${next.year}-${next.month}-${next.day}`);
+  };
+
+  return (
+    <div className="relative mx-auto mt-10 flex w-full max-w-[350px] gap-2 rounded-[24px] border border-black/[0.07] bg-white/45 p-3 shadow-[0_18px_50px_rgba(18,18,18,0.045)]">
+      <WheelColumn
+        values={years}
+        selected={parts.year}
+        suffix="년"
+        onChange={(year) => update("year", year)}
+      />
+      <WheelColumn
+        values={months}
+        selected={parts.month}
+        suffix="월"
+        onChange={(month) => update("month", month)}
+      />
+      <WheelColumn
+        values={days}
+        selected={parts.day}
+        suffix="일"
+        onChange={(day) => update("day", day)}
+      />
+    </div>
+  );
+}
+
 function optionValue(option: string | QuestionOption) {
   return typeof option === "string" ? option : option.value;
 }
@@ -240,6 +502,7 @@ function isComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
   if (!answer) return false;
 
   const value = answer.value;
+  if (isBirthDateQuestion(question)) return validBirthDate(value);
   const hasValue = Array.isArray(value)
     ? value.length > 0
     : Boolean(String(value).trim());
@@ -336,6 +599,10 @@ function perceivedProgress(completedQuestionCount: number, questionCount: number
 
 export function QuestionFlow({
   userId,
+  initialName = "",
+  initialGender = "",
+  initialPhotoUrl = "",
+  namePreview = false,
   initialRows,
   mode = "onboarding",
   questionSet = profileQuestions,
@@ -344,11 +611,18 @@ export function QuestionFlow({
   skipConversationResult = false,
   showProfileArchetypeResult = false,
   conversationQuestionCount = 16,
+  initialQuestionIndex,
+  initialPhotoStep = false,
+  onPhotoChanged,
   onPreviewComplete,
   onGuestDraftChange,
   onGuestComplete,
 }: {
   userId?: string;
+  initialName?: string;
+  initialGender?: Gender;
+  initialPhotoUrl?: string;
+  namePreview?: boolean;
   initialRows: StoredAnswerRow[];
   mode?: QuestionFlowMode;
   questionSet?: ProfileQuestion[];
@@ -362,6 +636,9 @@ export function QuestionFlow({
   skipConversationResult?: boolean;
   showProfileArchetypeResult?: boolean;
   conversationQuestionCount?: number;
+  initialQuestionIndex?: number;
+  initialPhotoStep?: boolean;
+  onPhotoChanged?: (photoUrl: string) => void;
   onPreviewComplete?: () => void | Promise<void>;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
@@ -371,6 +648,10 @@ export function QuestionFlow({
   const isPreview = mode === "preview";
   const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
+  const shouldCollectName =
+    namePreview || (mode === "onboarding" && !initialName.trim());
+  const shouldCollectGender =
+    namePreview || (mode === "onboarding" && !initialGender);
   const questions = questionSet;
   const initialAnswers = useMemo(
     () =>
@@ -416,7 +697,8 @@ export function QuestionFlow({
       ) as AnswerMap)
     : null;
   const [questionIndex, setQuestionIndex] = useState(
-    requestedStartIndex ??
+    initialQuestionIndex ??
+      requestedStartIndex ??
       (isPreview
         ? 0
         : firstIncomplete === -1
@@ -424,6 +706,15 @@ export function QuestionFlow({
           : firstIncomplete),
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
+  const [collectingName, setCollectingName] = useState(shouldCollectName);
+  const [name, setName] = useState(namePreview ? "" : initialName);
+  const [collectingGender, setCollectingGender] =
+    useState(shouldCollectGender);
+  const [collectingPhoto, setCollectingPhoto] = useState(initialPhotoStep);
+  const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [pendingFinalAnswers, setPendingFinalAnswers] =
+    useState<AnswerMap | null>(initialPhotoStep ? initialAnswers : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(
@@ -435,14 +726,48 @@ export function QuestionFlow({
     useState<StoredAnswerRow[] | null>(null);
   const [showResultDetails, setShowResultDetails] = useState(false);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const savingRef = useRef(false);
   const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
   const questionStartTrackedRef = useRef(false);
   const question = questions[questionIndex];
+  const isBirthDate = isBirthDateQuestion(question);
+  const typedNamePrompt = useTypedText(NAME_PROMPT, collectingName, 55);
+  const isNamePromptComplete = typedNamePrompt.length === NAME_PROMPT.length;
+  const typedGenderPrompt = useTypedText(
+    GENDER_PROMPT,
+    collectingGender && !collectingName,
+    55,
+  );
+  const isGenderPromptComplete =
+    typedGenderPrompt.length === GENDER_PROMPT.length;
+  const normalizedName = name.trim();
+  const canSubmitName =
+    isNamePromptComplete &&
+    normalizedName.length >= 2 &&
+    normalizedName.length <= 30;
+  const isPreferenceFlow = questions === preferenceQuestions;
+  const identityStepCount = isPreferenceFlow ? 2 : 0;
+  const photoStepCount = isPreferenceFlow ? 1 : 0;
+  const totalFlowSteps =
+    questions.length + identityStepCount + photoStepCount;
+  const nameProgressPercent = isPreferenceFlow
+    ? (Math.min(normalizedName.length / 2, 1) / totalFlowSteps) * 100
+    : 0;
+  const genderProgressPercent = isPreferenceFlow
+    ? (1 / totalFlowSteps) * 100
+    : 0;
+  const photoProgressPercent = isPreferenceFlow
+    ? ((identityStepCount + questions.length + (photoUrl ? 1 : 0)) /
+        totalFlowSteps) *
+      100
+    : 100;
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
-  const progressPercent = perceivedProgress(questionIndex, questions.length);
+  const progressPercent = isPreferenceFlow
+    ? ((identityStepCount + questionIndex) / totalFlowSteps) * 100
+    : perceivedProgress(questionIndex, questions.length);
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
   const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
@@ -473,6 +798,12 @@ export function QuestionFlow({
     scaleOptions.length === (question.options?.length ?? 0);
 
   useEffect(() => {
+    if (!collectingName || !isNamePromptComplete) return;
+    const timer = window.setTimeout(() => nameInputRef.current?.focus(), 180);
+    return () => window.clearTimeout(timer);
+  }, [collectingName, isNamePromptComplete]);
+
+  useEffect(() => {
     if (isPreview || isGuest || isRegeneration) return;
     trackLoginSuccessFromUrl("new");
   }, [isGuest, isPreview, isRegeneration]);
@@ -483,13 +814,26 @@ export function QuestionFlow({
   }, [isGuest, isPreview, userId]);
 
   useEffect(() => {
-    if (isPreview || isRegeneration || questionStartTrackedRef.current) return;
+    if (
+      collectingName ||
+      collectingGender ||
+      isPreview ||
+      isRegeneration ||
+      questionStartTrackedRef.current
+    ) return;
 
     questionStartTrackedRef.current = true;
     trackEvent("question_start", {
-      question_count: questions.length,
+      question_count: questions.length + photoStepCount,
     });
-  }, [isPreview, isRegeneration, questions.length]);
+  }, [
+    collectingGender,
+    collectingName,
+    isPreview,
+    isRegeneration,
+    photoStepCount,
+    questions.length,
+  ]);
 
   const trackQuestionAnswered = (targetQuestion: ProfileQuestion) => {
     if (isPreview || isRegeneration) return;
@@ -561,6 +905,28 @@ export function QuestionFlow({
       );
 
     if (saveError) throw new Error(saveError.message);
+
+    if (isBirthDateQuestion(targetQuestion)) {
+      const birthDateResponse = await fetch("/api/profile/birth-date", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ birthDate: nextAnswer.value }),
+      });
+      if (!birthDateResponse.ok) {
+        throw new Error("Profile birth date save failed.");
+      }
+    }
+
+    if (isMbtiQuestion(targetQuestion)) {
+      const mbtiResponse = await fetch("/api/profile/mbti", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mbti: nextAnswer.value }),
+      });
+      if (!mbtiResponse.ok) {
+        throw new Error("Profile MBTI save failed.");
+      }
+    }
   };
 
   const answerMapWith = (nextAnswer: QuestionAnswer) => ({
@@ -632,8 +998,12 @@ export function QuestionFlow({
 
     if (!isRegeneration) {
       trackEvent("questions_complete", {
-        question_count: questions.length,
+        question_count: questions.length + photoStepCount,
       });
+      if (completionRequestMode === "preferences-v2") {
+        trackEvent("basic_info_complete", { source: "questions" });
+        trackEvent("profile_complete", { source: "questions" });
+      }
     }
 
     if (showProfileArchetypeResult) {
@@ -656,6 +1026,11 @@ export function QuestionFlow({
   const moveToNext = async (nextAnswers: AnswerMap) => {
     if (questionIndex >= questions.length - 1) {
       if (isPreview) {
+        if (isPreferenceFlow) {
+          setPendingFinalAnswers(nextAnswers);
+          setCollectingPhoto(true);
+          return;
+        }
         if (showProfileArchetypeResult) {
           const completedRows = answersToStoredRows(nextAnswers, questions);
           setCompletedProfileRows(completedRows);
@@ -663,6 +1038,12 @@ export function QuestionFlow({
           return;
         }
         await onPreviewComplete?.();
+        return;
+      }
+
+      if (!isGuest) {
+        setPendingFinalAnswers(nextAnswers);
+        setCollectingPhoto(true);
         return;
       }
 
@@ -850,8 +1231,361 @@ export function QuestionFlow({
     }
   };
 
+  const submitName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSubmitName) return;
+    if (namePreview) {
+      setName(normalizedName);
+      setCollectingName(false);
+      return;
+    }
+    if (!beginSaving()) return;
+
+    setError(null);
+    try {
+      const response = await fetch("/api/profile/name", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: normalizedName }),
+      });
+      if (!response.ok) throw new Error("Profile name save failed.");
+      setName(normalizedName);
+      setCollectingName(false);
+    } catch (nameError) {
+      console.error("Failed to save profile name:", nameError);
+      setError("이름을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      endSaving();
+    }
+  };
+
+  const submitGender = async (gender: "여성" | "남성") => {
+    if (!isGenderPromptComplete || !beginSaving()) return;
+
+    setError(null);
+    if (namePreview) {
+      setCollectingGender(false);
+      endSaving();
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/profile/gender", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gender }),
+      });
+      if (!response.ok) throw new Error("Profile gender save failed.");
+      setCollectingGender(false);
+    } catch (genderError) {
+      console.error("Failed to save profile gender:", genderError);
+      setError("성별을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      endSaving();
+    }
+  };
+
+  const uploadFinalPhoto = async (file: File | null) => {
+    if (!file || !userId || photoUploading) return;
+
+    setPhotoUploading(true);
+    setError(null);
+    try {
+      const nextPhotoUrl = await uploadProfilePhoto(userId, file);
+      const { error: profileError } = await createClient()
+        .from("profiles")
+        .update({ photo_url: nextPhotoUrl })
+        .eq("user_id", userId);
+      if (profileError) throw new Error(profileError.message);
+      setPhotoUrl(nextPhotoUrl);
+      onPhotoChanged?.(nextPhotoUrl);
+    } catch (photoError) {
+      console.error("Failed to upload final profile photo:", photoError);
+      setError("사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.");
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const continueFromPhoto = async () => {
+    if (
+      !photoUrl ||
+      (!isPreview && !pendingFinalAnswers) ||
+      !beginSaving()
+    ) return;
+
+    setError(null);
+    try {
+      if (isPreview) {
+        await onPreviewComplete?.();
+      } else if (pendingFinalAnswers) {
+        await completeOrMoveNext(pendingFinalAnswers);
+      }
+      setCollectingPhoto(false);
+    } catch (completionError) {
+      console.error("Failed to complete questions after photo:", completionError);
+      setError("답변 완료 처리에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      endSaving();
+    }
+  };
+
   const isConversationQuestion =
     (question.order ?? question.id) <= conversationQuestionCount;
+  if (collectingName) {
+    return (
+      <section className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F5F1E8] px-8 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+
+        <header className="relative z-10 shrink-0 pt-10">
+          <div
+            className="h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
+            role="progressbar"
+            aria-label="전체 진행률"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(nameProgressPercent)}
+          >
+            <motion.div
+              className="h-full rounded-full bg-black/70"
+              initial={false}
+              animate={{ width: `${nameProgressPercent}%` }}
+              transition={{ duration: 0.32, ease: "easeOut" }}
+            />
+          </div>
+        </header>
+
+        <motion.form
+          onSubmit={submitName}
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="relative z-10 mx-auto flex w-full max-w-[340px] flex-1 flex-col justify-center"
+        >
+          <div className="mb-14 min-h-[74px]">
+            <h1 className="break-keep text-[22px] font-semibold leading-[1.42] tracking-[-0.045em] text-[#171714]">
+              {typedNamePrompt}
+              {!isNamePromptComplete && (
+                <span className="ml-1 inline-block h-[0.9em] w-px animate-pulse bg-black/55 align-[-0.05em]" />
+              )}
+            </h1>
+          </div>
+
+          <div className="w-full">
+            <input
+              ref={nameInputRef}
+              value={name}
+              maxLength={30}
+              autoComplete="name"
+              aria-label="이름"
+              placeholder="김서연"
+              onChange={(event) => setName(event.target.value)}
+              className="h-16 w-full border-b border-black/25 bg-transparent px-1 text-[24px] font-medium tracking-[-0.025em] text-black outline-none placeholder:text-black/18 focus:border-black"
+            />
+
+            <div className="mt-10 flex min-h-12 justify-end">
+              <AnimatePresence initial={false}>
+                {canSubmitName && (
+                  <motion.button
+                    type="submit"
+                    disabled={saving}
+                    aria-label="이름 저장하고 질문 시작하기"
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -8 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="flex h-12 w-12 items-center justify-center text-black transition active:translate-x-0.5 disabled:text-black/20"
+                  >
+                    <ArrowRight size={28} strokeWidth={1.8} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </motion.form>
+
+        {error && (
+          <p className="absolute inset-x-6 bottom-8 z-20 rounded-2xl bg-black px-4 py-3 text-center text-xs font-semibold leading-5 text-white shadow-lg">
+            {error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  if (collectingGender) {
+    return (
+      <section className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F5F1E8] px-8 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+
+        <header className="relative z-10 shrink-0 pt-10">
+          <div
+            className="h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
+            role="progressbar"
+            aria-label="전체 진행률"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(genderProgressPercent)}
+          >
+            <motion.div
+              className="h-full rounded-full bg-black/70"
+              initial={{ width: 0 }}
+              animate={{ width: `${genderProgressPercent}%` }}
+              transition={{ duration: 0.42, ease: "easeOut" }}
+            />
+          </div>
+        </header>
+
+        <motion.div
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="relative z-10 mx-auto flex w-full max-w-[340px] flex-1 flex-col justify-center"
+        >
+          <div className="mb-14 min-h-[74px]">
+            <h1 className="break-keep text-[22px] font-semibold leading-[1.42] tracking-[-0.045em] text-[#171714]">
+              {typedGenderPrompt}
+              {!isGenderPromptComplete && (
+                <span className="ml-1 inline-block h-[0.9em] w-px animate-pulse bg-black/55 align-[-0.05em]" />
+              )}
+            </h1>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { value: "여성", label: "여성" },
+              { value: "남성", label: "남성" },
+            ] as const).map((option) => (
+              <motion.button
+                key={option.value}
+                type="button"
+                disabled={!isGenderPromptComplete || saving}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => void submitGender(option.value)}
+                className="flex h-16 items-center justify-center rounded-[22px] border border-black/[0.08] bg-white/68 text-[16px] font-bold text-black/72 shadow-[0_12px_35px_rgba(18,18,18,0.045)] backdrop-blur transition hover:border-black/18 disabled:text-black/24"
+              >
+                {option.label}
+              </motion.button>
+            ))}
+          </div>
+        </motion.div>
+
+        {error && (
+          <p className="absolute inset-x-6 bottom-8 z-20 rounded-2xl bg-black px-4 py-3 text-center text-xs font-semibold leading-5 text-white shadow-lg">
+            {error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
+  if (collectingPhoto) {
+    return (
+      <section className="relative flex min-h-dvh flex-col overflow-hidden bg-[#F5F1E8] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+        <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
+        <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
+
+        <header className="relative z-10 shrink-0 pt-10">
+          <div
+            className="h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
+            role="progressbar"
+            aria-label="전체 진행률"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(photoProgressPercent)}
+          >
+            <motion.div
+              className="h-full rounded-full bg-black/70"
+              initial={{ width: 0 }}
+              animate={{ width: `${photoProgressPercent}%` }}
+              transition={{ duration: 0.55, ease: "easeOut" }}
+            />
+          </div>
+        </header>
+
+        <motion.div
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="relative z-10 flex flex-1 flex-col"
+        >
+          <div className="mt-[11vh] text-center">
+            <h1 className="mx-auto max-w-[350px] break-keep text-[25px] font-black leading-[1.34] tracking-[-0.055em] text-black/86">
+              당신의 사진을 등록해주세요.
+            </h1>
+            <p className="mx-auto mt-3 max-w-[330px] break-keep text-[13px] font-semibold leading-5 text-black/42">
+              나를 알아보기 쉬운 사진이면 충분해요.
+            </p>
+          </div>
+
+          <div className="mx-auto mt-10 w-full max-w-[340px]">
+            <input
+              id="question-flow-profile-photo"
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={photoUploading || saving}
+              onChange={(event) =>
+                void uploadFinalPhoto(event.target.files?.[0] ?? null)
+              }
+            />
+            <label
+              htmlFor="question-flow-profile-photo"
+              className={`flex min-h-[168px] cursor-pointer items-center justify-center overflow-hidden rounded-[28px] border border-dashed border-black/15 bg-white/60 shadow-[0_18px_50px_rgba(18,18,18,0.05)] transition ${
+                photoUploading || saving ? "cursor-wait opacity-65" : ""
+              }`}
+            >
+              {photoUrl ? (
+                <img
+                  src={photoUrl}
+                  alt="등록한 프로필 사진"
+                  className="h-[220px] w-full object-cover"
+                />
+              ) : (
+                <span className="flex flex-col items-center gap-3 text-black/42">
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full border border-black/10 bg-white/70">
+                    <Camera size={22} aria-hidden />
+                  </span>
+                  <span className="text-[13px] font-bold">
+                    {photoUploading ? "사진을 올리고 있어요..." : "사진 선택하기"}
+                  </span>
+                </span>
+              )}
+            </label>
+
+            <div className="mt-8 flex min-h-12 justify-end">
+              <AnimatePresence initial={false}>
+                {photoUrl && !photoUploading && (
+                  <motion.button
+                    type="button"
+                    onClick={() => void continueFromPhoto()}
+                    disabled={saving}
+                    aria-label="사진 저장하고 결과 확인하기"
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -8 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}
+                    className="flex h-12 w-12 items-center justify-center text-black transition active:translate-x-0.5 disabled:text-black/20"
+                  >
+                    <ArrowRight size={28} strokeWidth={1.8} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </motion.div>
+
+        {error && (
+          <p className="absolute inset-x-6 bottom-8 z-20 rounded-2xl bg-black px-4 py-3 text-center text-xs font-semibold leading-5 text-white shadow-lg">
+            {error}
+          </p>
+        )}
+      </section>
+    );
+  }
+
   if (profileArchetypeResultId) {
     return (
       <ProfileArchetypeResult
@@ -878,7 +1612,7 @@ export function QuestionFlow({
     const resultCode = conversationResultCode(resultAnswers);
     const result = conversationResults[resultCode];
     return (
-      <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-[calc(120px+env(safe-area-inset-bottom))] pt-[calc(54px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+      <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#F5F1E8] px-6 pb-[calc(120px+env(safe-area-inset-bottom))] pt-[calc(54px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
         <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
         <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
         <motion.div
@@ -957,7 +1691,7 @@ export function QuestionFlow({
           </AnimatePresence>
 
         </motion.div>
-        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/98 to-transparent px-6 pb-[max(18px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
+        <div className="fixed inset-x-0 bottom-0 z-30 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#F5F1E8] via-[#F5F1E8]/98 to-transparent px-6 pb-[max(18px,env(safe-area-inset-bottom))] pt-5 md:bottom-4">
           {error && (
             <p className="mb-2 text-center text-[12px] font-semibold text-red-600">
               {error}
@@ -997,7 +1731,7 @@ export function QuestionFlow({
   }
 
   return (
-    <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#f7f7f5] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
+    <section className="relative flex min-h-dvh flex-col overflow-y-auto bg-[#F5F1E8] px-6 pb-5 pt-[calc(14px+env(safe-area-inset-top))] text-[#121212] md:min-h-[calc(100dvh-32px)]">
       <div className="pointer-events-none absolute -right-24 top-24 h-64 w-64 rounded-full bg-accent/15 blur-[80px]" />
       <div className="pointer-events-none absolute -left-20 bottom-28 h-52 w-52 rounded-full bg-[#e8d9c6]/45 blur-[70px]" />
       {!hideProgressHeader && (
@@ -1015,20 +1749,13 @@ export function QuestionFlow({
           >
             <ChevronLeft size={18} aria-hidden />
           </button>
-          <span className="text-center text-[13px] font-bold tabular-nums text-black/45">
-            {questionIndex + 1} / {questions.length}
-          </span>
+          <div />
           <div />
         </div>
-        <p className="mt-1 text-center text-[11px] font-semibold tracking-[-0.01em] text-black/38">
-          {isConversationQuestion
-            ? "평소의 나에게 더 가까운 쪽을 골라주세요."
-            : "솔직하게 답할수록 더 편안한 자리를 준비할 수 있어요."}
-        </p>
         <div
-          className="mt-4 h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
+          className="mt-2 h-[5px] overflow-hidden rounded-full bg-black/[0.07]"
           role="progressbar"
-          aria-label="질문 진행률"
+          aria-label="전체 진행률"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(progressPercent)}
@@ -1077,7 +1804,32 @@ export function QuestionFlow({
             )}
           </div>
 
-          {question.type === "single_choice" && (
+          {isBirthDate && (
+            <BirthDateWheel
+              value={typeof answer?.value === "string" ? answer.value : ""}
+              onChange={(birthDate) => {
+                setError(null);
+                updateLocalAnswer({
+                  questionId: question.id,
+                  value: birthDate,
+                });
+              }}
+            />
+          )}
+
+          {isMbtiQuestion(question) && (
+            <div className="mx-auto my-auto w-full max-w-[340px] pb-16 pt-10">
+              <MbtiSelect
+                value={typeof answer?.value === "string" ? answer.value : ""}
+                onChange={(mbti) => {
+                  setError(null);
+                  void selectSingle(mbti);
+                }}
+              />
+            </div>
+          )}
+
+          {!isBirthDate && !isMbtiQuestion(question) && question.type === "single_choice" && (
             usesNumericScale ? (
               <div className="my-auto pb-14 pt-10">
                 <div
@@ -1161,7 +1913,7 @@ export function QuestionFlow({
             )
           )}
 
-          {question.type === "multi_choice" && (
+          {!isBirthDate && question.type === "multi_choice" && (
             <div className="mt-8 pb-24">
               <div className="grid grid-cols-2 gap-3">
                 {(question.options ?? []).map((option) => {
@@ -1215,7 +1967,7 @@ export function QuestionFlow({
             </div>
           )}
 
-          {question.type === "text" && (
+          {!isBirthDate && question.type === "text" && (
             <div className="mt-8 pb-24">
               <textarea
                 value={
@@ -1294,7 +2046,7 @@ export function QuestionFlow({
       )}
 
       {question.type !== "single_choice" && (
-        <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#f7f7f5] via-[#f7f7f5]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
+        <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#F5F1E8] via-[#F5F1E8]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
           <button
             type="button"
             disabled={!canContinue || saving}

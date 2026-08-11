@@ -10,7 +10,6 @@ import {
   Gift,
   Heart,
   Info,
-  LockKeyhole,
   Loader2,
   LogOut,
   MapPin,
@@ -40,10 +39,6 @@ import {
   profileSectionValueQuestions,
   profileSectionValuesQuestions,
 } from "@/data/profileDetailQuestions";
-import {
-  resolvedProfileEmoji,
-  singleEmojiFromInput,
-} from "@/lib/profileEmoji";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
 import type { Gender } from "@/types/user";
@@ -55,7 +50,6 @@ import {
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
 
 type ProfileDraft = {
-  emoji: string;
   name: string;
   phone: string;
   gender: Gender;
@@ -107,7 +101,6 @@ function normalizePhone(phone: string) {
 
 function initialProfileDraft(profile: ProfileRow): ProfileDraft {
   return {
-    emoji: resolvedProfileEmoji(profile),
     name: profile.name ?? "",
     phone: profile.phone ?? profile.phone_normalized ?? "",
     gender: profile.gender ?? "",
@@ -302,6 +295,7 @@ function BasicQuestionsSection({
   onOpenValue,
   onOpenTraits,
   onOpenSelf,
+  photoCompleted,
 }: {
   answers: Record<number, QuestionAnswer>;
   backgroundAnsweredCount: number;
@@ -321,6 +315,7 @@ function BasicQuestionsSection({
   onOpenValue: () => void;
   onOpenTraits: () => void;
   onOpenSelf: () => void;
+  photoCompleted: boolean;
 }) {
   const answeredCount = preferenceQuestions.filter((question) => {
     const value = answers[question.id]?.value;
@@ -328,6 +323,8 @@ function BasicQuestionsSection({
       ? value.length > 0
       : value !== undefined && value !== "";
   }).length;
+  const coreAnsweredCount = answeredCount + (photoCompleted ? 1 : 0);
+  const coreQuestionCount = preferenceQuestions.length + 1;
   const backgroundPercent = Math.round(
     (backgroundAnsweredCount / profileSectionBackgroundQuestions.length) * 100,
   );
@@ -391,7 +388,7 @@ function BasicQuestionsSection({
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-black text-black">코어 질문</span>
             <span className="mt-1 block text-xs font-semibold text-black/40">
-              {answeredCount}/{preferenceQuestions.length} 답변 완료
+              {coreAnsweredCount}/{coreQuestionCount} 답변 완료
             </span>
           </span>
           <ChevronRight size={20} aria-hidden className="shrink-0 text-black/42" />
@@ -717,7 +714,8 @@ export function PreferenceProfileTab({
   onOpenValueQuestions = () => undefined,
   onOpenTraitsQuestions = () => undefined,
   onOpenSelfQuestions = () => undefined,
-  onRequestBasicInfo,
+  onOpenQuestionReview = () => undefined,
+  showOperatorQuestionReview = false,
   onLogout,
   previewMode = false,
 }: {
@@ -744,7 +742,8 @@ export function PreferenceProfileTab({
   onOpenValueQuestions?: () => void;
   onOpenTraitsQuestions?: () => void;
   onOpenSelfQuestions?: () => void;
-  onRequestBasicInfo?: () => void;
+  onOpenQuestionReview?: () => void;
+  showOperatorQuestionReview?: boolean;
   onLogout: () => Promise<void>;
   previewMode?: boolean;
 }) {
@@ -754,7 +753,6 @@ export function PreferenceProfileTab({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const displayEmoji = resolvedProfileEmoji(profile);
   const archetypeId = isProfileArchetypeId(profile.profile_archetype_id)
     ? profile.profile_archetype_id
     : null;
@@ -763,21 +761,6 @@ export function PreferenceProfileTab({
   useEffect(() => {
     if (!editing) setDraft(initialDraft);
   }, [editing, initialDraft]);
-
-  useEffect(() => {
-    if (profile.public_emoji?.trim()) return;
-
-    const nextProfile = { ...profile, public_emoji: displayEmoji };
-    onProfileUpdated(nextProfile);
-
-    if (!previewMode) {
-      void fetch("/api/profile/preferences", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicEmoji: displayEmoji }),
-      });
-    }
-  }, [displayEmoji, onProfileUpdated, previewMode, profile]);
 
   const canSave = useMemo(
     () =>
@@ -805,7 +788,6 @@ export function PreferenceProfileTab({
     const normalizedPhone = normalizePhone(draft.phone);
     const nextProfile: ProfileRow = {
       ...profile,
-      public_emoji: draft.emoji,
       name: draft.name.trim(),
       phone: draft.phone.trim(),
       phone_normalized: normalizedPhone,
@@ -820,7 +802,6 @@ export function PreferenceProfileTab({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            publicEmoji: nextProfile.public_emoji,
             name: nextProfile.name,
             phone: nextProfile.phone,
             gender: nextProfile.gender,
@@ -866,7 +847,12 @@ export function PreferenceProfileTab({
                   fill
                   priority
                   sizes="(max-width: 430px) calc(100vw - 40px), 390px"
-                  className="object-cover"
+                  className={cn(
+                    "object-cover",
+                    archetypeId === "visionary"
+                      ? "object-[center_74%]"
+                      : "object-center",
+                  )}
                 />
                 <div className="absolute inset-0 bg-black/28" />
                 <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/15 to-black/80" />
@@ -880,33 +866,9 @@ export function PreferenceProfileTab({
 
             {!profile.profile_completed ? (
               <>
-              <div className="hidden">
-                <span className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/[0.07] text-white/76">
-                  <LockKeyhole size={22} strokeWidth={1.8} aria-hidden />
-                </span>
-                <h2 className="mt-5 text-[18px] font-black tracking-[-0.035em] text-white">
-                  프로필이 잠겨 있어요
-                </h2>
-                <p className="mt-2 break-keep text-[12px] font-semibold leading-5 text-white/52">
-                  간단한 정보를 입력하고 프로필을 완성하세요.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onRequestBasicInfo) {
-                      onRequestBasicInfo();
-                      return;
-                    }
-                    window.location.assign("/onboarding/profile?from=profile");
-                  }}
-                  className="mt-5 h-11 rounded-full bg-[#faf8f2] px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.18)] transition active:scale-[0.98]"
-                >
-                  기본정보 입력하기
-                </button>
-              </div>
               <div className="relative flex min-h-[280px] flex-col items-center justify-center px-4 py-7 text-center">
                 <p className="text-[17px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
-                  이름을 알려주세요
+                  질문을 이어서 답해주세요
                 </p>
                 {archetype && (
                   <>
@@ -921,15 +883,11 @@ export function PreferenceProfileTab({
                 <button
                   type="button"
                   onClick={() => {
-                    if (onRequestBasicInfo) {
-                      onRequestBasicInfo();
-                      return;
-                    }
-                    window.location.assign("/onboarding/profile?from=profile");
+                    window.location.assign("/onboarding/questions");
                   }}
                   className="mt-7 h-11 rounded-full border border-white/25 bg-[#faf8f2] px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.22)] transition active:scale-[0.98]"
                 >
-                  기본정보 입력하기
+                  질문 이어가기
                 </button>
               </div>
               </>
@@ -961,9 +919,6 @@ export function PreferenceProfileTab({
             </div>
 
             <div className="relative mt-3 flex min-h-[210px] flex-col items-center justify-center gap-3 text-center">
-              <span className="hidden h-16 w-16 shrink-0 items-center justify-center rounded-[22px] border border-white/80 bg-white text-[24px] font-black shadow-[0_8px_22px_rgba(0,0,0,0.12)]">
-                {editing ? draft.emoji : displayEmoji}
-              </span>
               <div className="min-w-0 max-w-full">
                 <p className="truncate text-[17px] font-black tracking-[-0.04em] drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
                   {profile.name?.trim() || "이름 미입력"}
@@ -1000,38 +955,6 @@ export function PreferenceProfileTab({
           <div className={cn(editing || saved ? "p-5" : "hidden")}>
             {editing ? (
               <div className="space-y-5">
-                <fieldset>
-                  <legend className="text-[11px] font-bold text-black/48">
-                    프로필 이모지
-                  </legend>
-                  <p className="mt-1 text-[10px] font-semibold text-black/30">
-                    입력란을 누르고 이모지 키보드에서 원하는 아이콘을 골라보세요.
-                  </p>
-                  <label className="mt-3 flex items-center gap-3 rounded-[16px] border border-black/[0.08] bg-black/[0.015] px-3 py-2.5">
-                    <span
-                      aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-white text-xl shadow-[0_3px_12px_rgba(0,0,0,0.05)]"
-                    >
-                      {draft.emoji}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <input
-                        value={draft.emoji}
-                        inputMode="text"
-                        maxLength={16}
-                        aria-label="프로필 이모지 직접 입력"
-                        onChange={(event) => {
-                          const emoji = singleEmojiFromInput(event.target.value);
-                          if (emoji) {
-                            setDraft((current) => ({ ...current, emoji }));
-                          }
-                        }}
-                        className="w-full bg-transparent text-[11px] font-semibold text-black/35 outline-none"
-                      />
-                    </span>
-                  </label>
-                </fieldset>
-
                 <div>
                   <TextField
                     label="이름"
@@ -1167,7 +1090,19 @@ export function PreferenceProfileTab({
           onOpenValue={onOpenValueQuestions}
           onOpenTraits={onOpenTraitsQuestions}
           onOpenSelf={onOpenSelfQuestions}
+          photoCompleted={Boolean(profile.photo_url)}
         />
+
+        {showOperatorQuestionReview && (
+          <button
+            type="button"
+            onClick={onOpenQuestionReview}
+            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
+          >
+            <PenLine size={15} aria-hidden />
+            질문 다시보기
+          </button>
+        )}
 
         {!previewMode && (
           <button
