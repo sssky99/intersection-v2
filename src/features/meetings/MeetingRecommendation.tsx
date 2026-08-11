@@ -2368,8 +2368,8 @@ function MeetingDateApplicationFlow({
   return (
     <section
       className={cn(
-        "min-h-full bg-[#f7f4ed] px-5 pb-8 pt-7",
-        embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+        "flex min-h-full flex-col bg-[#f7f4ed] px-5 pb-8 pt-7",
+        embedded ? "h-full min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
       )}
     >
       <AnimatePresence mode="wait" initial={false}>
@@ -2422,6 +2422,7 @@ function MeetingDateApplicationFlow({
         ) : (
           <motion.div
             key="date-options"
+            className="flex flex-1 flex-col"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -2675,7 +2676,7 @@ function MeetingDateApplicationFlow({
             )}
             </div>
 
-            <div className="flex min-h-[60vh] items-center justify-center px-5 text-center">
+            <div className="flex flex-1 items-center justify-center px-5 text-center">
               {availableTicketsLoading ? (
                 <div className="flex items-center gap-2 text-sm font-bold text-black/42">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/15 border-t-black/55" />

@@ -1178,7 +1178,7 @@ export function AppHome({
         </div>
         <div
           aria-hidden={activeTab !== "recommend"}
-          className={cn(activeTab === "recommend" ? "block min-h-full" : "hidden")}
+          className={cn(activeTab === "recommend" ? "block h-full" : "hidden")}
         >
           {recommendationProfileReady ? (
             <MeetingRecommendation
