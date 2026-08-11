@@ -1532,6 +1532,11 @@ function MeetingDateApplicationFlow({
           deposit_amount: 0,
           payment_option: "one_month_membership",
         });
+        trackEvent("invitation_yes", {
+          ticket_instance_id: ticket?.id,
+          meeting_date: ticket?.date ?? targetDates[0],
+          payment_option: "one_month_membership",
+        });
         trackEvent("membership_purchase_click", {
           plan: "one_month",
           months: 1,
@@ -1647,6 +1652,11 @@ function MeetingDateApplicationFlow({
         application_type: "meeting_date",
         date_count: targetDates.length,
         deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      });
+      trackEvent("invitation_yes", {
+        ticket_instance_id: ticket?.id,
+        meeting_date: ticket?.date ?? targetDates[0],
+        payment_option: openStoreAfterSave ? "payment" : "deposit_message",
       });
       if (openStoreAfterSave) {
         if (!data.paymentIntentCreated) {

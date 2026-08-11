@@ -3,6 +3,7 @@
 import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { onboardingGuides } from "@/data/onboardingGuides";
+import { trackEvent } from "@/lib/analytics";
 import { createClient } from "@/lib/supabase/client";
 
 const introVideoCookie = "intro_video_seen_v1";
@@ -70,7 +71,9 @@ export function FiftyQLandingClient({
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const otpInputRef = useRef<HTMLInputElement>(null);
+  const phoneInputViewTrackedRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [isIntroFinished, setIsIntroFinished] = useState(initialHasSeenIntro);
   const [isAuthVisible, setIsAuthVisible] = useState(initialHasSeenIntro);
   const [isAuthContentVisible, setIsAuthContentVisible] = useState(initialHasSeenIntro);
@@ -96,6 +99,7 @@ export function FiftyQLandingClient({
 
   useEffect(() => {
     let mounted = true;
+    trackEvent("landing_view");
     const timer = window.setTimeout(() => {
       void createClient().auth.getUser().then(({ data }) => {
         if (!mounted) return;
@@ -104,9 +108,7 @@ export function FiftyQLandingClient({
           window.location.replace("/meetings?tab=recommend");
           return;
         }
-        void import("@/lib/analytics").then(({ trackEvent }) => {
-          trackEvent("landing_view");
-        });
+        setAuthChecked(true);
       });
     }, 500);
 
@@ -115,6 +117,25 @@ export function FiftyQLandingClient({
       window.clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !isAuthContentVisible ||
+      !authChecked ||
+      step !== "phone" ||
+      guidePage !== null ||
+      phoneInputViewTrackedRef.current
+    ) {
+      return;
+    }
+
+    phoneInputViewTrackedRef.current = true;
+    trackEvent("phone_input_view", {
+      intro_status: initialHasSeenIntro
+        ? "completed_previous_visit"
+        : "completed_this_visit",
+    });
+  }, [authChecked, guidePage, initialHasSeenIntro, isAuthContentVisible, step]);
 
   useEffect(() => {
     if (!isPromptTypingComplete || guidePage !== null) return;
@@ -126,6 +147,9 @@ export function FiftyQLandingClient({
 
   const finishIntro = () => {
     document.cookie = `${introVideoCookie}=1; Max-Age=${introVideoCookieMaxAge}; Path=/; SameSite=Lax`;
+    trackEvent("landing_video_complete", {
+      video_asset: "landing-intro-v1",
+    });
     setIsIntroFinished(true);
     setIsAuthVisible(true);
     window.setTimeout(() => setIsAuthContentVisible(true), 1450);
@@ -177,6 +201,10 @@ export function FiftyQLandingClient({
       | { nextPath?: string; loginType?: "new" | "existing" }
       | null;
     if (!response.ok || !body?.nextPath) throw new Error("profile-bootstrap-failed");
+
+    trackEvent("phone_verification_complete", {
+      login_type: body.loginType ?? "unknown",
+    });
 
     if (body.nextPath.startsWith("/onboarding/questions")) {
       setNextPath(body.nextPath);

@@ -20,12 +20,24 @@ type DailyMetric = {
   total_users: number;
   stages: Record<string, number>;
 };
+type QuestionDropoffMetric = {
+  step_key: string;
+  step_label: string;
+  flow_order: number;
+  category: string | null;
+  viewed_users: number;
+  answered_users: number;
+  dropoff_users: number;
+  answer_rate: number | null;
+  dropoff_rate: number | null;
+};
 type FunnelAggregate = {
   totalUsers: number;
   visitorUsers: number;
   reached: FunnelStageMetric[];
   finalStages: FunnelStageMetric[];
   daily: DailyMetric[];
+  questionDropoff: QuestionDropoffMetric[];
 };
 type FunnelResponse = FunnelAggregate & {
   basis: FunnelBasis;
@@ -39,18 +51,20 @@ type FunnelResponse = FunnelAggregate & {
 };
 
 const summaryStageKeys = [
-  "question_start",
-  "questions_complete",
-  "basic_info_complete",
+  "landing_video_complete",
+  "phone_verification_complete",
   "profile_complete",
+  "invitation_yes",
+  "payment_completed",
 ] as const;
 
 const trendSeries = [
-  { key: "landing", label: "방문", color: "#111111" },
-  { key: "question_start", label: "질문 시작", color: "#9b8f80" },
-  { key: "questions_complete", label: "질문 완료", color: "#7eb3c7" },
-  { key: "basic_info_complete", label: "기본정보 입력", color: "#d88a5b" },
-  { key: "profile_complete", label: "프로필 완성", color: "#5b7f65" },
+  { key: "landing", label: "랜딩", color: "#111111" },
+  { key: "landing_video_complete", label: "영상 완주", color: "#9b8f80" },
+  { key: "phone_verification_complete", label: "전화 인증", color: "#7eb3c7" },
+  { key: "profile_complete", label: "명단 등록", color: "#5b7f65" },
+  { key: "invitation_yes", label: "YES", color: "#d88a5b" },
+  { key: "payment_completed", label: "결제", color: "#76558f" },
 ] as const;
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -288,6 +302,60 @@ export function FunnelAdminPanel() {
             <p className="mt-1 text-[11px] font-semibold text-black/40">{basis === "acquisition" ? "같은 날 유입된 사용자들이 각 단계까지 도달한 흐름입니다." : "각 날짜에 실제 발생한 단계별 사용자 수입니다."}</p>
           </div>
           <DailyTrendChart rows={data?.daily ?? []} />
+        </section>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white">
+          <div className="border-b border-black/10 px-4 py-3">
+            <h3 className="text-sm font-bold">질문별 이탈</h3>
+            <p className="mt-1 text-[11px] font-semibold text-black/40">
+              프로필을 완성하지 않은 사용자가 마지막으로 본 질문을 이탈 지점으로 집계합니다.
+            </p>
+          </div>
+          <div className="max-h-[520px] overflow-auto">
+            <table className="min-w-[820px] w-full text-left text-sm">
+              <thead className="sticky top-0 bg-[#f8f8f6] text-xs font-bold text-black/45">
+                <tr>
+                  <th className="px-4 py-3">순서</th>
+                  <th className="px-4 py-3">질문</th>
+                  <th className="px-4 py-3">노출</th>
+                  <th className="px-4 py-3">응답</th>
+                  <th className="px-4 py-3">응답률</th>
+                  <th className="px-4 py-3">이탈</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.questionDropoff ?? []).map((step) => (
+                  <tr key={step.step_key} className="border-b border-black/5">
+                    <td className="px-4 py-3 font-black tabular-nums text-black/45">
+                      {step.flow_order}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-bold">{step.step_label}</p>
+                      {step.category && (
+                        <p className="mt-0.5 text-[10px] font-semibold text-black/35">
+                          {step.category}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-semibold">{step.viewed_users.toLocaleString()}명</td>
+                    <td className="px-4 py-3 font-semibold">{step.answered_users.toLocaleString()}명</td>
+                    <td className="px-4 py-3 font-black">{formatRate(step.answer_rate)}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-black text-red-500">{step.dropoff_users.toLocaleString()}명</p>
+                      <p className="text-[10px] font-semibold text-black/35">{formatRate(step.dropoff_rate)}</p>
+                    </td>
+                  </tr>
+                ))}
+                {(data?.questionDropoff?.length ?? 0) === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-xs font-semibold text-black/35">
+                      새 추적 이벤트가 쌓이면 질문별 이탈이 표시됩니다.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-white">

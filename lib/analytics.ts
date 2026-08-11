@@ -17,13 +17,20 @@ const supabaseEventNameAliases: Record<string, string> = {
   profile_intro_complete: "profile_generated",
 };
 const clarityUpgradeEvents = new Set([
+  "landing_video_complete",
+  "phone_verification_complete",
   "questions_complete",
   "basic_info_complete",
   "profile_complete",
   "profile_intro_complete",
   "application_created",
+  "invitation_yes",
+  "payment_completed",
 ]);
 const clarityFunnelStatuses: Record<string, string> = {
+  landing_video_complete: "landing_video_completed",
+  phone_input_view: "phone_input_viewed",
+  phone_verification_complete: "phone_verified",
   question_start: "question_started",
   questions_complete: "questions_completed",
   basic_info_start: "basic_info_started",
@@ -32,6 +39,8 @@ const clarityFunnelStatuses: Record<string, string> = {
   profile_intro_complete: "profile_generated",
   recommendation_view: "recommendation_viewed",
   application_created: "application_created",
+  invitation_yes: "invitation_yes",
+  payment_completed: "payment_completed",
 };
 
 declare global {

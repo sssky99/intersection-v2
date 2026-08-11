@@ -730,6 +730,7 @@ export function QuestionFlow({
   const savingRef = useRef(false);
   const completionSubmittedRef = useRef(false);
   const trackedMilestonesRef = useRef<Set<string>>(new Set());
+  const trackedQuestionViewsRef = useRef<Set<string>>(new Set());
   const questionStartTrackedRef = useRef(false);
   const question = questions[questionIndex];
   const isBirthDate = isBirthDateQuestion(question);
@@ -814,25 +815,78 @@ export function QuestionFlow({
   }, [isGuest, isPreview, userId]);
 
   useEffect(() => {
-    if (
-      collectingName ||
-      collectingGender ||
-      isPreview ||
-      isRegeneration ||
-      questionStartTrackedRef.current
-    ) return;
+    if (isPreview || isRegeneration || questionStartTrackedRef.current) return;
 
     questionStartTrackedRef.current = true;
     trackEvent("question_start", {
-      question_count: questions.length + photoStepCount,
+      question_count: totalFlowSteps,
+    });
+  }, [
+    isPreview,
+    isRegeneration,
+    totalFlowSteps,
+  ]);
+
+  useEffect(() => {
+    if (isPreview || isRegeneration) return;
+
+    const trackView = (
+      key: string,
+      metadata: Record<string, string | number | boolean>,
+    ) => {
+      if (trackedQuestionViewsRef.current.has(key)) return;
+      trackedQuestionViewsRef.current.add(key);
+      trackEvent("question_view", metadata);
+    };
+
+    if (collectingName) {
+      trackView("name", {
+        question_key: "name",
+        flow_order: 1,
+        total_flow_steps: totalFlowSteps,
+      });
+      return;
+    }
+
+    if (collectingGender) {
+      trackView("gender", {
+        question_key: "gender",
+        flow_order: 2,
+        total_flow_steps: totalFlowSteps,
+      });
+      return;
+    }
+
+    if (collectingPhoto) {
+      if (trackedQuestionViewsRef.current.has("photo")) return;
+      trackedQuestionViewsRef.current.add("photo");
+      const photoMetadata = {
+        question_key: "photo",
+        flow_order: totalFlowSteps,
+        total_flow_steps: totalFlowSteps,
+      };
+      trackEvent("question_view", photoMetadata);
+      trackEvent("profile_photo_view", photoMetadata);
+      return;
+    }
+
+    trackView(`question:${question.order ?? question.id}`, {
+      question_order: question.order ?? question.id,
+      question_type: question.type,
+      category: question.category,
+      flow_order: identityStepCount + questionIndex + 1,
+      total_flow_steps: totalFlowSteps,
     });
   }, [
     collectingGender,
     collectingName,
+    collectingPhoto,
+    identityStepCount,
     isPreview,
     isRegeneration,
-    photoStepCount,
-    questions.length,
+    question,
+    questionIndex,
+    totalFlowSteps,
   ]);
 
   const trackQuestionAnswered = (targetQuestion: ProfileQuestion) => {
@@ -842,6 +896,8 @@ export function QuestionFlow({
       question_order: targetQuestion.order ?? targetQuestion.id,
       question_type: targetQuestion.type,
       category: targetQuestion.category,
+      flow_order: identityStepCount + questionIndex + 1,
+      total_flow_steps: totalFlowSteps,
     });
   };
 
@@ -1002,7 +1058,11 @@ export function QuestionFlow({
       });
       if (completionRequestMode === "preferences-v2") {
         trackEvent("basic_info_complete", { source: "questions" });
-        trackEvent("profile_complete", { source: "questions" });
+        trackEvent("profile_complete", {
+          source: "questions",
+          profile_archetype_id: responseBody?.profileArchetypeId ?? "unknown",
+          photo_submitted: Boolean(photoUrl),
+        });
       }
     }
 
@@ -1249,6 +1309,11 @@ export function QuestionFlow({
         body: JSON.stringify({ name: normalizedName }),
       });
       if (!response.ok) throw new Error("Profile name save failed.");
+      trackEvent("question_answered", {
+        question_key: "name",
+        flow_order: 1,
+        total_flow_steps: totalFlowSteps,
+      });
       setName(normalizedName);
       setCollectingName(false);
     } catch (nameError) {
@@ -1276,6 +1341,11 @@ export function QuestionFlow({
         body: JSON.stringify({ gender }),
       });
       if (!response.ok) throw new Error("Profile gender save failed.");
+      trackEvent("question_answered", {
+        question_key: "gender",
+        flow_order: 2,
+        total_flow_steps: totalFlowSteps,
+      });
       setCollectingGender(false);
     } catch (genderError) {
       console.error("Failed to save profile gender:", genderError);
@@ -1299,6 +1369,15 @@ export function QuestionFlow({
       if (profileError) throw new Error(profileError.message);
       setPhotoUrl(nextPhotoUrl);
       onPhotoChanged?.(nextPhotoUrl);
+      trackEvent("profile_photo_submitted", {
+        flow_order: totalFlowSteps,
+        total_flow_steps: totalFlowSteps,
+      });
+      trackEvent("question_answered", {
+        question_key: "photo",
+        flow_order: totalFlowSteps,
+        total_flow_steps: totalFlowSteps,
+      });
     } catch (photoError) {
       console.error("Failed to upload final profile photo:", photoError);
       setError("사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.");

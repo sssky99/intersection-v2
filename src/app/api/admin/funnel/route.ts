@@ -37,60 +37,56 @@ type UserProgress = {
   furthestStageKey: string;
   furthestStageOrder: number;
 };
+type QuestionStepAccumulator = {
+  stepKey: string;
+  stepLabel: string;
+  flowOrder: number;
+  category: string | null;
+  viewedUsers: Set<string>;
+  answeredUsers: Set<string>;
+  dropoffUsers: Set<string>;
+};
 
 const funnelStages: FunnelStage[] = [
   { key: "landing", label: "랜딩 방문", eventNames: ["landing_view"] },
+  {
+    key: "landing_video_complete",
+    label: "랜딩 영상 완주",
+    eventNames: ["landing_video_complete"],
+  },
+  {
+    key: "phone_input_view",
+    label: "전화번호 입력 화면 도달",
+    eventNames: ["phone_input_view"],
+  },
+  {
+    key: "phone_verification_complete",
+    label: "전화번호 인증 완료",
+    eventNames: ["phone_verification_complete"],
+  },
   { key: "question_start", label: "질문 시작", eventNames: ["question_start"] },
-  { key: "questions_complete", label: "질문 완료", eventNames: ["questions_complete"] },
-  { key: "basic_info_name", label: "이름 입력", eventNames: ["basic_info_name_view"] },
-  { key: "basic_info_phone", label: "전화번호 입력", eventNames: ["basic_info_phone_view"] },
-  { key: "basic_info_gender", label: "성별 선택", eventNames: ["basic_info_gender_view"] },
-  { key: "basic_info_birth_year", label: "출생연도 선택", eventNames: ["basic_info_birth_year_view"] },
-  { key: "basic_info_mbti", label: "MBTI 선택", eventNames: ["basic_info_mbti_view"] },
-  { key: "basic_info_photo", label: "사진 등록", eventNames: ["basic_info_photo_view"] },
-  { key: "basic_info_complete", label: "기본정보 완료", eventNames: ["basic_info_complete"] },
-  { key: "kakao_login_click", label: "카카오 로그인 클릭", eventNames: ["kakao_login_click"] },
-  { key: "kakao_auth_return", label: "카카오 인증 복귀", eventNames: ["kakao_auth_return"] },
+  {
+    key: "profile_photo_view",
+    label: "사진 질문 도달",
+    eventNames: ["profile_photo_view"],
+  },
+  {
+    key: "profile_photo_submitted",
+    label: "사진 제출",
+    eventNames: ["profile_photo_submitted"],
+  },
   {
     key: "profile_complete",
-    label: "프로필 완성",
+    label: "명단 등록·성향 배정",
     eventNames: ["profile_complete"],
-    previousKey: "basic_info_complete",
+    previousKey: "profile_photo_submitted",
   },
-  {
-    key: "conversation_result_view",
-    label: "대화 타입 결과 확인",
-    eventNames: ["conversation_result_view", "profile_generated"],
-  },
-  { key: "recommendation_view", label: "추천 보기", eventNames: ["recommendation_view"] },
-  {
-    key: "application_intro_continue_click",
-    label: "신청 안내 통과",
-    eventNames: ["application_intro_continue_click"],
-  },
-  {
-    key: "application_date_selected",
-    label: "참여 날짜 선택",
-    eventNames: ["application_date_selected"],
-  },
-  { key: "application_submit_click", label: "신청 클릭", eventNames: ["application_submit_click"] },
-  {
-    key: "application_created",
-    label: "신청 생성",
-    eventNames: ["application_created"],
-    previousKey: "application_submit_click",
-  },
-  {
-    key: "payment_page_open",
-    label: "그로블 결제창 이동",
-    eventNames: ["payment_page_open"],
-    previousKey: "application_created",
-  },
+  { key: "invitation_yes", label: "초대 YES", eventNames: ["invitation_yes"] },
   {
     key: "payment_completed",
     label: "결제 완료",
     eventNames: ["payment_completed"],
-    previousKey: "payment_page_open",
+    previousKey: "invitation_yes",
   },
 ];
 
@@ -191,6 +187,35 @@ function metadataText(metadata: Record<string, unknown> | null, key: string) {
   return typeof value === "string" ? value.toLowerCase() : "";
 }
 
+function metadataNumber(metadata: Record<string, unknown> | null, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function questionStep(row: UserEventRow) {
+  if (row.event_name !== "question_view" && row.event_name !== "question_answered") {
+    return null;
+  }
+
+  const questionKey = metadataText(row.metadata, "question_key");
+  const questionOrder = metadataNumber(row.metadata, "question_order");
+  const flowOrder = metadataNumber(row.metadata, "flow_order");
+  const stepKey = questionKey || (questionOrder != null ? `question:${questionOrder}` : "");
+  if (!stepKey || flowOrder == null) return null;
+
+  const labels: Record<string, string> = {
+    name: "이름 입력",
+    gender: "성별 선택",
+    photo: "사진 제출",
+  };
+  return {
+    stepKey,
+    stepLabel: labels[questionKey] ?? `질문 ${questionOrder ?? flowOrder}`,
+    flowOrder,
+    category: metadataText(row.metadata, "category") || null,
+  };
+}
+
 function acquisitionSource(row: UserEventRow): Exclude<FunnelSource, "all"> {
   const source = metadataText(row.metadata, "utm_source");
   const medium = metadataText(row.metadata, "utm_medium");
@@ -215,7 +240,13 @@ function kstDate(value: string | Date) {
 
 async function fetchFunnelRows(start: string, end: string) {
   const supabase = createAdminClient();
-  const eventNames = Array.from(new Set(funnelStages.flatMap((stage) => stage.eventNames)));
+  const eventNames = Array.from(
+    new Set([
+      ...funnelStages.flatMap((stage) => stage.eventNames),
+      "question_view",
+      "question_answered",
+    ]),
+  );
   const rows: UserEventRow[] = [];
 
   for (let from = 0; from < maxFunnelRows; from += pageSize) {
@@ -323,6 +354,7 @@ function aggregateFunnel(
 
   const progress = new Map<string, UserProgress>();
   const dailyStageUsers = new Map<string, Map<string, Set<string>>>();
+  const questionSteps = new Map<string, QuestionStepAccumulator>();
 
   for (const [key, userRows] of grouped) {
     const attributionRow = userRows.find((row) => row.event_name === "landing_view") ?? userRows[0];
@@ -343,6 +375,45 @@ function aggregateFunnel(
           : []
         : userRows.filter(inWindow);
     if (selectedRows.length === 0) continue;
+
+    const viewedQuestionSteps = selectedRows
+      .filter((row) => row.event_name === "question_view")
+      .map((row) => ({ row, step: questionStep(row) }))
+      .filter(
+        (entry): entry is { row: UserEventRow; step: NonNullable<ReturnType<typeof questionStep>> } =>
+          Boolean(entry.step),
+      );
+    const answeredQuestionSteps = selectedRows
+      .filter((row) => row.event_name === "question_answered")
+      .map((row) => questionStep(row))
+      .filter((step): step is NonNullable<ReturnType<typeof questionStep>> => Boolean(step));
+
+    const accumulatorFor = (step: NonNullable<ReturnType<typeof questionStep>>) => {
+      const existing = questionSteps.get(step.stepKey);
+      if (existing) return existing;
+      const next: QuestionStepAccumulator = {
+        ...step,
+        viewedUsers: new Set<string>(),
+        answeredUsers: new Set<string>(),
+        dropoffUsers: new Set<string>(),
+      };
+      questionSteps.set(step.stepKey, next);
+      return next;
+    };
+
+    viewedQuestionSteps.forEach(({ step }) => accumulatorFor(step).viewedUsers.add(key));
+    answeredQuestionSteps.forEach((step) => accumulatorFor(step).answeredUsers.add(key));
+
+    const completedProfile = selectedRows.some(
+      (row) => row.event_name === "profile_complete",
+    );
+    if (!completedProfile && viewedQuestionSteps.length > 0) {
+      const lastViewed = [...viewedQuestionSteps].sort((left, right) => {
+        const orderDifference = left.step.flowOrder - right.step.flowOrder;
+        return orderDifference || left.row.created_at.localeCompare(right.row.created_at);
+      }).at(-1);
+      if (lastViewed) accumulatorFor(lastViewed.step).dropoffUsers.add(key);
+    }
 
     let furthestStageKey = "landing";
     let furthestStageOrder = 0;
@@ -409,7 +480,21 @@ function aggregateFunnel(
       stages: Object.fromEntries(funnelStages.map((stage) => [stage.key, stageUsers.get(stage.key)?.size ?? 0])),
     }));
 
-  return { totalUsers, visitorUsers, reached, finalStages, daily };
+  const questionDropoff = Array.from(questionSteps.values())
+    .sort((left, right) => left.flowOrder - right.flowOrder)
+    .map((step) => ({
+      step_key: step.stepKey,
+      step_label: step.stepLabel,
+      flow_order: step.flowOrder,
+      category: step.category,
+      viewed_users: step.viewedUsers.size,
+      answered_users: step.answeredUsers.size,
+      dropoff_users: step.dropoffUsers.size,
+      answer_rate: percent(step.answeredUsers.size, step.viewedUsers.size),
+      dropoff_rate: percent(step.dropoffUsers.size, step.viewedUsers.size),
+    }));
+
+  return { totalUsers, visitorUsers, reached, finalStages, daily, questionDropoff };
 }
 
 function emptyResponse(range: WindowRange, basis: FunnelBasis, source: FunnelSource, tableMissing = false) {
