@@ -14,7 +14,6 @@ import {
   Loader2,
   MapPin,
   MessageCircle,
-  RotateCcw,
   X,
   PenLine,
   Sparkles,
@@ -588,6 +587,8 @@ export function AppHome({
     id: number;
     ticketId: string;
   } | null>(null);
+  const [replayedDeclinedTicket, setReplayedDeclinedTicket] =
+    useState<GatheringTicket | null>(null);
   const recommendTabTrackedRef = useRef(false);
   const profileTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
@@ -1160,7 +1161,7 @@ export function AppHome({
       >
         <div
           aria-hidden={activeTab !== "browse"}
-          className={cn(activeTab === "browse" ? "block h-full" : "hidden")}
+          className={cn(activeTab === "browse" ? "block min-h-full" : "hidden")}
         >
           <TicketListTab
             tickets={waitlistedTickets}
@@ -1199,6 +1200,7 @@ export function AppHome({
               onFocusModeChange={setRecommendationFocusMode}
               onAvailableTicketsChange={setAvailableMeetingTickets}
               onTicketInteractionChange={applyTicketInteraction}
+              onOpenDeclinedTicket={setReplayedDeclinedTicket}
               embedded
               active={activeTab === "recommend"}
               membershipStatus={recommendationMembershipStatus}
@@ -1388,7 +1390,27 @@ export function AppHome({
         </div>
       </div>
 
-      {!chatRoomOpen && !recommendationFocusMode && !ticketTabFocusMode && (
+      {replayedDeclinedTicket && (
+        <div className="absolute inset-0 z-[60] overflow-y-auto bg-[#f7f4ed] scrollbar-none">
+          <AssignedApplicationTicketDetailView
+            ticket={replayedDeclinedTicket}
+            onClose={() => {
+              setReplayedDeclinedTicket(null);
+              switchTab("browse");
+            }}
+            onReapply={() => {
+              const ticket = replayedDeclinedTicket;
+              setReplayedDeclinedTicket(null);
+              requestDeclinedTicketApplication(ticket);
+            }}
+          />
+        </div>
+      )}
+
+      {!chatRoomOpen &&
+        !recommendationFocusMode &&
+        !ticketTabFocusMode &&
+        !replayedDeclinedTicket && (
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
           <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
@@ -1671,6 +1693,7 @@ function TicketListTab({
     selectedApplicationTicketDeclined,
     selectedApplicationTicketOpen,
   ]);
+
   const availableTicketById = useMemo(
     () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
     [availableTickets],
@@ -1737,7 +1760,7 @@ function TicketListTab({
     tickets,
   ]);
   const itemCount = ticketItems.length;
-  const carouselItemCount = itemCount + 1;
+  const carouselItemCount = itemCount;
 
   useEffect(() => {
     setForceReveal(ticketRevealPreviewEnabled());
@@ -2127,39 +2150,33 @@ function TicketListTab({
             aria-busy={loadingMore}
             exit={{ opacity: 0, y: -8 }}
             transition={ticketFadeTransition}
-            className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
+            className="flex min-h-full flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
           >
-            <header className="shrink-0 px-5 pr-28">
-              <p className="text-[13px] font-bold uppercase italic tracking-wide text-black">
-                tickets {Math.max(totalTicketCount + mysteryApplications.length, itemCount)}
-              </p>
-            </header>
-
             {itemCount === 0 ? (
-              <div className="mx-5 mt-16 rounded-[28px] border border-black/10 bg-[#faf8f2] p-6 text-center shadow-[0_16px_44px_rgba(0,0,0,0.04)]">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
-                  <CalendarDays size={20} aria-hidden />
+              <div className="flex min-h-0 flex-1 items-start justify-center px-5 pb-[calc(72px+env(safe-area-inset-bottom))] pt-5">
+                <div className="relative flex aspect-[1/1.618] w-full max-w-[340px] flex-col justify-center bg-[#f8f4eb] px-7 py-10 text-center shadow-[0_24px_60px_rgba(39,34,24,0.09)] before:pointer-events-none before:absolute before:inset-0 before:border before:border-black/[0.11] after:pointer-events-none after:absolute after:inset-2 after:border after:border-black/[0.055]">
+                  <div className="relative">
+                    <TicketIcon
+                      size={22}
+                      strokeWidth={1.35}
+                      className="mx-auto text-black/38"
+                      aria-hidden
+                    />
+                    <h2 className="mt-6 text-[22px] font-bold leading-[1.34] tracking-[-0.045em] text-black">
+                      신청 탭에서 나에게 온
+                      <br />
+                      초대장을 확인해보세요.
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={onGoRecommend}
+                      className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-black/[0.88] px-5 text-[13px] font-bold text-white transition hover:bg-black active:scale-[0.99]"
+                    >
+                      이번 주 초대 보러 가기
+                      <ChevronRight size={16} aria-hidden />
+                    </button>
+                  </div>
                 </div>
-                <h2 className="mt-5 text-lg font-bold text-black">
-                  아직 보관된 티켓이 없어요
-                </h2>
-                <p className="mt-2 text-xs leading-5 text-black/45">
-                  신청 탭에서 참여 가능한 날짜를 선택해보세요.
-                </p>
-                <button
-                  type="button"
-                  onClick={onGoRecommend}
-                  className="mt-6 h-12 w-full rounded-full bg-black text-sm font-semibold text-white"
-                >
-                  날짜 신청하기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void openDeclinedReview()}
-                  className="mt-3 h-11 w-full rounded-full border border-black/10 bg-transparent text-xs font-bold text-black/45"
-                >
-                  거절한 티켓 다시 보기
-                </button>
               </div>
             ) : (
               <div className="flex min-h-0 flex-1 -translate-y-3 flex-col justify-center pb-3 pt-4">
@@ -2185,7 +2202,7 @@ function TicketListTab({
                       key={item.id}
                       data-ticket-slide
                       data-ticket-slide-index={index}
-                      className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
+                      className="w-[min(78vw,340px)] shrink-0 snap-center snap-always"
                     >
                       {item.kind === "stored-ticket" ? (
                         <StoredTicketCard
@@ -2224,23 +2241,6 @@ function TicketListTab({
                       )}
                     </div>
                   ))}
-                  <div
-                    data-ticket-slide
-                    data-ticket-slide-index={ticketItems.length}
-                    className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
-                  >
-                    <div className="grid aspect-[1/1.62] w-full place-items-center rounded-[28px] border border-black/[0.08] bg-[#faf8f2]">
-                      <button
-                        type="button"
-                        data-drag-scroll-ignore
-                        onClick={() => void openDeclinedReview()}
-                        className="flex items-center gap-2.5 rounded-full px-5 py-3 text-[14px] font-extrabold tracking-[-0.025em] text-black/52 transition hover:bg-black/[0.035] hover:text-black/75"
-                      >
-                        <RotateCcw size={20} strokeWidth={1.5} aria-hidden />
-                        거절한 티켓 다시 보기
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
                 {carouselItemCount > 1 && (
@@ -2549,7 +2549,7 @@ function DeclinedTicketReview({
                 key={ticket.id}
                 data-declined-ticket-slide
                 data-declined-ticket-slide-index={index}
-                className="w-[min(78vw,330px,calc(61.73dvh-121px))] shrink-0 snap-center snap-always"
+                className="w-[min(78vw,340px)] shrink-0 snap-center snap-always"
               >
                 <DeclinedTicketCard
                   ticket={ticket}
@@ -2579,6 +2579,11 @@ function DeclinedTicketReview({
   );
 }
 
+const ticketPaperFrameClass =
+  "relative aspect-[1/1.618] w-full bg-[#f8f4eb] p-[10px] shadow-[0_24px_60px_rgba(39,34,24,0.09)] before:pointer-events-none before:absolute before:inset-0 before:z-20 before:border before:border-black/[0.11] after:pointer-events-none after:absolute after:inset-2 after:z-20 after:border after:border-black/[0.055]";
+
+const ticketPaperImageClass = "!h-full !aspect-auto !rounded-none shadow-none";
+
 function DeclinedTicketCard({
   ticket,
   onOpen,
@@ -2599,7 +2604,10 @@ function DeclinedTicketCard({
         }
       }}
       whileTap={{ scale: 0.99 }}
-      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+      className={cn(
+        ticketPaperFrameClass,
+        "outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4",
+      )}
     >
       <IntersectionTicketCard
         title={ticket.title}
@@ -2612,7 +2620,7 @@ function DeclinedTicketCard({
         badgeLabel="거절한 티켓"
         badgeClassName="border-white/25 bg-white/[0.18] text-white"
         remainingSeatCount={ticket.remainingSeatCount}
-        className="shadow-none"
+        className={cn(ticketPaperImageClass, "grayscale")}
       />
     </motion.div>
   );
@@ -2640,7 +2648,10 @@ function StoredTicketCard({
         }
       }}
       whileTap={{ scale: 0.99 }}
-      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4"
+      className={cn(
+        ticketPaperFrameClass,
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4",
+      )}
     >
       <IntersectionTicketCard
         title={ticket.title}
@@ -2653,7 +2664,7 @@ function StoredTicketCard({
         badgeLabel={userTicket.statusLabel}
         badgeClassName={statusBadgeClass(userTicket.status)}
         remainingSeatCount={ticket.remainingSeatCount}
-        className="shadow-none"
+        className={ticketPaperImageClass}
       />
     </motion.div>
   );
@@ -2704,7 +2715,7 @@ function AssignedApplicationTicketDetailView({
         티켓함으로
       </button>
 
-      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-[#faf8f2] shadow-[0_18px_44px_rgba(24,24,20,0.06)]">
+      <div className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]">
         <TicketDetailHero
           ticket={ticket}
           backgroundImageUrls={ticket.imageUrl ? undefined : []}
@@ -2712,7 +2723,7 @@ function AssignedApplicationTicketDetailView({
         <TicketDetailContent
           ticket={ticket}
           sections={["summary", "course", "vibe", "activities", "notice"]}
-          className="px-4 pb-5"
+          className="px-5 pb-5"
         />
       </div>
       {responseError && (
@@ -2782,7 +2793,10 @@ function AssignedApplicationTicketCard({
       animate={{ opacity: 1, scale: 1 }}
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.28, ease: "easeOut" }}
-      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+      className={cn(
+        ticketPaperFrameClass,
+        "outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4",
+      )}
     >
       <IntersectionTicketCard
         title={ticket.title}
@@ -2795,7 +2809,7 @@ function AssignedApplicationTicketCard({
         badgeLabel={meetingDateApplicationStatusLabels[application.status]}
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
-        className="shadow-none"
+        className={ticketPaperImageClass}
       />
     </motion.div>
   );
@@ -2822,7 +2836,10 @@ function InteractionTicketCard({
         }
       }}
       whileTap={{ scale: 0.99 }}
-      className="relative rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
+      className={cn(
+        ticketPaperFrameClass,
+        "outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4",
+      )}
     >
       <IntersectionTicketCard
         title={ticket.title}
@@ -2839,11 +2856,11 @@ function InteractionTicketCard({
             : status === "payment_pending"
               ? "border-amber-200 bg-amber-50 text-amber-700 shadow-none"
               : status === "no"
-                ? "border-black/10 bg-black/[0.06] text-black/55 shadow-none"
+                ? "border-white/30 bg-black/55 text-white shadow-none"
                 : "border-white/25 bg-white/[0.18] text-white"
         }
         remainingSeatCount={ticket.remainingSeatCount}
-        className="shadow-none"
+        className={cn(ticketPaperImageClass, status === "no" && "grayscale")}
       />
     </motion.div>
   );
@@ -2958,7 +2975,7 @@ function MysteryApplicationTicketCard({
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.28, ease: "easeOut" }}
       aria-label={`${meetingDateApplicationStatusLabels[application.status]} 미정 티켓`}
-      className="relative"
+      className={ticketPaperFrameClass}
     >
       <IntersectionTicketCard
         title={<MysteryConfirmationCountdown application={application} />}
@@ -2967,7 +2984,7 @@ function MysteryApplicationTicketCard({
         location={application.region}
         badgeLabel={meetingDateApplicationStatusLabels[application.status]}
         badgeClassName={dateApplicationBadgeClass(application)}
-        className="shadow-none"
+        className={ticketPaperImageClass}
       />
       <div
         aria-hidden
@@ -3095,7 +3112,7 @@ export function StoredTicketDetailView({
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.04, duration: 0.22, ease: "easeOut" }}
-        className="overflow-hidden rounded-[28px] border border-black/12 bg-[#faf8f2] shadow-[0_18px_45px_rgba(0,0,0,0.08)]"
+        className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]"
       >
         <TicketDetailHero
           ticket={ticket}
@@ -3109,7 +3126,7 @@ export function StoredTicketDetailView({
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.08, duration: 0.22, ease: "easeOut" }}
-          className="bg-[#faf8f2] px-5 pb-5 pt-1"
+          className="bg-[#f8f4eb] px-5 pb-5 pt-1"
         >
           <TicketStatusOverview
             userTicket={userTicket}

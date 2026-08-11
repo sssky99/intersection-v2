@@ -54,12 +54,12 @@ export default function CoursePreviewPage() {
         <p className="mb-4 text-center text-[11px] font-black tracking-[0.12em] text-black/38">
           여정 미리보기
         </p>
-        <div className="overflow-hidden rounded-[28px] border border-black/10 bg-[#faf8f2] shadow-[0_18px_44px_rgba(24,24,20,0.06)]">
+        <div className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]">
           <TicketDetailHero ticket={coursePreviewTicket} backgroundImageUrls={[]} />
           <TicketDetailContent
             ticket={coursePreviewTicket}
             sections={["summary", "course", "vibe", "activities", "notice"]}
-            className="px-4 pb-2"
+            className="px-5 pb-5"
           />
         </div>
       </main>

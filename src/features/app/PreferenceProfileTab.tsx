@@ -931,7 +931,7 @@ export function PreferenceProfileTab({
                     }
                     window.location.assign("/onboarding/profile?from=profile");
                   }}
-                  className="mt-7 h-11 rounded-full border border-white/25 bg-white/92 px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.22)] transition active:scale-[0.98]"
+                  className="mt-7 h-11 rounded-full border border-white/25 bg-[#faf8f2] px-6 text-[12px] font-black text-black shadow-[0_10px_28px_rgba(0,0,0,0.22)] transition active:scale-[0.98]"
                 >
                   기본정보 입력하기
                 </button>

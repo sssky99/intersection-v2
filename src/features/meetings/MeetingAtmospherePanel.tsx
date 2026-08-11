@@ -8,97 +8,19 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
-type MoodVisual = {
-  primary: string;
-  soft: string;
-  softFill: string;
-  stroke: string;
-  shadow: string;
-};
-
-type GenderGaugeSegment = {
-  mood: MeetingAtmosphereGenderMood;
-  label: string;
-  startAngle: number;
-  endAngle: number;
-};
-
-const moodVisuals: Record<MeetingAtmosphereGenderMood, MoodVisual> = {
-  male: {
-    primary: "#4f8dd8",
-    soft: "rgba(79, 141, 216, 0.13)",
-    softFill: "rgba(79, 141, 216, 0.24)",
-    stroke: "rgba(79, 141, 216, 0.7)",
-    shadow: "rgba(79, 141, 216, 0.22)",
-  },
-  female: {
-    primary: "#e783ad",
-    soft: "rgba(231, 131, 173, 0.13)",
-    softFill: "rgba(231, 131, 173, 0.24)",
-    stroke: "rgba(231, 131, 173, 0.7)",
-    shadow: "rgba(231, 131, 173, 0.22)",
-  },
-  balanced: {
-    primary: "#99c765",
-    soft: "rgba(153, 199, 101, 0.14)",
-    softFill: "rgba(153, 199, 101, 0.24)",
-    stroke: "rgba(153, 199, 101, 0.75)",
-    shadow: "rgba(153, 199, 101, 0.22)",
-  },
-};
-
-const genderGaugeSegments: GenderGaugeSegment[] = [
-  { mood: "male", label: "남성 선호", startAngle: -90, endAngle: -18 },
-  { mood: "balanced", label: "모두 선호", startAngle: -18, endAngle: 18 },
-  { mood: "female", label: "여성 선호", startAngle: 18, endAngle: 90 },
-];
-
 const moodCopy: Record<MeetingAtmosphereGenderMood, string> = {
-  female: "현재 여성분들이 더 많은 관심을 보이고 있어요",
-  male: "남성 분들이 더 많은 관심을 보이고 있어요.",
-  balanced: "남녀 모두 고르게 관심을 보이고 있어요.",
+  female: "현재 여성분들이 더 많은 관심을 보이고 있어요.",
+  male: "현재 남성분들이 더 많은 관심을 보이고 있어요.",
+  balanced: "현재 남녀 모두 고르게 관심을 보이고 있어요.",
 };
 
-const gaugeCenterX = 120;
-const gaugeCenterY = 118;
-const gaugeOuterRadius = 104;
-const gaugeInnerRadius = 66;
-const gaugeGapDegrees = 2;
-
-const needleAngles: Record<MeetingAtmosphereGenderMood, number> = {
-  male: -44,
-  balanced: 0,
-  female: 44,
+const needlePosition: Record<MeetingAtmosphereGenderMood, string> = {
+  male: "19%",
+  balanced: "50%",
+  female: "81%",
 };
 
-function polarPoint(radius: number, angle: number) {
-  const radians = (angle * Math.PI) / 180;
-  return {
-    x: gaugeCenterX + radius * Math.sin(radians),
-    y: gaugeCenterY - radius * Math.cos(radians),
-  };
-}
-
-function arcSegmentPath(startAngle: number, endAngle: number) {
-  const adjustedStart = startAngle + gaugeGapDegrees / 2;
-  const adjustedEnd = endAngle - gaugeGapDegrees / 2;
-  const outerStart = polarPoint(gaugeOuterRadius, adjustedStart);
-  const outerEnd = polarPoint(gaugeOuterRadius, adjustedEnd);
-  const innerEnd = polarPoint(gaugeInnerRadius, adjustedEnd);
-  const innerStart = polarPoint(gaugeInnerRadius, adjustedStart);
-
-  return [
-    `M ${outerStart.x.toFixed(2)} ${outerStart.y.toFixed(2)}`,
-    `A ${gaugeOuterRadius} ${gaugeOuterRadius} 0 0 1 ${outerEnd.x.toFixed(2)} ${outerEnd.y.toFixed(2)}`,
-    `L ${innerEnd.x.toFixed(2)} ${innerEnd.y.toFixed(2)}`,
-    `A ${gaugeInnerRadius} ${gaugeInnerRadius} 0 0 0 ${innerStart.x.toFixed(2)} ${innerStart.y.toFixed(2)}`,
-    "Z",
-  ].join(" ");
-}
-
-function midpointAngle(segment: GenderGaugeSegment) {
-  return (segment.startAngle + segment.endAngle) / 2;
-}
+const seats = Array.from({ length: 6 }, (_, index) => index);
 
 export function MeetingAtmospherePanel({
   profile,
@@ -108,99 +30,82 @@ export function MeetingAtmospherePanel({
   className?: string;
 }) {
   const summary = meetingAtmosphereSummary(profile);
-  const visual = moodVisuals[summary.genderMood];
-  const activeSegment =
-    genderGaugeSegments.find((segment) => segment.mood === summary.genderMood) ??
-    genderGaugeSegments[1];
-  const needleAngle = needleAngles[activeSegment.mood];
 
   return (
-    <div className={cn("rounded-[28px] border border-black/8 bg-white p-4", className)}>
-      <div
-        className="rounded-[24px] border border-black/6 px-3 py-4 shadow-[0_12px_28px_rgba(0,0,0,0.035)]"
-        style={{
-          background: `linear-gradient(145deg, #ffffff 0%, #ffffff 52%, ${visual.soft} 100%)`,
-        }}
-      >
-        <div
-          className="flex flex-wrap items-center justify-start gap-x-3 gap-y-1 text-[10px] font-bold text-black/45"
-          aria-label="성별 관심도 색상 안내"
-        >
-          {genderGaugeSegments.map((item) => (
-            <span key={item.mood} className="inline-flex items-center gap-1">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ backgroundColor: moodVisuals[item.mood].primary }}
-                aria-hidden
-              />
-              {item.label}
-            </span>
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-[12px] border border-black/[0.07] bg-[#f1ebe0] px-5 pb-5 pt-5",
+        className,
+      )}
+    >
+      <div className="relative flex items-center gap-4 border-b border-black/[0.07] pb-5">
+        <div className="grid w-[74px] shrink-0 grid-cols-3 gap-1.5" aria-hidden>
+          {seats.map((seat) => (
+            <span
+              key={seat}
+              className={cn(
+                "h-[18px] w-[18px] rounded-full border border-black",
+                seat === 4 ? "bg-black" : "bg-[#e5dfd3]",
+              )}
+            />
           ))}
         </div>
-
-        <div className="mx-auto mt-2 w-full max-w-[268px]">
-          <svg
-            viewBox="0 0 240 132"
-            role="img"
-            aria-label={`성별 관심도. ${moodCopy[summary.genderMood]}`}
-            className="h-auto w-full overflow-visible"
-          >
-            <defs>
-              <filter id="meeting-atmosphere-needle-shadow">
-                <feDropShadow
-                  dx="0"
-                  dy="8"
-                  stdDeviation="5"
-                  floodColor={visual.shadow}
-                />
-              </filter>
-            </defs>
-
-            {genderGaugeSegments.map((segment) => {
-              const segmentVisual = moodVisuals[segment.mood];
-              const selected = segment.mood === summary.genderMood;
-
-              return (
-                <g key={segment.mood}>
-                  <path
-                    d={arcSegmentPath(segment.startAngle, segment.endAngle)}
-                    fill={segmentVisual.softFill}
-                    stroke={selected ? segmentVisual.stroke : "rgba(255,255,255,0.75)"}
-                    strokeWidth={selected ? 2.5 : 1}
-                  />
-                </g>
-              );
-            })}
-
-            <g
-              transform={`rotate(${needleAngle} ${gaugeCenterX} ${gaugeCenterY})`}
-              filter="url(#meeting-atmosphere-needle-shadow)"
-            >
-              <path
-                d={`M ${gaugeCenterX - 6} ${gaugeCenterY - 2} L ${gaugeCenterX} 34 L ${gaugeCenterX + 6} ${gaugeCenterY - 2} Z`}
-                fill={visual.primary}
-              />
-            </g>
-            <circle
-              cx={gaugeCenterX}
-              cy={gaugeCenterY}
-              r="19"
-              fill="white"
-              stroke="rgba(0,0,0,0.08)"
-              strokeWidth="1"
-            />
-            <circle cx={gaugeCenterX} cy={gaugeCenterY} r="7" fill={visual.primary} />
-          </svg>
+        <div className="min-w-0 flex-1">
+          <h3 className="break-keep text-[15px] font-black leading-[1.35] tracking-[-0.05em]">
+            어떤 사람들이 함께하나요?
+          </h3>
+          <p className="mt-2 break-keep text-[11px] font-semibold leading-[1.65] text-black/45">
+            제출한 답변을 운영자가 꼼꼼하게 확인하고 잘 어울릴 분들을 큐레이션해요.
+            <span className="mt-1 block">나와 결이 잘 맞는 4~6명이 함께합니다.</span>
+          </p>
         </div>
       </div>
 
-      <div className="mt-3 rounded-2xl bg-black/[0.025] px-4 py-3">
-        <p className="text-sm font-semibold leading-6 text-black/70">
-          성비는 최대한 비슷하게 조정돼요.
-        </p>
-        <p className="mt-1 text-sm font-semibold leading-6 text-black/70">
-          {moodCopy[summary.genderMood]}
-        </p>
+      <div
+        className="relative mt-4 flex items-center justify-between text-[9px] font-bold text-black/42"
+        aria-label="성별 관심도 색상 안내"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#91a6b5]" aria-hidden />
+          남성 선호
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-[#5f6952]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#a8b596]" aria-hidden />
+          모두 선호
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#bea0a9]" aria-hidden />
+          여성 선호
+        </span>
+      </div>
+
+      <div
+        className="relative mx-auto mb-5 mt-7 w-full"
+        role="img"
+        aria-label={moodCopy[summary.genderMood]}
+      >
+        <div className="relative flex h-[13px] overflow-hidden rounded-full border border-black/[0.045] bg-black/[0.035] p-[2px] shadow-[inset_0_1px_3px_rgba(23,23,19,0.08)]">
+          <span className="h-full w-[38%] rounded-l-full bg-[#91a6b5]" />
+          <span className="h-full w-[24%] bg-[#a8b596]" />
+          <span className="h-full w-[38%] rounded-r-full bg-[#bea0a9]" />
+        </div>
+        <span
+          className="absolute top-1/2 h-[27px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#171713] shadow-[0_3px_8px_rgba(23,23,19,0.2)] transition-[left] duration-700"
+          style={{ left: needlePosition[summary.genderMood] }}
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-[19px] flex justify-between px-0.5" aria-hidden>
+          {Array.from({ length: 9 }, (_, index) => (
+            <span
+              key={index}
+              className={cn("w-px bg-black/12", index === 4 ? "h-2" : "h-1")}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="relative border-t border-black/[0.07] pt-4 text-[11px] font-semibold leading-[1.65] text-black/55">
+        <p>성비는 최대한 비슷하게 조정돼요.</p>
+        <p className="mt-0.5">{moodCopy[summary.genderMood]}</p>
       </div>
     </div>
   );

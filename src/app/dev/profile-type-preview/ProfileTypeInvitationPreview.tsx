@@ -8,7 +8,7 @@ import { NaverMapPreview } from "@/components/NaverMapPreview";
 import { type ProfileArchetypeId } from "@/data/profileArchetypes";
 import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
 
-type PreviewScreen = "type" | "invitation" | "accepted" | "passed";
+type PreviewScreen = "type" | "invitation" | "passed";
 
 const seats = Array.from({ length: 6 }, (_, index) => index);
 
@@ -353,13 +353,7 @@ function pulseInvitation() {
   }
 }
 
-function InvitationResult({
-  passed,
-  onReset,
-}: {
-  passed: boolean;
-  onReset: () => void;
-}) {
+function InvitationPassResult({ onReset }: { onReset: () => void }) {
   return (
     <motion.section
       initial={{ opacity: 0 }}
@@ -371,14 +365,10 @@ function InvitationResult({
         SATURDAY INVITATION
       </p>
       <h1 className="mt-7 whitespace-pre-line text-[28px] font-black leading-[1.32] tracking-[-0.055em]">
-        {passed
-          ? "이번 주는\n천천히 지나갈게요."
-          : "이 초대를\n받아두었어요."}
+        {"이번 주는\n천천히 지나갈게요."}
       </h1>
       <p className="mt-5 whitespace-pre-line text-[14px] font-medium leading-6 text-white/58">
-        {passed
-          ? "다음 토요일,\n새로운 자리가 준비되면 다시 알려드릴게요."
-          : "함께할 자리가 완성되면\n다음 이야기를 알려드릴게요."}
+        {"다음 토요일,\n새로운 자리가 준비되면 다시 알려드릴게요."}
       </p>
       <button
         type="button"
@@ -391,13 +381,7 @@ function InvitationResult({
   );
 }
 
-function FirstInvitation({
-  onAccept,
-  onPass,
-}: {
-  onAccept: () => void;
-  onPass: () => void;
-}) {
+function FirstInvitation({ onPass }: { onPass: () => void }) {
   const invitationTitle = "이번 주 토요일\n나와 잘 어울리는 자리가 준비됐어요.";
   const [typedTitle, setTypedTitle] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -484,7 +468,7 @@ function FirstInvitation({
             </span>
           </div>
           <p className="absolute inset-x-5 bottom-5 whitespace-pre-line text-[22px] font-black leading-[1.27] tracking-[-0.055em] text-white [text-shadow:0_4px_18px_rgba(0,0,0,0.35)]">
-            {"디너 &\n한옥 수제 맥주"}
+            {"디너 & 수제맥주"}
           </p>
         </div>
 
@@ -522,7 +506,6 @@ function FirstInvitation({
         <motion.button
           type="button"
           whileTap={{ scale: 0.98 }}
-          onClick={onAccept}
           className="flex h-[56px] items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
         >
           YES
@@ -564,13 +547,11 @@ export function ProfileTypeInvitationPreview({
       ) : screen === "invitation" ? (
         <FirstInvitation
           key="invitation"
-          onAccept={() => setScreen("accepted")}
           onPass={() => setScreen("passed")}
         />
       ) : (
-        <InvitationResult
+        <InvitationPassResult
           key={screen}
-          passed={screen === "passed"}
           onReset={() => setScreen("invitation")}
         />
       )}

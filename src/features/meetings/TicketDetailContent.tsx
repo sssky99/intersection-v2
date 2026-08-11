@@ -3,7 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Clock3, LockKeyhole, MapPin, Navigation, UserRound, X } from "lucide-react";
-import { formatTicketDateLabel } from "@/components/IntersectionTicketCard";
+import {
+  formatTicketDateLabel,
+  formatTicketTimeLabel,
+} from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
 import {
   SelectionColumn,
@@ -173,6 +176,12 @@ export function TicketDetailContent({
   const noticeItems = [...defaultNotices, ...customNotices];
   const visibleSections = new Set(sections);
   const courseSteps = cleanCourseSteps(ticket.courseSteps);
+  const journeyDateTimeLabel = [
+    formatTicketDateLabel(ticket.date),
+    formatTicketTimeLabel(ticket.time),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const detailSummary = ticket.detailSummary?.trim();
   const recommendationReasons = cleanList(ticket.recommendationReasons);
   const hasRecommendationAudience = Boolean(
@@ -233,6 +242,7 @@ export function TicketDetailContent({
       {hasCourse && (
         <TicketDetailSection
           title="여정"
+          eyebrow={journeyDateTimeLabel}
           startWithBorder={startWithBorder}
           hideTopBorder={firstSectionAfterSummary === "course"}
         >
@@ -324,17 +334,7 @@ function TicketCoursePanel({ ticket, steps }: {
 
   return (
     <div className="relative">
-      <div className="relative pl-5 before:absolute before:bottom-8 before:left-[5px] before:top-[7px] before:block before:w-px before:bg-[#c9c4ba] before:content-['']">
-        <div className="relative mb-5">
-          <span
-            aria-hidden
-            className="absolute -left-[20px] top-[5px] z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f7f4ed] bg-[#9f988c] shadow-[0_0_0_1px_rgba(78,72,64,0.22)]"
-          />
-          <p className="text-[12px] font-black tracking-[0.04em] text-black/48">
-            {formatTicketDateLabel(ticket.date)}
-          </p>
-        </div>
-
+      <div className="relative pl-5 before:absolute before:bottom-8 before:left-[5px] before:top-[6px] before:block before:w-px before:bg-black/[0.13] before:content-['']">
         <ol className="space-y-3">
       {steps.map((step, index) => {
         const openOffsetMinutes = courseStepOpenOffsetMinutes(
@@ -346,26 +346,33 @@ function TicketCoursePanel({ ticket, steps }: {
         return (
           <li
             key={step.id}
-            className="relative overflow-hidden rounded-[26px] border border-black/[0.08] bg-white shadow-[0_12px_28px_rgba(24,24,20,0.045)]"
+            className="relative rounded-[12px] border border-black/[0.07] bg-[#f1ebe0]"
           >
+            <span
+              aria-hidden
+              className={cn(
+                "absolute -left-[20px] top-5 z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f8f4eb] shadow-[0_0_0_1px_rgba(23,23,19,0.14)]",
+                index === 0 ? "bg-[#171713]" : "bg-[#8f8778]",
+              )}
+            />
             <button
               type="button"
               onClick={() => setMapStepIndex(index)}
               aria-label={`${step.title || step.activityType || "활동"} 지도 보기`}
-              className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#f7f7f2] text-black/58 shadow-[0_5px_14px_rgba(0,0,0,0.08)] transition hover:bg-black hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
+              className="absolute right-3.5 top-3.5 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-[#f8f4eb]/80 text-black/58 shadow-[0_5px_14px_rgba(0,0,0,0.07)] transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
             >
-              <Navigation size={17} fill="currentColor" strokeWidth={1.8} aria-hidden />
+              <Navigation size={15} fill="currentColor" strokeWidth={1.8} aria-hidden />
             </button>
 
-            <div className="p-5 pb-4 pr-16">
+            <div className="px-4 pb-3 pt-4 pr-14">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-[12px] font-black text-black/48">
+                  <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-[0.04em] text-black/40">
                     {timeLabel}
                   </span>
                 </div>
 
-                <p className="mt-2.5 break-keep text-[19px] font-black leading-6 tracking-[-0.035em] text-black">
+                <p className="mt-1.5 break-keep text-[17px] font-black leading-6 tracking-[-0.04em] text-black">
                   {step.title || step.activityType || "활동"}
                 </p>
               </div>
@@ -472,22 +479,22 @@ function UnreleasedMapSheet({
 function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
   if (stepIndex === 0) {
     return (
-      <div className="mx-3 mb-3 overflow-hidden rounded-[22px] border border-black/[0.07] bg-black/[0.018]">
-        <div className="flex min-h-[62px] items-center justify-between gap-3 px-4">
+      <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
+        <div className="flex min-h-12 items-center justify-between gap-3 px-3.5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-white text-black/44">
-              <UserRound size={15} strokeWidth={2} aria-hidden />
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
+              <UserRound size={13} strokeWidth={2} aria-hidden />
             </span>
-            <span className="text-[13px] font-black text-black/68">나</span>
+            <span className="text-[11px] font-black text-black/68">나</span>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-black/36">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
             응답 대기
-            <Clock3 size={14} strokeWidth={1.9} aria-hidden />
+            <Clock3 size={12} strokeWidth={1.9} aria-hidden />
           </span>
         </div>
-        <div className="flex min-h-[62px] items-center gap-3 border-t border-black/[0.06] px-4">
+        <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
           <JourneyAvatarStack tone="warm" />
-          <p className="text-[12px] font-bold text-black/44">
+          <p className="text-[10px] font-bold text-black/44">
             나와 <strong className="font-black text-black/72">잘 맞는 5명</strong>
           </p>
         </div>
@@ -496,16 +503,16 @@ function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
   }
 
   return (
-    <div className="mx-3 mb-3 overflow-hidden rounded-[22px] border border-black/[0.07] bg-black/[0.018]">
-      <div className="flex min-h-[62px] items-center gap-3 px-4">
+    <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
+      <div className="flex min-h-12 items-center gap-2.5 px-3.5">
         <JourneyAvatarStack tone="warm" />
-        <p className="text-[12px] font-bold text-black/44">
+        <p className="text-[10px] font-bold text-black/44">
           <strong className="font-black text-black/72">저녁을 함께한 멤버</strong>
         </p>
       </div>
-      <div className="flex min-h-[62px] items-center gap-3 border-t border-black/[0.06] px-4">
+      <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
         <JourneyAvatarStack tone="cool" />
-        <p className="text-[12px] font-bold text-black/44">
+        <p className="text-[10px] font-bold text-black/44">
           다른 <strong className="font-black text-black/72">교집합 멤버들</strong>도 함께해요
         </p>
       </div>
@@ -520,12 +527,12 @@ function JourneyAvatarStack({ tone }: { tone: "warm" | "cool" }) {
       : ["bg-[#d7aab7]", "bg-[#b5c8d7]", "bg-[#c6b6d4]"];
 
   return (
-    <span className="flex w-[62px] shrink-0 items-center" aria-hidden>
+    <span className="flex w-[52px] shrink-0 items-center" aria-hidden>
       {colors.map((color, index) => (
         <span
           key={color}
           className={cn(
-            "h-8 w-8 rounded-full border-2 border-[#f8f7f3] shadow-sm",
+            "h-7 w-7 rounded-full border-2 border-[#f8f4eb] shadow-sm",
             color,
             index > 0 && "-ml-3",
           )}
@@ -668,15 +675,21 @@ function TicketPlacePanel({
 
 function TicketDetailSection({
   title,
+  eyebrow: eyebrowOverride,
   children,
   startWithBorder = false,
   hideTopBorder = false,
 }: {
   title: string;
+  eyebrow?: string;
   children: ReactNode;
   startWithBorder?: boolean;
   hideTopBorder?: boolean;
 }) {
+  const eyebrow =
+    eyebrowOverride ||
+    (title === "추천 이유" ? "CURATED FOR YOU" : null);
+
   return (
     <section
       className={cn(
@@ -685,7 +698,14 @@ function TicketDetailSection({
         hideTopBorder && "border-t-0",
       )}
     >
-      <h2 className="text-[15px] font-black text-black">{title}</h2>
+      <div className="flex items-end justify-between gap-3">
+        <h2 className="text-[15px] font-black tracking-[-0.04em] text-black">{title}</h2>
+        {eyebrow && (
+          <p className="font-serif text-[9px] italic tracking-[0.14em] text-black/36">
+            {eyebrow}
+          </p>
+        )}
+      </div>
       <div className="mt-4">{children}</div>
     </section>
   );

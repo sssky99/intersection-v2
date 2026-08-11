@@ -900,7 +900,7 @@ export function QuestionFlow({
             return;
           }
           router.replace(
-            isRegeneration ? "/meetings?tab=profile" : "/onboarding/profile",
+            isRegeneration ? "/meetings?tab=profile" : "/meetings?tab=recommend",
           );
           router.refresh();
         }}

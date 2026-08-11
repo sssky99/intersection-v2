@@ -777,10 +777,6 @@ export function MeetingChat({
 
   return (
     <section className="h-full overflow-y-auto bg-[#f7f4ed] px-5 pb-7 pt-[calc(24px+env(safe-area-inset-top))] text-black scrollbar-none">
-      <header className="pr-16">
-        <h1 className="text-[27px] font-bold leading-9">채팅</h1>
-      </header>
-
       {loading ? (
         <div className="flex min-h-[360px] items-center justify-center text-black/35">
           <Loader2 size={22} className="animate-spin" aria-hidden />
