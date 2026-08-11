@@ -10,6 +10,8 @@ const introVideoCookie = "intro_video_seen_v1";
 const introVideoCookieMaxAge = 60 * 60 * 24 * 365;
 const phonePrompt = "전화번호를 입력해주세요.";
 const otpPrompt = "6자리 인증 번호를 입력해주세요.";
+// TODO: SOLAPI/SMS 발송 한도가 안정되면 false로 되돌려 기존 OTP 흐름을 복구한다.
+const isPhoneOtpTemporarilyDisabled = true;
 type AuthStep = "phone" | "otp";
 
 type FiftyQLandingClientProps = {
@@ -93,7 +95,11 @@ export function FiftyQLandingClient({
   const isGuideTypingComplete = typedGuide.length === guideText.length;
   const isPhoneValid = /^010\d{8}$/.test(phoneDigits(phone));
   const isOtpValid = /^\d{6}$/.test(otp);
-  const canContinue = step === "phone" ? isPhoneValid : isOtpValid;
+  const canContinue = isPhoneOtpTemporarilyDisabled
+    ? isPhoneValid
+    : step === "phone"
+      ? isPhoneValid
+      : isOtpValid;
   const isPromptTypingComplete =
     isAuthContentVisible && typedPrompt.length === prompt.length;
 
@@ -216,17 +222,48 @@ export function FiftyQLandingClient({
     window.location.replace(body.nextPath);
   };
 
+  const continueWithoutOtp = async () => {
+    const response = await fetch("/api/auth/phone/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: phoneDigits(phone), bypassOtp: true }),
+    });
+    const body = (await response.json().catch(() => null)) as
+      | { nextPath?: string; loginType?: "new" | "existing" }
+      | null;
+    if (!response.ok || !body?.nextPath) throw new Error("profile-bootstrap-failed");
+
+    trackEvent("phone_verification_complete", {
+      login_type: body.loginType ?? "unknown",
+      verification_bypassed: true,
+    });
+
+    if (body.nextPath.startsWith("/onboarding/questions")) {
+      setNextPath(body.nextPath);
+      setGuidePage(0);
+      setError("");
+      return;
+    }
+
+    window.location.replace(body.nextPath);
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!canContinue || isSubmitting || isAuthenticated) return;
     setIsSubmitting(true);
     setError("");
     try {
-      if (step === "phone") await requestOtp();
+      if (isPhoneOtpTemporarilyDisabled) await continueWithoutOtp();
+      else if (step === "phone") await requestOtp();
       else await verifyOtp();
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "";
-      setError(authErrorMessage(message, step));
+      setError(
+        isPhoneOtpTemporarilyDisabled
+          ? "잠시 후 다시 시도해주세요."
+          : authErrorMessage(message, step),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -313,17 +350,24 @@ export function FiftyQLandingClient({
                   : "pointer-events-none translate-y-5 opacity-0"
               }`}
             >
-              {step === "phone" ? (
-                <input
-                  ref={phoneInputRef}
-                  value={displayPhone}
-                  onChange={(event) => setPhone(phoneDigits(event.target.value))}
-                  inputMode="tel"
-                  autoComplete="tel"
-                  aria-label="전화 번호"
-                  placeholder="010-0000-0000"
-                  className="h-16 w-full border-b border-black/25 bg-transparent px-1 text-[24px] font-medium tracking-[-0.025em] text-black outline-none placeholder:text-black/18 focus:border-black"
-                />
+              {isPhoneOtpTemporarilyDisabled || step === "phone" ? (
+                <div>
+                  <input
+                    ref={phoneInputRef}
+                    value={displayPhone}
+                    onChange={(event) => setPhone(phoneDigits(event.target.value))}
+                    inputMode="tel"
+                    autoComplete="tel"
+                    aria-label="전화 번호"
+                    placeholder="010-0000-0000"
+                    className="h-16 w-full border-b border-black/25 bg-transparent px-1 text-[24px] font-medium tracking-[-0.025em] text-black outline-none placeholder:text-black/18 focus:border-black"
+                  />
+                  <p className="mt-3 break-keep px-1 text-[11px] font-medium leading-[1.55] tracking-[-0.025em] text-black/45">
+                    (계속 진행하면 교집합의 모임/경험 초대 안내를 문자(SMS)로
+                    받는 것에 동의하게 됩니다. 언제든지 수신거부라고 문자로
+                    보내 수신을 취소할 수 있습니다.)
+                  </p>
+                </div>
               ) : (
                 <input
                   ref={otpInputRef}
@@ -339,7 +383,7 @@ export function FiftyQLandingClient({
             </div>
 
             <div className="mt-4 flex min-h-6 items-center justify-between">
-              {step === "otp" ? (
+              {!isPhoneOtpTemporarilyDisabled && step === "otp" ? (
                 <button
                   type="button"
                   onClick={returnToPhone}
@@ -356,7 +400,13 @@ export function FiftyQLandingClient({
             <button
               type="submit"
               disabled={!canContinue || isSubmitting}
-              aria-label={step === "phone" ? "인증 번호 받기" : "인증하고 계속하기"}
+              aria-label={
+                isPhoneOtpTemporarilyDisabled
+                  ? "전화번호 입력하고 계속하기"
+                  : step === "phone"
+                    ? "인증 번호 받기"
+                    : "인증하고 계속하기"
+              }
               className={`ml-auto mt-10 flex h-12 w-12 items-center justify-center transition-all duration-300 ${
                 canContinue && !isSubmitting
                   ? "text-black active:translate-x-0.5"
