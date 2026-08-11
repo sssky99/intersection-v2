@@ -43,9 +43,7 @@ import {
   type VibeScores,
 } from "@/components/vibe/vibeGraphConfig";
 import {
-  preferencePreferredActivities,
   preferenceQuestions,
-  preferenceRecentInterests,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
 import {
@@ -1161,7 +1159,7 @@ export function AppHome({
       >
         <div
           aria-hidden={activeTab !== "browse"}
-          className={cn(activeTab === "browse" ? "block min-h-full" : "hidden")}
+          className={cn(activeTab === "browse" ? "block h-full" : "hidden")}
         >
           <TicketListTab
             tickets={waitlistedTickets}
@@ -1185,11 +1183,7 @@ export function AppHome({
               userId={userId}
               profileCompleted={Boolean(currentProfile.profile_completed)}
               profileName={currentProfile.name ?? currentProfile.nickname}
-              profileGender={currentProfile.gender}
-              profileBirthYear={currentProfile.birth_year}
               profileMbti={currentProfile.mbti}
-              preferredActivities={preferencePreferredActivities(answers)}
-              recentInterests={preferenceRecentInterests(answers)}
               guestMode={guestMode}
               onRequestBasicInfo={onRequestBasicInfo}
               participationPrecisionCount={
@@ -1266,16 +1260,6 @@ export function AppHome({
                 profile={currentProfile}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
-                preferredActivities={
-                  preferenceProfileEnabled
-                    ? preferencePreferredActivities(answers)
-                    : []
-                }
-                recentInterests={
-                  preferenceProfileEnabled
-                    ? preferenceRecentInterests(answers)
-                    : []
-                }
                 answers={preferenceProfileEnabled ? answers : {}}
                 backgroundAnsweredCount={
                   answeredQuestionCount(
@@ -2150,10 +2134,10 @@ function TicketListTab({
             aria-busy={loadingMore}
             exit={{ opacity: 0, y: -8 }}
             transition={ticketFadeTransition}
-            className="flex min-h-full flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
+            className="flex h-full min-h-full flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
           >
             {itemCount === 0 ? (
-              <div className="flex min-h-0 flex-1 items-start justify-center px-5 pb-[calc(72px+env(safe-area-inset-bottom))] pt-5">
+              <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-3 pt-4">
                 <div className="relative flex aspect-[1/1.618] w-full max-w-[340px] flex-col justify-center bg-[#f8f4eb] px-7 py-10 text-center shadow-[0_24px_60px_rgba(39,34,24,0.09)] before:pointer-events-none before:absolute before:inset-0 before:border before:border-black/[0.11] after:pointer-events-none after:absolute after:inset-2 after:border after:border-black/[0.055]">
                   <div className="relative">
                     <TicketIcon
@@ -2179,7 +2163,7 @@ function TicketListTab({
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-0 flex-1 -translate-y-3 flex-col justify-center pb-3 pt-4">
+              <div className="flex min-h-0 flex-1 flex-col justify-center pb-3 pt-4">
                 <div
                   ref={carouselRef}
                   onScroll={updateActiveSlide}

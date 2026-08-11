@@ -8,13 +8,6 @@ import {
   formatTicketTimeLabel,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
-import {
-  SelectionColumn,
-  activityIcons,
-  activityLabels,
-  interestIcons,
-  interestLabels,
-} from "@/features/app/PreferenceProfileTab";
 import { MeetingAtmospherePanel } from "@/features/meetings/MeetingAtmospherePanel";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import {
@@ -184,16 +177,10 @@ export function TicketDetailContent({
     .join(" · ");
   const detailSummary = ticket.detailSummary?.trim();
   const recommendationReasons = cleanList(ticket.recommendationReasons);
-  const hasRecommendationAudience = Boolean(
-    ticket.recommendationProfile &&
-      ticket.recommendationAudience &&
-      (ticket.recommendationAudience.preferredActivities.length > 0 ||
-        ticket.recommendationAudience.recentInterests.length > 0),
-  );
   const hasSummary = Boolean(visibleSections.has("summary") && detailSummary);
   const hasRecommendation = Boolean(
     visibleSections.has("recommendation") &&
-      (recommendationReasons.length > 0 || hasRecommendationAudience),
+      recommendationReasons.length > 0,
   );
   const hasCourse = Boolean(
     visibleSections.has("course") && courseSteps.length >= 2,
@@ -221,19 +208,11 @@ export function TicketDetailContent({
     <div className={cn("mt-5", className)}>
       {hasRecommendation && (
         <TicketDetailSection
-          title={
-            recommendationReasons.length > 0
-              ? "추천 이유"
-              : "이런 분들이 신청했어요."
-          }
+          title="추천 이유"
           startWithBorder={startWithBorder}
           hideTopBorder
         >
-          <RecommendationReasons
-            items={recommendationReasons}
-            profile={ticket.recommendationProfile}
-            audience={ticket.recommendationAudience}
-          />
+          <BulletList items={recommendationReasons} />
         </TicketDetailSection>
       )}
 
@@ -724,108 +703,6 @@ function BulletList({ items }: { items: string[] }) {
       ))}
     </ul>
   );
-}
-
-function RecommendationReasons({
-  items,
-  profile,
-  audience,
-}: {
-  items: string[];
-  profile: GatheringTicket["recommendationProfile"];
-  audience: GatheringTicket["recommendationAudience"];
-}) {
-  const preferredActivityAudience = matchedAudienceValues(
-    audience?.preferredActivities,
-    profile?.preferredActivities,
-    items.length > 0,
-  );
-  const recentInterestAudience = matchedAudienceValues(
-    audience?.recentInterests,
-    profile?.recentInterests,
-    items.length > 0,
-  );
-
-  return (
-    <div className="space-y-2.5 rounded-3xl border border-black/8 bg-white p-3 shadow-[0_10px_26px_rgba(24,24,20,0.045)]">
-      {items.length > 0 && (
-        <div className="rounded-[18px] border border-black/[0.06] bg-white px-4 py-3.5">
-          <p className="text-[11px] font-black tracking-[-0.015em] text-black/38">
-            비슷한 나이대
-          </p>
-          <p className="mt-1 break-keep text-[14px] font-bold leading-6 tracking-[-0.025em] text-black/70">
-            {items[0] ?? "—"}
-          </p>
-        </div>
-      )}
-
-      {profile && audience ? (
-        <div>
-          {items.length > 0 && (
-            <p className="px-1 pb-3 text-[12px] font-black tracking-[-0.025em] text-black/62">
-              이런 분들이 주로 신청했어요.
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-2.5">
-          <SelectionColumn
-            label="선호 활동"
-            values={preferredActivityAudience.values}
-            labels={activityLabels}
-            icons={activityIcons}
-            matchedValues={preferredActivityAudience.matchedValues}
-          />
-          <SelectionColumn
-            label="최근 관심사"
-            values={recentInterestAudience.values}
-            labels={interestLabels}
-            icons={interestIcons}
-            matchedValues={recentInterestAudience.matchedValues}
-          />
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {items.slice(1, 3).map((item, index) => (
-            <div
-              key={`${index}-${item}`}
-              className="rounded-[18px] bg-black/[0.025] px-4 py-3.5"
-            >
-              <p className="text-[10px] font-bold tracking-[0.08em] text-black/34">
-                {index === 0 ? "선호 활동" : "최근 관심사"}
-              </p>
-              <p className="mt-2 text-[11px] font-extrabold tracking-[-0.02em] text-black/70">
-                {item}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function matchedAudienceValues(
-  ticketValues: string[] | undefined,
-  userValues: string[] | undefined,
-  ensureMatch: boolean,
-) {
-  const values = Array.from(new Set(ticketValues ?? [])).slice(0, 3);
-  const userValueSet = new Set(userValues ?? []);
-  let matchedValues = values.filter((value) => userValueSet.has(value));
-
-  if (ensureMatch && matchedValues.length === 0 && userValues?.[0]) {
-    const userFirstValue = userValues[0];
-    const replacementIndex = Math.min(2, values.length);
-
-    if (replacementIndex === values.length) {
-      values.push(userFirstValue);
-    } else {
-      values[replacementIndex] = userFirstValue;
-    }
-    matchedValues = [userFirstValue];
-  }
-
-  return { values, matchedValues };
 }
 
 function ActivityProse({ items }: { items: string[] }) {

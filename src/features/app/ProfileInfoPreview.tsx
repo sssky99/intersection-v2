@@ -61,8 +61,6 @@ export function ProfileInfoPreview() {
         loggingOut={false}
         logoutError={null}
         participationCount={2}
-        preferredActivities={["meal", "culture", "reading"]}
-        recentInterests={["travel", "coffee", "movie"]}
         onProfileUpdated={setProfile}
         onLogout={async () => undefined}
         previewMode

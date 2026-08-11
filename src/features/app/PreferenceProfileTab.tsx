@@ -697,8 +697,6 @@ export function PreferenceProfileTab({
   profile,
   loggingOut,
   logoutError,
-  preferredActivities = [],
-  recentInterests = [],
   answers = {},
   backgroundAnsweredCount = 0,
   activityAnsweredCount = 0,
@@ -726,8 +724,6 @@ export function PreferenceProfileTab({
   profile: ProfileRow;
   loggingOut: boolean;
   logoutError: string | null;
-  preferredActivities?: string[];
-  recentInterests?: string[];
   answers?: Record<number, QuestionAnswer>;
   backgroundAnsweredCount?: number;
   activityAnsweredCount?: number;
@@ -1001,7 +997,7 @@ export function PreferenceProfileTab({
             )}
           </div>
 
-          <div className="p-5">
+          <div className={cn(editing || saved ? "p-5" : "hidden")}>
             {editing ? (
               <div className="space-y-5">
                 <fieldset>
@@ -1136,24 +1132,7 @@ export function PreferenceProfileTab({
                   {saving ? "저장 중..." : "변경사항 저장"}
                 </button>
               </div>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <SelectionColumn
-                    label="선호 활동"
-                    values={preferredActivities}
-                    labels={activityLabels}
-                    icons={activityIcons}
-                  />
-                  <SelectionColumn
-                    label="최근 관심사"
-                    values={recentInterests}
-                    labels={interestLabels}
-                    icons={interestIcons}
-                  />
-                </div>
-              </>
-            )}
+            ) : null}
 
             {saved && (
               <p className="mt-4 rounded-[16px] bg-accent/10 px-4 py-3 text-center text-[11px] font-bold text-accent">

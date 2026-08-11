@@ -218,49 +218,6 @@ export function classifyProfileArchetype(
     if (selected(order, value)) add(scores, ids, weight);
   };
 
-  choice(1, "romance", ["romantic"], 3);
-  choice(1, "drama", ["sentimental", "idealist"], 2);
-  choice(1, "adventure", ["adventurer", "experientialist"], 2.5);
-  choice(1, "comedy", ["bohemian", "experientialist"], 1.5);
-
-  const interestSignals: Array<[string, ProfileArchetypeId[]]> = [
-    ["travel", ["adventurer", "experientialist"]],
-    ["nature", ["adventurer", "stoic"]],
-    ["fitness", ["adventurer", "experientialist"]],
-    ["book", ["searcher", "idealist"]],
-    ["growth", ["searcher", "idealist", "visionary"]],
-    ["movie", ["sentimental", "romantic"]],
-    ["music", ["sentimental", "artisan"]],
-    ["photo", ["sentimental", "artisan"]],
-    ["exhibition", ["artisan", "bohemian"]],
-    ["coffee", ["romantic", "sentimental"]],
-    ["game", ["experientialist", "bohemian"]],
-  ];
-  interestSignals.forEach(([value, ids]) => choice(2, value, ids, 1.2));
-
-  const relationshipSignals: Array<[string, ProfileArchetypeId[]]> = [
-    ["authentic", ["idealist", "stoic"]],
-    ["attentive", ["romantic", "sentimental"]],
-    ["funny", ["bohemian", "experientialist"]],
-    ["warm", ["romantic", "idealist"]],
-    ["intelligent", ["searcher", "visionary"]],
-    ["grounded", ["stoic"]],
-    ["curious", ["searcher", "visionary"]],
-    ["positive", ["idealist", "visionary"]],
-  ];
-  relationshipSignals.forEach(([value, ids]) => choice(3, value, ids, 1.4));
-
-  const activitySignals: Array<[string, ProfileArchetypeId[]]> = [
-    ["meal", ["romantic", "experientialist"]],
-    ["culture", ["sentimental", "artisan"]],
-    ["outdoor", ["adventurer", "experientialist"]],
-    ["play", ["bohemian", "experientialist"]],
-    ["reading", ["searcher", "stoic"]],
-    ["taste", ["artisan", "bohemian"]],
-  ];
-  activitySignals.forEach(([value, ids]) => choice(4, value, ids, 1.5));
-  choice(5, "no_avoidance", ["adventurer", "experientialist"], 1.5);
-
   scale(6, 1, 7, ["stoic", "searcher"], ["bohemian", "experientialist"], 2.5);
   scale(7, 1, 7, ["sentimental", "searcher"], ["romantic", "experientialist"], 2.5);
   scale(8, 1, 7, ["stoic", "searcher"], ["sentimental", "romantic", "idealist"], 2.5);

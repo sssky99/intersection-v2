@@ -79,8 +79,7 @@ export async function POST(request: Request) {
   const isPreferenceFlow =
     isPreferenceOnboarding ||
     isPreferenceUpgrade ||
-    (isPreferenceRegeneration &&
-      Boolean(profile && usesPreferenceProfile(profile)));
+    isPreferenceRegeneration;
   const questions = isPreferenceFlow
     ? preferenceQuestions
     : profileQuestions;
@@ -169,7 +168,7 @@ export async function POST(request: Request) {
     const { error: resultResetError } = await admin
       .from("profiles")
       .update({
-        ...(isPreferenceUpgrade
+        ...(isPreferenceUpgrade || isPreferenceRegeneration
           ? { profile_experience_version: preferenceProfileVersion }
           : {}),
         conversation_result_code: null,

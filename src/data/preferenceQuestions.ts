@@ -2,7 +2,7 @@ import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
 
 export const preferenceProfileVersion = "preferences-v13";
 
-export const preferenceQuestions: ProfileQuestion[] = [
+const allPreferenceQuestions: ProfileQuestion[] = [
   {
     id: 1,
     order: 1,
@@ -1054,6 +1054,11 @@ export const preferenceQuestions: ProfileQuestion[] = [
     "placeholder": "예: 일본, 프랑스, 태국 / 아직 해외여행 경험은 없어요"
   }
 ];
+
+export const preferenceQuestions: ProfileQuestion[] =
+  allPreferenceQuestions.filter(
+    (question) => (question.order ?? question.id) > 5,
+  );
 
 function selectedLabels(answer: QuestionAnswer | undefined, questionId: number) {
   if (!answer || !Array.isArray(answer.value)) return [];

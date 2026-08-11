@@ -1,10 +1,8 @@
 import { redirect } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
 import {
-  QuestionFlow,
-} from "@/features/onboarding/QuestionFlow";
-import { PreferenceQuestionFlow } from "@/features/onboarding/TableCardSurveyPreview";
-import { usesPreferenceProfile } from "@/data/preferenceQuestions";
+  PreferenceQuestionFlow,
+} from "@/features/onboarding/TableCardSurveyPreview";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 import type { StoredAnswerRow } from "@/types/question";
 
@@ -54,25 +52,17 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
     .order("question_order");
   return (
     <MobileFrame>
-      {usesPreferenceProfile(profile) || isPreferenceUpgrade ? (
-        <PreferenceQuestionFlow
-          userId={user.id}
-          initialRows={(data ?? []) as StoredAnswerRow[]}
-          mode={
-            isPreferenceUpgrade
-              ? "upgrade"
-              : isRegeneration
-                ? "regeneration"
-                : "onboarding"
-          }
-        />
-      ) : (
-        <QuestionFlow
-          userId={user.id}
-          initialRows={(data ?? []) as StoredAnswerRow[]}
-          mode={isRegeneration ? "regeneration" : "onboarding"}
-        />
-      )}
+      <PreferenceQuestionFlow
+        userId={user.id}
+        initialRows={(data ?? []) as StoredAnswerRow[]}
+        mode={
+          isPreferenceUpgrade
+            ? "upgrade"
+            : isRegeneration
+              ? "regeneration"
+              : "onboarding"
+        }
+      />
     </MobileFrame>
   );
 }

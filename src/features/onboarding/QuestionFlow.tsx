@@ -17,7 +17,6 @@ import {
   type ProfileArchetypeId,
 } from "@/data/profileArchetypes";
 import { profileQuestions } from "@/data/profileQuestions";
-import { LegacyPreferenceQuestion } from "@/features/onboarding/LegacyPreferenceQuestion";
 import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
 import {
   identifyAnalyticsUser,
@@ -853,39 +852,6 @@ export function QuestionFlow({
 
   const isConversationQuestion =
     (question.order ?? question.id) <= conversationQuestionCount;
-  const usesLegacyPreferenceStyle =
-    questionSet === preferenceQuestions &&
-    (question.order ?? question.id) <= 5;
-
-  if (usesLegacyPreferenceStyle) {
-    const preferredAnswer = answers[4]?.value;
-    return (
-      <LegacyPreferenceQuestion
-        question={question}
-        questionIndex={questionIndex}
-        questionCount={questions.length}
-        answer={answer}
-        preferredValues={Array.isArray(preferredAnswer) ? preferredAnswer : []}
-        saving={saving}
-        canContinue={canContinue}
-        onBack={() => {
-          setError(null);
-          if (questionIndex > 0) {
-            setQuestionIndex((current) => current - 1);
-            return;
-          }
-          router.push(isRegeneration ? "/meetings?tab=profile" : "/");
-        }}
-        onContinue={() => void continueQuestion()}
-        onSelectSingle={(value) => {
-          setError(null);
-          updateLocalAnswer({ questionId: question.id, value });
-        }}
-        onToggleMultiple={toggleMultiple}
-      />
-    );
-  }
-
   if (profileArchetypeResultId) {
     return (
       <ProfileArchetypeResult

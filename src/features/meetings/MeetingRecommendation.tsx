@@ -34,7 +34,6 @@ import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { trackEvent } from "@/lib/analytics";
-import { birthYearNumber } from "@/lib/meetingAgeVisibility";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
@@ -227,23 +226,6 @@ const initialTicketRecommendationEnabled = false;
 const initialRecommendedTicketDate = "2026-08-08";
 const initialRecommendedTicketTitle = "향수 공방";
 const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
-const initialRecommendedTicketAudience = {
-  preferredActivities: ["culture", "outdoor", "taste"],
-  recentInterests: ["exhibition", "growth", "photo"],
-};
-
-function recommendationAgeGroupFromBirthYear(
-  birthYear: string | number | null | undefined,
-) {
-  const year = birthYearNumber(birthYear);
-  if (!year) return null;
-
-  const age = new Date().getFullYear() + 1 - year;
-  if (age >= 20 && age <= 24) return "20대 초중반";
-  if (age >= 25 && age <= 29) return "20대 중후반";
-  if (age >= 30 && age <= 39) return "30대 초반";
-  return null;
-}
 
 function personalizedTicketHeading(name: string | null | undefined) {
   const displayName = profileGivenName(name);
@@ -625,11 +607,7 @@ type MeetingRecommendationProps = {
   userId: string;
   profileCompleted?: boolean;
   profileName?: string | null;
-  profileGender?: string | null;
-  profileBirthYear?: string | number | null;
   profileMbti?: string | null;
-  preferredActivities?: string[];
-  recentInterests?: string[];
   guestMode?: boolean;
   onRequestBasicInfo?: (meetingDate?: string) => void;
   participationPrecisionCount?: number;
@@ -868,11 +846,7 @@ function MeetingDateApplicationFlow({
   userId,
   profileCompleted = true,
   profileName = null,
-  profileGender = null,
-  profileBirthYear = null,
   profileMbti = null,
-  preferredActivities = [],
-  recentInterests = [],
   guestMode = false,
   onRequestBasicInfo,
   participationPrecisionCount = 0,
@@ -1018,21 +992,6 @@ function MeetingDateApplicationFlow({
   const ticketPreviewHeading = profileCompleted
     ? personalizedTicketHeading(profileName)
     : initialRecommendedTicketHeading;
-  const profileAgeGroup = recommendationAgeGroupFromBirthYear(profileBirthYear);
-  const personalizedAgeReason =
-    profileCompleted && profileAgeGroup
-      ? `${profileAgeGroup}이 많이 신청했어요.`
-      : null;
-  const personalizedActivityReason = preferredActivities
-    .map((value) => activityLabels[value])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(" · ");
-  const personalizedInterestReason = recentInterests
-    .map((value) => interestLabels[value])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(" · ");
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -1307,35 +1266,8 @@ function MeetingDateApplicationFlow({
       }
     }
 
-    const recommendationReasons = profileCompleted
-      ? [
-          personalizedAgeReason ?? "—",
-          personalizedActivityReason || "—",
-          personalizedInterestReason || "—",
-        ]
-      : recommendedTicket.recommendationReasons;
-    const configuredAudience = recommendedTicket.recommendationAudience;
-    const recommendationAudience = {
-      preferredActivities:
-        configuredAudience?.preferredActivities.length
-          ? configuredAudience.preferredActivities
-          : initialRecommendedTicketAudience.preferredActivities,
-      recentInterests: configuredAudience?.recentInterests.length
-        ? configuredAudience.recentInterests
-        : initialRecommendedTicketAudience.recentInterests,
-    };
-    const personalizedRecommendedTicket = {
-      ...recommendedTicket,
-      recommendationReasons,
-      recommendationProfile: {
-        preferredActivities,
-        recentInterests,
-      },
-      recommendationAudience,
-    };
-
     setPurchaseOption("single");
-    setSelectedTicket(personalizedRecommendedTicket);
+    setSelectedTicket(recommendedTicket);
     setError(null);
     setScreen("ticketPreview");
     trackEvent("meeting_ticket_initial_recommendation_open", {
@@ -1351,14 +1283,7 @@ function MeetingDateApplicationFlow({
     ticketAcceptRequestId,
     userId,
     forceInitialRecommendationPreview,
-    personalizedAgeReason,
-    personalizedActivityReason,
-    personalizedInterestReason,
-    preferredActivities,
     profileCompleted,
-    profileGender,
-    profileBirthYear,
-    recentInterests,
   ]);
 
   const completeInitialTicketRecommendation = () => {
@@ -1403,13 +1328,7 @@ function MeetingDateApplicationFlow({
     if (saving) return;
     recordTicketInteraction(ticket, "open");
     setPurchaseOption("single");
-    setSelectedTicket({
-      ...ticket,
-      recommendationProfile: {
-        preferredActivities,
-        recentInterests,
-      },
-    });
+    setSelectedTicket(ticket);
     setError(null);
     setScreen("ticket");
     trackEvent("meeting_ticket_detail_open", {
@@ -1944,8 +1863,8 @@ function MeetingDateApplicationFlow({
               <ProfileCurationOrbit
                 name={profileName}
                 mbti={profileMbti}
-                preferredActivities={preferredActivities}
-                recentInterests={recentInterests}
+                preferredActivities={[]}
+                recentInterests={[]}
                 reducedMotion={shouldReduceMotion}
               />
             ) : ticketPreviewHeadingComplete ? (
