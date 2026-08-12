@@ -1240,6 +1240,9 @@ export function AppHome({
             availableTickets={availableMeetingTickets}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
+            participantPhotoUrl={currentProfile.photo_url}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             onGoRecommend={() => switchTab("recommend")}
             onReapplyTicket={requestDeclinedTicketApplication}
             onDeclineTicket={declineTicketFromInbox}
@@ -1458,6 +1461,9 @@ export function AppHome({
         <div className="absolute inset-0 z-[60] overflow-y-auto bg-[#f7f4ed] scrollbar-none">
           <AssignedApplicationTicketDetailView
             ticket={replayedDeclinedTicket}
+            participantPhotoUrl={currentProfile.photo_url}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             onClose={() => {
               setReplayedDeclinedTicket(null);
               switchTab("browse");
@@ -1840,6 +1846,9 @@ function TicketListTab({
   availableTickets,
   totalTicketCount,
   loadingMore,
+  participantPhotoUrl,
+  previewMatchPhotoUrls,
+  previewOtherMemberPhotoUrls,
   onGoRecommend,
   onReapplyTicket,
   onDeclineTicket,
@@ -1851,6 +1860,9 @@ function TicketListTab({
   availableTickets: GatheringTicket[];
   totalTicketCount: number;
   loadingMore: boolean;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls: string[];
+  previewOtherMemberPhotoUrls: string[];
   onGoRecommend: () => void;
   onReapplyTicket: (ticket: GatheringTicket) => void;
   onDeclineTicket: (ticket: GatheringTicket) => Promise<boolean>;
@@ -2295,12 +2307,18 @@ function TicketListTab({
           <StoredTicketDetailView
             key={`stored-ticket-detail-${selectedTicket.id}`}
             userTicket={selectedTicket}
+            participantPhotoUrl={participantPhotoUrl}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             onClose={() => setSelectedTicket(null)}
           />
         ) : selectedApplicationTicket ? (
           <AssignedApplicationTicketDetailView
             key={`assigned-application-ticket-${selectedApplicationTicket.id}`}
             ticket={selectedApplicationTicket}
+            participantPhotoUrl={participantPhotoUrl}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             onClose={() => {
               setSelectedApplicationTicket(null);
               setSelectedApplicationTicketDeclined(false);
@@ -2886,12 +2904,18 @@ function AssignedApplicationTicketDetailView({
   onReapply,
   onAccept,
   onDecline,
+  participantPhotoUrl = null,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
 }: {
   ticket: GatheringTicket;
   onClose: () => void;
   onReapply?: () => void;
   onAccept?: () => void;
   onDecline?: () => Promise<boolean>;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
 }) {
   const [responding, setResponding] = useState(false);
   const [responseError, setResponseError] = useState<string | null>(null);
@@ -2932,6 +2956,9 @@ function AssignedApplicationTicketDetailView({
         />
         <TicketDetailContent
           ticket={ticket}
+          participantPhotoUrl={participantPhotoUrl}
+          previewMatchPhotoUrls={previewMatchPhotoUrls}
+          previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           sections={["summary", "course"]}
           className="px-5 pb-5"
         />
@@ -3239,12 +3266,18 @@ export function StoredTicketDetailView({
   userTicket,
   onClose,
   previewMode = false,
+  participantPhotoUrl = null,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
   selectedProgressStep: controlledProgressStep,
   onProgressStepChange,
 }: {
   userTicket: UserTicket;
   onClose: () => void;
   previewMode?: boolean;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
   selectedProgressStep?: TicketProgressViewStepKey;
   onProgressStepChange?: (step: TicketProgressViewStepKey) => void;
 }) {
@@ -3349,6 +3382,9 @@ export function StoredTicketDetailView({
             userTicket={userTicket}
             progressStep={selectedProgressStep}
             previewMode={previewMode}
+            participantPhotoUrl={participantPhotoUrl}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           />
         </motion.div>
       </motion.article>
@@ -4058,10 +4094,16 @@ function TicketStageContent({
   userTicket,
   progressStep,
   previewMode = false,
+  participantPhotoUrl = null,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressViewStepKey;
   previewMode?: boolean;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
 }) {
   const ticket = userTicket.ticket;
   const baseProgressStep = progressViewBaseStep(progressStep);
@@ -4090,6 +4132,9 @@ function TicketStageContent({
         />
         <TicketDetailContent
           ticket={ticket}
+          participantPhotoUrl={participantPhotoUrl}
+          previewMatchPhotoUrls={previewMatchPhotoUrls}
+          previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -4116,6 +4161,9 @@ function TicketStageContent({
         />
         <TicketDetailContent
           ticket={ticket}
+          participantPhotoUrl={participantPhotoUrl}
+          previewMatchPhotoUrls={previewMatchPhotoUrls}
+          previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -4131,6 +4179,9 @@ function TicketStageContent({
       <>
         <TicketDetailContent
           ticket={ticket}
+          participantPhotoUrl={participantPhotoUrl}
+          previewMatchPhotoUrls={previewMatchPhotoUrls}
+          previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           sections={introDetailSections}
           afterActivities={
             <PlaceSection userTicket={userTicket} revealDetails />
@@ -4143,6 +4194,9 @@ function TicketStageContent({
   return (
     <TicketDetailContent
       ticket={ticket}
+      participantPhotoUrl={participantPhotoUrl}
+      previewMatchPhotoUrls={previewMatchPhotoUrls}
+      previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
       sections={appliedDetailSections}
       className="mt-0"
       afterActivities={<PlaceSection userTicket={userTicket} />}
