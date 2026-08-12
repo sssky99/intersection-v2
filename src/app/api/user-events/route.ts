@@ -17,6 +17,7 @@ type UserEventBody = {
 const allowedEventNames = new Set([
   "landing_view",
   "landing_video_complete",
+  "landing_cta_click",
   "phone_input_view",
   "phone_verification_complete",
   "kakao_login_click",

@@ -3,12 +3,17 @@
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { FiftyQLandingClient } from "@/app/FiftyQLandingClient";
+import { trackEvent } from "@/lib/analytics";
 
 const headline =
   "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
 const headlineLead = "아무나 만나지 않도록,\n";
 
-export function LandingVariantBPreview() {
+type LandingVariantBProps = {
+  preview?: boolean;
+};
+
+export function LandingVariantB({ preview = false }: LandingVariantBProps) {
   const [typedHeadline, setTypedHeadline] = useState(headlineLead);
   const [isContentVisible, setIsContentVisible] = useState(false);
   const [isCtaVisible, setIsCtaVisible] = useState(false);
@@ -16,6 +21,13 @@ export function LandingVariantBPreview() {
   const [showPhoneInput, setShowPhoneInput] = useState(false);
 
   useEffect(() => {
+    if (!preview) {
+      trackEvent("landing_view", {
+        experiment_id: "landing_ab_2026_08",
+        landing_variant: "b",
+      });
+    }
+
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -24,7 +36,7 @@ export function LandingVariantBPreview() {
     setTypedHeadline(headline);
     setIsContentVisible(true);
     setIsCtaVisible(true);
-  }, []);
+  }, [preview]);
 
   useEffect(() => {
     if (!hasReachedContentCue) return;
@@ -108,7 +120,13 @@ export function LandingVariantBPreview() {
           >
             <button
               type="button"
-              onClick={() => setShowPhoneInput(true)}
+              onClick={() => {
+                trackEvent("landing_cta_click", {
+                  experiment_id: "landing_ab_2026_08",
+                  landing_variant: "b",
+                });
+                setShowPhoneInput(true);
+              }}
               className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98]"
             >
               나와 맞는 사람들 추천받기
@@ -122,10 +140,16 @@ export function LandingVariantBPreview() {
           </div>
         </div>
 
-        <div className="absolute left-5 top-5 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80 backdrop-blur-md">
-          B · PREVIEW
-        </div>
+        {preview && (
+          <div className="absolute left-5 top-5 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80 backdrop-blur-md">
+            B · PREVIEW
+          </div>
+        )}
       </section>
     </main>
   );
+}
+
+export function LandingVariantBPreview() {
+  return <LandingVariantB preview />;
 }

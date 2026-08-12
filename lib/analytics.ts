@@ -10,6 +10,8 @@ type ClarityFn = ((...args: unknown[]) => void) & { q?: unknown[][] };
 
 const anonymousSessionStorageKey = "intersection_anonymous_session_id";
 const acquisitionStorageKey = "intersection_acquisition_context";
+const landingExperimentCookie = "landing_ab_v1";
+const landingExperimentId = "landing_ab_2026_08";
 
 const supabaseEventNameAliases: Record<string, string> = {
   kakao_start_click: "kakao_login_click",
@@ -127,6 +129,20 @@ function acquisitionContext() {
   return current;
 }
 
+function landingExperimentContext() {
+  const cookieValue = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${landingExperimentCookie}=`))
+    ?.split("=")[1];
+
+  if (cookieValue !== "a" && cookieValue !== "b") return {};
+  return {
+    experiment_id: landingExperimentId,
+    landing_variant: cookieValue,
+  };
+}
+
 function isLocalHostname(hostname: string) {
   return (
     hostname === "localhost" ||
@@ -227,6 +243,7 @@ function trackSupabaseEvent(
     metadata: {
       ...payload,
       ...acquisitionContext(),
+      ...landingExperimentContext(),
       ...(normalizedEventName === eventName
         ? {}
         : { original_event_name: eventName }),
