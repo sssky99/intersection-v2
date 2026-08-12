@@ -16,6 +16,7 @@ type AuthStep = "phone" | "otp";
 
 type FiftyQLandingClientProps = {
   initialHasSeenIntro: boolean;
+  previewPhoneOnly?: boolean;
 };
 
 function useTypedText(text: string, active: boolean, interval = 58) {
@@ -69,6 +70,7 @@ function authErrorMessage(message: string, step: AuthStep) {
 
 export function FiftyQLandingClient({
   initialHasSeenIntro,
+  previewPhoneOnly = false,
 }: FiftyQLandingClientProps) {
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +106,11 @@ export function FiftyQLandingClient({
     isAuthContentVisible && typedPrompt.length === prompt.length;
 
   useEffect(() => {
+    if (previewPhoneOnly) {
+      setAuthChecked(true);
+      return;
+    }
+
     let mounted = true;
     trackEvent("landing_view");
     const timer = window.setTimeout(() => {
@@ -122,7 +129,7 @@ export function FiftyQLandingClient({
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, []);
+  }, [previewPhoneOnly]);
 
   useEffect(() => {
     if (
@@ -250,6 +257,7 @@ export function FiftyQLandingClient({
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (previewPhoneOnly) return;
     if (!canContinue || isSubmitting || isAuthenticated) return;
     setIsSubmitting(true);
     setError("");

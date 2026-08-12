@@ -10,6 +10,7 @@ import {
 } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import { hasCurrentMembershipAccess } from "@/features/membership/membershipTypes";
 import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ type DateApplicationRequest = {
 
 type SelectedTicketInstance = {
   id: string;
+  template_id: string;
+  title: string;
   event_date: string | null;
   event_time: string | null;
   region: string | null;
@@ -205,7 +208,7 @@ export async function POST(request: Request) {
   const { data: applicantProfile, error: applicantProfileError } = await admin
     .from("profiles")
     .select(
-      "profile_completed,questions_completed,profile_experience_version,is_test_participant",
+      "profile_completed,questions_completed,profile_experience_version,is_test_participant,membership_status,membership_start_date,membership_end_date",
     )
     .eq("user_id", user.id)
     .maybeSingle<{
@@ -213,6 +216,9 @@ export async function POST(request: Request) {
       questions_completed: boolean | null;
       profile_experience_version: string | null;
       is_test_participant: boolean | null;
+      membership_status: string | null;
+      membership_start_date: string | null;
+      membership_end_date: string | null;
     }>();
   if (applicantProfileError) {
     return NextResponse.json(
@@ -231,6 +237,11 @@ export async function POST(request: Request) {
   const dates = requestedDates(body.dates);
   const openPayment = body.openPayment === true;
   const joinWaitlist = body.waitlist === true;
+  const membershipCovered = hasCurrentMembershipAccess({
+    status: applicantProfile.membership_status,
+    startDate: applicantProfile.membership_start_date,
+    endDate: applicantProfile.membership_end_date,
+  });
   const ticketInstanceId =
     typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
       ? body.ticketInstanceId.trim()
@@ -258,7 +269,7 @@ export async function POST(request: Request) {
         : ["public"];
     const { data, error } = await admin
       .from("ticket_instances")
-      .select("id,event_date,event_time,region,visibility")
+      .select("id,template_id,title,event_date,event_time,region,visibility")
       .eq("id", ticketInstanceId)
       .in("visibility", allowedVisibilities)
       .maybeSingle<SelectedTicketInstance>();
@@ -334,11 +345,13 @@ export async function POST(request: Request) {
           meeting_date: date,
           meeting_time: selectedTicket?.event_time?.slice(0, 5) ?? schedule.time,
           region: selectedTicket?.region ?? MEETING_DATE_REGION,
-          status: joinWaitlist ? "waitlisted" : "payment_pending",
-          deposit_amount: joinWaitlist ? 0 : MEETING_DATE_DEPOSIT_AMOUNT,
-          deposit_status: "payment_pending",
-          deposit_requested_at: joinWaitlist ? null : now,
-          deposit_confirmed_at: null,
+          status:
+            joinWaitlist || membershipCovered ? "waitlisted" : "payment_pending",
+          deposit_amount:
+            joinWaitlist || membershipCovered ? 0 : MEETING_DATE_DEPOSIT_AMOUNT,
+          deposit_status: membershipCovered ? "confirmed" : "payment_pending",
+          deposit_requested_at: joinWaitlist || membershipCovered ? null : now,
+          deposit_confirmed_at: membershipCovered ? now : null,
           refund_completed_at: null,
           assigned_ticket_instance_id: selectedTicket?.id ?? null,
           ticket_participation_id: null,
@@ -362,6 +375,34 @@ export async function POST(request: Request) {
       savedRows = data ?? [];
     }
 
+    if (membershipCovered && selectedTicket) {
+      const { data: participationId, error: participationError } =
+        await admin.rpc("set_ticket_participation_status", {
+          p_ticket_instance_id: selectedTicket.id,
+          p_user_id: user.id,
+          p_status: "waitlisted",
+          p_ticket_snapshot: {
+            id: selectedTicket.id,
+            templateId: selectedTicket.template_id,
+            title: selectedTicket.title,
+            date: selectedTicket.event_date,
+            time: selectedTicket.event_time,
+            area: selectedTicket.region,
+          },
+          p_invitation_id: null,
+        });
+      if (participationError) throw participationError;
+
+      if (participationId != null) {
+        const { error: linkError } = await admin
+          .from("meeting_date_applications")
+          .update({ ticket_participation_id: participationId, updated_at: now })
+          .eq("user_id", user.id)
+          .in("meeting_date", dates);
+        if (linkError) throw linkError;
+      }
+    }
+
     const rows = dates
       .map(
         (date) =>
@@ -376,8 +417,11 @@ export async function POST(request: Request) {
       duplicateDates: protectedRows.map((row) => row.meeting_date),
       totalDepositAmount: joinWaitlist
         ? 0
-        : dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+        : membershipCovered
+          ? 0
+          : dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
       paymentIntentCreated: false,
+      membershipCovered,
     });
   } catch (error) {
     console.error("Meeting date applications save failed:", error);

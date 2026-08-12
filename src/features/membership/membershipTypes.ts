@@ -77,6 +77,28 @@ export function displayMembershipStatus({
   return status;
 }
 
+export function hasCurrentMembershipAccess({
+  status,
+  startDate,
+  endDate,
+}: {
+  status: string | null | undefined;
+  startDate: string | null | undefined;
+  endDate: string | null | undefined;
+}) {
+  const today = todayKoreaDateString();
+  const isWithinRecordedPeriod = Boolean(
+    startDate && endDate && startDate <= today && endDate >= today,
+  );
+
+  // A membership purchase click used to downgrade an active profile to
+  // `pending` without clearing its already-paid membership period.
+  return (
+    (status === "active" && (!endDate || endDate >= today)) ||
+    (status === "pending" && isWithinRecordedPeriod)
+  );
+}
+
 function parseDateOnly(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number);
 

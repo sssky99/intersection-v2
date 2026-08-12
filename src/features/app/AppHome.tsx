@@ -77,6 +77,7 @@ import {
 } from "@/features/meetings/TicketDetailHero";
 import {
   displayMembershipStatus,
+  hasCurrentMembershipAccess,
 } from "@/features/membership/membershipTypes";
 import {
   identifyAnalyticsUser,
@@ -594,14 +595,26 @@ export function AppHome({
   const recommendTabTrackedRef = useRef(false);
   const profileTabTrackedRef = useRef(false);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-  const recommendationMembershipStatus = useMemo(
-    () =>
-      displayMembershipStatus({
+  const recommendationMembershipStatus = useMemo(() => {
+    if (
+      hasCurrentMembershipAccess({
         status: currentProfile.membership_status,
+        startDate: currentProfile.membership_start_date,
         endDate: currentProfile.membership_end_date,
-      }),
-    [currentProfile.membership_end_date, currentProfile.membership_status],
-  );
+      })
+    ) {
+      return "active" as const;
+    }
+
+    return displayMembershipStatus({
+      status: currentProfile.membership_status,
+      endDate: currentProfile.membership_end_date,
+    });
+  }, [
+    currentProfile.membership_end_date,
+    currentProfile.membership_start_date,
+    currentProfile.membership_status,
+  ]);
   const pendingBlindDateOfferCount = useMemo(
     () =>
       blindDateOffers.filter(

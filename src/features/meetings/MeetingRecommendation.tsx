@@ -667,6 +667,7 @@ type DateApplicationScreen =
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
+  membershipCovered?: boolean;
   error?: string;
 };
 
@@ -1361,6 +1362,11 @@ function MeetingDateApplicationFlow({
     recordTicketInteraction(ticket, "yes");
     setError(null);
 
+    if (membershipStatus === "active") {
+      void submitDateApplications(ticket);
+      return;
+    }
+
     setMembershipSheetOpen(true);
   };
 
@@ -1376,7 +1382,11 @@ function MeetingDateApplicationFlow({
     recordTicketInteraction(ticket, "yes");
 
     setScreen("ticket");
-    setMembershipSheetOpen(true);
+    if (membershipStatus === "active") {
+      void submitDateApplications(ticket);
+    } else {
+      setMembershipSheetOpen(true);
+    }
 
     onTicketAcceptRequestHandled?.();
   }, [
@@ -1384,6 +1394,7 @@ function MeetingDateApplicationFlow({
     onTicketAcceptRequestHandled,
     ticketAcceptRequestId,
     ticketAcceptRequestTicketId,
+    membershipStatus,
   ]);
 
   const declineTicket = async (ticket: GatheringTicket) => {
@@ -1508,6 +1519,39 @@ function MeetingDateApplicationFlow({
           );
         }
 
+        setApplications((current) => {
+          const next = new Map(
+            [...current, ...applicationData.applications!].map(
+              (application) => [application.meetingDate, application],
+            ),
+          );
+          return Array.from(next.values()).sort((left, right) =>
+            left.meetingDate.localeCompare(right.meetingDate),
+          );
+        });
+
+        if (applicationData.membershipCovered) {
+          if (ticket) {
+            await recordTicketInteraction(ticket, "payment_confirmed");
+          }
+          setSubmittedDates(targetDates);
+          setMembershipSheetOpen(false);
+          setScreen("submitted");
+          trackEvent("application_created", {
+            application_type: "meeting_date",
+            date_count: targetDates.length,
+            deposit_amount: 0,
+            payment_option: "existing_membership",
+          });
+          trackEvent("invitation_yes", {
+            ticket_instance_id: ticket?.id,
+            meeting_date: ticket?.date ?? targetDates[0],
+            payment_option: "existing_membership",
+          });
+          setSaving(false);
+          return;
+        }
+
         const membershipResponse = await fetch(
           "/api/membership/purchase-click",
           {
@@ -1533,16 +1577,12 @@ function MeetingDateApplicationFlow({
           await recordTicketInteraction(ticket, "payment_pending");
         }
 
-        setApplications((current) => {
-          const next = new Map(
-            [...current, ...applicationData.applications!].map(
-              (application) => [application.meetingDate, application],
-            ),
-          );
-          return Array.from(next.values()).sort((left, right) =>
-            left.meetingDate.localeCompare(right.meetingDate),
-          );
-        });
+      } else if (membershipStatus === "active") {
+        setSubmittedDates(targetDates);
+        setMembershipSheetOpen(false);
+        setScreen("submitted");
+        setSaving(false);
+        return;
       }
 
       trackEvent("application_created", {
@@ -1958,13 +1998,14 @@ function MeetingDateApplicationFlow({
             exit={{ opacity: 0, y: -8 }}
           >
             <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-              payment pending
+              application complete
             </p>
             <h1 className="mt-2 text-[28px] font-bold leading-9 text-black">
-              입금 확인 요청이
-              <br />
-              기록됐어요.
+              신청이 완료되었습니다.
             </h1>
+            <p className="mt-3 text-[13px] font-semibold leading-6 text-black/50">
+              이용 중인 멤버십이 적용되어 별도 결제 없이 신청됐어요.
+            </p>
             <div className="mt-7 divide-y divide-black/8 border-y border-black/10">
               {submittedDates.map((date) => {
                 const schedule = meetingDateSchedule(date)!;
@@ -1981,9 +2022,7 @@ function MeetingDateApplicationFlow({
                         {schedule.timeLabel} · {MEETING_DATE_REGION}
                       </p>
                     </div>
-                    <p className="text-sm font-black tabular-nums text-black">
-                      {MEETING_DATE_DEPOSIT_AMOUNT.toLocaleString("ko-KR")}원
-                    </p>
+                    <p className="text-sm font-black text-black">신청 완료</p>
                   </div>
                 );
               })}
@@ -1993,7 +2032,7 @@ function MeetingDateApplicationFlow({
               onClick={() => setScreen("ticket")}
               className="mt-7 h-[52px] w-full bg-black text-sm font-black text-white"
             >
-              이번 주 티켓 확인하기
+              모임 확인하기
             </button>
           </motion.div>
         ) : (
