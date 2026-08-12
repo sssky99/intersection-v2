@@ -2,7 +2,14 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Clock3, LockKeyhole, MapPin, Navigation, UserRound, X } from "lucide-react";
+import {
+  Clock3,
+  LockKeyhole,
+  MapPin,
+  Navigation,
+  UserRound,
+  X,
+} from "lucide-react";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
@@ -137,6 +144,9 @@ function activityParagraphs(items: string[]) {
 
 export function TicketDetailContent({
   ticket,
+  participantPhotoUrl,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
   className,
   sections = defaultSections,
   startWithBorder = false,
@@ -145,6 +155,9 @@ export function TicketDetailContent({
   footer,
 }: {
   ticket: GatheringTicket;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
   className?: string;
   sections?: TicketDetailSectionKey[];
   startWithBorder?: boolean;
@@ -205,7 +218,13 @@ export function TicketDetailContent({
           eyebrow={journeyDateTimeLabel}
           startWithBorder={startWithBorder}
         >
-          <TicketCoursePanel ticket={ticket} steps={courseSteps} />
+          <TicketCoursePanel
+            ticket={ticket}
+            steps={courseSteps}
+            participantPhotoUrl={participantPhotoUrl}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+          />
         </TicketDetailSection>
       )}
 
@@ -286,11 +305,21 @@ function formatKstTimeLabel(value: Date) {
   }).format(value);
 }
 
-function TicketCoursePanel({ ticket, steps }: {
+function TicketCoursePanel({
+  ticket,
+  steps,
+  participantPhotoUrl,
+  previewMatchPhotoUrls,
+  previewOtherMemberPhotoUrls,
+}: {
   ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls: string[];
+  previewOtherMemberPhotoUrls: string[];
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
+  const [matchSheetOpen, setMatchSheetOpen] = useState(false);
   const selectedStep = mapStepIndex === null ? null : steps[mapStepIndex];
   const selectedMapPlace = journeyStationMapPlace(ticket.area);
 
@@ -356,7 +385,13 @@ function TicketCoursePanel({ ticket, steps }: {
               </div>
             </div>
 
-            <JourneyPeoplePanel stepIndex={index} />
+            <JourneyPeoplePanel
+              stepIndex={index}
+              participantPhotoUrl={participantPhotoUrl}
+              previewMatchPhotoUrls={previewMatchPhotoUrls}
+              previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+              onOpenMatches={() => setMatchSheetOpen(true)}
+            />
           </li>
         );
       })}
@@ -368,6 +403,16 @@ function TicketCoursePanel({ ticket, steps }: {
       <JoinDeadlineCountdown ticket={ticket} />
 
       <AnimatePresence>
+        {matchSheetOpen && (
+          <MatchMembersSheet
+            ticket={ticket}
+            steps={steps}
+            participantPhotoUrl={participantPhotoUrl}
+            matchPhotoUrls={previewMatchPhotoUrls.slice(0, 5)}
+            otherMemberPhotoUrls={previewOtherMemberPhotoUrls.slice(0, 6)}
+            onClose={() => setMatchSheetOpen(false)}
+          />
+        )}
         {selectedStep && (
           <UnreleasedMapSheet
             title={selectedStep.title || selectedStep.activityType || "활동"}
@@ -578,14 +623,34 @@ function UnreleasedMapSheet({
   );
 }
 
-function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
+function JourneyPeoplePanel({
+  stepIndex,
+  participantPhotoUrl,
+  previewMatchPhotoUrls,
+  previewOtherMemberPhotoUrls,
+  onOpenMatches,
+}: {
+  stepIndex: number;
+  participantPhotoUrl?: string | null;
+  previewMatchPhotoUrls: string[];
+  previewOtherMemberPhotoUrls: string[];
+  onOpenMatches: () => void;
+}) {
   if (stepIndex === 0) {
     return (
       <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
         <div className="flex min-h-12 items-center justify-between gap-3 px-3.5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
-              <UserRound size={13} strokeWidth={2} aria-hidden />
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
+              {participantPhotoUrl ? (
+                <span
+                  className="h-full w-full bg-cover bg-center"
+                  style={{ backgroundImage: `url(${participantPhotoUrl})` }}
+                  aria-hidden
+                />
+              ) : (
+                <UserRound size={13} strokeWidth={2} aria-hidden />
+              )}
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
@@ -594,12 +659,20 @@ function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
             <Clock3 size={12} strokeWidth={1.9} aria-hidden />
           </span>
         </div>
-        <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
-          <JourneyAvatarStack tone="warm" />
+        <button
+          type="button"
+          onClick={onOpenMatches}
+          className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left transition hover:bg-black/[0.025] active:bg-black/[0.045]"
+          aria-label="나와 잘 맞는 5명 보기"
+        >
+          <JourneyAvatarStack
+            tone="warm"
+            photoUrls={previewMatchPhotoUrls.slice(0, 5)}
+          />
           <p className="text-[10px] font-bold text-black/44">
             나와 <strong className="font-black text-black/72">잘 맞는 5명</strong>
           </p>
-        </div>
+        </button>
       </div>
     );
   }
@@ -607,13 +680,23 @@ function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
   return (
     <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
       <div className="flex min-h-12 items-center gap-2.5 px-3.5">
-        <JourneyAvatarStack tone="warm" />
+        <JourneyAvatarStack
+          tone="warm"
+          photoUrls={[
+            ...previewMatchPhotoUrls.slice(0, 5),
+            ...(participantPhotoUrl ? [participantPhotoUrl] : []),
+          ]}
+          clearLastPhoto={Boolean(participantPhotoUrl)}
+        />
         <p className="text-[10px] font-bold text-black/44">
           <strong className="font-black text-black/72">저녁을 함께한 멤버</strong>
         </p>
       </div>
       <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
-        <JourneyAvatarStack tone="cool" />
+        <JourneyAvatarStack
+          tone="cool"
+          photoUrls={previewOtherMemberPhotoUrls.slice(0, 6)}
+        />
         <p className="text-[10px] font-bold text-black/44">
           다른 <strong className="font-black text-black/72">교집합 멤버들</strong>도 함께해요
         </p>
@@ -622,23 +705,262 @@ function JourneyPeoplePanel({ stepIndex }: { stepIndex: number }) {
   );
 }
 
-function JourneyAvatarStack({ tone }: { tone: "warm" | "cool" }) {
+function MatchMembersSheet({
+  ticket,
+  steps,
+  participantPhotoUrl,
+  matchPhotoUrls,
+  otherMemberPhotoUrls,
+  onClose,
+}: {
+  ticket: GatheringTicket;
+  steps: NonNullable<GatheringTicket["courseSteps"]>;
+  participantPhotoUrl?: string | null;
+  matchPhotoUrls: string[];
+  otherMemberPhotoUrls: string[];
+  onClose: () => void;
+}) {
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [noticeOpen, setNoticeOpen] = useState(false);
+  const mapPlace = journeyStationMapPlace(ticket.area);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (noticeOpen) {
+        setNoticeOpen(false);
+        return;
+      }
+      onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [noticeOpen, onClose]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[140] flex justify-center bg-black/28"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-label="나와 잘 맞는 멤버"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 330, damping: 34 }}
+        className="relative flex h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-[#f7f4ed] text-black shadow-[0_-28px_90px_rgba(0,0,0,0.28)]"
+      >
+        <header className="relative h-[calc(58px+env(safe-area-inset-top))] shrink-0 px-5 pt-[calc(12px+env(safe-area-inset-top))]">
+          <span
+            className="mx-auto block h-1.5 w-16 rounded-full bg-black/15"
+            aria-hidden
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="매칭 멤버 닫기"
+            className="absolute right-4 top-[calc(8px+env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center text-black/58 transition hover:text-black"
+          >
+            <X size={20} strokeWidth={1.8} aria-hidden />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[calc(32px+env(safe-area-inset-bottom))] scrollbar-none">
+          <div className="mt-4 flex overflow-x-auto rounded-full border border-black/10 bg-black/[0.035] p-1 scrollbar-none">
+            {steps.map((step, index) => (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => setActiveStepIndex(index)}
+                className={cn(
+                  "min-w-max flex-1 rounded-full px-5 py-2.5 text-[12px] font-black transition",
+                  activeStepIndex === index
+                    ? "bg-black text-white shadow-sm"
+                    : "text-black/38",
+                )}
+              >
+                {step.title || step.activityType || `코스 ${index + 1}`}
+              </button>
+            ))}
+          </div>
+
+          {activeStepIndex === 0 ? (
+            <section className="mt-6 rounded-[26px] border border-black/10 bg-white/45 px-4 py-5 shadow-[0_18px_50px_rgba(39,34,24,0.08)]">
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-[17px] font-black tracking-[-0.035em]">내 테이블</h3>
+              </div>
+
+              <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-6">
+                <div className="flex min-w-0 flex-col items-center">
+                  <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/45 shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
+                    {participantPhotoUrl ? (
+                      <span
+                        className="h-full w-full bg-cover bg-center"
+                        style={{ backgroundImage: `url(${participantPhotoUrl})` }}
+                        aria-hidden
+                      />
+                    ) : (
+                      <UserRound size={20} strokeWidth={1.8} aria-hidden />
+                    )}
+                  </span>
+                  <span className="mt-2 text-[12px] font-black text-black/[0.62]">나</span>
+                </div>
+                {matchPhotoUrls.map((photoUrl, index) => (
+                  <button
+                    key={photoUrl}
+                    type="button"
+                    onClick={() => setNoticeOpen(true)}
+                    aria-label={`매칭 멤버 ${index + 1} 안내 보기`}
+                    className="group flex min-w-0 flex-col items-center"
+                  >
+                    <span className="relative h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-black/[0.04] shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
+                      <span
+                        className="absolute -inset-2 scale-125 bg-cover bg-center blur-[8px]"
+                        style={{ backgroundImage: `url(${photoUrl})` }}
+                        aria-hidden
+                      />
+                      <span className="absolute inset-0 bg-black/[0.12]" />
+                    </span>
+                    <span className="mt-2 text-[12px] font-bold text-black/48">
+                      매칭 {index + 1}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <section className="mt-6 overflow-hidden rounded-[26px] border border-black/10 bg-white/45 shadow-[0_18px_50px_rgba(39,34,24,0.08)]">
+              <div
+                className="relative flex h-[238px] items-center justify-center overflow-hidden bg-[#d8d1c3] px-5"
+              >
+                {mapPlace && (
+                  <NaverMapPreview
+                    place={mapPlace}
+                    heightClassName="h-full"
+                    className="pointer-events-none absolute inset-0 rounded-none border-0 saturate-[0.78]"
+                  />
+                )}
+                <span className="absolute inset-0 bg-[#d8d1c3]/42 backdrop-blur-[1px]" />
+                <div className="relative flex items-center gap-4 rounded-full border border-black/10 bg-[#f7f4ed]/88 px-6 py-4 shadow-[0_14px_38px_rgba(39,34,24,0.14)] backdrop-blur-md">
+                  <JourneyAvatarStack
+                    tone="cool"
+                    photoUrls={otherMemberPhotoUrls.slice(0, 6)}
+                  />
+                  <p className="whitespace-nowrap text-[15px] font-black tracking-[-0.025em] text-black/72">
+                    여러 명의 멤버가 함께해요.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-black/[0.07] px-6 py-6 text-center">
+                <p className="break-keep text-[14px] font-semibold leading-7 tracking-[-0.025em] text-black/48">
+                  내 테이블 멤버들과 함께 시크릿 칵테일 바에서 더 많은 교집합 멤버들을 만나요. 정확한 장소는 저녁 식사 후 공개돼요.
+                </p>
+              </div>
+            </section>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {noticeOpen && (
+            <motion.div
+              className="absolute inset-0 z-20 flex items-center justify-center bg-black/[0.42] px-8 backdrop-blur-md"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              role="presentation"
+            >
+              <motion.div
+                role="alertdialog"
+                aria-modal="true"
+                aria-label="매칭 멤버 공개 안내"
+                initial={{ scale: 0.96, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0 }}
+                className="w-full overflow-hidden rounded-[28px] border border-black/10 bg-[#f7f4ed] text-center shadow-[0_24px_80px_rgba(0,0,0,0.28)]"
+              >
+                <p className="break-keep px-7 py-7 text-[16px] font-bold leading-7 tracking-[-0.035em] text-black">
+                  매칭 멤버는 현장에서 직접 만나보세요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setNoticeOpen(false)}
+                  className="h-14 w-full border-t border-black/10 text-[14px] font-bold text-black transition hover:bg-black/[0.035]"
+                >
+                  확인
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function JourneyAvatarStack({
+  tone,
+  photoUrls = [],
+  clearLastPhoto = false,
+}: {
+  tone: "warm" | "cool";
+  photoUrls?: string[];
+  clearLastPhoto?: boolean;
+}) {
   const colors =
     tone === "warm"
       ? ["bg-[#d8b49b]", "bg-[#b9c7b0]", "bg-[#a9bbc9]"]
       : ["bg-[#d7aab7]", "bg-[#b5c8d7]", "bg-[#c6b6d4]"];
 
   return (
-    <span className="flex w-[52px] shrink-0 items-center" aria-hidden>
-      {colors.map((color, index) => (
+    <span
+      className={cn(
+        "flex shrink-0 items-center",
+        photoUrls.length > 0
+          ? photoUrls.length >= 6
+            ? "w-[108px]"
+            : "w-[92px]"
+          : "w-[52px]",
+      )}
+      aria-hidden
+    >
+      {(photoUrls.length > 0 ? photoUrls : colors).map((value, index) => (
         <span
-          key={color}
+          key={value}
           className={cn(
-            "h-7 w-7 rounded-full border-2 border-[#f8f4eb] shadow-sm",
-            color,
+            "relative h-7 w-7 overflow-hidden rounded-full border-2 border-[#f8f4eb] shadow-sm",
+            photoUrls.length === 0 && value,
             index > 0 && "-ml-3",
           )}
-        />
+        >
+          {photoUrls.length > 0 && (
+            <>
+              <span
+                className={cn(
+                  "absolute bg-cover bg-center",
+                  clearLastPhoto && index === photoUrls.length - 1
+                    ? "inset-0"
+                    : "-inset-1 scale-125 blur-[1px]",
+                )}
+                style={{ backgroundImage: `url(${value})` }}
+              />
+              {(!clearLastPhoto || index < photoUrls.length - 1) && (
+                <span className="absolute inset-0 bg-black/[0.12]" />
+              )}
+            </>
+          )}
+        </span>
       ))}
     </span>
   );

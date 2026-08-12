@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type VisitorRange = "today" | "7d" | "30d";
 
+const visitorEventsApiEnabled = false;
+
 type FunnelMetric = {
   event_name: string;
   count: number;
@@ -158,6 +160,13 @@ export function VisitorAdminPanel() {
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
+    if (!visitorEventsApiEnabled) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -186,6 +195,8 @@ export function VisitorAdminPanel() {
   }, [loadEvents]);
 
   const loadTimeline = useCallback(async (summary: VisitorUserSummary) => {
+    if (!visitorEventsApiEnabled) return;
+
     setSelectedSummary(summary);
     setTimelineEvents([]);
     setTimelineError(null);
@@ -259,11 +270,13 @@ export function VisitorAdminPanel() {
                   key={option.value}
                   type="button"
                   onClick={() => setRange(option.value)}
+                  disabled={!visitorEventsApiEnabled}
                   className={cn(
                     "h-9 rounded-lg px-4 text-sm font-semibold transition",
                     range === option.value
                       ? "bg-white text-black shadow-sm"
                       : "text-black/45 hover:text-black",
+                    !visitorEventsApiEnabled && "cursor-not-allowed opacity-45",
                   )}
                 >
                   {option.label}
@@ -273,7 +286,7 @@ export function VisitorAdminPanel() {
             <button
               type="button"
               onClick={() => void loadEvents()}
-              disabled={loading}
+              disabled={loading || !visitorEventsApiEnabled}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-45"
             >
               <RefreshCw size={15} aria-hidden className={loading ? "animate-spin" : ""} />
@@ -285,6 +298,11 @@ export function VisitorAdminPanel() {
         {error && (
           <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
             {error}
+          </p>
+        )}
+        {!visitorEventsApiEnabled && (
+          <p className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            방문자 로그 조회는 일시 중단했어요. 필요한 방문자 데이터는 코드로 확인해 주세요.
           </p>
         )}
       </header>

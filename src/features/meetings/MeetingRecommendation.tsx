@@ -636,6 +636,9 @@ type MeetingRecommendationProps = {
   profileCompleted?: boolean;
   profileName?: string | null;
   profileMbti?: string | null;
+  profilePhotoUrl?: string | null;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
   guestMode?: boolean;
   participationPrecisionCount?: number;
   onOpenParticipationRecord?: () => void;
@@ -871,6 +874,9 @@ function MeetingDateApplicationFlow({
   profileCompleted = true,
   profileName = null,
   profileMbti = null,
+  profilePhotoUrl = null,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
   guestMode = false,
   participationPrecisionCount = 0,
   onOpenParticipationRecord = () => undefined,
@@ -1853,6 +1859,9 @@ function MeetingDateApplicationFlow({
           />
           <TicketDetailContent
             ticket={selectedTicket}
+            participantPhotoUrl={profilePhotoUrl}
+            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             sections={[
               "summary",
               "recommendation",

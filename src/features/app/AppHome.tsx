@@ -197,7 +197,6 @@ const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "recommend", label: "신청", Icon: Sparkles },
   { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "chat", label: "채팅", Icon: MessageCircle },
-  { id: "profile", label: "프로필", Icon: UserRound },
 ];
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -509,6 +508,8 @@ export function AppHome({
   initialAnswerRows = [],
   onRequestBasicInfo,
   forceInitialRecommendationPreview = false,
+  previewMatchPhotoUrls = [],
+  previewOtherMemberPhotoUrls = [],
 }: {
   userId: string;
   profile: ProfileRow;
@@ -519,6 +520,8 @@ export function AppHome({
   initialAnswerRows?: AnswerRow[];
   onRequestBasicInfo?: (meetingDate?: string) => void;
   forceInitialRecommendationPreview?: boolean;
+  previewMatchPhotoUrls?: string[];
+  previewOtherMemberPhotoUrls?: string[];
 }) {
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
@@ -1187,6 +1190,35 @@ export function AppHome({
         </button>
       )}
 
+      {!chatRoomOpen &&
+        !recommendationFocusMode &&
+        !ticketTabFocusMode &&
+        !replayedDeclinedTicket && (
+          <button
+            type="button"
+            onClick={() => switchTab("profile")}
+            title="프로필"
+            aria-label="프로필 열기"
+            aria-current={activeTab === "profile" ? "page" : undefined}
+            className={cn(
+              "absolute right-5 top-[calc(14px+env(safe-area-inset-top))] z-40 flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border bg-white shadow-[0_6px_18px_rgba(0,0,0,0.14)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,0,0,0.18)]",
+              activeTab === "profile"
+                ? "border-black ring-2 ring-black/15"
+                : "border-black/12",
+            )}
+          >
+            {currentProfile.photo_url ? (
+              <span
+                className="h-full w-full bg-cover bg-center"
+                style={{ backgroundImage: `url(${currentProfile.photo_url})` }}
+                aria-hidden
+              />
+            ) : (
+              <UserRound size={20} strokeWidth={1.8} aria-hidden />
+            )}
+          </button>
+        )}
+
       <div
         ref={scrollAreaRef}
         className={cn(
@@ -1224,6 +1256,9 @@ export function AppHome({
               profileCompleted={Boolean(currentProfile.profile_completed)}
               profileName={currentProfile.name ?? currentProfile.nickname}
               profileMbti={currentProfile.mbti}
+              profilePhotoUrl={currentProfile.photo_url}
+              previewMatchPhotoUrls={previewMatchPhotoUrls}
+              previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
               guestMode={guestMode}
               participationPrecisionCount={
                 participationCount +
@@ -1441,7 +1476,7 @@ export function AppHome({
         !ticketTabFocusMode &&
         !replayedDeclinedTicket && (
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
-          <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+          <div className="pointer-events-auto relative grid grid-cols-3 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
               const selected = activeTab === id;
 
@@ -5175,9 +5210,9 @@ function ProfileCompletionModal({
         if (!alive) return;
         setIntro(
           existingIntro ||
-            "프로필을 준비하고 있어요.\n\n잠시 후 프로필 탭에서 다시 확인할 수 있어요.",
+            "프로필을 준비하고 있어요.\n\n잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.",
         );
-        setNotice("잠시 후 프로필 탭에서 다시 확인할 수 있어요.");
+        setNotice("잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.");
         setError(null);
         setPhase("typing");
       } finally {
