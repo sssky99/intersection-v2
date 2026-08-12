@@ -14,10 +14,7 @@ import {
   type WaitlistTicketTemplate,
 } from "@/features/admin/waitlistAdminTypes";
 import type { GatheringTicket } from "@/types/ticket";
-import {
-  meetingDateDepositStatusLabels,
-  type MeetingDateDepositStatus,
-} from "@/lib/meetingDateApplications";
+import type { MeetingDateDepositStatus } from "@/lib/meetingDateApplications";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +41,8 @@ type DateApplicationDbRow = {
   meeting_time: string;
   region: string;
   status: string;
-  deposit_amount: number;
-  deposit_status: MeetingDateDepositStatus;
+  deposit_amount: number | null;
+  deposit_status: MeetingDateDepositStatus | null;
   assigned_ticket_instance_id: string | null;
   ticket_participation_id: number | string | null;
   admin_note: string | null;
@@ -92,14 +89,6 @@ function unauthorized() {
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function isMeetingDateDepositStatus(
-  value: unknown,
-): value is MeetingDateDepositStatus {
-  return (
-    typeof value === "string" && value in meetingDateDepositStatusLabels
-  );
 }
 
 async function loadWaitlistData(): Promise<AdminWaitlistData> {
@@ -357,7 +346,6 @@ export async function PATCH(request: NextRequest) {
   const id = body?.id;
   const status = body?.status;
   const adminNote = body?.adminNote;
-  const depositStatus = body?.depositStatus;
   const ticketInstanceId =
     body && "ticketInstanceId" in body ? body.ticketInstanceId : undefined;
 
@@ -426,16 +414,6 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (
-    depositStatus !== undefined &&
-    !isMeetingDateDepositStatus(depositStatus)
-  ) {
-    return NextResponse.json(
-      { error: "참여 보증금 상태가 올바르지 않습니다." },
-      { status: 400 },
-    );
-  }
-
-  if (
     ticketInstanceId !== undefined &&
     ticketInstanceId !== null &&
     typeof ticketInstanceId !== "string"
@@ -457,7 +435,7 @@ export async function PATCH(request: NextRequest) {
       const { data: current, error: currentError } = await supabase
         .from("meeting_date_applications")
         .select(
-          "id,user_id,meeting_date,status,deposit_status,assigned_ticket_instance_id,ticket_participation_id",
+          "id,user_id,meeting_date,status,assigned_ticket_instance_id,ticket_participation_id",
         )
         .eq("id", dateApplicationId)
         .single<{
@@ -465,7 +443,6 @@ export async function PATCH(request: NextRequest) {
           user_id: string;
           meeting_date: string;
           status: string;
-          deposit_status: MeetingDateDepositStatus;
           assigned_ticket_instance_id: string | null;
           ticket_participation_id: number | string | null;
         }>();
@@ -524,19 +501,7 @@ export async function PATCH(request: NextRequest) {
       }
       if (status !== undefined) {
         payload.status = status;
-        if (status === "waitlisted") {
-          payload.deposit_status = "confirmed";
-          payload.deposit_confirmed_at = now;
-        }
-        if (["not_selected", "completed", "feedback_done"].includes(status)) {
-          payload.deposit_status = "refund_pending";
-        }
         if (status === "cancelled") payload.cancelled_at = now;
-      }
-      if (depositStatus !== undefined) {
-        payload.deposit_status = depositStatus;
-        if (depositStatus === "confirmed") payload.deposit_confirmed_at = now;
-        if (depositStatus === "refunded") payload.refund_completed_at = now;
       }
 
       if (status !== undefined && nextInstanceId) {
@@ -560,52 +525,6 @@ export async function PATCH(request: NextRequest) {
         .update(payload)
         .eq("id", dateApplicationId);
       if (updateError) throw updateError;
-
-      const paymentConfirmed =
-        payload.deposit_status === "confirmed" ||
-        (payload.deposit_status === undefined &&
-          current.deposit_status === "confirmed");
-      if (paymentConfirmed && nextInstanceId) {
-        const { data: confirmedInstance, error: confirmedInstanceError } =
-          await supabase
-            .from("ticket_instances")
-            .select("id,template_id")
-            .eq("id", nextInstanceId)
-            .single<{ id: string; template_id: string }>();
-        if (confirmedInstanceError) throw confirmedInstanceError;
-
-        const { data: existingInteraction, error: existingInteractionError } =
-          await supabase
-            .from("ticket_user_interactions")
-            .select("opened_at,responded_at,payment_started_at")
-            .eq("user_id", current.user_id)
-            .eq("ticket_instance_id", nextInstanceId)
-            .maybeSingle<{
-              opened_at: string | null;
-              responded_at: string | null;
-              payment_started_at: string | null;
-            }>();
-        if (existingInteractionError) throw existingInteractionError;
-
-        const { error: interactionError } = await supabase
-          .from("ticket_user_interactions")
-          .upsert(
-            {
-              user_id: current.user_id,
-              ticket_instance_id: confirmedInstance.id,
-              ticket_template_id: confirmedInstance.template_id,
-              status: "payment_confirmed",
-              opened_at: existingInteraction?.opened_at ?? now,
-              responded_at: existingInteraction?.responded_at ?? now,
-              payment_started_at:
-                existingInteraction?.payment_started_at ?? now,
-              payment_confirmed_at: now,
-              updated_at: now,
-            },
-            { onConflict: "user_id,ticket_instance_id" },
-          );
-        if (interactionError) throw interactionError;
-      }
 
       return NextResponse.json(await loadWaitlistData());
     }

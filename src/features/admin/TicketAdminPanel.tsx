@@ -3032,7 +3032,7 @@ function StageCopyEditor({
       <h3 className="mt-1 text-sm font-bold">실제 진행상황 문구</h3>
       <div className="mt-3 space-y-3">
         <TextAreaField
-          label="입금 확인 안내"
+          label="결제 확인 안내"
           rows={2}
           value={draft.stagePaymentPendingText}
           onChange={(stagePaymentPendingText) =>

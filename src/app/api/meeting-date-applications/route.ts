@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import {
-  MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
   isMeetingDateClosed,
   meetingDateSchedule,
@@ -39,7 +38,7 @@ type DateApplicationRow = {
   meeting_time: string;
   region: string;
   status: MeetingDateApplication["status"];
-  deposit_amount: number;
+  deposit_amount: number | null;
   deposit_status: MeetingDateApplication["depositStatus"];
   assigned_ticket_instance_id: string | null;
   created_at: string | null;
@@ -318,10 +317,7 @@ export async function POST(request: Request) {
       .filter((date) => {
         const existing = existingByDate.get(date);
         if (!existing) return true;
-        return (
-          existing.status === "payment_pending" &&
-          existing.deposit_status === "payment_pending"
-        );
+        return existing.status === "payment_pending";
       })
       .map((date) => {
         const schedule = meetingDateSchedule(date)!;
@@ -333,11 +329,10 @@ export async function POST(request: Request) {
           region: selectedTicket?.region ?? MEETING_DATE_REGION,
           status:
             joinWaitlist || membershipCovered ? "waitlisted" : "payment_pending",
-          deposit_amount:
-            joinWaitlist || membershipCovered ? 0 : MEETING_DATE_DEPOSIT_AMOUNT,
-          deposit_status: membershipCovered ? "confirmed" : "payment_pending",
-          deposit_requested_at: joinWaitlist || membershipCovered ? null : now,
-          deposit_confirmed_at: membershipCovered ? now : null,
+          deposit_amount: null,
+          deposit_status: null,
+          deposit_requested_at: null,
+          deposit_confirmed_at: null,
           refund_completed_at: null,
           assigned_ticket_instance_id: selectedTicket?.id ?? null,
           ticket_participation_id: null,
@@ -401,11 +396,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       applications: rows.map((row) => toApplication(row)),
       duplicateDates: protectedRows.map((row) => row.meeting_date),
-      totalDepositAmount: joinWaitlist
-        ? 0
-        : membershipCovered
-          ? 0
-          : dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      totalDepositAmount: 0,
       paymentIntentCreated: false,
       membershipCovered,
     });

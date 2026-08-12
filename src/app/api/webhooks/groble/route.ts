@@ -651,8 +651,6 @@ async function processMembershipPayment({
         .from("meeting_date_applications")
         .update({
           status: "waitlisted",
-          deposit_status: "confirmed",
-          deposit_confirmed_at: paidAt,
           groble_merchant_uid: details.merchantUid,
           groble_payment_event_id: envelope.id,
           updated_at: new Date().toISOString(),

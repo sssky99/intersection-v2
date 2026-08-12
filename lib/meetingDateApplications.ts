@@ -28,8 +28,8 @@ export type MeetingDateApplication = {
   meetingTime: string;
   region: string;
   status: MeetingDateApplicationStatus;
-  depositAmount: number;
-  depositStatus: MeetingDateDepositStatus;
+  depositAmount: number | null;
+  depositStatus: MeetingDateDepositStatus | null;
   assignedTicketInstanceId: string | null;
   ticketRevealsAt?: string | null;
   createdAt: string | null;

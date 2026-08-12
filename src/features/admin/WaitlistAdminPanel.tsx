@@ -28,10 +28,6 @@ import {
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
 import {
-  meetingDateDepositStatusLabels,
-  type MeetingDateDepositStatus,
-} from "@/lib/meetingDateApplications";
-import {
   arrivalStatusLabels,
   waitlistStatuses,
   waitlistStatusLabels,
@@ -46,7 +42,6 @@ type WaitlistPatch = {
   status?: WaitlistStatus;
   adminNote?: string | null;
   ticketInstanceId?: string | null;
-  depositStatus?: MeetingDateDepositStatus;
 };
 
 type StatusFilter = WaitlistStatus | "all";
@@ -1112,7 +1107,7 @@ function WaitlistAccordion({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-black">
-                    결제 확인된 대기 {eligibleRows.length}명 티켓 이동
+                    대기 신청 {eligibleRows.length}명 티켓 이동
                   </p>
                   <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
                     선택한 티켓의 참여자로 확정합니다. 사용자는 행사 24시간
@@ -1313,16 +1308,6 @@ function WaitlistDetailPanel({
               label="현재 세부 티켓"
               value={instanceText(row.ticket_instance)}
             />
-            {row.deposit_amount !== null && (
-              <DetailItem
-                label="참여 보증금"
-                value={`${row.deposit_amount.toLocaleString("ko-KR")}원 · ${
-                  row.deposit_status
-                    ? meetingDateDepositStatusLabels[row.deposit_status]
-                    : "-"
-                }`}
-              />
-            )}
             <DetailItem label="도착 상태" value={arrivalStatusText(row)} />
           </div>
         </section>
@@ -1382,35 +1367,6 @@ function WaitlistDetailPanel({
             </select>
           </label>
 
-          {row.deposit_status && (
-            <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
-              <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">
-                참여 보증금 상태
-              </span>
-              <select
-                value={row.deposit_status}
-                disabled={saving}
-                onChange={(event) =>
-                  onPatch(
-                    row,
-                    {
-                      depositStatus: event.target.value as MeetingDateDepositStatus,
-                    },
-                    "참여 보증금 상태를 저장했습니다.",
-                  )
-                }
-                className="mt-2 h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-              >
-                {Object.entries(meetingDateDepositStatusLabels).map(
-                  ([status, label]) => (
-                    <option key={status} value={status}>
-                      {label}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-          )}
 
           <label className="block rounded-2xl border border-black/10 bg-white px-4 py-3">
             <span className="text-[11px] font-bold uppercase tracking-wide text-black/35">

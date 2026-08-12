@@ -732,8 +732,7 @@ function DateApplicationOption({
 }) {
   const schedule = meetingDateSchedule(ticket.date);
   const canResumePayment =
-    application?.status === "payment_pending" &&
-    application.depositStatus === "payment_pending";
+    application?.status === "payment_pending";
   const canJoinWaitlist = waitlistAvailable && !application;
   const isWaitingForSeat = application?.status === "waitlisted";
 
@@ -912,14 +911,6 @@ function MeetingDateApplicationFlow({
   const [submittedDates, setSubmittedDates] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [depositOpen, setDepositOpen] = useState(false);
-  const [depositSession, setDepositSession] = useState(0);
-  const [depositAccountCopied, setDepositAccountCopied] = useState(false);
-  const [depositCopyError, setDepositCopyError] = useState<string | null>(null);
-  const [depositMessageSummary, setDepositMessageSummary] =
-    useState<DepositMessageRegistrationSummary | null>(() =>
-      cachedDepositMessageSummary(),
-    );
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const [ticketPreviewMotionKey, setTicketPreviewMotionKey] = useState(0);
@@ -1333,8 +1324,7 @@ function MeetingDateApplicationFlow({
   const toggleDate = (date: string) => {
     const application = applicationByDate.get(date);
     const canResumePayment =
-      application?.status === "payment_pending" &&
-      application.depositStatus === "payment_pending";
+      application?.status === "payment_pending";
     if (date < today || (application && !canResumePayment) || saving) return;
     setSelectedDates((current) => {
       if (current.includes(date)) return [];
@@ -1471,19 +1461,6 @@ function MeetingDateApplicationFlow({
     }
   };
 
-  const copyDepositAccount = async () => {
-    if (saving) return;
-    try {
-      await copyTextToClipboard(noShowDepositAccountText);
-      setDepositAccountCopied(true);
-      setDepositCopyError(null);
-    } catch {
-      setDepositCopyError(
-        "계좌번호를 복사하지 못했어요. 직접 선택해서 복사해주세요.",
-      );
-    }
-  };
-
   const submitDateApplications = async (
     ticket: GatheringTicket | null = null,
   ) => {
@@ -1492,12 +1469,11 @@ function MeetingDateApplicationFlow({
 
     setSaving(true);
     setError(null);
-    setDepositCopyError(null);
     let membershipCheckoutUrl = membershipStoreUrls.one_month;
     trackEvent("application_submit_click", {
       application_type: "meeting_date",
       date_count: targetDates.length,
-      deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+      deposit_amount: 0,
       membership_status: membershipStatus,
     });
 
@@ -1620,7 +1596,6 @@ function MeetingDateApplicationFlow({
           ? membershipPurchaseError.message
           : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.";
       setError(message);
-      setDepositCopyError(message);
       setSaving(false);
     }
   };
@@ -1649,8 +1624,8 @@ function MeetingDateApplicationFlow({
             meetingTime: meetingDateSchedule(date)?.time ?? "",
             region: MEETING_DATE_REGION,
             status: "waitlisted",
-            depositAmount: 0,
-            depositStatus: "payment_pending",
+            depositAmount: null,
+            depositStatus: null,
             assignedTicketInstanceId: null,
             createdAt: now,
           },
@@ -2449,23 +2424,6 @@ function MeetingDateApplicationFlow({
         )}
       </AnimatePresence>
 
-      {depositOpen && (
-        <DateDepositBottomSheet
-          key={`date-deposit-sheet-${depositSession}`}
-          saving={saving}
-          accountCopied={depositAccountCopied}
-          registrationSummary={depositMessageSummary}
-          copyError={depositCopyError}
-          onCopy={() => void copyDepositAccount()}
-          onSubmit={() => void submitDateApplications()}
-          onClose={() => {
-            if (saving) return;
-            setDepositOpen(false);
-            setDepositAccountCopied(false);
-            setDepositCopyError(null);
-          }}
-        />
-      )}
     </section>
   );
 }

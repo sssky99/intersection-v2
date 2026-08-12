@@ -139,7 +139,6 @@ export async function POST(request: NextRequest) {
           .eq("id", meetingDateApplicationId)
           .eq("user_id", user.id)
           .eq("status", "payment_pending")
-          .eq("deposit_status", "payment_pending")
           .maybeSingle<{
             id: number | string;
             assigned_ticket_instance_id: string | null;

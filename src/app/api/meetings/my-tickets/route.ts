@@ -260,7 +260,7 @@ const statusPriority: Record<UserTicketStatus, number> = {
 };
 
 const statusLabels: Record<UserTicketStatus, string> = {
-  payment_pending: "입금 확인 필요",
+  payment_pending: "멤버십 결제 확인 중",
   waitlisted: "신청 완료",
   approved: "참여 확정",
   in_progress: "진행 중",
