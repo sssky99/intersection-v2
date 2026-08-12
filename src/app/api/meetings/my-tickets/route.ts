@@ -90,6 +90,7 @@ type WaitlistRow = {
   arrival_status: TicketArrivalStatus | null;
   arrival_status_updated_at: string | null;
   created_at: string | null;
+  updated_at: string | null;
 };
 
 type ParticipantRow = {
@@ -1389,6 +1390,7 @@ export async function GET(request: Request) {
             confirmed && derived.canSetArrival,
           arrivalStatus: row.arrival_status ?? null,
           arrivalStatusUpdatedAt: row.arrival_status_updated_at ?? null,
+          updatedAt: row.updated_at ?? row.created_at ?? null,
           place: placeVisible
             ? {
                 name: ticket.place?.name ?? instance?.place_name ?? null,

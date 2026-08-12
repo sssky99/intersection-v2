@@ -43,6 +43,7 @@ type DateApplicationRow = {
   deposit_status: MeetingDateApplication["depositStatus"];
   assigned_ticket_instance_id: string | null;
   created_at: string | null;
+  updated_at: string | null;
 };
 
 type AssignedTicketSchedule = {
@@ -93,6 +94,7 @@ function toApplication(
     assignedTicketInstanceId: row.assigned_ticket_instance_id,
     ticketRevealsAt: ticketRevealsAt(schedule),
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -141,7 +143,7 @@ export async function GET() {
     const { data, error } = await createAdminClient()
       .from("meeting_date_applications")
       .select(
-        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
       .eq("user_id", user.id)
       .gte("meeting_date", todayInKst())
@@ -306,7 +308,7 @@ export async function POST(request: Request) {
     const { data: existingRows, error: existingError } = await admin
       .from("meeting_date_applications")
       .select(
-        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
       .eq("user_id", user.id)
       .in("meeting_date", dates)
@@ -368,7 +370,7 @@ export async function POST(request: Request) {
         .from("meeting_date_applications")
         .upsert(rowsToSave, { onConflict: "user_id,meeting_date" })
         .select(
-          "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at",
+          "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
         )
         .returns<DateApplicationRow[]>();
       if (error) throw error;

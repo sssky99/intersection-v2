@@ -155,6 +155,7 @@ export type UserTicket = {
   canSetArrival: boolean;
   arrivalStatus: TicketArrivalStatus | null;
   arrivalStatusUpdatedAt: string | null;
+  updatedAt?: string | null;
   place: TicketPlace | null;
   members: TicketMemberIntro[];
 };

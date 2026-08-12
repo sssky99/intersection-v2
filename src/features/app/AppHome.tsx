@@ -1816,6 +1816,18 @@ type TicketListItem =
       interaction: TicketInteraction;
     };
 
+function ticketListItemUpdatedAt(item: TicketListItem) {
+  const value =
+    item.kind === "stored-ticket"
+      ? item.userTicket.updatedAt
+      : item.kind === "interaction-ticket"
+        ? item.interaction.updatedAt
+        : item.application.updatedAt ?? item.application.createdAt;
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function isVisibleMysteryApplication(
   application: MeetingDateApplication,
   nowMs: number | null,
@@ -1921,15 +1933,7 @@ function TicketListTab({
     [availableTickets],
   );
   const ticketItems = useMemo<TicketListItem[]>(() => {
-    const storedTicketIds = new Set(
-      tickets.map((userTicket) => userTicket.ticket.id),
-    );
-    const applicationTicketIds = new Set(
-      mysteryApplications
-        .map((application) => application.assignedTicketInstanceId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const items: TicketListItem[] = [
+    const candidates: TicketListItem[] = [
       ...mysteryApplications.map((application): TicketListItem => ({
         kind: "date-application" as const,
         id: `date-application:${application.id}`,
@@ -1947,18 +1951,34 @@ function TicketListTab({
         id: `stored-ticket:${userTicket.id}`,
         userTicket,
       })),
-      ...interactions
-        .filter(
-          (interaction) =>
-            !storedTicketIds.has(interaction.ticket.id) &&
-            !applicationTicketIds.has(interaction.ticket.id),
-        )
-        .map((interaction): TicketListItem => ({
+      ...interactions.map((interaction): TicketListItem => ({
           kind: "interaction-ticket",
           id: `interaction-ticket:${interaction.ticket.id}`,
           interaction,
         })),
     ];
+    const latestItemByTicket = new Map<string, TicketListItem>();
+    for (const item of candidates) {
+      const ticketId =
+        item.kind === "stored-ticket"
+          ? item.userTicket.ticket.id
+          : item.kind === "interaction-ticket"
+            ? item.interaction.ticket.id
+            : item.ticket?.id ?? item.application.assignedTicketInstanceId;
+      if (!ticketId) {
+        latestItemByTicket.set(item.id, item);
+        continue;
+      }
+
+      const current = latestItemByTicket.get(ticketId);
+      if (
+        !current ||
+        ticketListItemUpdatedAt(item) > ticketListItemUpdatedAt(current)
+      ) {
+        latestItemByTicket.set(ticketId, item);
+      }
+    }
+    const items = Array.from(latestItemByTicket.values());
     return items.sort((left, right) => {
       const leftDate =
         left.kind === "stored-ticket"

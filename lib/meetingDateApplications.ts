@@ -33,6 +33,7 @@ export type MeetingDateApplication = {
   assignedTicketInstanceId: string | null;
   ticketRevealsAt?: string | null;
   createdAt: string | null;
+  updatedAt?: string | null;
 };
 
 function dateParts(value: string) {
