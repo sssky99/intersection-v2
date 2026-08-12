@@ -67,6 +67,78 @@ type AtmosphereProfileRow = {
   birth_year: string | number | null;
 };
 
+// The invitation's editorial content changes far less often than its live
+// instance state. Keeping the current template here lets the public invitation
+// load after only the live instance/user-state queries. Unknown templates still
+// use the database-backed path below.
+const hardcodedPublicTicketTemplates = new Map<
+  string,
+  PublicTicketTemplateRow
+>([
+  [
+    "16c7a68a-2415-4170-9f3b-0ff5e054eb28",
+    {
+      id: "16c7a68a-2415-4170-9f3b-0ff5e054eb28",
+      title: "디너 & \n시크릿 칵테일 바",
+      short_description: null,
+      detail_summary: null,
+      detail_activities: [
+        "저녁 식사로 먼저 이야기를 나눈 뒤, 시크릿 칵테일 바로 자리를 옮겨요. 각자의 취향에 맞는 칵테일을 고르고 늦은 저녁의 대화를 이어가요.",
+      ],
+      detail_flow: [],
+      detail_good_for: [],
+      detail_notice: null,
+      image_url:
+        "https://hvyrhwhxbtsgrgodgzms.supabase.co/storage/v1/object/public/ticket-images/templates/16c7a68a-2415-4170-9f3b-0ff5e054eb28/1786092211741-28.jpg",
+      course_steps: [
+        {
+          id: "step-1",
+          order: 1,
+          place: null,
+          title: "저녁 식사",
+          address: null,
+          imageUrl:
+            "https://hvyrhwhxbtsgrgodgzms.supabase.co/storage/v1/object/public/ticket-images/templates/16c7a68a-2415-4170-9f3b-0ff5e054eb28/1786092211741-28.jpg",
+          placeName: null,
+          activityType: "식사 / 카페",
+          isMainActivity: true,
+          openOffsetMinutes: 0,
+        },
+        {
+          id: "step-2",
+          order: 2,
+          place: {
+            link: "https://app.catchtable.co.kr/ct/shop/jeanfrigo",
+            mapx: 1270081967,
+            mapy: 375636086,
+            name: "장프리고",
+            source: "naver",
+            category: "술집>바(BAR)",
+            roadAddress: "서울특별시 중구 퇴계로62길 9-8 장프리고 냉장고 안",
+            jibunAddress: "서울특별시 중구 광희동2가 296 장프리고 냉장고 안",
+          },
+          title: "시크릿 칵테일 바",
+          address: "서울특별시 중구 퇴계로62길 9-8 장프리고 냉장고 안",
+          imageUrl: null,
+          placeName: "장프리고",
+          activityType: "식사 / 카페",
+          isMainActivity: false,
+          openOffsetMinutes: 90,
+        },
+      ],
+      mood_tags: ["저녁식사", "칵테일바", "대화"],
+      activity_type: "식사 / 카페",
+      recommendation_copy: null,
+      recommendation_preferred_activities: ["outdoor", "culture", "meal"],
+      recommendation_recent_interests: ["coffee", "photo", "travel"],
+      default_region: "동대문 을지로",
+      default_time: "18:00:00",
+      atmosphere_gender_mood: null,
+      atmosphere_age_band_id: null,
+    },
+  ],
+]);
+
 const publicTicketInstanceSelect = [
   "id",
   "template_id",
@@ -319,26 +391,34 @@ async function atmosphereDefaultsForInstances(
 async function previewTicketsFromInstances(
   instances: PublicTicketInstanceRow[],
 ): Promise<GatheringTicket[]> {
-  const templateIds = Array.from(
-    new Set(instances.map((instance) => instance.template_id)),
+  const dynamicInstances = instances.filter(
+    (instance) => !hardcodedPublicTicketTemplates.has(instance.template_id),
   );
-  if (templateIds.length === 0) return [];
+  const dynamicTemplateIds = Array.from(
+    new Set(dynamicInstances.map((instance) => instance.template_id)),
+  );
+  if (instances.length === 0) return [];
 
   const supabase = createAdminClient();
-  const { data: templates, error: templatesError } = await supabase
-    .from("ticket_templates")
-    .select(publicTicketTemplateSelect)
-    .in("id", templateIds)
-    .returns<PublicTicketTemplateRow[]>();
-  if (templatesError) throw templatesError;
-
-  const atmosphereDefaultsMap = await atmosphereDefaultsForInstances(
-    supabase,
-    instances,
-  );
+  const [templatesResult, atmosphereDefaultsMap] = await Promise.all([
+    dynamicTemplateIds.length > 0
+      ? supabase
+          .from("ticket_templates")
+          .select(publicTicketTemplateSelect)
+          .in("id", dynamicTemplateIds)
+          .returns<PublicTicketTemplateRow[]>()
+      : Promise.resolve({ data: [] as PublicTicketTemplateRow[], error: null }),
+    dynamicInstances.length > 0
+      ? atmosphereDefaultsForInstances(supabase, dynamicInstances)
+      : Promise.resolve(new Map<string, MeetingAtmosphereDefaults>()),
+  ]);
+  if (templatesResult.error) throw templatesResult.error;
 
   const templateMap = new Map(
-    (templates ?? []).map((template) => [template.id, template]),
+    [
+      ...hardcodedPublicTicketTemplates.values(),
+      ...(templatesResult.data ?? []),
+    ].map((template) => [template.id, template]),
   );
   return instances
     .map((instance) => {
@@ -379,19 +459,22 @@ export async function getAvailableMeetingTickets({
 
   if (instancesError) throw instancesError;
 
-  const tickets = await previewTicketsFromInstances(
+  const ticketsPromise = previewTicketsFromInstances(
     (instances ?? []).filter(
       (instance) =>
         !hasTicketStarted(instance.event_date, instance.event_time),
     ),
   );
-  if (!userId) return tickets;
+  if (!userId) return ticketsPromise;
 
-  const rejectionResult = await supabase
-    .from("ticket_rejections")
-    .select("ticket_instance_id")
-    .eq("user_id", userId)
-    .returns<Array<{ ticket_instance_id: string }>>();
+  const [tickets, rejectionResult] = await Promise.all([
+    ticketsPromise,
+    supabase
+      .from("ticket_rejections")
+      .select("ticket_instance_id")
+      .eq("user_id", userId)
+      .returns<Array<{ ticket_instance_id: string }>>(),
+  ]);
   if (rejectionResult.error) throw rejectionResult.error;
 
   const rejectedIds = new Set(

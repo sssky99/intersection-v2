@@ -1117,12 +1117,10 @@ function MeetingDateApplicationFlow({
     };
 
     void load();
-    if (active) window.addEventListener("focus", load);
     return () => {
       alive = false;
-      window.removeEventListener("focus", load);
     };
-  }, [active, guestMode, onAvailableTicketsChange]);
+  }, [guestMode, onAvailableTicketsChange]);
 
   useEffect(() => {
     if (
