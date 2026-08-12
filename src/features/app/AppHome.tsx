@@ -3188,7 +3188,7 @@ function MysteryApplicationTicketCard({
           <span
             className="inline-block bg-gradient-to-r from-white/55 via-white to-white/70 bg-clip-text text-[208px] font-black leading-none text-transparent drop-shadow-[8px_12px_14px_rgba(0,0,0,0.42)]"
             style={{
-              fontFamily: '"Arial Black", "Arial Narrow", Arial, sans-serif',
+              fontFamily: '"KMU80 Sungkok Serif", "Nanum Myeongjo", serif',
               transform: "scaleX(0.8) scaleY(1.22)",
             }}
           >

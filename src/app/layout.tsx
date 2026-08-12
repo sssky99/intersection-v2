@@ -1,24 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Bodoni_Moda, Noto_Serif_KR } from "next/font/google";
 import Script from "next/script";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics";
 import { ClarityScript } from "./ClarityScript";
 import "./globals.css";
-
-const bodoniModa = Bodoni_Moda({
-  subsets: ["latin"],
-  weight: "variable",
-  style: ["normal", "italic"],
-  display: "swap",
-  variable: "--font-bodoni-moda",
-});
-
-const notoSerifKr = Noto_Serif_KR({
-  weight: "variable",
-  display: "swap",
-  preload: false,
-  variable: "--font-noto-serif-kr",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://interv2.netlify.app"),
@@ -61,7 +45,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className={`${bodoniModa.variable} ${notoSerifKr.variable}`}>
+      <body>
         {children}
         {GA_MEASUREMENT_ID && (
           <Script

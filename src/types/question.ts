@@ -30,6 +30,8 @@ export type QuestionCategory =
   | "활동성"
   | "흥미"
   | "관점"
+  | "관계"
+  | "대화"
   | "선호"
   | "가치"
   | "성향"

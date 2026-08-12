@@ -1591,7 +1591,7 @@ export function QuestionFlow({
           className="relative z-10 flex flex-1 flex-col"
         >
           <div className="mt-[11vh] text-center">
-            <h1 className="mx-auto max-w-[350px] break-keep text-[25px] font-black leading-[1.34] tracking-[-0.055em] text-black/86">
+            <h1 className="mx-auto max-w-[350px] break-keep text-[25px] font-black leading-[1.34] tracking-[-0.035em] text-black/78">
               당신의 사진을 등록해주세요.
             </h1>
             <p className="mx-auto mt-3 max-w-[330px] break-keep text-[13px] font-semibold leading-5 text-black/42">
@@ -1721,7 +1721,7 @@ export function QuestionFlow({
                 <p className="text-[11px] font-bold tracking-[-0.01em] text-black/38">
                   나의 대화 결과 · {resultCode}
                 </p>
-                <h1 className="mt-3 break-keep text-[26px] font-black leading-[1.15] tracking-[-0.055em] text-black/88">
+                <h1 className="mt-3 break-keep text-[26px] font-black leading-[1.15] tracking-[-0.035em] text-black/80">
                   {result.title}
                 </h1>
                 <p className="mt-3 break-keep text-[14px] font-semibold leading-[1.65] tracking-[-0.025em] text-black/48">
@@ -1868,14 +1868,9 @@ export function QuestionFlow({
                   : "mt-10",
             )}
           >
-            <h1 className="mx-auto max-w-[350px] whitespace-pre-line break-keep text-[25px] font-black leading-[1.34] tracking-[-0.055em] text-black/86">
+            <h1 className="mx-auto max-w-[350px] whitespace-pre-line break-keep text-[25px] font-black leading-[1.34] tracking-[-0.035em] text-black/78">
               {question.question}
             </h1>
-            {question.prompt && !usesNumericScale && (
-              <p className="mx-auto mt-3 max-w-[330px] whitespace-pre-line text-[13px] font-semibold leading-5 text-black/42">
-                {question.prompt}
-              </p>
-            )}
             {question.description && (
               <p className="mx-auto mt-3 max-w-[340px] whitespace-pre-line break-keep text-[13px] font-semibold leading-6 text-black/45">
                 {question.description}
@@ -1974,7 +1969,7 @@ export function QuestionFlow({
                     disabled={saving}
                     onClick={() => void selectSingle(value)}
                     className={cn(
-                      "flex min-h-[72px] w-full items-center justify-center rounded-[22px] border py-3 text-center text-[14px] font-semibold leading-[1.5] tracking-[-0.02em] backdrop-blur transition disabled:cursor-wait",
+                      "flex min-h-[72px] w-full items-center justify-center rounded-[22px] border py-3 text-center backdrop-blur transition disabled:cursor-wait",
                       question.optionColumns === 2 ? "px-3" : "px-5",
                       typeof option !== "string" &&
                         option.fullWidth &&
@@ -1984,7 +1979,9 @@ export function QuestionFlow({
                         : "border-black/[0.07] bg-white/68 text-black/68 shadow-[0_12px_35px_rgba(18,18,18,0.045)] hover:border-black/15",
                     )}
                   >
-                    <span className="max-w-[310px]">{optionLabel(option)}</span>
+                    <span className="font-question-option max-w-[310px] text-[15px] font-normal leading-[1.6] tracking-normal">
+                      {optionLabel(option)}
+                    </span>
                   </motion.button>
                 );
                 })}
@@ -2007,14 +2004,16 @@ export function QuestionFlow({
                       whileTap={{ scale: 0.97 }}
                       onClick={() => toggleMultiple(value)}
                       className={cn(
-                        "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center text-[13px] font-bold leading-5 backdrop-blur transition",
+                        "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center backdrop-blur transition",
                         exclusive && "col-span-2 min-h-[58px]",
                         selected
                           ? "border-black bg-black font-extrabold text-white shadow-[0_14px_32px_rgba(18,18,18,0.14)]"
                           : "border-black/[0.07] bg-white/65 text-black/65 shadow-[0_10px_28px_rgba(18,18,18,0.04)]",
                       )}
                     >
-                      {optionLabel(option)}
+                      <span className="font-question-option text-[15px] font-normal leading-[1.6] tracking-normal">
+                        {optionLabel(option)}
+                      </span>
                       {selected && !exclusive && (
                         <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/18 px-1 text-[9px] font-black text-white">
                           {priorityIndex + 1}

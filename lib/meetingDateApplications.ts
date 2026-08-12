@@ -154,7 +154,7 @@ export const meetingDateApplicationStatusLabels: Record<
   MeetingDateApplicationStatus,
   string
 > = {
-  payment_pending: "입금 확인 중",
+  payment_pending: "결제 확인 중",
   waitlisted: "배정 대기",
   on_hold: "배정 보류",
   approved: "참여 확정",

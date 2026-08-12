@@ -18,7 +18,6 @@ import {
   Scale,
   Sparkles,
   UserRound,
-  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
@@ -772,12 +771,6 @@ export function PreferenceProfileTab({
     [draft],
   );
 
-  const cancelEdit = () => {
-    setDraft(initialDraft);
-    setSaveError(null);
-    setEditing(false);
-  };
-
   const save = async () => {
     if (!canSave || saving) return;
 
@@ -825,14 +818,14 @@ export function PreferenceProfileTab({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className="min-h-full bg-[#f7f4ed]"
+      className="font-profile-kmu-serif min-h-full bg-[#f7f4ed]"
     >
       <section className="px-5 pb-7 pt-7">
         <header className="pr-16">
-          <h1 className="text-[29px] font-black leading-9 tracking-[-0.055em] text-black">
+          <h1 className="font-profile-kmu-serif text-[29px] leading-9 tracking-[-0.035em] text-black">
             profile
           </h1>
         </header>
@@ -872,7 +865,7 @@ export function PreferenceProfileTab({
                 </p>
                 {archetype && (
                   <>
-                    <p className="mt-4 font-serif text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
+                    <p className="font-profile-kmu-serif mt-4 text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
                       {archetype.englishName.toUpperCase()}
                     </p>
                     <p className="mt-3 text-[20px] font-black tracking-[-0.05em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.5)]">
@@ -893,32 +886,7 @@ export function PreferenceProfileTab({
               </>
             ) : (
               <>
-            <div className="relative flex items-center justify-end">
-              {editing ? (
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 px-3 text-[11px] font-bold text-white/70"
-                >
-                  <X size={13} aria-hidden />
-                  취소
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSaveError(null);
-                    setEditing(true);
-                  }}
-                  className="flex h-8 items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 text-[11px] font-bold text-white/78"
-                >
-                  <PenLine size={13} aria-hidden />
-                  수정
-                </button>
-              )}
-            </div>
-
-            <div className="relative mt-3 flex min-h-[210px] flex-col items-center justify-center gap-3 text-center">
+            <div className="relative flex min-h-[210px] flex-col items-center justify-center gap-3 text-center">
               <div className="min-w-0 max-w-full">
                 <p className="truncate text-[17px] font-black tracking-[-0.04em] drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
                   {profile.name?.trim() || "이름 미입력"}
@@ -926,7 +894,7 @@ export function PreferenceProfileTab({
               </div>
               {archetype && (
                 <>
-                  <p className="mt-1 font-serif text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
+                  <p className="font-profile-kmu-serif mt-1 text-[38px] italic leading-none tracking-[-0.045em] text-white drop-shadow-[0_3px_18px_rgba(0,0,0,0.5)]">
                     {archetype.englishName.toUpperCase()}
                   </p>
                   <p className="text-[20px] font-black tracking-[-0.05em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.5)]">

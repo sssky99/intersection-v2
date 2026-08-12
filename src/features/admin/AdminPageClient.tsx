@@ -509,7 +509,7 @@ function AssignmentCriteriaDialog({ onClose }: { onClose: () => void }) {
             />
             <CriteriaSummaryCard
               label="2. 직접 반영 문항"
-              body="척도 6~12·19~25·27번, 취미 13번, 관심사 14번, 활동 회피 15번, 직업 28번을 계산합니다. 그 외 문항은 현재 직접 점수화하지 않습니다."
+              body="척도 6~12·20~27번, 그룹 역할 19번, 취미 13번, 관심사 14번, 활동 회피 15번, 직업 28번을 계산합니다. 그 외 문항은 현재 직접 점수화하지 않습니다."
             />
             <CriteriaSummaryCard
               label="3. 유형별 보정"

@@ -81,6 +81,22 @@
 }
 
 @font-face {
+  font-family: "KMU80 Haeong Sans";
+  src: url("/fonts/kmu80/KMU80HaeongSans.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "KMU80 Sungkok Serif";
+  src: url("/fonts/kmu80/KMU80SungkokSerif.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "Nanum Myeongjo";
   src:
     url("/fonts/nanum-myeongjo/NanumMyeongjoBold.woff2") format("woff2"),
@@ -106,7 +122,7 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #121212;
+  --foreground: #181816;
   --accent: #7eb3c7;
   --outer-background: #f7f7f5;
 }
@@ -125,11 +141,11 @@ body {
   background: var(--outer-background);
   color: var(--foreground);
   font-family:
-    Pretendard,
+    "KMU80 Sungkok Serif",
+    "Nanum Myeongjo",
     "Apple SD Gothic Neo",
     "Malgun Gothic",
-    Arial,
-    sans-serif;
+    serif;
 }
 
 button,
@@ -156,19 +172,48 @@ button {
 }
 
 .font-ticket-serif {
-  font-family: "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif;
+  font-family: "KMU80 Sungkok Serif", "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif;
 }
 
 .font-ticket-display {
   font-family:
-    var(--font-bodoni-moda),
-    var(--font-noto-serif-kr),
+    "KMU80 Sungkok Serif",
     "Nanum Myeongjo",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
     serif;
 }
 
 .font-ticket-latin {
-  font-family: var(--font-bodoni-moda), "Times New Roman", serif;
+  font-family: "KMU80 Sungkok Serif", "Nanum Myeongjo", "Times New Roman", serif;
+}
+
+.font-profile-kmu {
+  font-family:
+    "KMU80 Sungkok Serif",
+    "Nanum Myeongjo",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    serif;
+}
+
+.font-profile-kmu-serif {
+  font-family:
+    "KMU80 Sungkok Serif",
+    "Nanum Myeongjo",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    serif;
+}
+
+.font-question-option {
+  font-family:
+    "Pretendard",
+    "SUIT",
+    "Noto Sans KR",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    sans-serif;
 }
 
 .text-balance {

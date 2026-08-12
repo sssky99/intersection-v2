@@ -16,7 +16,7 @@ export const profileArchetypeIds = [
 
 export type ProfileArchetypeId = (typeof profileArchetypeIds)[number];
 
-export const profileArchetypeVersion = "profile-archetypes-v1";
+export const profileArchetypeVersion = "profile-archetypes-v2";
 
 export const profileArchetypeBackgrounds: Record<ProfileArchetypeId, string> = {
   romantic: "/images/profile-archetypes/romantic.jpg",
@@ -342,13 +342,18 @@ export function classifyProfileArchetype(
   choice(14, "interests_choice_17", ["idealist", "searcher"], 1.4);
 
   if (!selected(15, "none")) add(scores, ["experientialist", "adventurer"], 0.8);
-  scale(19, 1, 5, ["stoic"], ["artisan", "bohemian"], 3);
+  choice(19, "group_role_listener", ["stoic", "sentimental", "searcher"], 2.2);
+  choice(19, "group_role_reactor", ["sentimental", "romantic"], 2.2);
+  choice(19, "group_role_questioner", ["searcher", "idealist"], 2.2);
+  choice(19, "group_role_leader", ["visionary", "experientialist"], 2.2);
+  choice(19, "group_role_moodmaker", ["bohemian", "romantic", "experientialist"], 2.2);
   scale(20, 1, 7, ["stoic"], ["searcher", "visionary", "idealist"], 3);
   scale(21, 1, 10, ["sentimental"], ["romantic", "bohemian"], 1.2);
   scale(22, 1, 10, ["experientialist"], ["searcher", "visionary"], 2);
   scale(23, 1, 5, ["idealist", "sentimental"], ["romantic", "bohemian"], 1.2);
   scale(24, 1, 7, ["experientialist"], ["searcher", "idealist", "visionary"], 1.6);
-  scale(25, 1, 5, ["stoic"], ["idealist", "searcher", "bohemian"], 1.8);
+  scale(25, 1, 7, ["stoic", "sentimental", "searcher"], ["romantic", "experientialist", "bohemian"], 1.8);
+  scale(26, 1, 7, ["experientialist", "bohemian"], ["searcher", "idealist", "sentimental"], 1.8);
   scale(27, 1, 5, ["bohemian", "experientialist"], ["visionary", "stoic"], 1.8);
 
   choice(28, "work_field_choice_3", ["visionary", "searcher"], 1.2);

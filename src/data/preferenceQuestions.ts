@@ -1,7 +1,12 @@
 import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
 import { mbtiOptions } from "@/data/mbti";
 
-export const preferenceProfileVersion = "preferences-v13";
+export const preferenceProfileVersion = "preferences-v14";
+
+const supportedPreferenceProfileVersions = new Set([
+  "preferences-v13",
+  preferenceProfileVersion,
+]);
 
 export const preferenceQuestionCatalog: ProfileQuestion[] = [
   {
@@ -586,31 +591,30 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
   {
     "id": 19,
     "order": 19,
-    "category": "가치",
+    "category": "활동성",
     "type": "single_choice",
-    "question": "나는 예술적인 사람이라고 생각한다",
-    "scaleMinLabel": "전혀 동의하지 않음",
-    "scaleMaxLabel": "매우 동의함",
+    "question": "처음 만난 여러 명의 자리에서\n나는 보통 어떤 역할인가요?",
+    "prompt": "가장 가까운 역할 하나를 골라주세요.",
     "options": [
       {
-        "value": "1",
-        "label": "1"
+        "value": "group_role_listener",
+        "label": "주로 다른 사람의 이야기를 듣는 편이에요."
       },
       {
-        "value": "2",
-        "label": "2"
+        "value": "group_role_reactor",
+        "label": "리액션을 하면서 대화에 참여하는 편이에요."
       },
       {
-        "value": "3",
-        "label": "3"
+        "value": "group_role_questioner",
+        "label": "질문을 던지면서 대화를 이어가는 편이에요."
       },
       {
-        "value": "4",
-        "label": "4"
+        "value": "group_role_leader",
+        "label": "먼저 이야깃거리를 꺼내고 대화를 이끄는 편이에요."
       },
       {
-        "value": "5",
-        "label": "5"
+        "value": "group_role_moodmaker",
+        "label": "농담이나 밝은 반응으로 분위기를 띄우는 편이에요."
       }
     ]
   },
@@ -795,9 +799,9 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
     "order": 24,
     "category": "관점",
     "type": "single_choice",
-    "question": "나는 정치 토론과 뉴스를 즐긴다",
-    "scaleMinLabel": "전혀 동의하지 않는다",
-    "scaleMaxLabel": "매우 동의한다",
+    "question": "나와 가치관이나 생각이 다른 사람과\n이야기하는 것은 얼마나 편한가요?",
+    "scaleMinLabel": "매우 불편하다",
+    "scaleMaxLabel": "매우 편하다",
     "options": [
       {
         "value": "1",
@@ -832,68 +836,78 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
   {
     "id": 25,
     "order": 25,
-    "category": "관점",
+    "category": "관계",
     "type": "single_choice",
-    "question": "나와 다른 정치적 성향의\n사람을 만나는 걸 즐기시나요?",
-    "prompt": "차이 불편함에서 차이 존중함 사이, 가장 가까운 답을 골라주세요.",
+    "question": "새로운 사람과 관계를 맺을 때,\n어느 정도 속도가 편한가요?",
+    "scaleMinLabel": "천천히 알아가는 편이 편하다",
+    "scaleMaxLabel": "빠르게 가까워지는 편이 편하다",
     "options": [
       {
-        "value": "openness_to_different_opinions_scale_1",
-        "label": "생각이 너무 다르면 대화가 조금 어렵게 느껴져요."
+        "value": "1",
+        "label": "1"
       },
       {
-        "value": "openness_to_different_opinions_scale_2",
-        "label": "차이가 크면 조심스러워지는 편이에요."
+        "value": "2",
+        "label": "2"
       },
       {
-        "value": "openness_to_different_opinions_scale_3",
-        "label": "서로 예의를 지킨다면 어느 정도 괜찮아요."
+        "value": "3",
+        "label": "3"
       },
       {
-        "value": "openness_to_different_opinions_scale_4",
-        "label": "다른 생각을 가진 사람과도 편하게 이야기할 수 있어요."
+        "value": "4",
+        "label": "4"
       },
       {
-        "value": "openness_to_different_opinions_scale_5",
-        "label": "저는 생각의 차이도 흥미로운 대화가 될 수 있다고 느껴요."
+        "value": "5",
+        "label": "5"
+      },
+      {
+        "value": "6",
+        "label": "6"
+      },
+      {
+        "value": "7",
+        "label": "7"
       }
     ]
   },
   {
     "id": 26,
     "order": 26,
-    "category": "관점",
+    "category": "대화",
     "type": "single_choice",
-    "question": "나는 정치적으로\n어떠한 성향의 사람인가요?",
-    "prompt": "가장 가깝다고 느끼는 답을 골라주세요.",
+    "question": "사람들과 어떤 깊이의 대화를 할 때\n가장 잘 맞는다고 느끼나요?",
+    "scaleMinLabel": "가볍고 편안한 일상 대화",
+    "scaleMaxLabel": "깊이 있는 개인적 대화",
     "options": [
       {
-        "value": "progressive",
-        "label": "진보"
+        "value": "1",
+        "label": "1"
       },
       {
-        "value": "center_progressive",
-        "label": "중도 진보"
+        "value": "2",
+        "label": "2"
       },
       {
-        "value": "center",
-        "label": "중도"
+        "value": "3",
+        "label": "3"
       },
       {
-        "value": "center_conservative",
-        "label": "중도 보수"
+        "value": "4",
+        "label": "4"
       },
       {
-        "value": "conservative",
-        "label": "보수"
+        "value": "5",
+        "label": "5"
       },
       {
-        "value": "not_interested",
-        "label": "정치에 관심이 적어요"
+        "value": "6",
+        "label": "6"
       },
       {
-        "value": "prefer_not_to_say",
-        "label": "답하고 싶지 않아요"
+        "value": "7",
+        "label": "7"
       }
     ]
   },
@@ -1111,7 +1125,9 @@ export function preferencePreferredActivities(
 export function usesPreferenceProfile(
   profile: { profile_experience_version?: string | null },
 ) {
-  return profile.profile_experience_version === preferenceProfileVersion;
+  return supportedPreferenceProfileVersions.has(
+    profile.profile_experience_version ?? "",
+  );
 }
 
 export function hasCompletedPreferenceProfile(
