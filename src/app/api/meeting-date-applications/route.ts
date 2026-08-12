@@ -4,8 +4,8 @@ import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_REGION,
   isMeetingDateClosed,
-  meetingDateApplicationDates,
   meetingDateSchedule,
+  requestedMeetingApplicationDates,
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -96,24 +96,6 @@ function toApplication(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-function requestedDates(value: unknown) {
-  if (!Array.isArray(value)) return [];
-
-  const today = todayInKst();
-  const selectableDates = new Set(
-    meetingDateApplicationDates(today).filter((date) => date >= today),
-  );
-
-  return Array.from(
-    new Set(
-      value.filter(
-        (date): date is string =>
-          typeof date === "string" && selectableDates.has(date),
-      ),
-    ),
-  ).sort();
 }
 
 async function authenticatedUser() {
@@ -236,7 +218,6 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => ({}))) as DateApplicationRequest;
-  const dates = requestedDates(body.dates);
   const openPayment = body.openPayment === true;
   const joinWaitlist = body.waitlist === true;
   const membershipCovered = hasCurrentMembershipAccess({
@@ -248,6 +229,9 @@ export async function POST(request: Request) {
     typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
       ? body.ticketInstanceId.trim()
       : null;
+  const dates = requestedMeetingApplicationDates(body.dates, todayInKst(), {
+    ticketInstanceProvided: ticketInstanceId !== null,
+  });
   if (openPayment) {
     return NextResponse.json(
       {

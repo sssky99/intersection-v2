@@ -79,6 +79,32 @@ export function meetingDateApplicationDates(today: string) {
   );
 }
 
+export function requestedMeetingApplicationDates(
+  value: unknown,
+  today: string,
+  options: { ticketInstanceProvided?: boolean } = {},
+) {
+  if (!Array.isArray(value)) return [];
+
+  const selectableDates = new Set(
+    meetingDateApplicationDates(today).filter((date) => date >= today),
+  );
+
+  return Array.from(
+    new Set(
+      value.filter((date): date is string => {
+        if (typeof date !== "string" || date < today) return false;
+        if (selectableDates.has(date)) return true;
+
+        return (
+          options.ticketInstanceProvided === true &&
+          isMeetingDateApplicationDate(date)
+        );
+      }),
+    ),
+  ).sort();
+}
+
 export function meetingDateSchedule(value: string) {
   const parts = dateParts(value);
   if (!parts) return null;
