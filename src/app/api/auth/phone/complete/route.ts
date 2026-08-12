@@ -6,6 +6,16 @@ import type { ProfileRow } from "@/types/profile";
 
 export const dynamic = "force-dynamic";
 
+type ProfileErrorCode =
+  | "PROFILE_UNAUTHORIZED"
+  | "PROFILE_INVALID_PHONE"
+  | "PROFILE_LOOKUP_FAILED"
+  | "PROFILE_CREATE_FAILED";
+
+function profileError(errorCode: ProfileErrorCode, status: number) {
+  return NextResponse.json({ errorCode }, { status });
+}
+
 function localPhone(value: string | null | undefined) {
   const digits = value?.replace(/\D/g, "") ?? "";
   if (digits.startsWith("8210")) return `0${digits.slice(2)}`;
@@ -22,7 +32,7 @@ export async function POST() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user || !user.phone) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return profileError("PROFILE_UNAUTHORIZED", 401);
   }
 
   const { data: existingProfile, error: lookupError } = await supabase
@@ -32,7 +42,7 @@ export async function POST() {
     .maybeSingle<ProfileRow>();
   if (lookupError) {
     console.error("[phone-auth] profile lookup after verification failed", lookupError.code);
-    return NextResponse.json({ error: "Profile unavailable" }, { status: 503 });
+    return profileError("PROFILE_LOOKUP_FAILED", 503);
   }
 
   if (existingProfile) {
@@ -44,7 +54,7 @@ export async function POST() {
 
   const normalizedPhone = localPhone(user.phone);
   if (!/^010\d{8}$/.test(normalizedPhone)) {
-    return NextResponse.json({ error: "Invalid verified phone" }, { status: 400 });
+    return profileError("PROFILE_INVALID_PHONE", 400);
   }
 
   const { data: createdProfile, error: createError } = await supabase
@@ -64,8 +74,21 @@ export async function POST() {
     .single<ProfileRow>();
 
   if (createError || !createdProfile) {
+    if (createError?.code === "23505") {
+      const { data: concurrentProfile, error: concurrentLookupError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle<ProfileRow>();
+      if (!concurrentLookupError && concurrentProfile) {
+        return NextResponse.json({
+          loginType: "existing",
+          nextPath: nextOnboardingPath(concurrentProfile),
+        });
+      }
+    }
     console.error("[phone-auth] profile bootstrap failed", createError?.code);
-    return NextResponse.json({ error: "Profile unavailable" }, { status: 503 });
+    return profileError("PROFILE_CREATE_FAILED", 503);
   }
 
   return NextResponse.json({

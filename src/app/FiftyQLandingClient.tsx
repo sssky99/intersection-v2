@@ -4,6 +4,15 @@ import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { onboardingGuides } from "@/data/onboardingGuides";
 import { trackEvent } from "@/lib/analytics";
+import {
+  isProfileSetupFailure,
+  otpFailureCode,
+  PhoneAuthError,
+  phoneAuthErrorMessage,
+  profileRecoveryMessage,
+  retryProfileSetup,
+  type PhoneAuthFailureCode,
+} from "@/lib/phoneAuthFlow";
 import { createClient } from "@/lib/supabase/client";
 
 const introVideoCookie = "intro_video_seen_v1";
@@ -15,6 +24,7 @@ type AuthStep = "phone" | "otp";
 type FiftyQLandingClientProps = {
   initialHasSeenIntro: boolean;
   previewPhoneOnly?: boolean;
+  trackLandingView?: boolean;
 };
 
 function useTypedText(text: string, active: boolean, interval = 58) {
@@ -69,6 +79,7 @@ function authErrorMessage(message: string, step: AuthStep) {
 export function FiftyQLandingClient({
   initialHasSeenIntro,
   previewPhoneOnly = false,
+  trackLandingView = true,
 }: FiftyQLandingClientProps) {
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +96,8 @@ export function FiftyQLandingClient({
   const [otp, setOtp] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [failureCode, setFailureCode] = useState<PhoneAuthFailureCode | null>(null);
+  const [isRecoveringProfile, setIsRecoveringProfile] = useState(false);
   const [promptKey, setPromptKey] = useState(0);
   const [guidePage, setGuidePage] = useState<0 | 1 | null>(null);
   const [nextPath, setNextPath] = useState("");
@@ -106,13 +119,33 @@ export function FiftyQLandingClient({
     }
 
     let mounted = true;
-    trackEvent("landing_view");
+    if (trackLandingView) trackEvent("landing_view");
     const timer = window.setTimeout(() => {
-      void createClient().auth.getUser().then(({ data }) => {
+      void createClient().auth.getUser().then(async ({ data }) => {
         if (!mounted) return;
         if (data.user) {
           setIsAuthenticated(true);
-          window.location.replace("/meetings?tab=recommend");
+          if (!data.user.phone) {
+            window.location.replace("/meetings?tab=recommend");
+            return;
+          }
+          const response = await fetch("/api/auth/phone/complete", { method: "POST" });
+          const body = (await response.json().catch(() => null)) as
+            | { nextPath?: string; errorCode?: PhoneAuthFailureCode }
+            | null;
+          if (!mounted) return;
+          if (response.ok && body?.nextPath) {
+            window.location.replace(body.nextPath);
+            return;
+          }
+          const code = body?.errorCode ?? "PROFILE_RESPONSE_INVALID";
+          if (isProfileSetupFailure(code)) {
+            await recoverProfileSetup();
+          } else {
+            setFailureCode(code);
+            setError(phoneAuthErrorMessage(code));
+          }
+          setAuthChecked(true);
           return;
         }
         setAuthChecked(true);
@@ -123,7 +156,7 @@ export function FiftyQLandingClient({
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, [previewPhoneOnly]);
+  }, [previewPhoneOnly, trackLandingView]);
 
   useEffect(() => {
     if (
@@ -180,34 +213,33 @@ export function FiftyQLandingClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: localPhone }),
     });
-    if (!prepareResponse.ok) throw new Error("prepare-failed");
+    if (!prepareResponse.ok) throw new PhoneAuthError("OTP_SEND_FAILED");
 
     const { error: sendError } = await createClient().auth.signInWithOtp({
       phone: internationalPhone(localPhone),
       options: { shouldCreateUser: true },
     });
-    if (sendError) throw sendError;
+    if (sendError) throw new PhoneAuthError(otpFailureCode(sendError.message));
 
     setError("");
+    setFailureCode(null);
     setOtp("");
     setStep("otp");
     setPromptKey((value) => value + 1);
   };
 
-  const verifyOtp = async () => {
-    const supabase = createClient();
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      phone: internationalPhone(phone),
-      token: otp,
-      type: "sms",
-    });
-    if (verifyError) throw verifyError;
-
+  const completePhoneAuth = async () => {
     const response = await fetch("/api/auth/phone/complete", { method: "POST" });
     const body = (await response.json().catch(() => null)) as
-      | { nextPath?: string; loginType?: "new" | "existing" }
+      | {
+          nextPath?: string;
+          loginType?: "new" | "existing";
+          errorCode?: PhoneAuthFailureCode;
+        }
       | null;
-    if (!response.ok || !body?.nextPath) throw new Error("profile-bootstrap-failed");
+    if (!response.ok || !body?.nextPath) {
+      throw new PhoneAuthError(body?.errorCode ?? "PROFILE_RESPONSE_INVALID");
+    }
 
     trackEvent("phone_verification_complete", {
       login_type: body.loginType ?? "unknown",
@@ -223,28 +255,89 @@ export function FiftyQLandingClient({
     window.location.replace(body.nextPath);
   };
 
+  const verifyOtp = async () => {
+    const supabase = createClient();
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      phone: internationalPhone(phone),
+      token: otp,
+      type: "sms",
+    });
+    if (verifyError) throw new PhoneAuthError(otpFailureCode(verifyError.message));
+    await completePhoneAuth();
+  };
+
+  const recoverProfileSetup = async () => {
+    setIsRecoveringProfile(true);
+    setFailureCode(null);
+    setError(profileRecoveryMessage);
+    try {
+      await retryProfileSetup(completePhoneAuth);
+    } catch (recoveryError) {
+      const code = recoveryError instanceof PhoneAuthError
+        ? recoveryError.code
+        : "PROFILE_RESPONSE_INVALID";
+      setFailureCode(code);
+      setError(phoneAuthErrorMessage(code));
+    } finally {
+      setIsRecoveringProfile(false);
+    }
+  };
+
+  const retryProfileSetupManually = async () => {
+    if (isSubmitting || isRecoveringProfile) return;
+    setIsSubmitting(true);
+    setError("");
+    setFailureCode(null);
+    try {
+      await completePhoneAuth();
+    } catch (retryError) {
+      const code = retryError instanceof PhoneAuthError
+        ? retryError.code
+        : "PROFILE_RESPONSE_INVALID";
+      if (isProfileSetupFailure(code)) {
+        await recoverProfileSetup();
+      } else {
+        setFailureCode(code);
+        setError(phoneAuthErrorMessage(code));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (previewPhoneOnly) return;
     if (!canContinue || isSubmitting || isAuthenticated) return;
     setIsSubmitting(true);
     setError("");
+    setFailureCode(null);
     try {
       if (step === "phone") await requestOtp();
       else await verifyOtp();
     } catch (submitError) {
-      const message = submitError instanceof Error ? submitError.message : "";
-      setError(authErrorMessage(message, step));
+      const code = submitError instanceof PhoneAuthError
+        ? submitError.code
+        : step === "otp"
+          ? "OTP_INVALID"
+          : "OTP_SEND_FAILED";
+      if (isProfileSetupFailure(code)) {
+        await recoverProfileSetup();
+      } else {
+        setFailureCode(code);
+        setError(phoneAuthErrorMessage(code));
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const returnToPhone = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isRecoveringProfile) return;
     setStep("phone");
     setOtp("");
     setError("");
+    setFailureCode(null);
     setPromptKey((value) => value + 1);
   };
 
@@ -354,7 +447,7 @@ export function FiftyQLandingClient({
             </div>
 
             <div className="mt-4 flex min-h-6 items-center justify-between">
-              {step === "otp" ? (
+              {step === "otp" && !isRecoveringProfile ? (
                 <button
                   type="button"
                   onClick={returnToPhone}
@@ -365,15 +458,34 @@ export function FiftyQLandingClient({
               ) : (
                 <span />
               )}
-              {error && <p className="text-right text-[13px] font-medium text-red-600">{error}</p>}
+              {error && (
+                <div className="ml-auto flex flex-col items-end gap-2">
+                  <p className={`flex items-center gap-2 text-right text-[13px] font-medium ${
+                    isRecoveringProfile ? "text-black/55" : "text-red-600"
+                  }`}>
+                    {isRecoveringProfile && <span className="h-2 w-2 animate-pulse rounded-full bg-black/45" />}
+                    {error}
+                  </p>
+                  {failureCode && isProfileSetupFailure(failureCode) && (
+                    <button
+                      type="button"
+                      onClick={() => void retryProfileSetupManually()}
+                      disabled={isSubmitting}
+                      className="text-[13px] font-semibold text-black underline underline-offset-4 disabled:text-black/30"
+                    >
+                      다시 시도
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <button
               type="submit"
-              disabled={!canContinue || isSubmitting}
+              disabled={!canContinue || isSubmitting || isRecoveringProfile}
               aria-label={step === "phone" ? "인증 번호 받기" : "인증하고 계속하기"}
               className={`ml-auto mt-10 flex h-12 w-12 items-center justify-center transition-all duration-300 ${
-                canContinue && !isSubmitting
+                canContinue && !isSubmitting && !isRecoveringProfile
                   ? "text-black active:translate-x-0.5"
                   : "cursor-not-allowed text-black/20"
               }`}
