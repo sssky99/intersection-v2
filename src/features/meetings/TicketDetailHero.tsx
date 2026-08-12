@@ -64,7 +64,7 @@ export function TicketDetailHero({
       <div className="absolute inset-0 bg-black/20" />
       <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/75" />
       <div className="absolute inset-x-5 top-5 z-10 flex items-center justify-between gap-3">
-        <span className="shrink-0 rounded-full border border-white/25 bg-black/20 px-3 py-1.5 font-serif text-[10px] italic tracking-[0.1em] text-white backdrop-blur-md">
+        <span className="font-ticket-latin shrink-0 rounded-full border border-white/25 bg-black/20 px-3 py-1.5 text-[11px] italic tracking-[0.1em] text-white backdrop-blur-md">
           {dateTimeLabel}
         </span>
         <span className="truncate text-right text-[10px] font-bold tracking-[-0.02em] text-white/75">
@@ -88,7 +88,7 @@ export function TicketDetailHero({
         </button>
       )}
       <div className={cn("absolute inset-x-5 bottom-5", badgeLabel && "pr-28")}>
-        <h2 className="whitespace-pre-line text-[22px] font-black leading-[1.27] tracking-[-0.055em] text-white [text-shadow:0_4px_18px_rgba(0,0,0,0.35)]">
+        <h2 className="font-ticket-display whitespace-pre-line text-[24px] font-bold leading-[1.27] tracking-[-0.045em] text-white [text-shadow:0_4px_18px_rgba(0,0,0,0.35)]">
           {ticket.title}
         </h2>
       </div>

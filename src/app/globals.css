@@ -159,6 +159,18 @@ button {
   font-family: "Nanum Myeongjo", "Apple SD Gothic Neo", "Malgun Gothic", serif;
 }
 
+.font-ticket-display {
+  font-family:
+    var(--font-bodoni-moda),
+    var(--font-noto-serif-kr),
+    "Nanum Myeongjo",
+    serif;
+}
+
+.font-ticket-latin {
+  font-family: var(--font-bodoni-moda), "Times New Roman", serif;
+}
+
 .text-balance {
   text-wrap: balance;
 }

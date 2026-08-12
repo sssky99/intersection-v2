@@ -1931,9 +1931,6 @@ function MeetingDateApplicationFlow({
               "summary",
               "recommendation",
               "course",
-              "vibe",
-              "activities",
-              "notice",
             ]}
             className="px-5 pb-5"
           />
@@ -1978,7 +1975,7 @@ function MeetingDateApplicationFlow({
               whileTap={!saving ? { scale: 0.98 } : undefined}
               disabled={saving}
               onClick={() => acceptTicket(selectedTicket)}
-              className="flex h-[56px] items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+              className="font-ticket-latin flex h-[56px] items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
             >
               YES
             </motion.button>
@@ -2613,7 +2610,7 @@ function MeetingDateApplicationFlow({
                         ease: "easeOut",
                       }}
                     >
-                      <p className="absolute inset-x-0 top-0 font-serif text-[10px] italic tracking-[0.2em] text-black/38">
+                      <p className="font-ticket-latin absolute inset-x-0 top-0 text-[11px] italic tracking-[0.2em] text-black/38">
                         WEEKLY INVITATION
                       </p>
                       <p className="text-[11px] font-black tracking-[-0.02em] text-black/38">
@@ -2644,7 +2641,7 @@ function MeetingDateApplicationFlow({
                 </div>
               ) : showInvitationCountdown ? (
                 <div className="w-full max-w-[340px]">
-                  <p className="font-serif text-[10px] italic tracking-[0.2em] text-black/32">
+                  <p className="font-ticket-latin text-[11px] italic tracking-[0.2em] text-black/32">
                     WEEKLY INVITATION
                   </p>
                   <h1 className="mt-5 text-[24px] font-black tracking-[-0.05em] text-black">
@@ -2697,7 +2694,7 @@ function MeetingDateApplicationFlow({
                 </div>
               ) : (
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-black/35">
+                  <p className="font-ticket-latin text-[12px] font-bold italic uppercase tracking-[0.18em] text-black/35">
                     WEEKLY INVITATION
                   </p>
                   <h1 className="mt-3 text-[24px] font-black tracking-[-0.04em] text-black">

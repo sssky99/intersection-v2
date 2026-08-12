@@ -8,7 +8,6 @@ import {
   formatTicketTimeLabel,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
-import { MeetingAtmospherePanel } from "@/features/meetings/MeetingAtmospherePanel";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
@@ -20,10 +19,7 @@ export type TicketDetailSectionKey =
   | "summary"
   | "recommendation"
   | "course"
-  | "activities"
-  | "vibe"
-  | "place"
-  | "notice";
+  | "place";
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -106,10 +102,7 @@ const defaultSections: TicketDetailSectionKey[] = [
   "summary",
   "recommendation",
   "course",
-  "vibe",
   "place",
-  "activities",
-  "notice",
 ];
 
 function participantNotice(ticket: GatheringTicket) {
@@ -190,19 +183,7 @@ export function TicketDetailContent({
     ticket.place?.name?.trim() || ticket.place?.address?.trim(),
   );
   const firstSectionAfterSummary =
-    showSummary && hasCourse
-      ? "course"
-      : showSummary && visibleSections.has("vibe")
-      ? "vibe"
-      : showSummary && visibleSections.has("place") && hasPlace
-        ? "place"
-        : showSummary &&
-            visibleSections.has("activities") &&
-            activities.length > 0
-          ? "activities"
-          : showSummary && visibleSections.has("notice")
-            ? "notice"
-            : null;
+    showSummary && visibleSections.has("place") && hasPlace ? "place" : null;
 
   return (
     <div className={cn("mt-5", className)}>
@@ -223,19 +204,8 @@ export function TicketDetailContent({
           title="여정"
           eyebrow={journeyDateTimeLabel}
           startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "course"}
         >
           <TicketCoursePanel ticket={ticket} steps={courseSteps} />
-        </TicketDetailSection>
-      )}
-
-      {visibleSections.has("vibe") && (
-        <TicketDetailSection
-          title="자리 분위기"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "vibe"}
-        >
-          <MeetingAtmospherePanel profile={ticket.atmosphere} />
         </TicketDetailSection>
       )}
 
@@ -249,28 +219,7 @@ export function TicketDetailContent({
         </TicketDetailSection>
       )}
 
-      {visibleSections.has("activities") && activities.length > 0 && (
-        <TicketDetailSection
-          title="이 자리에서는 이런 걸 해요"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "activities"}
-        >
-          <ActivityProse items={activities} />
-        </TicketDetailSection>
-      )}
-
       {afterActivities}
-
-      {visibleSections.has("notice") && (
-        <TicketDetailSection
-          title="알아두면 좋아요"
-          startWithBorder={startWithBorder}
-          hideTopBorder={firstSectionAfterSummary === "notice"}
-        >
-          <BulletList items={noticeItems} />
-          {afterNotice && <div className="mt-4">{afterNotice}</div>}
-        </TicketDetailSection>
-      )}
 
       {footer}
     </div>
@@ -285,6 +234,56 @@ function cleanCourseSteps(steps: GatheringTicket["courseSteps"]) {
         step.imageUrl?.trim(),
     ),
   );
+}
+
+const kstOffsetMs = 9 * 60 * 60 * 1000;
+const hourMs = 60 * 60 * 1000;
+const dayMs = 24 * hourMs;
+const joinCountdownWindowMs = 72 * hourMs;
+
+function ticketStartAt(ticket: GatheringTicket) {
+  const rawTime = ticket.time.trim();
+  const twentyFourHourMatch = rawTime.match(/^(\d{1,2}):(\d{2})/);
+  const koreanTimeMatch = rawTime.match(/^(오전|오후)\s*(\d{1,2}):(\d{2})/);
+  let hours: number;
+  let minutes: number;
+
+  if (twentyFourHourMatch) {
+    hours = Number(twentyFourHourMatch[1]);
+    minutes = Number(twentyFourHourMatch[2]);
+  } else if (koreanTimeMatch) {
+    const period = koreanTimeMatch[1];
+    const rawHours = Number(koreanTimeMatch[2]) % 12;
+    hours = rawHours + (period === "오후" ? 12 : 0);
+    minutes = Number(koreanTimeMatch[3]);
+  } else {
+    return null;
+  }
+
+  if (hours > 23 || minutes > 59) return null;
+  const startAt = new Date(
+    `${ticket.date}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+09:00`,
+  );
+  return Number.isFinite(startAt.getTime()) ? startAt : null;
+}
+
+function formatKstDateLabel(value: Date) {
+  const kstDate = new Date(value.getTime() + kstOffsetMs);
+  const dateValue = [
+    kstDate.getUTCFullYear(),
+    String(kstDate.getUTCMonth() + 1).padStart(2, "0"),
+    String(kstDate.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+  return formatTicketDateLabel(dateValue);
+}
+
+function formatKstTimeLabel(value: Date) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(value);
 }
 
 function TicketCoursePanel({ ticket, steps }: {
@@ -351,7 +350,7 @@ function TicketCoursePanel({ ticket, steps }: {
                   </span>
                 </div>
 
-                <p className="mt-1.5 break-keep text-[17px] font-black leading-6 tracking-[-0.04em] text-black">
+                <p className="font-ticket-display mt-1.5 break-keep text-[18px] font-bold leading-6 tracking-[-0.035em] text-black">
                   {step.title || step.activityType || "활동"}
                 </p>
               </div>
@@ -362,7 +361,11 @@ function TicketCoursePanel({ ticket, steps }: {
         );
       })}
         </ol>
+
+        <FeedbackTimeCard ticket={ticket} />
       </div>
+
+      <JoinDeadlineCountdown ticket={ticket} />
 
       <AnimatePresence>
         {selectedStep && (
@@ -380,6 +383,126 @@ function TicketCoursePanel({ ticket, steps }: {
           />
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
+  const startAt = ticketStartAt(ticket);
+  if (!startAt) return null;
+  const feedbackAt = new Date(startAt.getTime() + 3 * hourMs);
+
+  return (
+    <div className="relative mt-8 pt-1">
+      <span
+        aria-hidden
+        className="absolute -left-[20px] top-[10px] z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f8f4eb] bg-[#8f8778] shadow-[0_0_0_1px_rgba(23,23,19,0.14)]"
+      />
+      <p className="mb-3 text-[11px] font-black tracking-[0.08em] text-black/40">
+        {formatKstDateLabel(feedbackAt)}
+      </p>
+      <div className="flex items-center justify-between gap-4 rounded-[12px] border border-black/[0.07] bg-[#f1ebe0] px-4 py-4">
+        <span className="text-[12px] font-bold text-black/42">
+          {formatKstTimeLabel(feedbackAt)}
+        </span>
+        <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
+          피드백 시간
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RouletteDigit({ digit }: { digit: string }) {
+  const shouldReduceMotion = useReducedMotion();
+
+  return (
+    <span className="relative flex h-12 min-w-9 overflow-hidden rounded-[11px] border border-black/[0.08] bg-[#f1ebe0] shadow-[0_5px_16px_rgba(54,46,33,0.05)]">
+      <span className="pointer-events-none absolute inset-x-0 top-0 z-10 h-3 bg-gradient-to-b from-[#e7dfd1]/90 to-transparent" />
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-3 bg-gradient-to-t from-[#e7dfd1]/90 to-transparent" />
+      <span className="pointer-events-none absolute inset-x-1 top-1/2 z-10 border-t border-black/[0.045]" />
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={digit}
+          initial={
+            shouldReduceMotion
+              ? false
+              : { y: -38, opacity: 0.3, filter: "blur(2px)" }
+          }
+          animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
+          exit={
+            shouldReduceMotion
+              ? undefined
+              : { y: 38, opacity: 0.25, filter: "blur(2px)" }
+          }
+          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="font-ticket-latin absolute inset-0 flex items-center justify-center px-2 text-[27px] font-medium leading-none tabular-nums text-black/82"
+        >
+          {digit}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+function CountdownPair({ value }: { value: number | null }) {
+  const label = value === null ? "--" : String(value).padStart(2, "0");
+
+  return (
+    <span className="inline-flex gap-1">
+      {label.split("").map((digit, index) => (
+        <RouletteDigit key={index} digit={digit} />
+      ))}
+    </span>
+  );
+}
+
+function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
+  const [nowMs, setNowMs] = useState<number | null>(null);
+  const startAt = ticketStartAt(ticket);
+  const deadlineAt = startAt ? new Date(startAt.getTime() - dayMs) : null;
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (!deadlineAt || nowMs === null) return null;
+  const rawRemainingMs = deadlineAt.getTime() - nowMs;
+  if (rawRemainingMs > joinCountdownWindowMs) return null;
+
+  const remainingMs = Math.max(0, rawRemainingMs);
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const isClosed = remainingMs <= 0;
+
+  return (
+    <div className="mt-9 border-t border-black/[0.08] pt-7 text-center">
+      <p className="text-[12px] font-bold tracking-[-0.01em] text-black/42">
+        {isClosed ? "참여 신청이 마감됐어요" : "참여 마감까지 남은 시간"}
+      </p>
+      <div
+        className="mt-4 flex items-center justify-center gap-2"
+        aria-label={
+          isClosed
+            ? "참여 신청 마감"
+            : `${hours}시간 ${minutes}분 ${seconds}초 남음`
+        }
+      >
+        <span aria-hidden className="contents">
+          <CountdownPair value={hours} />
+          <span className="font-ticket-latin text-[24px] text-black/38">:</span>
+          <CountdownPair value={minutes} />
+          <span className="font-ticket-latin text-[24px] text-black/38">:</span>
+          <CountdownPair value={seconds} />
+        </span>
+      </div>
+      <p className="mt-3 text-[10px] font-semibold text-black/32">
+        {formatKstDateLabel(deadlineAt)} {formatKstTimeLabel(deadlineAt)} 마감
+      </p>
     </div>
   );
 }
@@ -678,9 +801,9 @@ function TicketDetailSection({
       )}
     >
       <div className="flex items-end justify-between gap-3">
-        <h2 className="text-[15px] font-black tracking-[-0.04em] text-black">{title}</h2>
+        <h2 className="font-ticket-display text-[17px] font-bold tracking-[-0.04em] text-black">{title}</h2>
         {eyebrow && (
-          <p className="font-serif text-[9px] italic tracking-[0.14em] text-black/36">
+          <p className="font-ticket-latin text-[10px] italic tracking-[0.14em] text-black/36">
             {eyebrow}
           </p>
         )}

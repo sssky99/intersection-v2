@@ -2884,7 +2884,7 @@ function AssignedApplicationTicketDetailView({
         />
         <TicketDetailContent
           ticket={ticket}
-          sections={["summary", "course", "vibe", "activities", "notice"]}
+          sections={["summary", "course"]}
           className="px-5 pb-5"
         />
       </div>
@@ -2909,7 +2909,7 @@ function AssignedApplicationTicketDetailView({
             whileTap={!responding ? { scale: 0.98 } : undefined}
             disabled={responding}
             onClick={onAccept}
-            className="flex h-[56px] items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+            className="font-ticket-latin flex h-[56px] items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
           >
             YES
           </motion.button>
@@ -2920,7 +2920,7 @@ function AssignedApplicationTicketDetailView({
             type="button"
             whileTap={{ scale: 0.985 }}
             onClick={onReapply}
-            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[0.04em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+            className="font-ticket-latin flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
           >
             YES
           </motion.button>
@@ -3533,15 +3533,10 @@ function ticketProgressHeroImageUrl(
 const introDetailSections: TicketDetailSectionKey[] = [
   "summary",
   "course",
-  "vibe",
-  "activities",
 ];
 const appliedDetailSections: TicketDetailSectionKey[] = [
   "summary",
   "course",
-  "vibe",
-  "activities",
-  "notice",
 ];
 const ticketGuidanceClass =
   "mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800";

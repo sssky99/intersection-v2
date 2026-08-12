@@ -58,7 +58,7 @@ export default function CoursePreviewPage() {
           <TicketDetailHero ticket={coursePreviewTicket} backgroundImageUrls={[]} />
           <TicketDetailContent
             ticket={coursePreviewTicket}
-            sections={["summary", "course", "vibe", "activities", "notice"]}
+            sections={["summary", "course"]}
             className="px-5 pb-5"
           />
         </div>
