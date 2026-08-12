@@ -3,7 +3,7 @@ import { mbtiOptions } from "@/data/mbti";
 
 export const preferenceProfileVersion = "preferences-v13";
 
-const allPreferenceQuestions: ProfileQuestion[] = [
+export const preferenceQuestionCatalog: ProfileQuestion[] = [
   {
     id: 1,
     order: 1,
@@ -1050,7 +1050,7 @@ const allPreferenceQuestions: ProfileQuestion[] = [
 ];
 
 export const preferenceQuestions: ProfileQuestion[] =
-  allPreferenceQuestions.filter(
+  preferenceQuestionCatalog.filter(
     (question) => (question.order ?? question.id) > 5,
   );
 

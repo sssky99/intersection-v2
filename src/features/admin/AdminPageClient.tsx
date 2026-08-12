@@ -1,7 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import {
+  BookOpen,
   Download,
   Image as ImageIcon,
   LogOut,
@@ -11,22 +11,19 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { VibeGraph } from "@/components/vibe/VibeGraph";
 import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import {
-  preferenceQuestions,
+  preferenceQuestionCatalog,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
+import { profileAdditionalQuestions } from "@/data/profileDetailQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
-  conversationResultImageSrc,
-  conversationResultOverview,
-  conversationResults,
-  type ConversationResultCode,
-} from "@/data/conversationResults";
-import {
   isProfileArchetypeId,
+  profileArchetypeAssignmentGuide,
   profileArchetypes,
+  profileArchetypeIds,
+  profileArchetypeScoreCalibration,
 } from "@/data/profileArchetypes";
 import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
@@ -47,12 +44,6 @@ import {
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
 import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
-import { calculateConversationResultCode } from "@/lib/conversationResult";
-import {
-  conversationAxisLabelOverrides,
-  conversationVibeAxes,
-  conversationVibeScores,
-} from "@/lib/conversationVibe";
 import {
   membershipStatusLabels,
   type MembershipStatus,
@@ -145,7 +136,45 @@ function questionOrder(question: ProfileQuestion) {
 function questionsForProfile(
   profile: Pick<AdminProfile, "profile_experience_version">,
 ) {
-  return usesPreferenceProfile(profile) ? preferenceQuestions : profileQuestions;
+  return usesPreferenceProfile(profile)
+    ? [...preferenceQuestionCatalog, ...profileAdditionalQuestions]
+    : profileQuestions;
+}
+
+const additionalQuestionOrders = new Set(
+  profileAdditionalQuestions.map(questionOrder),
+);
+
+function isAdditionalQuestion(question: ProfileQuestion) {
+  return additionalQuestionOrders.has(questionOrder(question));
+}
+
+function questionScaleMeta(question: ProfileQuestion) {
+  const options = question.options ?? [];
+  const numericValues = options.map((option) => {
+    const value = optionMeta(option).value;
+    return /^\d+$/.test(value) ? Number(value) : null;
+  });
+  const isNumericScale =
+    numericValues.length >= 3 && numericValues.every((value) => value !== null);
+
+  if (!isNumericScale) return null;
+
+  const values = numericValues as number[];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return {
+    min,
+    max,
+    minLabel: question.scaleMinLabel ?? String(min),
+    maxLabel: question.scaleMaxLabel ?? String(max),
+  };
+}
+
+function answerTypeLabel(question: ProfileQuestion) {
+  if (question.type === "text") return "주관식";
+  if (question.type === "multi_choice") return "복수 선택";
+  return "단일 선택";
 }
 
 function questionForOrder(
@@ -153,6 +182,26 @@ function questionForOrder(
   questions: ProfileQuestion[] = profileQuestions,
 ) {
   return questions.find((question) => questionOrder(question) === order);
+}
+
+function questionForAnswer(
+  answer: AdminProfileAnswer,
+  questions: ProfileQuestion[],
+) {
+  const matches = questions.filter(
+    (question) => questionOrder(question) === answer.question_order,
+  );
+  if (matches.length <= 1) return matches[0];
+
+  return (
+    matches.find(
+      (question) =>
+        question.category === answer.category &&
+        question.type === answer.question_type,
+    ) ??
+    matches.find((question) => question.category === answer.category) ??
+    matches[0]
+  );
 }
 
 function optionMeta(option: string | QuestionOption) {
@@ -238,7 +287,7 @@ function answerExportColumns(profiles: AdminProfile[]) {
       ? {
           key: "preferences" as const,
           label: "신규",
-          questions: preferenceQuestions,
+          questions: [...preferenceQuestionCatalog, ...profileAdditionalQuestions],
         }
       : null,
   ].filter(
@@ -411,32 +460,139 @@ function adminMatchingPrecisionBonus(profile: AdminProfile | null) {
     : 0;
 }
 
-function adminConversationResult(profile: AdminProfile) {
-  const storedCode = profile.conversation_result_code;
-  const code =
-    storedCode && storedCode in conversationResults
-      ? (storedCode as ConversationResultCode)
-      : calculateConversationResultCode(profile.answers ?? []);
-
-  return code ? conversationResults[code] : null;
-}
-
-function isLegacyInferredConversationResult(profile: AdminProfile) {
+function AssignmentCriteriaDialog({ onClose }: { onClose: () => void }) {
   return (
-    profile.conversation_result_source === "legacy_inferred" ||
-    profile.conversation_result_version === "legacy-inferred-v1"
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assignment-criteria-title"
+        className="flex max-h-[92dvh] w-full max-w-[1180px] flex-col overflow-hidden rounded-[24px] border border-black/10 bg-[#f7f7f5] shadow-[0_30px_100px_rgba(0,0,0,0.22)]"
+      >
+        <header className="flex items-start justify-between gap-5 border-b border-black/10 bg-white px-6 py-5">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+              profile assignment guide
+            </p>
+            <h2
+              id="assignment-criteria-title"
+              className="mt-1 text-2xl font-bold tracking-tight"
+            >
+              유형 배정 기준
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-black/55">
+              현재 프로필 유형 분류 코드에서 실제로 반영하는 응답 방향을
+              운영용으로 요약한 표입니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="유형 배정 기준 닫기"
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-black/55 transition hover:border-black/25 hover:text-black"
+          >
+            <X size={18} aria-hidden />
+          </button>
+        </header>
+
+        <div className="overflow-y-auto px-6 py-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <CriteriaSummaryCard
+              label="1. 응답별 점수"
+              body="척도형 답변은 낮은 쪽과 높은 쪽 유형에 비례 배분하고, 취미·관심·직업 선택은 관련 유형에 가중 점수를 더합니다."
+            />
+            <CriteriaSummaryCard
+              label="2. 직접 반영 문항"
+              body="척도 6~12·19~25·27번, 취미 13번, 관심사 14번, 활동 회피 15번, 직업 28번을 계산합니다. 그 외 문항은 현재 직접 점수화하지 않습니다."
+            />
+            <CriteriaSummaryCard
+              label="3. 유형별 보정"
+              body="질문 수와 신호 분포 차이를 보완하기 위해 유형마다 보정계수를 적용한 뒤 최종 점수를 비교합니다."
+            />
+            <CriteriaSummaryCard
+              label="4. 근소한 점수 차"
+              body="1·2위 차이가 0.75점 이하 또는 1위 점수의 8% 이하이면 사용자와 답변 기반의 고정값으로 둘 중 하나를 선택합니다."
+            />
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-2xl border border-black/10 bg-white">
+            <div className="overflow-x-auto">
+              <table className="min-w-[920px] w-full border-collapse text-left">
+                <thead className="bg-black/[0.035] text-xs font-bold text-black/55">
+                  <tr>
+                    <th className="w-[190px] px-5 py-4">유형</th>
+                    <th className="w-[270px] px-5 py-4">핵심 성향</th>
+                    <th className="px-5 py-4">점수를 높이는 대표 응답</th>
+                    <th className="w-[100px] px-5 py-4 text-center">
+                      보정계수
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profileArchetypeIds.map((id) => {
+                    const archetype = profileArchetypes[id];
+                    const guide = profileArchetypeAssignmentGuide[id];
+                    return (
+                      <tr
+                        key={id}
+                        className="border-t border-black/[0.07] align-top"
+                      >
+                        <td className="px-5 py-4">
+                          <p className="font-bold text-black">
+                            {archetype.koreanName}
+                          </p>
+                          <p className="mt-1 text-xs font-semibold text-black/40">
+                            {archetype.englishName}
+                          </p>
+                        </td>
+                        <td className="px-5 py-4 text-sm font-medium leading-6 text-black/70">
+                          {guide.summary}
+                        </td>
+                        <td className="px-5 py-4">
+                          <ul className="space-y-1.5 text-sm leading-5 text-black/65">
+                            {guide.signals.map((signal) => (
+                              <li key={signal} className="flex gap-2">
+                                <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-accent" />
+                                <span>{signal}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                        <td className="px-5 py-4 text-center text-sm font-bold tabular-nums text-black/65">
+                          ×{profileArchetypeScoreCalibration[id].toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold leading-5 text-amber-900/70">
+            이 표는 대표 신호를 요약한 운영 가이드입니다. 실제 결과는 여러
+            답변의 누적 가중점수로 정해지므로 특정 답변 하나만으로 유형이
+            확정되지는 않습니다.
+          </p>
+        </div>
+      </section>
+    </div>
   );
 }
 
-function conversationResultConfidenceLabel(profile: AdminProfile) {
-  const confidence = profile.conversation_result_confidence;
-  if (typeof confidence !== "number" || !Number.isFinite(confidence)) {
-    return "신뢰도 미측정";
-  }
-
-  const percent = Math.round(confidence * 100);
-  const band = confidence >= 0.55 ? "높음" : confidence >= 0.3 ? "보통" : "낮음";
-  return `신뢰도 ${band} · ${percent}%`;
+function CriteriaSummaryCard({ label, body }: { label: string; body: string }) {
+  return (
+    <article className="rounded-2xl border border-black/10 bg-white p-4">
+      <p className="text-sm font-bold">{label}</p>
+      <p className="mt-2 text-xs font-medium leading-5 text-black/55">{body}</p>
+    </article>
+  );
 }
 
 export function AdminPageClient({
@@ -475,9 +631,20 @@ export function AdminPageClient({
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
   const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
+  const [assignmentCriteriaOpen, setAssignmentCriteriaOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<
     Partial<Record<AdminTab, boolean>>
   >({ applicants: true });
+
+  useEffect(() => {
+    if (!assignmentCriteriaOpen) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAssignmentCriteriaOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [assignmentCriteriaOpen]);
 
   const loadProfiles = useCallback(async (force = false) => {
     if (!authenticated) return;
@@ -762,6 +929,7 @@ export function AdminPageClient({
     setSelectedProfileId(null);
     setActiveTab("applicants");
     setVisitedTabs({ applicants: true });
+    setAssignmentCriteriaOpen(false);
   };
 
   if (!authenticated) {
@@ -821,9 +989,19 @@ export function AdminPageClient({
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">
                 intersection admin
               </p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight">
-                운영 관리자
-              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-bold tracking-tight">
+                  운영 관리자
+                </h1>
+                <button
+                  type="button"
+                  onClick={() => setAssignmentCriteriaOpen(true)}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 bg-[#f7f7f5] px-3 text-xs font-bold text-black/60 transition hover:border-accent/40 hover:bg-accent/10 hover:text-black"
+                >
+                  <BookOpen size={15} aria-hidden />
+                  유형 배정 기준
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -940,6 +1118,11 @@ export function AdminPageClient({
           )}
         </section>
       </div>
+      {assignmentCriteriaOpen && (
+        <AssignmentCriteriaDialog
+          onClose={() => setAssignmentCriteriaOpen(false)}
+        />
+      )}
     </main>
   );
 }
@@ -1238,7 +1421,7 @@ function ApplicantTable({
 }) {
   return (
     <div className="h-full overflow-auto">
-      <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
+      <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
           <tr>
             <TableHead className="w-[120px] px-3">이름</TableHead>
@@ -1246,7 +1429,6 @@ function ApplicantTable({
             <TableHead className="w-24">출생연도</TableHead>
             <TableHead className="w-20">MBTI</TableHead>
             <TableHead className="w-36">성향 유형</TableHead>
-            <TableHead className="w-40">배정 타입</TableHead>
             <TableHead className="w-32">전화번호</TableHead>
             <TableHead className="w-28">가입일</TableHead>
             <TableHead className="w-44">멤버십 상태</TableHead>
@@ -1255,7 +1437,6 @@ function ApplicantTable({
         <tbody>
           {profiles.map((profile) => {
             const selected = selectedProfileId === profile.user_id;
-            const conversationResult = adminConversationResult(profile);
 
             return (
               <tr
@@ -1280,21 +1461,6 @@ function ApplicantTable({
                   <span className="block truncate font-bold text-black/70">
                     {adminProfileArchetypeLabel(profile)}
                   </span>
-                </TableCell>
-                <TableCell className="w-40">
-                  {conversationResult ? (
-                    <div className="min-w-0">
-                      <span className="block truncate font-bold text-black/75">
-                        {conversationResult.title}
-                      </span>
-                      <span className="text-[10px] font-black tracking-[0.12em] text-accent">
-                        {conversationResult.code}
-                        {isLegacyInferredConversationResult(profile) ? " · 추정" : ""}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs font-semibold text-black/30">미배정</span>
-                  )}
                 </TableCell>
                 <TableCell>{formatPhoneCompact(profile.phone)}</TableCell>
                 <TableCell>{formatCreatedAtCompact(profile.created_at)}</TableCell>
@@ -1331,7 +1497,6 @@ function ApplicantCards({
       <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {profiles.map((profile) => {
           const selected = selectedProfileId === profile.user_id;
-          const conversationResult = adminConversationResult(profile);
 
           return (
             <button
@@ -1361,10 +1526,6 @@ function ApplicantCards({
                   <InfoPill
                     label="성향 유형"
                     value={adminProfileArchetypeLabel(profile)}
-                  />
-                  <InfoPill
-                    label="배정 타입"
-                    value={conversationResult?.title ?? "미배정"}
                   />
                 </div>
               </div>
@@ -1419,17 +1580,6 @@ function ProfileDetailPanel({
   );
   const isTestParticipant = Boolean(profile?.is_test_participant);
   const detailNickname = profile?.nickname?.trim();
-  const conversationResult = profile ? adminConversationResult(profile) : null;
-  const currentConversationVibeScores =
-    profile && conversationResult
-      ? conversationVibeScores(
-          (order) =>
-            profile.answers?.find(
-              (answer) => answer.question_order === order,
-            )?.answer_value,
-          conversationResult.code as ConversationResultCode,
-        )
-      : null;
 
   const savePrecisionBonus = () => {
     if (!profile || !precisionBonusDirty || profileSaving) return;
@@ -1592,65 +1742,6 @@ function ProfileDetailPanel({
           </button>
         </section>
 
-        {currentConversationVibeScores && (
-          <VibeGraph
-            title="사람 지표"
-            description="현재 질문 답변을 기준으로 계산한 사용자 화면과 동일한 그래프입니다."
-            scores={currentConversationVibeScores}
-            visibleAxes={conversationVibeAxes}
-            axisLabelOverrides={conversationAxisLabelOverrides}
-            scoreScale="internal"
-            animateBars={false}
-            monochrome
-            className="mt-5"
-          />
-        )}
-
-        <section className="mt-5 overflow-hidden rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold">배정 대화 타입</h3>
-            <span className="text-[11px] font-semibold text-black/35">
-              {isLegacyInferredConversationResult(profile)
-                ? `구형 질문 기반 추정 · ${conversationResultConfidenceLabel(profile)}`
-                : "신형 질문 직접 계산"}
-            </span>
-          </div>
-          {conversationResult ? (
-            <div className="mt-4 rounded-2xl border border-black/8 bg-white p-4">
-              <div className="flex items-center gap-4">
-                <Image
-                  src={conversationResultImageSrc[conversationResult.code as ConversationResultCode]}
-                  alt={`${conversationResult.title} 타입 이미지`}
-                  width={88}
-                  height={88}
-                  className="h-[88px] w-[88px] shrink-0 rounded-2xl object-cover"
-                />
-                <div className="min-w-0">
-                  <span className="inline-flex rounded-full bg-accent/15 px-2.5 py-1 text-[10px] font-black tracking-[0.14em] text-accent">
-                    {conversationResult.code}
-                  </span>
-                  <p className="mt-2 text-lg font-black text-black">
-                    {conversationResult.title}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-black/50">
-                    {conversationResult.subtitle}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-4 rounded-xl bg-[#f7f7f5] px-3 py-3 text-xs font-semibold leading-5 text-black/60">
-                {conversationResultOverview(conversationResult.body)}
-              </p>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl border border-dashed border-black/12 bg-white px-4 py-6 text-center">
-              <p className="text-sm font-bold text-black/45">아직 배정된 타입이 없습니다.</p>
-              <p className="mt-1 text-xs font-semibold text-black/35">
-                대화 타입 질문 16개 응답이 완료되면 자동으로 표시됩니다.
-              </p>
-            </div>
-          )}
-        </section>
-
         <ProfileAnswersSection profile={profile} />
 
         {(saveError || saveNotice) && (
@@ -1778,17 +1869,24 @@ function InfoPill({ label, value }: { label: string; value: string }) {
 function ProfileAnswersSection({ profile }: { profile: AdminProfile }) {
   const answers = profile.answers ?? [];
   const questions = questionsForProfile(profile);
-  const preferenceProfile = usesPreferenceProfile(profile);
   const sortedAnswers = [...answers].sort(
     (left, right) => left.question_order - right.question_order,
   );
+  const additionalAnswerCount = answers.filter((answer) => {
+    const question = questionForAnswer(answer, questions);
+    return Boolean(
+      (question && isAdditionalQuestion(question)) ||
+        parseTicketRatingAnswer(answer.answer_text),
+    );
+  }).length;
 
   return (
     <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-bold">신청자 답변</h3>
         <span className="text-[11px] font-semibold text-black/35">
-          {preferenceProfile ? "신규 5개 질문" : `총 ${sortedAnswers.length}개`}
+          총 {sortedAnswers.length}개
+          {additionalAnswerCount > 0 ? ` · 추가 질문 ${additionalAnswerCount}개` : ""}
         </span>
       </div>
 
@@ -1802,7 +1900,7 @@ function ProfileAnswersSection({ profile }: { profile: AdminProfile }) {
             <ProfileAnswerCard
               key={`${answer.question_order}-${answer.updated_at ?? ""}`}
               answer={answer}
-              question={questionForOrder(answer.question_order, questions)}
+              question={questionForAnswer(answer, questions)}
             />
           ))}
         </div>
@@ -1823,13 +1921,18 @@ function ProfileAnswerCard({
     return (
       <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-accent">
-          티켓 취향
+          추가 질문 · 티켓 선호 · 1~5점 척도
         </p>
         <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/76">
-          {ticketRating.title}
+          &ldquo;{ticketRating.title}&rdquo; 모임에 얼마나 참여하고 싶나요?
         </p>
-        <p className="mt-1 text-xs font-black text-black/45">
-          {ticketRating.rating}점
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-black/6 bg-white px-3 py-2 text-[10px] font-semibold leading-4 text-black/45">
+          <span>1 · 별로 끌리지 않아요</span>
+          <span className="shrink-0 text-black/25">↔</span>
+          <span className="text-right">5 · 너무 좋아요</span>
+        </div>
+        <p className="mt-2 rounded-xl bg-white px-3 py-2.5 text-xs font-black text-black/64">
+          {ticketRating.rating}점 / 5점
         </p>
       </article>
     );
@@ -1839,7 +1942,7 @@ function ProfileAnswerCard({
     return (
       <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
-          질문 {answer.question_order}
+          저장된 질문 · 문항 {answer.question_order}
         </p>
         <p className="mt-2 text-sm font-semibold leading-6 text-black/70">
           {answerText(answer) || "-"}
@@ -1849,10 +1952,17 @@ function ProfileAnswerCard({
   }
 
   if (question.type === "text") {
+    const additional = isAdditionalQuestion(question);
     return (
       <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
-          주관식
+        <p
+          className={cn(
+            "text-[11px] font-black uppercase tracking-[0.12em]",
+            additional ? "text-accent" : "text-black/35",
+          )}
+        >
+          {additional ? "추가 질문 · " : ""}
+          {question.category} · 주관식
         </p>
         <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/78">
           {question.question}
@@ -1865,23 +1975,41 @@ function ProfileAnswerCard({
   }
 
   const values = selectedValues(answer);
+  const additional = isAdditionalQuestion(question);
+  const scaleMeta = questionScaleMeta(question);
 
   return (
     <article className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/35">
-        객관식
+      <p
+        className={cn(
+          "text-[11px] font-black uppercase tracking-[0.12em]",
+          additional ? "text-accent" : "text-black/35",
+        )}
+      >
+        {additional ? "추가 질문 · " : ""}
+        {question.category} · {scaleMeta ? `${scaleMeta.min}~${scaleMeta.max}점 척도` : answerTypeLabel(question)}
       </p>
       <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/78">
         {question.question}
       </p>
+      {scaleMeta && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-black/6 bg-white px-3 py-2 text-[10px] font-semibold leading-4 text-black/45">
+          <span>
+            {scaleMeta.min} · {scaleMeta.minLabel}
+          </span>
+          <span className="shrink-0 text-black/25">↔</span>
+          <span className="text-right">
+            {scaleMeta.max} · {scaleMeta.maxLabel}
+          </span>
+        </div>
+      )}
       <div className="mt-3 space-y-2">
         {values.length > 0 ? (
           values.map((value, index) => {
-            const displayText = selectedOptionDisplay(
-              question,
-              value,
-              answer.other_text,
-            );
+            const displayText =
+              scaleMeta && /^\d+$/.test(value)
+                ? `${value}점 / ${scaleMeta.max}점`
+                : selectedOptionDisplay(question, value, answer.other_text);
             const rankedDisplayText =
               question.category === "관심 분야"
                 ? `${index + 1}순위. ${displayText.replace(/^\d+번\.\s*/, "")}`

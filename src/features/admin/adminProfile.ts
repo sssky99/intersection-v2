@@ -6,6 +6,8 @@ import {
 export type AdminProfileAnswer = {
   user_id: string;
   question_order: number;
+  category?: string | null;
+  question_type?: string | null;
   answer_value: string | null;
   answer_values: string[] | null;
   answer_text: string | null;

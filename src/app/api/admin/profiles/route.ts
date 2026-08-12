@@ -169,7 +169,7 @@ async function attachProfileAnswers(
       const { data, error } = await supabase
         .from("user_answers")
         .select(
-          "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
+          "user_id,question_order,category,question_type,answer_value,answer_values,answer_text,other_text,updated_at",
         )
         .in("user_id", userIdBatch)
         .order("user_id", { ascending: true })

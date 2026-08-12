@@ -98,7 +98,96 @@ export const profileArchetypes: Record<
 
 type ScoreMap = Record<ProfileArchetypeId, number>;
 
-const scoreCalibration: Record<ProfileArchetypeId, number> = {
+export const profileArchetypeAssignmentGuide: Record<
+  ProfileArchetypeId,
+  { summary: string; signals: string[] }
+> = {
+  romantic: {
+    summary: "관계의 친밀감과 정서적 교감을 적극적으로 추구",
+    signals: [
+      "새로운 사람과 쉽게 가까워짐",
+      "논리보다 공감과 위로를 우선",
+      "반려동물·관계·친밀감 선호",
+    ],
+  },
+  sentimental: {
+    summary: "감정과 분위기를 섬세하게 느끼고 정서적으로 반응",
+    signals: [
+      "조심스럽게 관계를 시작함",
+      "공감과 위로를 우선",
+      "음악·영화·사진·반려동물 선호",
+    ],
+  },
+  bohemian: {
+    summary: "자유로운 취향과 즉흥성, 개성 있는 경험을 선호",
+    signals: [
+      "활기찬 자리와 즉흥적인 선택 선호",
+      "문화·예술·취향 탐색 관심",
+      "계획·규칙보다 자유로운 방식 선호",
+    ],
+  },
+  adventurer: {
+    summary: "새로운 장소와 도전을 몸으로 직접 경험",
+    signals: [
+      "운동·여행·아웃도어 관심",
+      "새로운 활동에 대한 거부가 적음",
+      "도전적인 업무·경험 선호",
+    ],
+  },
+  experientialist: {
+    summary: "생각보다 실행과 다양한 실제 경험을 중시",
+    signals: [
+      "활기찬 자리와 새로운 사람에 개방적",
+      "운동·요리·여행 등 체험 선호",
+      "분석보다 직접 해보는 선택 선호",
+    ],
+  },
+  stoic: {
+    summary: "차분한 환경, 현실적인 판단과 안정적인 계획을 중시",
+    signals: [
+      "조용한 자리와 논리적 해결 선호",
+      "안정·계획·현실성을 중시",
+      "독서와 차분한 활동 선호",
+    ],
+  },
+  searcher: {
+    summary: "질문과 탐구를 통해 새로운 관점과 지식을 발견",
+    signals: [
+      "조용한 환경에서 깊이 탐색",
+      "독서·지식·심리·연구 관심",
+      "경험의 의미와 새로운 관점을 중시",
+    ],
+  },
+  idealist: {
+    summary: "가치와 관계의 가능성, 더 나은 방향을 중요하게 생각",
+    signals: [
+      "공감과 관계의 의미를 중시",
+      "사회·인문·성장 주제 관심",
+      "새로운 관점과 가치 있는 선택 선호",
+    ],
+  },
+  artisan: {
+    summary: "감각과 취향을 창작이나 구체적인 결과물로 표현",
+    signals: [
+      "음악·사진·요리·공예·문화 관심",
+      "미적 감각과 표현 활동 선호",
+      "디자인·예술·콘텐츠 분야 관심",
+    ],
+  },
+  visionary: {
+    summary: "미래 가능성과 성장 방향을 보고 계획적으로 움직임",
+    signals: [
+      "목표·계획·성장 가능성을 중시",
+      "기술·창업·미래·새로운 관점 관심",
+      "장기적인 의미와 방향을 탐색",
+    ],
+  },
+};
+
+export const profileArchetypeScoreCalibration: Record<
+  ProfileArchetypeId,
+  number
+> = {
   romantic: 1.2,
   sentimental: 1.1,
   bohemian: 0.9,
@@ -165,13 +254,13 @@ function pickProfileArchetype(
 ) {
   const ranked = [...profileArchetypeIds].sort(
     (left, right) =>
-      scores[right] * scoreCalibration[right] -
-      scores[left] * scoreCalibration[left],
+      scores[right] * profileArchetypeScoreCalibration[right] -
+      scores[left] * profileArchetypeScoreCalibration[left],
   );
   const first = ranked[0];
   const second = ranked[1];
-  const firstScore = scores[first] * scoreCalibration[first];
-  const secondScore = scores[second] * scoreCalibration[second];
+  const firstScore = scores[first] * profileArchetypeScoreCalibration[first];
+  const secondScore = scores[second] * profileArchetypeScoreCalibration[second];
   const similar =
     firstScore - secondScore <= Math.max(0.75, Math.abs(firstScore) * 0.08);
 

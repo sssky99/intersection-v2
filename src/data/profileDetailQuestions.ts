@@ -662,6 +662,17 @@ export const valueQuestions: ProfileQuestion[] = [
   })),
 ];
 
+export const profileAdditionalQuestions: ProfileQuestion[] = [
+  ...backgroundQuestions,
+  ...activityQuestions,
+  ...interestQuestions,
+  ...valuesQuestions,
+  ...preferenceDetailQuestions,
+  ...traitsQuestions,
+  ...selfQuestions,
+  ...valueQuestions,
+];
+
 function coreQuestionsFor(...categories: string[]) {
   return preferenceQuestions.filter((question) =>
     categories.includes(question.category),
