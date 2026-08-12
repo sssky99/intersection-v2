@@ -10,8 +10,6 @@ const introVideoCookie = "intro_video_seen_v1";
 const introVideoCookieMaxAge = 60 * 60 * 24 * 365;
 const phonePrompt = "전화번호를 입력해주세요.";
 const otpPrompt = "6자리 인증 번호를 입력해주세요.";
-// TODO: SOLAPI/SMS 발송 한도가 안정되면 false로 되돌려 기존 OTP 흐름을 복구한다.
-const isPhoneOtpTemporarilyDisabled = true;
 type AuthStep = "phone" | "otp";
 
 type FiftyQLandingClientProps = {
@@ -97,11 +95,7 @@ export function FiftyQLandingClient({
   const isGuideTypingComplete = typedGuide.length === guideText.length;
   const isPhoneValid = /^010\d{8}$/.test(phoneDigits(phone));
   const isOtpValid = /^\d{6}$/.test(otp);
-  const canContinue = isPhoneOtpTemporarilyDisabled
-    ? isPhoneValid
-    : step === "phone"
-      ? isPhoneValid
-      : isOtpValid;
+  const canContinue = step === "phone" ? isPhoneValid : isOtpValid;
   const isPromptTypingComplete =
     isAuthContentVisible && typedPrompt.length === prompt.length;
 
@@ -229,32 +223,6 @@ export function FiftyQLandingClient({
     window.location.replace(body.nextPath);
   };
 
-  const continueWithoutOtp = async () => {
-    const response = await fetch("/api/auth/phone/complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: phoneDigits(phone), bypassOtp: true }),
-    });
-    const body = (await response.json().catch(() => null)) as
-      | { nextPath?: string; loginType?: "new" | "existing" }
-      | null;
-    if (!response.ok || !body?.nextPath) throw new Error("profile-bootstrap-failed");
-
-    trackEvent("phone_verification_complete", {
-      login_type: body.loginType ?? "unknown",
-      verification_bypassed: true,
-    });
-
-    if (body.nextPath.startsWith("/onboarding/questions")) {
-      setNextPath(body.nextPath);
-      setGuidePage(0);
-      setError("");
-      return;
-    }
-
-    window.location.replace(body.nextPath);
-  };
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (previewPhoneOnly) return;
@@ -262,16 +230,11 @@ export function FiftyQLandingClient({
     setIsSubmitting(true);
     setError("");
     try {
-      if (isPhoneOtpTemporarilyDisabled) await continueWithoutOtp();
-      else if (step === "phone") await requestOtp();
+      if (step === "phone") await requestOtp();
       else await verifyOtp();
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : "";
-      setError(
-        isPhoneOtpTemporarilyDisabled
-          ? "잠시 후 다시 시도해주세요."
-          : authErrorMessage(message, step),
-      );
+      setError(authErrorMessage(message, step));
     } finally {
       setIsSubmitting(false);
     }
@@ -358,7 +321,7 @@ export function FiftyQLandingClient({
                   : "pointer-events-none translate-y-5 opacity-0"
               }`}
             >
-              {isPhoneOtpTemporarilyDisabled || step === "phone" ? (
+              {step === "phone" ? (
                 <div>
                   <input
                     ref={phoneInputRef}
@@ -391,7 +354,7 @@ export function FiftyQLandingClient({
             </div>
 
             <div className="mt-4 flex min-h-6 items-center justify-between">
-              {!isPhoneOtpTemporarilyDisabled && step === "otp" ? (
+              {step === "otp" ? (
                 <button
                   type="button"
                   onClick={returnToPhone}
@@ -408,13 +371,7 @@ export function FiftyQLandingClient({
             <button
               type="submit"
               disabled={!canContinue || isSubmitting}
-              aria-label={
-                isPhoneOtpTemporarilyDisabled
-                  ? "전화번호 입력하고 계속하기"
-                  : step === "phone"
-                    ? "인증 번호 받기"
-                    : "인증하고 계속하기"
-              }
+              aria-label={step === "phone" ? "인증 번호 받기" : "인증하고 계속하기"}
               className={`ml-auto mt-10 flex h-12 w-12 items-center justify-center transition-all duration-300 ${
                 canContinue && !isSubmitting
                   ? "text-black active:translate-x-0.5"
