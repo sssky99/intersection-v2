@@ -61,7 +61,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
     return (
       <FiftyQLandingClient
         initialHasSeenIntro
-        previewPhoneOnly
+        previewPhoneOnly={preview}
       />
     );
   }
