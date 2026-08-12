@@ -131,18 +131,44 @@ export async function POST(request: NextRequest) {
   let ticketInstance: TicketInstanceRow | null = null;
   let ticketInvitation: TicketInvitationRow | null = null;
 
+  const applicationLookup =
+    meetingDateApplicationId !== null
+      ? admin
+          .from("meeting_date_applications")
+          .select("id,assigned_ticket_instance_id")
+          .eq("id", meetingDateApplicationId)
+          .eq("user_id", user.id)
+          .eq("status", "payment_pending")
+          .eq("deposit_status", "payment_pending")
+          .maybeSingle<{
+            id: number | string;
+            assigned_ticket_instance_id: string | null;
+          }>()
+      : Promise.resolve({ data: null, error: null });
+  const ticketInstanceLookup = body?.ticket
+    ? admin
+        .from("ticket_instances")
+        .select("id,template_id,event_date,visibility")
+        .eq("id", body.ticket.id)
+        .maybeSingle<TicketInstanceRow>()
+    : Promise.resolve({ data: null, error: null });
+  const ticketInvitationLookup = body?.ticket
+    ? admin
+        .from("ticket_invitations")
+        .select("id,status,source_type,inviter_id,expires_at")
+        .eq("ticket_instance_id", body.ticket.id)
+        .eq("user_id", user.id)
+        .maybeSingle<TicketInvitationRow>()
+    : Promise.resolve({ data: null, error: null });
+  const [applicationResult, ticketInstanceResult, ticketInvitationResult] =
+    await Promise.all([
+      applicationLookup,
+      ticketInstanceLookup,
+      ticketInvitationLookup,
+    ]);
+
   if (meetingDateApplicationId !== null) {
-    const { data: application, error: applicationError } = await admin
-      .from("meeting_date_applications")
-      .select("id,assigned_ticket_instance_id")
-      .eq("id", meetingDateApplicationId)
-      .eq("user_id", user.id)
-      .eq("status", "payment_pending")
-      .eq("deposit_status", "payment_pending")
-      .maybeSingle<{
-        id: number | string;
-        assigned_ticket_instance_id: string | null;
-      }>();
+    const { data: application, error: applicationError } = applicationResult;
     if (applicationError || !application) {
       return NextResponse.json(
         { error: "결제할 신청 정보를 확인하지 못했습니다." },
@@ -160,12 +186,8 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (body?.ticket && admin) {
-    const { data: instance, error: instanceError } = await admin
-      .from("ticket_instances")
-      .select("id,template_id,event_date,visibility")
-      .eq("id", body.ticket.id)
-      .maybeSingle<TicketInstanceRow>();
+  if (body?.ticket) {
+    const { data: instance, error: instanceError } = ticketInstanceResult;
 
     if (instanceError || !instance?.event_date) {
       console.error("Membership ticket lookup failed:", instanceError?.message);
@@ -184,12 +206,8 @@ export async function POST(request: NextRequest) {
 
     ticketInstance = instance;
 
-    const { data: invitation, error: invitationError } = await admin
-      .from("ticket_invitations")
-      .select("id,status,source_type,inviter_id,expires_at")
-      .eq("ticket_instance_id", instance.id)
-      .eq("user_id", user.id)
-      .maybeSingle<TicketInvitationRow>();
+    const { data: invitation, error: invitationError } =
+      ticketInvitationResult;
     if (invitationError) {
       return NextResponse.json(
         { error: "Ticket invitation is not available." },
@@ -299,18 +317,106 @@ export async function POST(request: NextRequest) {
       ? landingVariantCookie
       : null;
   const attribution = checkoutAttribution(body?.attribution);
-  const { error: intentLinkError } = await admin
-    .from("membership_payment_intents")
-    .update({
-      meeting_date_application_id: meetingDateApplicationId,
-      seller_reference: sellerReference,
-      experiment_id: landingVariant ? landingExperimentId : null,
-      landing_variant: landingVariant,
-      acquisition_context: attribution,
-      updated_at: now,
-    })
-    .eq("id", membershipIntentId)
-    .eq("user_id", user.id);
+  const ticketPaymentPendingPromise = (async () => {
+    if (!body.ticket || !ticketInstance) return { error: null };
+
+    const instance = ticketInstance;
+    const [existingWaitlistResult, acceptedInvitationResult] =
+      await Promise.all([
+        admin
+          .from("ticket_participations")
+          .select("id,status")
+          .eq("user_id", user.id)
+          .or(`ticket_instance_id.eq.${instance.id},ticket_id.eq.${instance.id}`)
+          .limit(1)
+          .maybeSingle<{ id: number | string; status: string }>(),
+        admin
+          .from("ticket_invitations")
+          .upsert(
+            {
+              ticket_instance_id: instance.id,
+              user_id: user.id,
+              source_type: ticketInvitation?.source_type ?? "service",
+              inviter_id: ticketInvitation?.inviter_id ?? null,
+              status: "accepted",
+              responded_at: now,
+              updated_at: now,
+            },
+            { onConflict: "ticket_instance_id,user_id" },
+          )
+          .select("id")
+          .single<{ id: string }>(),
+      ]);
+
+    if (existingWaitlistResult.error) {
+      console.error(
+        "Membership waitlist lookup failed:",
+        existingWaitlistResult.error.message,
+      );
+      return { error: "Failed to save the ticket application." };
+    }
+    if (acceptedInvitationResult.error) {
+      console.error(
+        "Membership invitation accept failed:",
+        acceptedInvitationResult.error.message,
+      );
+      return { error: "Failed to accept the ticket invitation." };
+    }
+
+    const protectedStatuses = new Set([
+      "approved",
+      "feedback_done",
+      "completed",
+    ]);
+    const existingWaitlist = existingWaitlistResult.data;
+    if (
+      existingWaitlist?.id != null &&
+      protectedStatuses.has(existingWaitlist.status)
+    ) {
+      return { error: null };
+    }
+
+    const { error } = await admin.rpc("set_ticket_participation_status", {
+      p_ticket_instance_id: instance.id,
+      p_user_id: user.id,
+      p_status: "payment_pending",
+      p_ticket_snapshot: body.ticket,
+      p_invitation_id: acceptedInvitationResult.data.id,
+    });
+    if (error) {
+      console.error("Membership waitlist save failed:", error.message);
+      return { error: "Failed to save the ticket application." };
+    }
+
+    return { error: null };
+  })();
+
+  const [intentLinkResult, profileUpdateResult, ticketPaymentPendingResult] =
+    await Promise.all([
+      admin
+        .from("membership_payment_intents")
+        .update({
+          meeting_date_application_id: meetingDateApplicationId,
+          seller_reference: sellerReference,
+          experiment_id: landingVariant ? landingExperimentId : null,
+          landing_variant: landingVariant,
+          acquisition_context: attribution,
+          updated_at: now,
+        })
+        .eq("id", membershipIntentId)
+        .eq("user_id", user.id),
+      admin
+        .from("profiles")
+        .update({
+          membership_status: "pending",
+          membership_plan: body.plan,
+          membership_purchase_clicked_at: now,
+          membership_updated_at: now,
+        })
+        .eq("user_id", user.id),
+      ticketPaymentPendingPromise,
+    ]);
+  const intentLinkError = intentLinkResult.error;
   if (intentLinkError) {
     console.error(
       "Membership application link failed:",
@@ -322,99 +428,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { error } = await admin
-    .from("profiles")
-    .update({
-      membership_status: "pending",
-      membership_plan: body.plan,
-      membership_purchase_clicked_at: now,
-      membership_updated_at: now,
-    })
-    .eq("user_id", user.id);
-
-  if (error) {
-    console.error("Membership purchase click save failed:", error.message);
+  if (profileUpdateResult.error) {
+    console.error(
+      "Membership purchase click save failed:",
+      profileUpdateResult.error.message,
+    );
     return NextResponse.json(
       { error: "멤버십 신청 상태를 저장하지 못했습니다." },
       { status: 500 },
     );
   }
 
-  if (body.ticket && admin && ticketInstance) {
-    const instance = ticketInstance;
-    const { data: existingWaitlist, error: existingWaitlistError } = await admin
-      .from("ticket_participations")
-      .select("id,status")
-      .eq("user_id", user.id)
-      .or(`ticket_instance_id.eq.${instance.id},ticket_id.eq.${instance.id}`)
-      .limit(1)
-      .maybeSingle<{ id: number | string; status: string }>();
-
-    if (existingWaitlistError) {
-      console.error(
-        "Membership waitlist lookup failed:",
-        existingWaitlistError.message,
-      );
-      return NextResponse.json(
-        { error: "Failed to save the ticket application." },
-        { status: 500 },
-      );
-    }
-
-    const protectedStatuses = new Set([
-      "approved",
-      "feedback_done",
-      "completed",
-    ]);
-    const { data: acceptedInvitation, error: invitationError } = await admin
-      .from("ticket_invitations")
-      .upsert(
-        {
-          ticket_instance_id: instance.id,
-          user_id: user.id,
-          source_type: ticketInvitation?.source_type ?? "service",
-          inviter_id: ticketInvitation?.inviter_id ?? null,
-          status: "accepted",
-          responded_at: now,
-          updated_at: now,
-        },
-        { onConflict: "ticket_instance_id,user_id" },
-      )
-      .select("id")
-      .single<{ id: string }>();
-    if (invitationError) {
-      console.error(
-        "Membership invitation accept failed:",
-        invitationError.message,
-      );
-      return NextResponse.json(
-        { error: "Failed to accept the ticket invitation." },
-        { status: 500 },
-      );
-    }
-
-    const waitlistResult =
-      existingWaitlist?.id != null &&
-      protectedStatuses.has(existingWaitlist.status)
-        ? null
-        : await admin.rpc("set_ticket_participation_status", {
-            p_ticket_instance_id: instance.id,
-            p_user_id: user.id,
-            p_status: "payment_pending",
-            p_ticket_snapshot: body.ticket,
-            p_invitation_id: acceptedInvitation.id,
-          });
-
-    if (waitlistResult?.error) {
-      console.error(
-        "Membership waitlist save failed:",
-        waitlistResult.error.message,
-      );
-      return NextResponse.json(
-        { error: "Failed to save the ticket application." },
-        { status: 500 },
-      );
-    }
+  if (ticketPaymentPendingResult.error) {
+    return NextResponse.json(
+      { error: ticketPaymentPendingResult.error },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({
