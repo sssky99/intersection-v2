@@ -12,6 +12,7 @@ import type { GatheringTicket } from "@/types/ticket";
 type PurchaseRequest = {
   plan?: unknown;
   ticket?: Partial<GatheringTicket> | null;
+  meetingDateApplicationId?: unknown;
 };
 
 type TicketInstanceRow = {
@@ -72,6 +73,22 @@ export async function POST(request: Request) {
     );
   }
 
+  const meetingDateApplicationId =
+    typeof body?.meetingDateApplicationId === "number" &&
+    Number.isSafeInteger(body.meetingDateApplicationId) &&
+    body.meetingDateApplicationId > 0
+      ? body.meetingDateApplicationId
+      : null;
+  if (
+    body?.meetingDateApplicationId !== undefined &&
+    meetingDateApplicationId === null
+  ) {
+    return NextResponse.json(
+      { error: "Invalid meeting date application." },
+      { status: 400 },
+    );
+  }
+
   if (body?.ticket && isPastTicketDate(body.ticket.date)) {
     return NextResponse.json(
       { error: "This invitation has ended.", code: "ticket_ended" },
@@ -82,6 +99,35 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   let ticketInstance: TicketInstanceRow | null = null;
   let ticketInvitation: TicketInvitationRow | null = null;
+
+  if (meetingDateApplicationId !== null) {
+    const { data: application, error: applicationError } = await admin
+      .from("meeting_date_applications")
+      .select("id,assigned_ticket_instance_id")
+      .eq("id", meetingDateApplicationId)
+      .eq("user_id", user.id)
+      .eq("status", "payment_pending")
+      .eq("deposit_status", "payment_pending")
+      .maybeSingle<{
+        id: number | string;
+        assigned_ticket_instance_id: string | null;
+      }>();
+    if (applicationError || !application) {
+      return NextResponse.json(
+        { error: "결제할 신청 정보를 확인하지 못했습니다." },
+        { status: 409 },
+      );
+    }
+    if (
+      body?.ticket &&
+      application.assigned_ticket_instance_id !== body.ticket.id
+    ) {
+      return NextResponse.json(
+        { error: "신청 정보와 초대장이 일치하지 않습니다." },
+        { status: 409 },
+      );
+    }
+  }
 
   if (body?.ticket && admin) {
     const { data: instance, error: instanceError } = await admin
@@ -212,6 +258,28 @@ export async function POST(request: Request) {
       { error: "멤버십 결제를 준비하지 못했습니다." },
       { status: 500 },
     );
+  }
+
+  const membershipIntentId = paymentIntent[0].intent_id as number | string;
+  if (meetingDateApplicationId !== null) {
+    const { error: intentLinkError } = await admin
+      .from("membership_payment_intents")
+      .update({
+        meeting_date_application_id: meetingDateApplicationId,
+        updated_at: now,
+      })
+      .eq("id", membershipIntentId)
+      .eq("user_id", user.id);
+    if (intentLinkError) {
+      console.error(
+        "Membership application link failed:",
+        intentLinkError.message,
+      );
+      return NextResponse.json(
+        { error: "멤버십 신청 정보를 연결하지 못했습니다." },
+        { status: 500 },
+      );
+    }
   }
 
   const { error } = await admin

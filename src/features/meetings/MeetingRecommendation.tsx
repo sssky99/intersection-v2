@@ -192,8 +192,6 @@ function CompactParticipationRecord({
 const noShowDepositBankName = "카카오뱅크";
 const noShowDepositAccountNumber = "7942-26-95406";
 const noShowDepositAccountText = `${noShowDepositBankName} ${noShowDepositAccountNumber}`;
-const meetingApplicationPaymentUrl = "https://www.groble.im/payment/PeXqpV";
-const kakaoDepositMessageChatUrl = "http://pf.kakao.com/_xnweQn/chat";
 const depositMessageSummaryStorageKey =
   "intersection:deposit-message-summary";
 const fallbackDepositMessageBaseCount = 66;
@@ -242,6 +240,36 @@ function profileGivenName(name: string | null | undefined) {
   return /^[가-힣]{2,}$/.test(compactName)
     ? Array.from(compactName).slice(1).join("")
     : fullName.split(/\s+/).at(-1) ?? fullName;
+}
+
+function oneMonthMembershipPeriod(meetingDate: string) {
+  const schedule = meetingDateSchedule(meetingDate);
+  if (!schedule) return { start: meetingDate, end: meetingDate };
+
+  const nextMonth = schedule.month === 12 ? 1 : schedule.month + 1;
+  const nextYear = schedule.month === 12 ? schedule.year + 1 : schedule.year;
+  const lastDayOfNextMonth = new Date(
+    Date.UTC(nextYear, nextMonth, 0),
+  ).getUTCDate();
+  const sameDayNextMonth = new Date(
+    Date.UTC(
+      nextYear,
+      nextMonth - 1,
+      Math.min(schedule.day, lastDayOfNextMonth),
+    ),
+  );
+  sameDayNextMonth.setUTCDate(sameDayNextMonth.getUTCDate() - 1);
+  const format = (year: number, month: number, day: number) =>
+    `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")}`;
+
+  return {
+    start: format(schedule.year, schedule.month, schedule.day),
+    end: format(
+      sameDayNextMonth.getUTCFullYear(),
+      sameDayNextMonth.getUTCMonth() + 1,
+      sameDayNextMonth.getUTCDate(),
+    ),
+  };
 }
 
 function ProfileCurationOrbit({
@@ -634,15 +662,11 @@ type DateApplicationScreen =
   | "dates"
   | "ticketPreview"
   | "ticket"
-  | "purchase"
   | "submitted"
   | "blindDate";
-type DateApplicationPurchaseOption = "single" | "membership";
-
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
-  paymentIntentCreated?: boolean;
   error?: string;
 };
 
@@ -876,9 +900,8 @@ function MeetingDateApplicationFlow({
   const [selectedTicket, setSelectedTicket] = useState<GatheringTicket | null>(
     null,
   );
+  const [membershipSheetOpen, setMembershipSheetOpen] = useState(false);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
-  const [purchaseOption, setPurchaseOption] =
-    useState<DateApplicationPurchaseOption>("single");
   const [submittedDates, setSubmittedDates] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1006,7 +1029,7 @@ function MeetingDateApplicationFlow({
     activeBlindDateOffers[0] ??
     null;
 
-  const focusMode = screen === "ticket" || screen === "purchase";
+  const focusMode = screen === "ticket";
 
   useEffect(() => {
     onFocusModeChange?.(focusMode);
@@ -1111,9 +1134,9 @@ function MeetingDateApplicationFlow({
 
     setSelectedDates([resumeDate]);
     setSelectedTicket(resumeTicket);
-    setPurchaseOption("single");
     setError(null);
-    setScreen("purchase");
+    setScreen("ticket");
+    setMembershipSheetOpen(true);
   }, [availableTickets, profileCompleted, resumeDate, today]);
 
   useEffect(() => {
@@ -1262,7 +1285,6 @@ function MeetingDateApplicationFlow({
       }
     }
 
-    setPurchaseOption("single");
     setSelectedTicket(recommendedTicket);
     setError(null);
     setScreen("ticketPreview");
@@ -1323,7 +1345,7 @@ function MeetingDateApplicationFlow({
   const openTicket = (ticket: GatheringTicket) => {
     if (saving) return;
     recordTicketInteraction(ticket, "open");
-    setPurchaseOption("single");
+    setMembershipSheetOpen(false);
     setSelectedTicket(ticket);
     setError(null);
     setScreen("ticket");
@@ -1337,10 +1359,9 @@ function MeetingDateApplicationFlow({
     if (saving) return;
 
     recordTicketInteraction(ticket, "yes");
-    setPurchaseOption("single");
     setError(null);
 
-    setScreen("purchase");
+    setMembershipSheetOpen(true);
   };
 
   useEffect(() => {
@@ -1351,11 +1372,11 @@ function MeetingDateApplicationFlow({
     if (!ticket) return;
 
     setSelectedTicket(ticket);
-    setPurchaseOption("single");
     setError(null);
     recordTicketInteraction(ticket, "yes");
 
-    setScreen("purchase");
+    setScreen("ticket");
+    setMembershipSheetOpen(true);
 
     onTicketAcceptRequestHandled?.();
   }, [
@@ -1448,16 +1469,7 @@ function MeetingDateApplicationFlow({
     }
   };
 
-  const selectedApplication =
-    selectedDates.length === 1
-      ? applicationByDate.get(selectedDates[0]) ?? null
-      : null;
-  const isResumingPayment =
-    selectedApplication?.status === "payment_pending" &&
-    selectedApplication.depositStatus === "payment_pending";
-
   const submitDateApplications = async (
-    openStoreAfterSave = false,
     ticket: GatheringTicket | null = null,
   ) => {
     const targetDates = ticket ? [ticket.date] : [...selectedDates];
@@ -1473,224 +1485,95 @@ function MeetingDateApplicationFlow({
       membership_status: membershipStatus,
     });
 
-    if (purchaseOption === "membership") {
-      try {
-        if (!isLocalTestHost()) {
-          const applicationResponse = await fetch(
-            "/api/meeting-date-applications",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                dates: targetDates,
-                openPayment: false,
-                ticketInstanceId: ticket?.id,
-              }),
-            },
+    try {
+      if (!isLocalTestHost()) {
+        const applicationResponse = await fetch(
+          "/api/meeting-date-applications",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              dates: targetDates,
+              openPayment: false,
+              ticketInstanceId: ticket?.id,
+            }),
+          },
+        );
+        const applicationData = (await applicationResponse
+          .json()
+          .catch(() => null)) as DateApplicationsResponse | null;
+        if (!applicationResponse.ok || !applicationData?.applications) {
+          throw new Error(
+            applicationData?.error ?? "date-applications-save-failed",
           );
-          const applicationData = (await applicationResponse
-            .json()
-            .catch(() => null)) as DateApplicationsResponse | null;
-          if (!applicationResponse.ok || !applicationData?.applications) {
-            throw new Error(
-              applicationData?.error ?? "date-applications-save-failed",
-            );
-          }
-
-          const membershipResponse = await fetch(
-            "/api/membership/purchase-click",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ plan: "one_month" }),
-            },
-          );
-          const membershipData = (await membershipResponse
-            .json()
-            .catch(() => null)) as { error?: string } | null;
-          if (!membershipResponse.ok) {
-            throw new Error(
-              membershipData?.error ?? "membership-purchase-save-failed",
-            );
-          }
-
-          setApplications((current) => {
-            const next = new Map(
-              [...current, ...applicationData.applications!].map(
-                (application) => [application.meetingDate, application],
-              ),
-            );
-            return Array.from(next.values()).sort((left, right) =>
-              left.meetingDate.localeCompare(right.meetingDate),
-            );
-          });
         }
 
-        trackEvent("application_created", {
-          application_type: "meeting_date",
-          date_count: targetDates.length,
-          deposit_amount: 0,
-          payment_option: "one_month_membership",
-        });
-        trackEvent("invitation_yes", {
-          ticket_instance_id: ticket?.id,
-          meeting_date: ticket?.date ?? targetDates[0],
-          payment_option: "one_month_membership",
-        });
-        trackEvent("membership_purchase_click", {
-          plan: "one_month",
-          months: 1,
-          application_type: "meeting_date",
-          meeting_date: targetDates[0],
-        });
-        window.location.assign(membershipStoreUrls.one_month);
-      } catch (membershipPurchaseError) {
-        const message =
-          membershipPurchaseError instanceof Error &&
-          ![
-            "date-applications-save-failed",
-            "membership-purchase-save-failed",
-          ].includes(membershipPurchaseError.message)
-            ? membershipPurchaseError.message
-            : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.";
-        setError(message);
-        setDepositCopyError(message);
-        setSaving(false);
-      }
-      return;
-    }
-
-    if (isLocalTestHost()) {
-      const now = new Date().toISOString();
-      const localApplications = targetDates.map(
-        (date, index): MeetingDateApplication => ({
-          id: `local:${date}:${index}`,
-          meetingDate: date,
-          meetingTime: meetingDateSchedule(date)?.time ?? "",
-          region: MEETING_DATE_REGION,
-          status: "payment_pending",
-          depositAmount: MEETING_DATE_DEPOSIT_AMOUNT,
-          depositStatus: "payment_pending",
-          assignedTicketInstanceId: null,
-          ...(ticket ? { assignedTicketInstanceId: ticket.id } : {}),
-          createdAt: now,
-        }),
-      );
-      setApplications((current) => {
-        const nextApplications = mergeDateApplications(
-          current,
-          localApplications,
+        const membershipResponse = await fetch(
+          "/api/membership/purchase-click",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              plan: "one_month",
+              ticket,
+              meetingDateApplicationId: applicationData.applications[0].id,
+            }),
+          },
         );
-        saveLocalDateApplications(userId, nextApplications);
-        return nextApplications;
-      });
-      if (openStoreAfterSave) {
-        trackEvent("payment_page_open", {
-          application_type: "meeting_date",
-          payment_provider: "groble",
-          date_count: targetDates.length,
-        });
+        const membershipData = (await membershipResponse
+          .json()
+          .catch(() => null)) as { error?: string } | null;
+        if (!membershipResponse.ok) {
+          throw new Error(
+            membershipData?.error ?? "membership-purchase-save-failed",
+          );
+        }
+
         if (ticket) {
           await recordTicketInteraction(ticket, "payment_pending");
-          trackEvent("meeting_ticket_response", {
-            ticket_instance_id: ticket.id,
-            meeting_date: ticket.date,
-            response: "yes",
-          });
         }
-        window.location.assign(meetingApplicationPaymentUrl);
-        return;
-      }
-      setSubmittedDates(targetDates);
-      setSelectedDates([]);
-      setDepositOpen(false);
-      setScreen("submitted");
-      setSaving(false);
-      return;
-    }
 
-    if (!openStoreAfterSave) {
-      window.open(kakaoDepositMessageChatUrl, "_blank", "noopener,noreferrer");
-    }
-
-    try {
-      const response = await fetch("/api/meeting-date-applications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dates: targetDates,
-          openPayment: openStoreAfterSave,
-          ticketInstanceId: ticket?.id,
-        }),
-      });
-      const data = (await response.json().catch(() => null)) as
-        | DateApplicationsResponse
-        | null;
-      if (!response.ok || !data?.applications) {
-        throw new Error(data?.error ?? "date-applications-save-failed");
-      }
-
-      if (!openStoreAfterSave) {
-        const registration = await saveDepositMessageRegistration();
-        setDepositMessageSummary({
-          count: registration.count,
-          limitCount: registration.limitCount,
+        setApplications((current) => {
+          const next = new Map(
+            [...current, ...applicationData.applications!].map(
+              (application) => [application.meetingDate, application],
+            ),
+          );
+          return Array.from(next.values()).sort((left, right) =>
+            left.meetingDate.localeCompare(right.meetingDate),
+          );
         });
       }
-      setApplications((current) => {
-        const next = new Map(
-          [...current, ...(data.applications ?? [])].map((application) => [
-            application.meetingDate,
-            application,
-          ]),
-        );
-        return Array.from(next.values()).sort((left, right) =>
-          left.meetingDate.localeCompare(right.meetingDate),
-        );
-      });
+
       trackEvent("application_created", {
         application_type: "meeting_date",
         date_count: targetDates.length,
-        deposit_amount: targetDates.length * MEETING_DATE_DEPOSIT_AMOUNT,
+        deposit_amount: 0,
+        payment_option: "one_month_membership",
       });
       trackEvent("invitation_yes", {
         ticket_instance_id: ticket?.id,
         meeting_date: ticket?.date ?? targetDates[0],
-        payment_option: openStoreAfterSave ? "payment" : "deposit_message",
+        payment_option: "one_month_membership",
       });
-      if (openStoreAfterSave) {
-        if (!data.paymentIntentCreated) {
-          throw new Error("date-applications-save-failed");
-        }
-        trackEvent("payment_page_open", {
-          application_type: "meeting_date",
-          payment_provider: "groble",
-          date_count: targetDates.length,
-        });
-        if (ticket) {
-          await recordTicketInteraction(ticket, "payment_pending");
-          trackEvent("meeting_ticket_response", {
-            ticket_instance_id: ticket.id,
-            meeting_date: ticket.date,
-            response: "yes",
-          });
-        }
-        window.location.assign(meetingApplicationPaymentUrl);
-        return;
-      }
-      setSubmittedDates(targetDates);
-      setSelectedDates([]);
-      setDepositOpen(false);
-      setScreen("submitted");
-    } catch (submissionError) {
+      trackEvent("membership_purchase_click", {
+        plan: "one_month",
+        months: 1,
+        application_type: "meeting_date",
+        meeting_date: targetDates[0],
+      });
+      window.location.assign(membershipStoreUrls.one_month);
+    } catch (membershipPurchaseError) {
       const message =
-        submissionError instanceof Error &&
-          submissionError.message !== "date-applications-save-failed"
-          ? submissionError.message
-          : "신청 정보를 저장하지 못했어요. 잠시 후 다시 시도해주세요.";
+        membershipPurchaseError instanceof Error &&
+        ![
+          "date-applications-save-failed",
+          "membership-purchase-save-failed",
+        ].includes(membershipPurchaseError.message)
+          ? membershipPurchaseError.message
+          : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.";
       setError(message);
       setDepositCopyError(message);
-    } finally {
       setSaving(false);
     }
   };
@@ -1909,6 +1792,7 @@ function MeetingDateApplicationFlow({
           type="button"
           onClick={() => {
             if (saving) return;
+            setMembershipSheetOpen(false);
             setSelectedTicket(null);
             setScreen("dates");
             setError(null);
@@ -2021,168 +1905,22 @@ function MeetingDateApplicationFlow({
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.section>
-    );
-  }
 
-  if (screen === "purchase" && selectedTicket) {
-    const singleSelected = purchaseOption === "single";
-
-    return (
-      <motion.section
-        key={`meeting-ticket-purchase-${selectedTicket.id}`}
-        initial={{ opacity: 0, x: 16 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -12 }}
-        transition={ticketFadeTransition}
-        className={cn(
-          "min-h-full bg-[#f7f4ed] px-5 pb-32 pt-7",
-          embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
-        )}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            if (saving) return;
-            setError(null);
-            setScreen("ticket");
-          }}
-          disabled={saving}
-          className="flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm disabled:opacity-40"
-        >
-          <ChevronLeft size={17} aria-hidden />
-          경험으로
-        </button>
-
-        <header className="mt-8">
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-black/34">
-            READY TO APPLY
-          </p>
-          <h1 className="mt-2 text-[28px] font-black leading-[1.18] tracking-[-0.055em] text-black">
-            참여 방식을
-            <br />
-            선택해주세요.
-          </h1>
-          <p className="mt-3 text-[13px] font-medium leading-5 text-black/48">
-            결제 방식을 선택한 다음 신청을 완료할 수 있어요.
-          </p>
-        </header>
-
-        <div className="mt-6 rounded-[22px] border border-black/[0.08] bg-[#faf8f2] px-4 py-4">
-          <p className="text-[11px] font-bold text-black/42">
-            {meetingDateLabel(selectedTicket.date)}
-          </p>
-          <h2 className="mt-1 text-[18px] font-black tracking-[-0.04em] text-black">
-            {selectedTicket.title}
-          </h2>
-          <p className="mt-1 text-[12px] font-semibold text-black/48">
-            {meetingDateSchedule(selectedTicket.date)?.timeLabel ??
-              selectedTicket.time} · {selectedTicket.area}
-          </p>
-        </div>
-
-        <div className="mt-7 space-y-2.5">
-          <button
-            type="button"
-            aria-pressed={singleSelected}
-            onClick={() => setPurchaseOption("single")}
-            className={cn(
-              "relative flex min-h-[88px] w-full items-center justify-between gap-4 rounded-[20px] border px-4 py-4 text-left transition",
-              singleSelected
-                ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                : "border-black/10 bg-[#faf8f2] hover:border-black/25",
-            )}
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <span
-                className={cn(
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
-                  singleSelected
-                    ? "border-black bg-black text-white"
-                    : "border-black/15 bg-[#f1eee6] text-transparent",
-                )}
-              >
-                <Check size={12} strokeWidth={3} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[15px] font-black text-black">
-                  1회권 결제
-                </span>
-                <span className="mt-1 block text-[11px] font-medium text-black/46">
-                  이번 경험에 한 번 참여해요
-                </span>
-              </span>
-            </span>
-            <strong className="whitespace-nowrap text-[20px] font-black tracking-[-0.045em] text-black">
-              10,000원
-            </strong>
-          </button>
-
-          <button
-            type="button"
-            aria-pressed={!singleSelected}
-            onClick={() => setPurchaseOption("membership")}
-            className={cn(
-              "relative flex min-h-[112px] w-full items-start justify-between gap-3 rounded-[20px] border px-4 py-4 text-left transition",
-              !singleSelected
-                ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                : "border-black/10 bg-[#faf8f2] hover:border-black/25",
-            )}
-          >
-            <span className="flex min-w-0 items-start gap-3">
-              <span
-                className={cn(
-                  "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
-                  !singleSelected
-                    ? "border-black bg-black text-white"
-                    : "border-black/15 bg-[#f1eee6] text-transparent",
-                )}
-              >
-                <Check size={12} strokeWidth={3} aria-hidden />
-              </span>
-              <span className="min-w-0">
-                <span className="flex items-center gap-2">
-                  <span className="text-[15px] font-black text-black">
-                    1개월 멤버십
-                  </span>
-                  <span className="rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
-                    추천
-                  </span>
-                </span>
-                <span className="mt-2 block text-[11px] font-medium leading-[1.55] text-black/46">
-                  30일 동안 참여 횟수와 관계없이
-                  <br />
-                  모임 참가비가 면제돼요
-                </span>
-              </span>
-            </span>
-            <strong className="whitespace-nowrap pt-0.5 text-[20px] font-black tracking-[-0.045em] text-black">
-              20,000원
-            </strong>
-          </button>
-        </div>
-
-        {error && (
-          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-            {error}
-          </p>
-        )}
-
-        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
-          <motion.button
-            type="button"
-            whileTap={!saving ? { scale: 0.985 } : undefined}
-            disabled={saving}
-            onClick={() => void submitDateApplications(true, selectedTicket)}
-            className="flex h-[56px] w-full items-center justify-center rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
-          >
-            {saving
-              ? "결제창을 준비하는 중..."
-              : singleSelected
-                ? "10,000원 결제하기"
-                : "20,000원 결제하고 멤버십 시작하기"}
-          </motion.button>
-        </div>
+        <AnimatePresence>
+          {membershipSheetOpen && (
+            <MembershipPurchaseBottomSheet
+              ticket={selectedTicket}
+              saving={saving}
+              error={error}
+              onSubmit={() => void submitDateApplications(selectedTicket)}
+              onClose={() => {
+                if (saving) return;
+                setMembershipSheetOpen(false);
+                setError(null);
+              }}
+            />
+          )}
+        </AnimatePresence>
       </motion.section>
     );
   }
@@ -2390,65 +2128,17 @@ function MeetingDateApplicationFlow({
               >
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-[15px] font-bold tracking-[-0.03em] text-black">
-                    참여 방식을 선택해주세요
+                    멤버십으로 참여해요
                   </h3>
                   <span className="text-[10px] font-medium text-black/38">
-                    1개 선택
+                    구독권 전용
                   </span>
                 </div>
 
                 <div className="mt-3 space-y-2.5">
-                  <button
-                    type="button"
-                    aria-pressed={purchaseOption === "single"}
-                    onClick={() => setPurchaseOption("single")}
-                    className={cn(
-                      "relative flex min-h-[82px] w-full items-center justify-between gap-4 rounded-[18px] border px-4 py-3.5 text-left transition",
-                      purchaseOption === "single"
-                        ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                        : "border-black/10 bg-[#faf8f2] hover:border-black/25 hover:bg-[#f1eee6]",
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span
-                        className={cn(
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
-                          purchaseOption === "single"
-                            ? "border-black bg-black text-white"
-                            : "border-black/15 bg-[#f1eee6] text-transparent",
-                        )}
-                      >
-                        <Check size={12} strokeWidth={3} aria-hidden />
-                      </span>
-                      <span className="text-[14px] font-bold text-black">
-                        1회 참가비
-                      </span>
-                    </span>
-                    <span className="whitespace-nowrap text-[20px] font-extrabold tracking-[-0.04em] text-black">
-                      10,000원
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    aria-pressed={purchaseOption === "membership"}
-                    onClick={() => setPurchaseOption("membership")}
-                    className={cn(
-                      "relative w-full rounded-[18px] border px-4 py-4 text-left transition",
-                      purchaseOption === "membership"
-                        ? "border-black bg-black/[0.035] shadow-[inset_0_0_0_1px_#111]"
-                        : "border-black/10 bg-[#faf8f2] hover:border-black/25 hover:bg-[#f1eee6]",
-                    )}
-                  >
+                  <div className="relative w-full rounded-[18px] border border-black bg-black/[0.035] px-4 py-4 text-left shadow-[inset_0_0_0_1px_#111]">
                     <span className="flex items-start gap-3">
-                      <span
-                        className={cn(
-                          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border",
-                          purchaseOption === "membership"
-                            ? "border-black bg-black text-white"
-                            : "border-black/15 bg-[#f1eee6] text-transparent",
-                        )}
-                      >
+                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-black bg-black text-white">
                         <Check size={12} strokeWidth={3} aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -2457,7 +2147,7 @@ function MeetingDateApplicationFlow({
                             1개월 멤버십
                           </span>
                           <span className="rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
-                            추천
+                            구독권
                           </span>
                         </span>
                         <span className="mt-2 block text-[12px] font-medium leading-[1.55] text-black/52">
@@ -2470,24 +2160,18 @@ function MeetingDateApplicationFlow({
                         20,000원
                       </span>
                     </span>
-                  </button>
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   disabled={saving}
-                  onClick={() => void submitDateApplications(true)}
+                  onClick={() => void submitDateApplications()}
                   className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-bold text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
                 >
                   {saving
-                    ? isResumingPayment
-                      ? "결제창을 여는 중..."
-                      : "신청 정보를 저장하는 중..."
-                    : purchaseOption === "membership"
-                      ? "20,000원 결제하고 멤버십 시작하기"
-                    : isResumingPayment
-                      ? `${meetingDateLabel(selectedDates[0])} 결제 계속하기`
-                      : "10,000원 결제하고 신청하기"}
+                    ? "결제창을 준비하는 중..."
+                    : "20,000원 결제하고 멤버십 시작하기"}
                 </button>
               </motion.div>
             )}
@@ -2734,6 +2418,120 @@ function MeetingDateApplicationFlow({
         />
       )}
     </section>
+  );
+}
+
+function MembershipPurchaseBottomSheet({
+  ticket,
+  saving,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  ticket: GatheringTicket;
+  saving: boolean;
+  error: string | null;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const period = oneMonthMembershipPeriod(ticket.date);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return (
+    <motion.div
+      key={`membership-purchase-sheet-${ticket.id}`}
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/[0.3] backdrop-blur-[5px]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.22 }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="membership-purchase-title"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 330, damping: 34 }}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-[430px] rounded-t-[32px] border border-b-0 border-black/10 bg-[#f7f4ed] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_80px_rgba(0,0,0,0.28)]"
+      >
+        <div className="mx-auto h-1.5 w-12 rounded-full bg-black/14" />
+
+        <div className="mt-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="font-ticket-latin text-[11px] font-bold italic uppercase tracking-[0.2em] text-black/34">
+              MEMBERSHIP
+            </p>
+            <h2
+              id="membership-purchase-title"
+              className="font-ticket-display mt-2 text-[27px] font-bold leading-[1.25] tracking-[-0.045em] text-black"
+            >
+              멤버십을 신청하세요.
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            aria-label="멤버십 신청 닫기"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/55 text-black/48 disabled:opacity-35"
+          >
+            <X size={17} aria-hidden />
+          </button>
+        </div>
+
+        <p className="mt-3 break-keep text-[13px] font-semibold leading-5 text-black/46">
+          모임 시작일부터 한 달 동안 교집합의 모임에 참여할 수 있어요.
+        </p>
+
+        <div className="mt-6 overflow-hidden rounded-[24px] border border-black/10 bg-white/36">
+          <div className="flex items-center justify-between gap-4 border-b border-black/[0.08] px-5 py-5">
+            <span className="text-[12px] font-bold text-black/42">금액</span>
+            <strong className="tabular-nums text-[21px] font-bold tracking-[-0.025em] text-black">
+              20,000원
+            </strong>
+          </div>
+          <div className="px-5 py-5">
+            <span className="text-[12px] font-bold text-black/42">기간</span>
+            <p className="mt-2 tabular-nums text-[18px] font-bold tracking-[-0.015em] text-black">
+              {period.start} – {period.end}
+            </p>
+            <p className="mt-2 text-[11px] font-semibold text-black/38">
+              {meetingDateLabel(ticket.date)} 모임 시작 기준
+            </p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+            {error}
+          </p>
+        )}
+
+        <motion.button
+          type="button"
+          whileTap={!saving ? { scale: 0.985 } : undefined}
+          disabled={saving}
+          onClick={onSubmit}
+          className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
+        >
+          {saving ? "결제창을 준비하는 중..." : "멤버십 신청하기"}
+        </motion.button>
+      </motion.section>
+    </motion.div>
   );
 }
 

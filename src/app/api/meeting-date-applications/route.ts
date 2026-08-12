@@ -235,6 +235,15 @@ export async function POST(request: Request) {
     typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
       ? body.ticketInstanceId.trim()
       : null;
+  if (openPayment) {
+    return NextResponse.json(
+      {
+        error: "1회권 결제는 더 이상 지원하지 않습니다. 멤버십으로 참여해주세요.",
+        code: "membership_required",
+      },
+      { status: 410 },
+    );
+  }
   if (dates.length !== 1) {
     return NextResponse.json(
       { error: "신청할 날짜를 하나만 선택해주세요." },
@@ -362,52 +371,13 @@ export async function POST(request: Request) {
       )
       .filter((row): row is DateApplicationRow => Boolean(row));
 
-    let paymentIntentCreated = false;
-    if (openPayment && !joinWaitlist) {
-      const application = rows[0];
-      if (
-        !application ||
-        application.deposit_status !== "payment_pending" ||
-        !["payment_pending", "waitlisted", "on_hold", "approved"].includes(
-          application.status,
-        )
-      ) {
-        return NextResponse.json(
-          { error: "결제 대상을 확인할 수 없습니다." },
-          { status: 409 },
-        );
-      }
-
-      const applicationId =
-        typeof application.id === "number"
-          ? application.id
-          : Number(application.id);
-      if (!Number.isSafeInteger(applicationId)) {
-        throw new Error("Invalid meeting date application id.");
-      }
-
-      const { data: paymentIntent, error: paymentIntentError } = await admin.rpc(
-        "activate_meeting_date_payment_intent",
-        {
-          p_user_id: user.id,
-          p_application_id: applicationId,
-        },
-      );
-      if (paymentIntentError) throw paymentIntentError;
-      paymentIntentCreated =
-        Array.isArray(paymentIntent) && paymentIntent.length === 1;
-      if (!paymentIntentCreated) {
-        throw new Error("Meeting date payment intent was not created.");
-      }
-    }
-
     return NextResponse.json({
       applications: rows.map((row) => toApplication(row)),
       duplicateDates: protectedRows.map((row) => row.meeting_date),
       totalDepositAmount: joinWaitlist
         ? 0
         : dates.length * MEETING_DATE_DEPOSIT_AMOUNT,
-      paymentIntentCreated,
+      paymentIntentCreated: false,
     });
   } catch (error) {
     console.error("Meeting date applications save failed:", error);

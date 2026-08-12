@@ -437,6 +437,42 @@ async function processMembershipPayment({
     creditAmount: match.creditAmount,
   });
   const admin = createAdminClient();
+  const { data: membershipIntent, error: membershipIntentError } = await admin
+    .from("membership_payment_intents")
+    .select("meeting_date_application_id,opened_at")
+    .eq("id", match.intentId)
+    .eq("user_id", match.userId)
+    .single<{
+      meeting_date_application_id: number | string | null;
+      opened_at: string;
+    }>();
+  if (membershipIntentError) throw membershipIntentError;
+
+  let linkedApplicationId = membershipIntent.meeting_date_application_id;
+  if (linkedApplicationId === null) {
+    const openedAt = new Date(membershipIntent.opened_at);
+    if (Number.isFinite(openedAt.getTime())) {
+      const compatibilityWindowStart = new Date(
+        openedAt.getTime() - 15 * 60 * 1000,
+      ).toISOString();
+      const { data: compatibilityApplications, error: compatibilityError } =
+        await admin
+          .from("meeting_date_applications")
+          .select("id")
+          .eq("user_id", match.userId)
+          .eq("status", "payment_pending")
+          .eq("deposit_status", "payment_pending")
+          .gte("created_at", compatibilityWindowStart)
+          .lte("created_at", membershipIntent.opened_at)
+          .order("created_at", { ascending: false })
+          .limit(2)
+          .returns<Array<{ id: number | string }>>();
+      if (compatibilityError) throw compatibilityError;
+      if (compatibilityApplications?.length === 1) {
+        linkedApplicationId = compatibilityApplications[0].id;
+      }
+    }
+  }
 
   const { error: transactionError } = await admin
     .from("payment_transactions")
@@ -465,29 +501,90 @@ async function processMembershipPayment({
       ended_at: paidAt,
       completed_at: paidAt,
       groble_payment_event_id: envelope.id,
+      meeting_date_application_id: linkedApplicationId,
       updated_at: new Date().toISOString(),
     })
     .eq("id", match.intentId)
     .eq("user_id", match.userId);
   if (intentUpdateError) throw intentUpdateError;
 
-  const { data: pendingTicketInteraction, error: pendingTicketInteractionError } =
-    await admin
-      .from("ticket_user_interactions")
-      .select(
-        "ticket_instance_id,ticket_template_id,opened_at,responded_at,payment_started_at",
-      )
+  let linkedTicketInstanceId: string | null = null;
+  if (linkedApplicationId !== null) {
+    const { data: linkedApplication, error: linkedApplicationError } = await admin
+      .from("meeting_date_applications")
+      .select("id,status,assigned_ticket_instance_id")
+      .eq("id", linkedApplicationId)
       .eq("user_id", match.userId)
-      .eq("status", "payment_pending")
-      .order("updated_at", { ascending: false })
-      .limit(1)
       .maybeSingle<{
-        ticket_instance_id: string;
-        ticket_template_id: string;
-        opened_at: string | null;
-        responded_at: string | null;
-        payment_started_at: string | null;
+        id: number | string;
+        status: string;
+        assigned_ticket_instance_id: string | null;
       }>();
+    if (linkedApplicationError) throw linkedApplicationError;
+    if (!linkedApplication) {
+      throw new Error("Linked meeting date application was not found.");
+    }
+
+    linkedTicketInstanceId = linkedApplication.assigned_ticket_instance_id;
+    if (linkedApplication.status === "payment_pending") {
+      const { error: applicationUpdateError } = await admin
+        .from("meeting_date_applications")
+        .update({
+          status: "waitlisted",
+          deposit_status: "confirmed",
+          deposit_confirmed_at: paidAt,
+          groble_merchant_uid: details.merchantUid,
+          groble_payment_event_id: envelope.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", linkedApplication.id)
+        .eq("user_id", match.userId)
+        .eq("status", "payment_pending");
+      if (applicationUpdateError) throw applicationUpdateError;
+    }
+
+    if (linkedTicketInstanceId) {
+      const { error: participationUpdateError } = await admin
+        .from("ticket_participations")
+        .update({
+          status: "waitlisted",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", match.userId)
+        .eq("ticket_instance_id", linkedTicketInstanceId)
+        .eq("status", "payment_pending");
+      if (participationUpdateError) throw participationUpdateError;
+    }
+  }
+
+  const ticketInteractionQuery = admin
+    .from("ticket_user_interactions")
+    .select(
+      "ticket_instance_id,ticket_template_id,opened_at,responded_at,payment_started_at",
+    )
+    .eq("user_id", match.userId);
+  const { data: pendingTicketInteraction, error: pendingTicketInteractionError } =
+    linkedTicketInstanceId
+      ? await ticketInteractionQuery
+          .eq("ticket_instance_id", linkedTicketInstanceId)
+          .maybeSingle<{
+            ticket_instance_id: string;
+            ticket_template_id: string;
+            opened_at: string | null;
+            responded_at: string | null;
+            payment_started_at: string | null;
+          }>()
+      : await ticketInteractionQuery
+          .eq("status", "payment_pending")
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle<{
+            ticket_instance_id: string;
+            ticket_template_id: string;
+            opened_at: string | null;
+            responded_at: string | null;
+            payment_started_at: string | null;
+          }>();
   if (pendingTicketInteractionError) throw pendingTicketInteractionError;
 
   if (pendingTicketInteraction) {
