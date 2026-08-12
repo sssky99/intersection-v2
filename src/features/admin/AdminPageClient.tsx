@@ -127,8 +127,15 @@ function adminProfileArchetypeLabel(profile: AdminProfile) {
     : "미배정";
 }
 
-function isDropoffProfile(profile: Pick<AdminProfile, "name">) {
-  return !profile.name?.trim();
+function isDropoffProfile(
+  profile: Pick<AdminProfile, "photo_url" | "profile_archetype_id">,
+) {
+  const hasSubmittedPhoto = Boolean(profile.photo_url?.trim());
+  const hasAssignedArchetype = isProfileArchetypeId(
+    profile.profile_archetype_id,
+  );
+
+  return !hasSubmittedPhoto || !hasAssignedArchetype;
 }
 
 function questionOrder(question: ProfileQuestion) {
@@ -691,11 +698,11 @@ export function AdminPageClient({
     viewMode,
   ]);
 
-  const namedProfileCount = useMemo(
+  const rosterProfileCount = useMemo(
     () => profiles.filter((profile) => !isDropoffProfile(profile)).length,
     [profiles],
   );
-  const dropoffProfileCount = profiles.length - namedProfileCount;
+  const dropoffProfileCount = profiles.length - rosterProfileCount;
 
   useEffect(() => {
     if (filteredProfiles.length === 0) {
@@ -855,7 +862,7 @@ export function AdminPageClient({
               <ApplicantsPanel
                 profiles={filteredProfiles}
                 totalCount={profiles.length}
-                namedCount={namedProfileCount}
+                namedCount={rosterProfileCount}
                 dropoffCount={dropoffProfileCount}
                 selectedProfile={selectedProfile}
                 selectedProfileId={selectedProfileId}
@@ -1012,7 +1019,7 @@ function ApplicantsPanel({
             <div>
               <h2 className="text-lg font-bold">신청자 관리</h2>
               <p className="mt-1 text-xs text-black/45">
-                전체 {totalCount.toLocaleString()}명 · 참가자{" "}
+                전체 {totalCount.toLocaleString()}명 · 명단{" "}
                 {namedCount.toLocaleString()}명 · 이탈자{" "}
                 {dropoffCount.toLocaleString()}명 · 표시{" "}
                 {profiles.length.toLocaleString()}명
@@ -1079,7 +1086,7 @@ function ApplicantsPanel({
           {viewMode === "dropoffs" ? (
             <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_auto] gap-2">
               <p className="flex h-10 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-4 text-sm font-semibold text-black/50">
-                이름이 아직 저장되지 않은 미완성 참가자를 전체 표시합니다.
+                사진 제출 또는 유형 타입 배정을 완료하지 않은 사용자를 표시합니다.
               </p>
               <button
                 type="button"

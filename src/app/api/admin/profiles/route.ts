@@ -142,7 +142,9 @@ const profileSelects = [
   baseProfileSelectWithoutTest,
 ];
 
+const PROFILE_PAGE_SIZE = 1000;
 const USER_ANSWERS_PAGE_SIZE = 1000;
+const USER_ID_BATCH_SIZE = 100;
 
 async function attachProfileAnswers(
   supabase: ReturnType<typeof createAdminClient>,
@@ -153,22 +155,33 @@ async function attachProfileAnswers(
 
   const answers: AdminProfileAnswer[] = [];
 
-  for (let from = 0; ; from += USER_ANSWERS_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("user_answers")
-      .select(
-        "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
-      )
-      .in("user_id", userIds)
-      .order("user_id", { ascending: true })
-      .order("question_order", { ascending: true })
-      .range(from, from + USER_ANSWERS_PAGE_SIZE - 1);
-    if (error) throw error;
+  for (
+    let batchStart = 0;
+    batchStart < userIds.length;
+    batchStart += USER_ID_BATCH_SIZE
+  ) {
+    const userIdBatch = userIds.slice(
+      batchStart,
+      batchStart + USER_ID_BATCH_SIZE,
+    );
 
-    const page = (data ?? []) as unknown as AdminProfileAnswer[];
-    answers.push(...page);
+    for (let from = 0; ; from += USER_ANSWERS_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("user_answers")
+        .select(
+          "user_id,question_order,answer_value,answer_values,answer_text,other_text,updated_at",
+        )
+        .in("user_id", userIdBatch)
+        .order("user_id", { ascending: true })
+        .order("question_order", { ascending: true })
+        .range(from, from + USER_ANSWERS_PAGE_SIZE - 1);
+      if (error) throw error;
 
-    if (page.length < USER_ANSWERS_PAGE_SIZE) break;
+      const page = (data ?? []) as unknown as AdminProfileAnswer[];
+      answers.push(...page);
+
+      if (page.length < USER_ANSWERS_PAGE_SIZE) break;
+    }
   }
 
   const answersByUserId = new Map<string, AdminProfileAnswer[]>();
@@ -214,17 +227,32 @@ async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
   const errors: string[] = [];
 
   for (const [index, select] of profileSelects.entries()) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(select)
-      .order("created_at", { ascending: false })
-      .limit(500);
+    const profiles: AdminProfile[] = [];
+    let selectError: { message: string; hint?: string | null } | null = null;
 
-    if (!error) {
-      return (data ?? []) as unknown as AdminProfile[];
+    for (let from = 0; ; from += PROFILE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select(select)
+        .order("created_at", { ascending: false })
+        .order("user_id", { ascending: true })
+        .range(from, from + PROFILE_PAGE_SIZE - 1);
+
+      if (error) {
+        selectError = error;
+        break;
+      }
+
+      const page = (data ?? []) as unknown as AdminProfile[];
+      profiles.push(...page);
+      if (page.length < PROFILE_PAGE_SIZE) return profiles;
     }
 
-    errors.push(queryErrorMessage(`profile query ${index + 1}`, error));
+    if (selectError) {
+      errors.push(
+        queryErrorMessage(`profile query ${index + 1}`, selectError),
+      );
+    }
   }
 
   throw new Error(errors.join(" | "));
