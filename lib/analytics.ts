@@ -129,6 +129,47 @@ function acquisitionContext() {
   return current;
 }
 
+export function checkoutAttributionContext() {
+  const acquisition = acquisitionContext();
+  const cleanValue = (value: unknown, maxLength = 160) =>
+    typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+  let referrerHost = "";
+
+  try {
+    const initialReferrer = cleanValue(acquisition.initial_referrer, 500);
+    referrerHost = initialReferrer
+      ? new URL(initialReferrer).hostname.toLowerCase().slice(0, 160)
+      : "";
+  } catch {
+    referrerHost = "";
+  }
+
+  const utmSource = cleanValue(acquisition.utm_source);
+  const utmMedium = cleanValue(acquisition.utm_medium);
+  const utmCampaign = cleanValue(acquisition.utm_campaign);
+  const utmContent = cleanValue(acquisition.utm_content);
+  const landingPathValue = cleanValue(acquisition.landing_path, 500);
+  let landingPath = "";
+  try {
+    landingPath = new URL(landingPathValue, window.location.origin).pathname.slice(
+      0,
+      240,
+    );
+  } catch {
+    landingPath = window.location.pathname.slice(0, 240);
+  }
+
+  return {
+    source_type: utmSource || utmMedium ? "utm" : referrerHost ? "referral" : "direct",
+    utm_source: utmSource,
+    utm_medium: utmMedium,
+    utm_campaign: utmCampaign,
+    utm_content: utmContent,
+    referrer_host: referrerHost,
+    landing_path: landingPath,
+  };
+}
+
 function landingExperimentContext() {
   const cookieValue = document.cookie
     .split(";")

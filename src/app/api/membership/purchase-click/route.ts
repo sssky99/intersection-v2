@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isMembershipPlan } from "@/features/membership/membershipTypes";
@@ -14,7 +14,34 @@ type PurchaseRequest = {
   plan?: unknown;
   ticket?: Partial<GatheringTicket> | null;
   meetingDateApplicationId?: unknown;
+  attribution?: unknown;
 };
+
+const attributionKeys = [
+  "source_type",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "referrer_host",
+  "landing_path",
+] as const;
+
+function checkoutAttribution(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const source = value as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const key of attributionKeys) {
+    const entry = source[key];
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    result[key] = trimmed.slice(0, key === "landing_path" ? 240 : 160);
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
 
 type TicketInstanceRow = {
   id: string;
@@ -45,7 +72,10 @@ function isTicket(value: PurchaseRequest["ticket"]): value is GatheringTicket {
   );
 }
 
-export async function POST(request: Request) {
+const landingExperimentId = "landing_ab_2026_08";
+const landingExperimentCookie = "landing_ab_v1";
+
+export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -263,11 +293,20 @@ export async function POST(request: Request) {
 
   const membershipIntentId = paymentIntent[0].intent_id as number | string;
   const sellerReference = `mem_${crypto.randomUUID()}`;
+  const landingVariantCookie = request.cookies.get(landingExperimentCookie)?.value;
+  const landingVariant =
+    landingVariantCookie === "a" || landingVariantCookie === "b"
+      ? landingVariantCookie
+      : null;
+  const attribution = checkoutAttribution(body?.attribution);
   const { error: intentLinkError } = await admin
     .from("membership_payment_intents")
     .update({
       meeting_date_application_id: meetingDateApplicationId,
       seller_reference: sellerReference,
+      experiment_id: landingVariant ? landingExperimentId : null,
+      landing_variant: landingVariant,
+      acquisition_context: attribution,
       updated_at: now,
     })
     .eq("id", membershipIntentId)

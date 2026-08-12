@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MembershipPlan } from "@/features/membership/membershipTypes";
-import { trackEvent } from "@/lib/analytics";
+import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import { rememberPendingTicketPayment } from "@/lib/pendingTicketPayment";
 import type { GatheringTicket } from "@/types/ticket";
@@ -208,6 +208,7 @@ export function MembershipModal({
         body: JSON.stringify({
           plan: selectedPlan.id,
           ticket: pendingTicket,
+          attribution: checkoutAttributionContext(),
         }),
       });
       const data = (await response.json().catch(() => null)) as {

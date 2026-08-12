@@ -33,7 +33,7 @@ import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
-import { trackEvent } from "@/lib/analytics";
+import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
@@ -1568,6 +1568,7 @@ function MeetingDateApplicationFlow({
               plan: "one_month",
               ticket,
               meetingDateApplicationId: applicationData.applications[0].id,
+              attribution: checkoutAttributionContext(),
             }),
           },
         );
