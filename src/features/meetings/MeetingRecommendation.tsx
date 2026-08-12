@@ -1489,6 +1489,7 @@ function MeetingDateApplicationFlow({
     setSaving(true);
     setError(null);
     setDepositCopyError(null);
+    let membershipCheckoutUrl = membershipStoreUrls.one_month;
     trackEvent("application_submit_click", {
       application_type: "meeting_date",
       date_count: targetDates.length,
@@ -1566,17 +1567,18 @@ function MeetingDateApplicationFlow({
         );
         const membershipData = (await membershipResponse
           .json()
-          .catch(() => null)) as { error?: string } | null;
+          .catch(() => null)) as { error?: string; checkoutUrl?: string } | null;
         if (!membershipResponse.ok) {
           throw new Error(
             membershipData?.error ?? "membership-purchase-save-failed",
           );
         }
+        membershipCheckoutUrl =
+          membershipData?.checkoutUrl ?? membershipStoreUrls.one_month;
 
         if (ticket) {
           await recordTicketInteraction(ticket, "payment_pending");
         }
-
       } else if (membershipStatus === "active") {
         setSubmittedDates(targetDates);
         setMembershipSheetOpen(false);
@@ -1602,7 +1604,7 @@ function MeetingDateApplicationFlow({
         application_type: "meeting_date",
         meeting_date: targetDates[0],
       });
-      window.location.assign(membershipStoreUrls.one_month);
+      window.location.assign(membershipCheckoutUrl);
     } catch (membershipPurchaseError) {
       const message =
         membershipPurchaseError instanceof Error &&

@@ -212,6 +212,7 @@ export function MembershipModal({
       });
       const data = (await response.json().catch(() => null)) as {
         error?: string;
+        checkoutUrl?: string;
       } | null;
 
       if (!response.ok) {
@@ -228,7 +229,7 @@ export function MembershipModal({
         rememberPendingTicketPayment(userId, pendingTicket);
       }
       onClose();
-      window.location.assign(selectedPlan.storeUrl);
+      window.location.assign(data?.checkoutUrl ?? selectedPlan.storeUrl);
     } catch {
       setPurchaseError("멤버십 신청 상태를 저장하지 못했습니다.");
     } finally {

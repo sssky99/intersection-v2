@@ -6,6 +6,7 @@ import {
   membershipPlanAmounts,
   oneTimeMembershipCreditAmount,
 } from "@/lib/membershipPlans";
+import { membershipStoreUrls } from "@/lib/membershipStore";
 import { isPastTicketDate } from "@/lib/ticketDate";
 import type { GatheringTicket } from "@/types/ticket";
 
@@ -261,25 +262,25 @@ export async function POST(request: Request) {
   }
 
   const membershipIntentId = paymentIntent[0].intent_id as number | string;
-  if (meetingDateApplicationId !== null) {
-    const { error: intentLinkError } = await admin
-      .from("membership_payment_intents")
-      .update({
-        meeting_date_application_id: meetingDateApplicationId,
-        updated_at: now,
-      })
-      .eq("id", membershipIntentId)
-      .eq("user_id", user.id);
-    if (intentLinkError) {
-      console.error(
-        "Membership application link failed:",
-        intentLinkError.message,
-      );
-      return NextResponse.json(
-        { error: "멤버십 신청 정보를 연결하지 못했습니다." },
-        { status: 500 },
-      );
-    }
+  const sellerReference = `mem_${crypto.randomUUID()}`;
+  const { error: intentLinkError } = await admin
+    .from("membership_payment_intents")
+    .update({
+      meeting_date_application_id: meetingDateApplicationId,
+      seller_reference: sellerReference,
+      updated_at: now,
+    })
+    .eq("id", membershipIntentId)
+    .eq("user_id", user.id);
+  if (intentLinkError) {
+    console.error(
+      "Membership application link failed:",
+      intentLinkError.message,
+    );
+    return NextResponse.json(
+      { error: "멤버십 신청 정보를 연결하지 못했습니다." },
+      { status: 500 },
+    );
   }
 
   const { error } = await admin
@@ -383,5 +384,6 @@ export async function POST(request: Request) {
     expectedAmount,
     creditAmount,
     payableAmount: expectedAmount - creditAmount,
+    checkoutUrl: `${membershipStoreUrls[body.plan]}?ref=${encodeURIComponent(sellerReference)}`,
   });
 }

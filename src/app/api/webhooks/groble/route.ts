@@ -1,5 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import {
+  calculateMembershipEndDate,
+  hasCurrentMembershipAccess,
+  todayKoreaDateString,
+  type MembershipPlan,
+} from "@/features/membership/membershipTypes";
+import { incrementMembershipApplicationCounter } from "@/lib/membershipApplicationCounter";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -38,14 +45,14 @@ type PaymentIntentMatchRow = {
 };
 type MembershipIntentMatchRow = {
   intent_id: number | string;
-  plan: "one_month" | "three_months" | "six_months";
+  plan: MembershipPlan;
   credit_amount: number;
 };
 type MatchedMembershipPayment = {
   status: "matched";
   userId: string;
   intentId: number | string;
-  plan: "one_month" | "three_months" | "six_months";
+  plan: MembershipPlan;
   creditAmount: number;
 };
 type PaymentKind =
@@ -60,6 +67,13 @@ type PaymentTransactionRow = {
   amount: number;
   application_group_id: string | null;
   membership_payment_intent_id: number | string | null;
+};
+type MembershipProfileRow = {
+  membership_status: string | null;
+  membership_plan: MembershipPlan | null;
+  membership_start_date: string | null;
+  membership_end_date: string | null;
+  membership_updated_at: string | null;
 };
 
 function jsonRecord(value: unknown): JsonRecord | null {
@@ -156,6 +170,7 @@ function objectParts(object: JsonRecord) {
 
   return {
     merchantUid: text(object.merchantUid),
+    sellerReference: text(object.sellerReference),
     buyerPhone: normalizePhone(buyer?.phoneNumber),
     buyerName:
       text(buyer?.name) ??
@@ -180,14 +195,46 @@ async function eventStatus(
 }
 
 async function pendingMembershipMatch({
+  sellerReference,
   buyerPhone,
   finalAmount,
   paidAt,
 }: {
+  sellerReference: string | null;
   buyerPhone: string | null;
   finalAmount: number | null;
   paidAt: string | null;
 }) {
+  if (sellerReference && finalAmount !== null) {
+    const { data: referencedIntent, error: referenceError } =
+      await createAdminClient()
+        .from("membership_payment_intents")
+        .select("id,user_id,plan,expected_amount,credit_amount")
+        .eq("seller_reference", sellerReference)
+        .maybeSingle<{
+          id: number | string;
+          user_id: string;
+          plan: MembershipPlan;
+          expected_amount: number;
+          credit_amount: number;
+        }>();
+    if (referenceError) throw referenceError;
+    if (
+      referencedIntent &&
+      (referencedIntent.expected_amount === finalAmount ||
+        referencedIntent.expected_amount - referencedIntent.credit_amount ===
+          finalAmount)
+    ) {
+      return {
+        status: "matched" as const,
+        userId: referencedIntent.user_id,
+        intentId: referencedIntent.id,
+        plan: referencedIntent.plan,
+        creditAmount: referencedIntent.credit_amount,
+      };
+    }
+  }
+
   if (!buyerPhone || finalAmount === null || !paidAt) {
     return {
       status: "unmatched" as const,
@@ -273,6 +320,49 @@ async function pendingMembershipMatch({
     intentId: matches[0].intent_id,
     plan: matches[0].plan,
     creditAmount: matches[0].credit_amount,
+  };
+}
+
+async function existingMembershipMatch(eventId: string) {
+  const admin = createAdminClient();
+  const { data: transaction, error: transactionError } = await admin
+    .from("payment_transactions")
+    .select("user_id,payment_kind,membership_payment_intent_id")
+    .eq("provider", "groble")
+    .eq("provider_event_id", eventId)
+    .maybeSingle<{
+      user_id: string | null;
+      payment_kind: string;
+      membership_payment_intent_id: number | string | null;
+    }>();
+  if (transactionError) throw transactionError;
+  if (
+    !transaction?.user_id ||
+    transaction.membership_payment_intent_id === null ||
+    ![
+      "membership_initial",
+      "membership_upgrade",
+      "membership_renewal",
+    ].includes(transaction.payment_kind)
+  ) {
+    return null;
+  }
+
+  const { data: intent, error: intentError } = await admin
+    .from("membership_payment_intents")
+    .select("plan,credit_amount")
+    .eq("id", transaction.membership_payment_intent_id)
+    .eq("user_id", transaction.user_id)
+    .maybeSingle<{ plan: MembershipPlan; credit_amount: number }>();
+  if (intentError) throw intentError;
+  if (!intent) return null;
+
+  return {
+    status: "matched" as const,
+    userId: transaction.user_id,
+    intentId: transaction.membership_payment_intent_id,
+    plan: intent.plan,
+    creditAmount: intent.credit_amount,
   };
 }
 
@@ -415,6 +505,24 @@ async function membershipPaymentKind({
   return (count ?? 0) > 0 ? "membership_renewal" : "membership_initial";
 }
 
+function addDateOnlyDays(value: string, days: number) {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return value;
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function sameInstant(left: string | null, right: string) {
+  if (!left) return false;
+  const leftTime = new Date(left).getTime();
+  const rightTime = new Date(right).getTime();
+  return (
+    Number.isFinite(leftTime) &&
+    Number.isFinite(rightTime) &&
+    leftTime === rightTime
+  );
+}
+
 async function processMembershipPayment({
   envelope,
   idempotencyKey,
@@ -437,6 +545,15 @@ async function processMembershipPayment({
     creditAmount: match.creditAmount,
   });
   const admin = createAdminClient();
+  const { data: existingTransaction, error: existingTransactionError } =
+    await admin
+      .from("payment_transactions")
+      .select("payment_kind")
+      .eq("provider", "groble")
+      .eq("provider_event_id", envelope.id)
+      .maybeSingle<{ payment_kind: PaymentKind }>();
+  if (existingTransactionError) throw existingTransactionError;
+  const resolvedPaymentKind = existingTransaction?.payment_kind ?? paymentKind;
   const { data: membershipIntent, error: membershipIntentError } = await admin
     .from("membership_payment_intents")
     .select("meeting_date_application_id,opened_at")
@@ -482,7 +599,7 @@ async function processMembershipPayment({
         provider_event_id: envelope.id,
         merchant_uid: details.merchantUid,
         user_id: match.userId,
-        payment_kind: paymentKind,
+        payment_kind: resolvedPaymentKind,
         product_code: `membership:${match.plan}`,
         amount: details.finalAmount,
         status: "completed",
@@ -509,15 +626,17 @@ async function processMembershipPayment({
   if (intentUpdateError) throw intentUpdateError;
 
   let linkedTicketInstanceId: string | null = null;
+  let linkedMeetingDate: string | null = null;
   if (linkedApplicationId !== null) {
     const { data: linkedApplication, error: linkedApplicationError } = await admin
       .from("meeting_date_applications")
-      .select("id,status,assigned_ticket_instance_id")
+      .select("id,status,meeting_date,assigned_ticket_instance_id")
       .eq("id", linkedApplicationId)
       .eq("user_id", match.userId)
       .maybeSingle<{
         id: number | string;
         status: string;
+        meeting_date: string;
         assigned_ticket_instance_id: string | null;
       }>();
     if (linkedApplicationError) throw linkedApplicationError;
@@ -526,6 +645,7 @@ async function processMembershipPayment({
     }
 
     linkedTicketInstanceId = linkedApplication.assigned_ticket_instance_id;
+    linkedMeetingDate = linkedApplication.meeting_date;
     if (linkedApplication.status === "payment_pending") {
       const { error: applicationUpdateError } = await admin
         .from("meeting_date_applications")
@@ -555,6 +675,59 @@ async function processMembershipPayment({
         .eq("status", "payment_pending");
       if (participationUpdateError) throw participationUpdateError;
     }
+  }
+
+  const { data: membershipProfile, error: membershipProfileError } = await admin
+    .from("profiles")
+    .select(
+      "membership_status,membership_plan,membership_start_date,membership_end_date,membership_updated_at",
+    )
+    .eq("user_id", match.userId)
+    .single<MembershipProfileRow>();
+  if (membershipProfileError) throw membershipProfileError;
+
+  const alreadyApplied = sameInstant(
+    membershipProfile.membership_updated_at,
+    paidAt,
+  );
+  const previouslyActive = hasCurrentMembershipAccess({
+    status: membershipProfile.membership_status,
+    startDate: membershipProfile.membership_start_date,
+    endDate: membershipProfile.membership_end_date,
+  });
+  const paidAtDate = new Date(paidAt);
+  const paidDate = todayKoreaDateString(
+    Number.isFinite(paidAtDate.getTime()) ? paidAtDate : new Date(),
+  );
+  const isRenewal =
+    resolvedPaymentKind === "membership_renewal" &&
+    previouslyActive &&
+    Boolean(membershipProfile.membership_end_date);
+  const periodBaseDate = isRenewal
+    ? addDateOnlyDays(membershipProfile.membership_end_date!, 1)
+    : linkedMeetingDate ?? paidDate;
+  const membershipStartDate = isRenewal
+    ? membershipProfile.membership_start_date ?? paidDate
+    : periodBaseDate;
+  const membershipEndDate = alreadyApplied
+    ? membershipProfile.membership_end_date ??
+      calculateMembershipEndDate(periodBaseDate, match.plan)
+    : calculateMembershipEndDate(periodBaseDate, match.plan);
+
+  const { error: membershipUpdateError } = await admin
+    .from("profiles")
+    .update({
+      membership_status: "active",
+      membership_plan: match.plan,
+      membership_start_date: membershipStartDate,
+      membership_end_date: membershipEndDate,
+      membership_updated_at: paidAt,
+    })
+    .eq("user_id", match.userId);
+  if (membershipUpdateError) throw membershipUpdateError;
+
+  if (!previouslyActive && !alreadyApplied) {
+    await incrementMembershipApplicationCounter(admin, match.userId);
   }
 
   const ticketInteractionQuery = admin
@@ -614,9 +787,9 @@ async function processMembershipPayment({
   });
 
   const eventName =
-    paymentKind === "membership_upgrade"
+    resolvedPaymentKind === "membership_upgrade"
       ? "subscription_upgraded"
-      : paymentKind === "membership_renewal"
+      : resolvedPaymentKind === "membership_renewal"
         ? "subscription_renewed"
         : "subscription_started";
   const { error: analyticsError } = await admin.from("user_events").insert({
@@ -628,7 +801,7 @@ async function processMembershipPayment({
       merchant_uid: details.merchantUid,
       membership_payment_intent_id: match.intentId,
       plan: match.plan,
-      payment_kind: paymentKind,
+      payment_kind: resolvedPaymentKind,
       amount: details.finalAmount,
       credit_amount: match.creditAmount,
       event_id: envelope.id,
@@ -642,7 +815,7 @@ async function processMembershipPayment({
     merchant_uid: details.merchantUid,
     matched_user_id: match.userId,
     matched_membership_payment_intent_id: match.intentId,
-    payment_kind: paymentKind,
+    payment_kind: resolvedPaymentKind,
     payment_amount: details.finalAmount,
     processed_at: new Date().toISOString(),
   });
@@ -689,10 +862,12 @@ async function processPaymentCompleted(
 ) {
   const details = objectParts(envelope.object);
   const paymentOccurredAt = details.purchasedAt ?? envelope.occurredAt;
-  const membershipMatch = await pendingMembershipMatch({
-    ...details,
-    paidAt: paymentOccurredAt,
-  });
+  const membershipMatch =
+    (await existingMembershipMatch(envelope.id)) ??
+    (await pendingMembershipMatch({
+      ...details,
+      paidAt: paymentOccurredAt,
+    }));
   const match = await pendingApplicationMatch({
     ...details,
     paidAt: paymentOccurredAt,
@@ -1082,7 +1257,10 @@ export async function POST(request: Request) {
 
   try {
     let status: string;
-    if (envelope.type === "payment.completed") {
+    if (
+      envelope.type === "payment.completed" ||
+      envelope.type === "subscription_payment.completed"
+    ) {
       status = await processPaymentCompleted(envelope, idempotencyKey);
     } else if (envelope.type === "payment.cancel_requested") {
       status = await processCancelRequested(envelope, idempotencyKey);
