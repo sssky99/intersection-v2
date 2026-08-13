@@ -143,6 +143,104 @@ function activityParagraphs(items: string[]) {
   );
 }
 
+const dinnerBoardgameMatchPhotoUrls = [
+  "/images/meeting-matches/dinner-boardgame/match-1.jpg",
+  "/images/meeting-matches/dinner-boardgame/match-2.jpg",
+  "/images/meeting-matches/dinner-boardgame/match-3.jpg",
+  "/images/meeting-matches/dinner-boardgame/match-4.jpg",
+  "/images/meeting-matches/dinner-boardgame/match-5.jpg",
+] as const;
+
+const dinnerBoardgameOtherMemberPhotoUrls = [
+  "/images/meeting-matches/dinner-boardgame/other-members/member-1.jpg",
+  "/images/meeting-matches/dinner-boardgame/other-members/member-2.jpg",
+  "/images/meeting-matches/dinner-boardgame/other-members/member-3.jpg",
+  "/images/meeting-matches/dinner-boardgame/other-members/member-4.jpg",
+  "/images/meeting-matches/dinner-boardgame/other-members/member-5.jpg",
+  "/images/meeting-matches/dinner-boardgame/other-members/member-6.jpg",
+] as const;
+
+const dinnerBeerMatchPhotoUrls = [
+  "/images/meeting-matches/dinner-beer/match-1.jpg",
+  "/images/meeting-matches/dinner-beer/match-2.jpg",
+  "/images/meeting-matches/dinner-beer/match-3.jpg",
+  "/images/meeting-matches/dinner-beer/match-4.jpg",
+  "/images/meeting-matches/dinner-beer/match-5.jpg",
+] as const;
+
+const dinnerBeerOtherMemberPhotoUrls = [
+  "/images/meeting-matches/dinner-beer/other-members/member-1.jpg",
+  "/images/meeting-matches/dinner-beer/other-members/member-2.jpg",
+  "/images/meeting-matches/dinner-beer/other-members/member-3.jpg",
+  "/images/meeting-matches/dinner-beer/other-members/member-4.jpg",
+  "/images/meeting-matches/dinner-beer/other-members/member-5.jpg",
+  "/images/meeting-matches/dinner-beer/other-members/member-6.jpg",
+] as const;
+
+const dinnerCocktailMatchPhotoUrls = [
+  "/images/meeting-matches/dinner-cocktail/match-1.jpg",
+  "/images/meeting-matches/dinner-cocktail/match-2.jpg",
+  "/images/meeting-matches/dinner-cocktail/match-3.jpg",
+  "/images/meeting-matches/dinner-cocktail/match-4.jpg",
+  "/images/meeting-matches/dinner-cocktail/match-5.jpg",
+] as const;
+
+const dinnerCocktailOtherMemberPhotoUrls = [
+  "/images/meeting-matches/dinner-cocktail/other-members/member-1.jpg",
+  "/images/meeting-matches/dinner-cocktail/other-members/member-2.jpg",
+  "/images/meeting-matches/dinner-cocktail/other-members/member-3.jpg",
+  "/images/meeting-matches/dinner-cocktail/other-members/member-4.jpg",
+  "/images/meeting-matches/dinner-cocktail/other-members/member-5.jpg",
+  "/images/meeting-matches/dinner-cocktail/other-members/member-6.jpg",
+] as const;
+
+function isDinnerBoardgameTicket(ticket: GatheringTicket) {
+  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
+  return normalizedTitle.includes("디너&보드게임") ||
+    normalizedTitle.includes("디너앤보드게임");
+}
+
+function isDinnerBeerTicket(ticket: GatheringTicket) {
+  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
+  return normalizedTitle.includes("디너&비어") ||
+    normalizedTitle.includes("디너앤비어");
+}
+
+function isDinnerCocktailTicket(ticket: GatheringTicket) {
+  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
+  return normalizedTitle.includes("디너&칵테일") ||
+    normalizedTitle.includes("디너앤칵테일");
+}
+
+function ticketMatchPhotoUrls(ticket: GatheringTicket, fallback: string[]) {
+  if (isDinnerBoardgameTicket(ticket)) {
+    return [...dinnerBoardgameMatchPhotoUrls];
+  }
+  if (isDinnerBeerTicket(ticket)) {
+    return [...dinnerBeerMatchPhotoUrls];
+  }
+  if (isDinnerCocktailTicket(ticket)) {
+    return [...dinnerCocktailMatchPhotoUrls];
+  }
+  return fallback;
+}
+
+function ticketOtherMemberPhotoUrls(
+  ticket: GatheringTicket,
+  fallback: string[],
+) {
+  if (isDinnerBoardgameTicket(ticket)) {
+    return [...dinnerBoardgameOtherMemberPhotoUrls];
+  }
+  if (isDinnerBeerTicket(ticket)) {
+    return [...dinnerBeerOtherMemberPhotoUrls];
+  }
+  if (isDinnerCocktailTicket(ticket)) {
+    return [...dinnerCocktailOtherMemberPhotoUrls];
+  }
+  return fallback;
+}
+
 export function TicketDetailContent({
   ticket,
   participantPhotoUrl,
@@ -166,6 +264,14 @@ export function TicketDetailContent({
   afterNotice?: ReactNode;
   footer?: ReactNode;
 }) {
+  const resolvedMatchPhotoUrls = ticketMatchPhotoUrls(
+    ticket,
+    previewMatchPhotoUrls,
+  );
+  const resolvedOtherMemberPhotoUrls = ticketOtherMemberPhotoUrls(
+    ticket,
+    previewOtherMemberPhotoUrls,
+  );
   const activities = cleanList(ticket.detailActivities);
   const defaultNotices = [...participantNotice(ticket), ...commonNotices];
   const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
@@ -223,8 +329,8 @@ export function TicketDetailContent({
             ticket={ticket}
             steps={courseSteps}
             participantPhotoUrl={participantPhotoUrl}
-            previewMatchPhotoUrls={previewMatchPhotoUrls}
-            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+            previewMatchPhotoUrls={resolvedMatchPhotoUrls}
+            previewOtherMemberPhotoUrls={resolvedOtherMemberPhotoUrls}
           />
         </TicketDetailSection>
       )}
@@ -868,7 +974,7 @@ function MatchMembersSheet({
 
               <div className="border-t border-black/[0.07] px-6 py-6 text-center">
                 <p className="break-keep text-[14px] font-semibold leading-7 tracking-[-0.025em] text-black/48">
-                  내 테이블 멤버들과 함께 시크릿 칵테일 바에서 더 많은 교집합 멤버들을 만나요. 정확한 장소는 저녁 식사 후 공개돼요.
+                  내 테이블 멤버들과 함께 더 많은 교집합 멤버들을 만나요. 정확한 장소는 저녁 식사 후 공개돼요.
                 </p>
               </div>
             </section>

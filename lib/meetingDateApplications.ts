@@ -82,7 +82,7 @@ export function meetingDateApplicationDates(today: string) {
 export function requestedMeetingApplicationDates(
   value: unknown,
   today: string,
-  options: { ticketInstanceProvided?: boolean } = {},
+  options: { ticketInstanceProvided?: boolean; eventProvided?: boolean } = {},
 ) {
   if (!Array.isArray(value)) return [];
 
@@ -95,6 +95,7 @@ export function requestedMeetingApplicationDates(
       value.filter((date): date is string => {
         if (typeof date !== "string" || date < today) return false;
         if (selectableDates.has(date)) return true;
+        if (options.eventProvided === true) return dateParts(date) !== null;
 
         return (
           options.ticketInstanceProvided === true &&

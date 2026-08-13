@@ -60,7 +60,6 @@ import { profileQuestions } from "@/data/profileQuestions";
 import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
-import { RecommendationProfileLocked } from "@/features/meetings/RecommendationProfileLocked";
 import { useDragScroll } from "@/features/app/useDragScroll";
 import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
 import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
@@ -194,6 +193,13 @@ const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "chat", label: "채팅", Icon: MessageCircle },
 ];
+
+const appTabPositions: Record<AppTab, number> = {
+  recommend: 0,
+  browse: 1,
+  chat: 2,
+  profile: 3,
+};
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -405,24 +411,14 @@ type FetchUserTicketsOptions = {
   offset?: number;
 };
 
-function ticketRevealPreviewEnabled() {
-  return (
-    typeof window !== "undefined" &&
-    new URLSearchParams(window.location.search).get("previewReveal") === "1"
-  );
-}
-
 function userTicketsRequestKey({ limit, offset = 0 }: FetchUserTicketsOptions) {
-  return `${ticketRevealPreviewEnabled() ? "preview" : "live"}:${offset}:${
-    limit ?? "all"
-  }`;
+  return `live:${offset}:${limit ?? "all"}`;
 }
 
 function userTicketsRequestPath({ limit, offset = 0 }: FetchUserTicketsOptions) {
   const params = new URLSearchParams();
   if (typeof limit === "number") params.set("limit", String(limit));
   if (offset > 0) params.set("offset", String(offset));
-  if (ticketRevealPreviewEnabled()) params.set("previewReveal", "1");
   const query = params.toString();
   return query ? `/api/meetings/my-tickets?${query}` : "/api/meetings/my-tickets";
 }
@@ -543,7 +539,7 @@ export function AppHome({
   const [currentProfile, setCurrentProfile] = useState(profile);
   const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
   const profileQuestionsReady = currentProfile.questions_completed === true;
-  const recommendationProfileReady = profileQuestionsReady;
+  const recommendationProfileReady = true;
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
   const [questionReviewStartIndex, setQuestionReviewStartIndex] = useState<
@@ -908,6 +904,8 @@ export function AppHome({
   }, [guestMode, loadUserTicketsProgressively]);
 
   const switchTab = (tab: AppTab) => {
+    if (tab === activeTab) return;
+
     if (tab === "profile") {
       setProfileVibeAnimationKey((current) => current + 1);
     }
@@ -1221,16 +1219,27 @@ export function AppHome({
       <div
         ref={scrollAreaRef}
         className={cn(
-          "min-h-0 flex-1 touch-pan-y scrollbar-none",
+          "relative min-h-0 flex-1 overflow-hidden",
           chatRoomOpen || recommendationFocusMode || ticketTabFocusMode
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
-          activeTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
         )}
       >
         <div
+          data-testid="app-tab-panel-browse"
           aria-hidden={activeTab !== "browse"}
-          className={cn(activeTab === "browse" ? "block h-full" : "hidden")}
+          className={cn(
+            "absolute inset-0 h-full overflow-y-auto scrollbar-none",
+            activeTab === "browse" ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={{
+            transform:
+              activeTab === "browse"
+                ? "none"
+                : `translate3d(${(appTabPositions.browse - appTabPositions[activeTab]) * 100}%, 0, 0)`,
+            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            willChange: "transform",
+          }}
         >
           <TicketListTab
             tickets={waitlistedTickets}
@@ -1249,17 +1258,26 @@ export function AppHome({
           />
         </div>
         <div
+          data-testid="app-tab-panel-recommend"
           aria-hidden={activeTab !== "recommend"}
           className={cn(
+            "application-stone-theme absolute inset-0 h-full overflow-y-auto scrollbar-none",
             activeTab === "recommend"
-              ? "application-stone-theme block h-full"
-              : "hidden",
+              ? "pointer-events-auto"
+              : "pointer-events-none",
           )}
+          style={{
+            transform:
+              activeTab === "recommend"
+                ? "none"
+                : `translate3d(${(appTabPositions.recommend - appTabPositions[activeTab]) * 100}%, 0, 0)`,
+            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            willChange: "transform",
+          }}
         >
-          {recommendationProfileReady ? (
-            <MeetingRecommendation
+          <MeetingRecommendation
               userId={userId}
-              profileCompleted={Boolean(currentProfile.profile_completed)}
+              profileCompleted
               profilePhotoUrl={currentProfile.photo_url}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
@@ -1291,21 +1309,22 @@ export function AppHome({
                 setBlindDateOpenRequestPending(false)
               }
             />
-          ) : (
-            <RecommendationProfileLocked
-              onCompleteProfile={() => {
-                if (guestMode && onRequestBasicInfo) {
-                  onRequestBasicInfo();
-                  return;
-                }
-                window.location.assign("/onboarding/questions");
-              }}
-            />
-          )}
         </div>
         <div
+          data-testid="app-tab-panel-chat"
           aria-hidden={activeTab !== "chat"}
-          className={cn(activeTab === "chat" ? "block h-full" : "hidden")}
+          className={cn(
+            "absolute inset-0 h-full overflow-hidden",
+            activeTab === "chat" ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={{
+            transform:
+              activeTab === "chat"
+                ? "none"
+                : `translate3d(${(appTabPositions.chat - appTabPositions[activeTab]) * 100}%, 0, 0)`,
+            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            willChange: "transform",
+          }}
         >
           {activeTab === "chat" && guestMode ? (
             <section className="flex h-full min-h-[520px] flex-col items-center justify-center bg-[#f7f4ed] px-8 pb-24 text-center">
@@ -1327,8 +1346,20 @@ export function AppHome({
           ) : null}
         </div>
         <div
+          data-testid="app-tab-panel-profile"
           aria-hidden={activeTab !== "profile"}
-          className={cn(activeTab === "profile" ? "block min-h-full" : "hidden")}
+          className={cn(
+            "absolute inset-0 min-h-full overflow-y-auto scrollbar-none",
+            activeTab === "profile" ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={{
+            transform:
+              activeTab === "profile"
+                ? "none"
+                : `translate3d(${(appTabPositions.profile - appTabPositions[activeTab]) * 100}%, 0, 0)`,
+            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            willChange: "transform",
+          }}
         >
           {activeTab === "profile" && (
             profileQuestionsReady ? (
@@ -1811,7 +1842,7 @@ type TicketListItem =
       kind: "date-application";
       id: string;
       application: MeetingDateApplication;
-      ticket: GatheringTicket | null;
+      ticket: GatheringTicket;
     }
   | { kind: "stored-ticket"; id: string; userTicket: UserTicket }
   | {
@@ -1830,29 +1861,6 @@ function ticketListItemUpdatedAt(item: TicketListItem) {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function isVisibleMysteryApplication(
-  application: MeetingDateApplication,
-  nowMs: number | null,
-  forceReveal = false,
-) {
-  if (
-    ["cancelled", "not_selected", "feedback_done", "completed"].includes(
-      application.status,
-    )
-  ) {
-    return false;
-  }
-
-  if (!application.assignedTicketInstanceId || application.status !== "approved") {
-    return true;
-  }
-
-  if (forceReveal) return false;
-
-  const revealAt = dateApplicationConfirmationAt(application);
-  return nowMs === null || revealAt === null || nowMs < revealAt;
 }
 
 function TicketListTab({
@@ -1896,8 +1904,6 @@ function TicketListTab({
   const [declinedTickets, setDeclinedTickets] = useState<GatheringTicket[]>([]);
   const [declinedLoading, setDeclinedLoading] = useState(false);
   const [declinedError, setDeclinedError] = useState<string | null>(null);
-  const [nowMs, setNowMs] = useState<number | null>(null);
-  const [forceReveal, setForceReveal] = useState(false);
   const dragState = useRef({
     active: false,
     interacting: false,
@@ -1908,16 +1914,6 @@ function TicketListTab({
   });
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const snapTimerRef = useRef<number | null>(null);
-  const mysteryApplications = useMemo(
-    () =>
-      dateApplications
-        .filter((application) =>
-          isVisibleMysteryApplication(application, nowMs, forceReveal),
-        )
-        .sort((left, right) => left.meetingDate.localeCompare(right.meetingDate)),
-    [dateApplications, forceReveal, nowMs],
-  );
-
   useEffect(() => {
     const focused = Boolean(
       selectedApplicationTicket &&
@@ -1937,19 +1933,38 @@ function TicketListTab({
     [availableTickets],
   );
   const ticketItems = useMemo<TicketListItem[]>(() => {
-    const candidates: TicketListItem[] = [
-      ...mysteryApplications.map((application): TicketListItem => ({
-        kind: "date-application" as const,
-        id: `date-application:${application.id}`,
-        application,
-        ticket: application.assignedTicketInstanceId
+    const applicationItems = dateApplications.flatMap(
+      (application): TicketListItem[] => {
+        if (
+          ["cancelled", "not_selected", "feedback_done", "completed"].includes(
+            application.status,
+          )
+        ) {
+          return [];
+        }
+
+        const ticket = application.assignedTicketInstanceId
           ? availableTicketById.get(application.assignedTicketInstanceId) ?? null
-          : application.status === "payment_pending"
-            ? availableTickets.find(
-                (ticket) => ticket.date === application.meetingDate,
-              ) ?? null
-            : null,
-      })),
+          : availableTickets.find(
+              (candidate) => candidate.date === application.meetingDate,
+            ) ?? null;
+
+        // Applications without a concrete program are legacy/incomplete data.
+        // They must not create placeholder cards in the ticket tab.
+        if (!ticket) return [];
+
+        return [
+          {
+            kind: "date-application",
+            id: `date-application:${application.id}`,
+            application,
+            ticket,
+          },
+        ];
+      },
+    );
+    const candidates: TicketListItem[] = [
+      ...applicationItems,
       ...tickets.map((userTicket): TicketListItem => ({
         kind: "stored-ticket" as const,
         id: `stored-ticket:${userTicket.id}`,
@@ -1968,7 +1983,7 @@ function TicketListTab({
           ? item.userTicket.ticket.id
           : item.kind === "interaction-ticket"
             ? item.interaction.ticket.id
-            : item.ticket?.id ?? item.application.assignedTicketInstanceId;
+            : item.ticket.id;
       if (!ticketId) {
         latestItemByTicket.set(item.id, item);
         continue;
@@ -2002,18 +2017,11 @@ function TicketListTab({
     availableTicketById,
     availableTickets,
     interactions,
-    mysteryApplications,
+    dateApplications,
     tickets,
   ]);
   const itemCount = ticketItems.length;
   const carouselItemCount = itemCount;
-
-  useEffect(() => {
-    setForceReveal(ticketRevealPreviewEnabled());
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     setActiveIndex((current) =>
@@ -2475,21 +2483,15 @@ function TicketListTab({
                           }}
                         />
                       ) : (
-                        item.ticket ? (
-                          <AssignedApplicationTicketCard
-                            application={item.application}
-                            ticket={item.ticket}
-                            onOpen={() => {
-                              setSelectedApplicationTicketDeclined(false);
-                              setSelectedApplicationTicketOpen(false);
-                              setSelectedApplicationTicket(item.ticket);
-                            }}
-                          />
-                        ) : (
-                          <MysteryApplicationTicketCard
-                            application={item.application}
-                          />
-                        )
+                        <AssignedApplicationTicketCard
+                          application={item.application}
+                          ticket={item.ticket}
+                          onOpen={() => {
+                            setSelectedApplicationTicketDeclined(false);
+                            setSelectedApplicationTicketOpen(false);
+                            setSelectedApplicationTicket(item.ticket);
+                          }}
+                        />
                       )}
                     </div>
                   ))}
@@ -2911,7 +2913,7 @@ function StoredTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={userTicket.statusLabel}
+        badgeLabel={userTicket.status === "approved" ? null : userTicket.statusLabel}
         badgeClassName={statusBadgeClass(userTicket.status)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3082,7 +3084,11 @@ function AssignedApplicationTicketCard({
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
         tags={ticket.moodTags}
-        badgeLabel={meetingDateApplicationStatusLabels[application.status]}
+        badgeLabel={
+          application.status === "approved"
+            ? null
+            : meetingDateApplicationStatusLabels[application.status]
+        }
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3124,7 +3130,11 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={ticketInteractionStatusLabel(status)}
+        badgeLabel={
+          status === "payment_confirmed"
+            ? null
+            : ticketInteractionStatusLabel(status)
+        }
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
@@ -3151,154 +3161,6 @@ function dateApplicationBadgeClass(application: MeetingDateApplication) {
   }
 
   return "border-white/25 bg-white/[0.18] text-white";
-}
-
-function dateApplicationConfirmationAt(application: MeetingDateApplication) {
-  if (application.ticketRevealsAt) {
-    const revealAt = new Date(application.ticketRevealsAt).getTime();
-    if (Number.isFinite(revealAt)) return revealAt;
-  }
-
-  const dateMatch = application.meetingDate.match(
-    /^(\d{4})-(\d{2})-(\d{2})$/,
-  );
-  const meetingTime =
-    meetingDateSchedule(application.meetingDate)?.time ??
-    application.meetingTime;
-  const timeMatch = meetingTime.match(/^(\d{1,2}):(\d{2})/);
-  if (!dateMatch || !timeMatch) return null;
-
-  const meetingAt = new Date(
-    Number(dateMatch[1]),
-    Number(dateMatch[2]) - 1,
-    Number(dateMatch[3]),
-    Number(timeMatch[1]),
-    Number(timeMatch[2]),
-  ).getTime();
-
-  return Number.isFinite(meetingAt) ? meetingAt - 24 * 60 * 60 * 1000 : null;
-}
-
-function formatConfirmationCountdown(remainingMs: number) {
-  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const clock = [hours, minutes, seconds]
-    .map((value) => String(value).padStart(2, "0"))
-    .join(":");
-
-  return days > 0 ? `${days}일 ${clock}` : clock;
-}
-
-function MysteryConfirmationCountdown({
-  application,
-}: {
-  application: MeetingDateApplication;
-}) {
-  const confirmationAt = dateApplicationConfirmationAt(application);
-  const [nowMs, setNowMs] = useState<number | null>(null);
-
-  useEffect(() => {
-    setNowMs(Date.now());
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [confirmationAt]);
-
-  if (confirmationAt === null) {
-    return <span className="block">확정 시간을 확인 중이에요</span>;
-  }
-
-  const remainingMs = nowMs === null ? null : confirmationAt - nowMs;
-
-  if (remainingMs !== null && remainingMs <= 0) {
-    return (
-      <span className="block">
-        확정 안내를
-        <br />
-        준비 중이에요
-      </span>
-    );
-  }
-
-  return (
-    <span className="block">
-      <span className="block text-[17px] font-extrabold leading-6 text-white/75">
-        공개까지 남은 시간
-      </span>
-      <span className="mt-0.5 block text-[38px] font-black leading-none tracking-[-0.03em] text-white tabular-nums">
-        {remainingMs === null
-          ? "--:--:--"
-          : formatConfirmationCountdown(remainingMs)}
-      </span>
-    </span>
-  );
-}
-
-function MysteryApplicationTicketCard({
-  application,
-}: {
-  application: MeetingDateApplication;
-}) {
-  const schedule = meetingDateSchedule(application.meetingDate);
-  const prefersReducedMotion = useReducedMotion();
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.28, ease: "easeOut" }}
-      aria-label={`${meetingDateApplicationStatusLabels[application.status]} 미정 티켓`}
-      className={ticketPaperFrameClass}
-    >
-      <IntersectionTicketCard
-        title={<MysteryConfirmationCountdown application={application} />}
-        appearance="minimal"
-        date={application.meetingDate}
-        time={schedule?.time ?? application.meetingTime}
-        location={application.region}
-        badgeLabel={meetingDateApplicationStatusLabels[application.status]}
-        badgeClassName={dateApplicationBadgeClass(application)}
-        className={ticketPaperImageClass}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-[10%] flex h-[62%] items-center justify-center [perspective:700px]"
-      >
-        <motion.div
-          animate={
-            prefersReducedMotion
-              ? { rotateX: 0, rotateY: 0 }
-              : { rotateX: -3, rotateY: 360 }
-          }
-          transition={
-            prefersReducedMotion
-              ? { duration: 0 }
-              : {
-                  duration: 3.6,
-                  ease: "linear",
-                  repeat: Infinity,
-                }
-          }
-          className="flex h-[250px] w-[200px] origin-center items-center justify-center"
-          style={{
-            transformStyle: "preserve-3d",
-          }}
-        >
-          <span
-            className="inline-block bg-gradient-to-r from-white/55 via-white to-white/70 bg-clip-text text-[208px] font-black leading-none text-transparent drop-shadow-[8px_12px_14px_rgba(0,0,0,0.42)]"
-            style={{
-              fontFamily: '"KMU80 Sungkok Serif", "Nanum Myeongjo", serif',
-              transform: "scaleX(0.8) scaleY(1.22)",
-            }}
-          >
-            ?
-          </span>
-        </motion.div>
-      </div>
-    </motion.div>
-  );
 }
 
 export function StoredTicketDetailView({
@@ -6122,9 +5984,9 @@ function BasicInfoField({
 function TabMotion({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
       className="h-full min-h-full"
     >

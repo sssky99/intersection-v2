@@ -25,4 +25,12 @@ describe("requestedMeetingApplicationDates", () => {
       ),
     ).toEqual([]);
   });
+
+  it("accepts any valid upcoming weekday for a configured event", () => {
+    expect(
+      requestedMeetingApplicationDates(["2026-08-23"], "2026-08-13", {
+        eventProvided: true,
+      }),
+    ).toEqual(["2026-08-23"]);
+  });
 });

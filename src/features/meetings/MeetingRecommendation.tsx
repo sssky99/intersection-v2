@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   CalendarDays,
   Check,
@@ -57,66 +58,6 @@ type DepositMessageRegistrationSummary = Pick<
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
-}
-
-function upcomingSaturdayDate(date: string) {
-  const [year, month, day] = date.split("-").map(Number);
-  const current = new Date(Date.UTC(year, month - 1, day));
-  const daysUntilSaturday = (6 - current.getUTCDay() + 7) % 7;
-  current.setUTCDate(current.getUTCDate() + daysUntilSaturday);
-  return current.toISOString().slice(0, 10);
-}
-
-const kstOffsetMs = 9 * 60 * 60 * 1000;
-const dayMs = 24 * 60 * 60 * 1000;
-
-function nextFridayOpeningAt(nowMs: number) {
-  const kstNow = new Date(nowMs + kstOffsetMs);
-  const daysUntilFriday = (5 - kstNow.getUTCDay() + 7) % 7;
-  let openingAt =
-    Date.UTC(
-      kstNow.getUTCFullYear(),
-      kstNow.getUTCMonth(),
-      kstNow.getUTCDate() + daysUntilFriday,
-    ) - kstOffsetMs;
-
-  if (openingAt <= nowMs) openingAt += 7 * dayMs;
-  return openingAt;
-}
-
-function RollingCountdownValue({
-  value,
-  reduceMotion,
-}: {
-  value: number;
-  reduceMotion: boolean;
-}) {
-  return (
-    <span className="inline-flex" aria-hidden>
-      {String(value)
-        .padStart(2, "0")
-        .split("")
-        .map((digit, index) => (
-          <span
-            key={index}
-            className="relative inline-flex h-8 w-[15px] overflow-hidden"
-          >
-            <AnimatePresence initial={false} mode="popLayout">
-              <motion.span
-                key={digit}
-                initial={reduceMotion ? false : { opacity: 0, y: -26 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: 26 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                {digit}
-              </motion.span>
-            </AnimatePresence>
-          </span>
-        ))}
-    </span>
-  );
 }
 
 function CompactParticipationRecord({
@@ -496,7 +437,9 @@ type MeetingRecommendationProps = {
 };
 
 type DateApplicationScreen =
+  | "intro"
   | "dates"
+  | "unlock"
   | "ticket"
   | "submitted"
   | "blindDate";
@@ -731,7 +674,10 @@ function MeetingDateApplicationFlow({
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const [screen, setScreen] = useState<DateApplicationScreen>("dates");
+  const [screen, setScreen] = useState<DateApplicationScreen>("intro");
+  const [introDotCount, setIntroDotCount] = useState(1);
+  const [introMinDurationElapsed, setIntroMinDurationElapsed] = useState(false);
+  const [suppressProgramMorph, setSuppressProgramMorph] = useState(false);
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
   const [availableTickets, setAvailableTickets] = useState<GatheringTicket[]>([]);
   const [availableTicketsLoading, setAvailableTicketsLoading] = useState(true);
@@ -746,9 +692,41 @@ function MeetingDateApplicationFlow({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
-  const [invitationClockMs, setInvitationClockMs] = useState(() => Date.now());
-  const [invitationDrawKey, setInvitationDrawKey] = useState(0);
-  const invitationWasActiveRef = useRef(active);
+
+  useEffect(() => {
+    if (screen !== "intro") return;
+
+    setIntroDotCount(1);
+    setIntroMinDurationElapsed(false);
+    const dotsTimer = window.setInterval(() => {
+      setIntroDotCount((current) => (current >= 3 ? 1 : current + 1));
+    }, 420);
+    const openListTimer = window.setTimeout(
+      () => setIntroMinDurationElapsed(true),
+      1500,
+    );
+
+    return () => {
+      window.clearInterval(dotsTimer);
+      window.clearTimeout(openListTimer);
+    };
+  }, [screen, shouldReduceMotion]);
+
+  useEffect(() => {
+    if (
+      screen === "intro" &&
+      introMinDurationElapsed &&
+      !availableTicketsLoading
+    ) {
+      setScreen("dates");
+    }
+  }, [availableTicketsLoading, introMinDurationElapsed, screen]);
+
+  useEffect(() => {
+    if (screen !== "dates" || !suppressProgramMorph) return;
+    const resetTimer = window.setTimeout(() => setSuppressProgramMorph(false), 320);
+    return () => window.clearTimeout(resetTimer);
+  }, [screen, suppressProgramMorph]);
 
   const recordTicketInteraction = async (
     ticket: GatheringTicket,
@@ -784,46 +762,6 @@ function MeetingDateApplicationFlow({
   };
 
   const today = todayInKst();
-  const saturdayDate = upcomingSaturdayDate(today);
-  const saturdayTicket =
-    availableTickets.find(
-      (ticket) => ticket.date === saturdayDate && !ticket.rejected,
-    ) ?? null;
-  const saturdayTicketWasDeclined = availableTickets.some(
-    (ticket) => ticket.date === saturdayDate && ticket.rejected,
-  );
-  const forceInvitationCountdownPreview =
-    searchParams.get("countdownPreview") === "1";
-  const declinedInvitationTicket =
-    availableTickets.find(
-      (ticket) => ticket.date === saturdayDate && ticket.rejected,
-    ) ?? (forceInvitationCountdownPreview ? saturdayTicket : null);
-  const weeklyInvitationTicket = forceInvitationCountdownPreview
-    ? null
-    : saturdayTicket;
-  const showInvitationCountdown =
-    forceInvitationCountdownPreview || saturdayTicketWasDeclined;
-  const nextInvitationOpeningAt = nextFridayOpeningAt(invitationClockMs);
-  const invitationCountdownMs = Math.max(
-    0,
-    nextInvitationOpeningAt - invitationClockMs,
-  );
-  const invitationCountdownDays = Math.floor(invitationCountdownMs / dayMs);
-  const invitationCountdownHours = Math.floor(
-    (invitationCountdownMs % dayMs) / (60 * 60 * 1000),
-  );
-  const invitationCountdownMinutes = Math.floor(
-    (invitationCountdownMs % (60 * 60 * 1000)) / (60 * 1000),
-  );
-  const invitationCountdownSeconds = Math.floor(
-    (invitationCountdownMs % (60 * 1000)) / 1000,
-  );
-  const nextInvitationOpeningLabel = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  }).format(new Date(nextInvitationOpeningAt));
   const applicationByDate = new Map(
     applications.map((application) => [application.meetingDate, application]),
   );
@@ -958,20 +896,6 @@ function MeetingDateApplicationFlow({
     onDateApplicationsChange?.(applications);
   }, [applications, onDateApplicationsChange]);
 
-  useEffect(() => {
-    if (active && !invitationWasActiveRef.current) {
-      setInvitationDrawKey((current) => current + 1);
-    }
-    invitationWasActiveRef.current = active;
-  }, [active]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setInvitationClockMs(Date.now());
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
   const toggleDate = (date: string) => {
     const application = applicationByDate.get(date);
     const canResumePayment =
@@ -994,7 +918,7 @@ function MeetingDateApplicationFlow({
     setMembershipSheetOpen(false);
     setSelectedTicket(ticket);
     setError(null);
-    setScreen("ticket");
+    setScreen("unlock");
     trackEvent("meeting_ticket_detail_open", {
       ticket_instance_id: ticket.id,
       meeting_date: ticket.date,
@@ -1194,12 +1118,43 @@ function MeetingDateApplicationFlow({
             keepalive: true,
           });
         }
-      } else if (membershipStatus === "active") {
-        setSubmittedDates(targetDates);
-        setMembershipSheetOpen(false);
-        setScreen("submitted");
-        setSaving(false);
-        return;
+      } else {
+        const now = new Date().toISOString();
+        const localApplication: MeetingDateApplication = {
+          id: `local:${ticket?.id ?? targetDates[0]}`,
+          meetingDate: targetDates[0],
+          meetingTime: ticket?.time ?? "19:00",
+          region: ticket?.area ?? MEETING_DATE_REGION,
+          status: membershipStatus === "active" ? "approved" : "payment_pending",
+          depositAmount: 0,
+          depositStatus: membershipStatus === "active" ? "confirmed" : "payment_pending",
+          assignedTicketInstanceId: ticket?.id ?? null,
+          ticketRevealsAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        setApplications((current) => {
+          const next = mergeDateApplications(current, [localApplication]);
+          saveLocalDateApplications(userId, next);
+          onDateApplicationsChange?.(next);
+          return next;
+        });
+
+        if (ticket) {
+          await recordTicketInteraction(
+            ticket,
+            membershipStatus === "active" ? "payment_confirmed" : "payment_pending",
+          );
+        }
+
+        if (membershipStatus === "active") {
+          setSubmittedDates(targetDates);
+          setMembershipSheetOpen(false);
+          setScreen("submitted");
+          setSaving(false);
+          return;
+        }
       }
 
       trackEvent("application_created", {
@@ -1306,6 +1261,22 @@ function MeetingDateApplicationFlow({
     }
   };
 
+  if (screen === "unlock" && selectedTicket) {
+    return (
+      <TicketUnlockSequence
+        ticket={selectedTicket}
+        reducedMotion={shouldReduceMotion}
+        onBack={() => {
+          setSuppressProgramMorph(true);
+          setSelectedTicket(null);
+          setScreen("dates");
+          setError(null);
+        }}
+        onComplete={() => setScreen("ticket")}
+      />
+    );
+  }
+
   if (screen === "ticket" && selectedTicket) {
     const selectedTicketClosed =
       selectedTicket.date < today || isMeetingDateClosed(selectedTicket.date);
@@ -1345,7 +1316,7 @@ function MeetingDateApplicationFlow({
           className="px-10 text-center"
         >
           <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
-            {selectedTicket.title}
+            {selectedTicket.title.replace(/\s+/g, " ").trim()}
           </h1>
           <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/75">
             {meetingDateLabel(selectedTicket.date)} · {formatTicketTimeLabel(selectedTicket.time)}
@@ -1379,7 +1350,7 @@ function MeetingDateApplicationFlow({
           </p>
         )}
 
-        {selectedTicketClosed ? (
+        {typeof document !== "undefined" && createPortal(selectedTicketClosed ? (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
             <motion.button
               type="button"
@@ -1417,7 +1388,7 @@ function MeetingDateApplicationFlow({
               YES
             </motion.button>
           </div>
-        )}
+        ), document.body)}
 
         <AnimatePresence>
           {waitlistDialog && (
@@ -1503,17 +1474,71 @@ function MeetingDateApplicationFlow({
       )}
     >
       <AnimatePresence mode="wait" initial={false}>
-        {screen === "submitted" ? (
+        {screen === "intro" ? (
+          <motion.div
+            key="meeting-intro"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.38, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-1 items-center justify-center pb-24"
+          >
+            <div className="flex w-full max-w-[350px] flex-col items-center text-center">
+              <svg
+                data-testid="matching-loader"
+                viewBox="0 0 48 48"
+                className="mb-6 block h-12 w-12 shrink-0"
+                aria-hidden
+              >
+                <g data-testid="matching-loader-rotor">
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    from="0 24 24"
+                    to="360 24 24"
+                    dur="1.05s"
+                    repeatCount="indefinite"
+                  />
+                  {Array.from({ length: 12 }, (_, index) => (
+                    <line
+                      key={index}
+                      x1="24"
+                      y1="5"
+                      x2="24"
+                      y2="14"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      style={{
+                        color: "#24211d",
+                        transformOrigin: "24px 24px",
+                        transform: `rotate(${index * 30}deg)`,
+                        opacity: 0.18 + index * 0.065,
+                      }}
+                    />
+                  ))}
+                </g>
+              </svg>
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-[17px] font-black tracking-[-0.045em] text-[#24211d]"
+              >
+                나와 잘 어울리는 사람들을 찾는 중
+                <span className="inline-block w-6 text-left" aria-hidden>
+                  {".".repeat(introDotCount)}
+                </span>
+              </p>
+            </div>
+          </motion.div>
+        ) : screen === "submitted" ? (
           <motion.div
             key="date-submitted"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
           >
-            <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-              application complete
-            </p>
-            <h1 className="mt-2 text-[28px] font-bold leading-9 text-black">
+            <h1 className="text-[28px] font-bold leading-9 text-black">
               신청이 완료되었습니다.
             </h1>
             <p className="mt-3 text-[13px] font-semibold leading-6 text-black/50">
@@ -1543,15 +1568,15 @@ function MeetingDateApplicationFlow({
             <button
               type="button"
               onClick={() => {
-                if (onOpenTicketTab) {
-                  onOpenTicketTab();
-                  return;
-                }
-                setScreen("ticket");
+                setSelectedTicket(null);
+                setSelectedDates([]);
+                setSubmittedDates([]);
+                setError(null);
+                setScreen("dates");
               }}
-              className="mt-7 h-[52px] w-full bg-black text-sm font-black text-white"
+              className="mt-7 h-[52px] w-full bg-black text-sm font-black text-white transition active:scale-[0.99]"
             >
-              모임 확인하기
+              다른 초대장 받기
             </button>
           </motion.div>
         ) : (
@@ -1757,120 +1782,64 @@ function MeetingDateApplicationFlow({
             )}
             </div>
 
-            <div className="flex flex-1 items-center justify-center px-5 text-center">
+            <div className="flex flex-1 flex-col justify-center px-1">
               {availableTicketsLoading ? (
-                <div className="flex items-center gap-2 text-sm font-bold text-black/42">
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-bold text-black/42">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/15 border-t-black/55" />
-                  이번 주 초대를 확인하는 중...
+                  참여 가능한 모임을 확인하는 중...
                 </div>
-              ) : weeklyInvitationTicket ? (
-                <div className="w-full max-w-[340px]">
-                  <motion.div
-                    key={`weekly-invitation-card-${weeklyInvitationTicket.id}-${invitationDrawKey}`}
-                    className="relative flex aspect-[1/1.618] flex-col justify-center overflow-hidden rounded-[28px] border border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)] px-7 py-10 shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]"
-                  >
-                    <motion.div
-                      className="relative flex h-full flex-col justify-center"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        duration: shouldReduceMotion ? 0 : 0.48,
-                        delay: shouldReduceMotion ? 0 : 0.68,
-                        ease: "easeOut",
-                      }}
-                    >
-                      <p className="font-ticket-latin absolute inset-x-0 top-0 text-[11px] italic tracking-[0.2em] text-black/38">
-                        WEEKLY INVITATION
-                      </p>
-                      <p className="text-[11px] font-black tracking-[-0.02em] text-black/38">
-                        {meetingDateLabel(weeklyInvitationTicket.date)} · {formatTicketTimeLabel(weeklyInvitationTicket.time)}
-                      </p>
-                      <h1 className="mt-5 text-[27px] font-black leading-[1.25] tracking-[-0.055em] text-black">
-                        이번 주 토요일
-                        <br />
-                        나에게 온 초대가 있어요.
-                      </h1>
-                      <p className="mt-4 text-[13px] font-semibold leading-6 text-black/48">
-                        문답을 바탕으로 잘 어울리는 자리와
-                        <br />
-                        사람들을 준비했어요.
-                      </p>
-                      <motion.button
+              ) : availableTickets.length > 0 ? (
+                <motion.div
+                  layoutId={suppressProgramMorph ? undefined : "program-selection-panel"}
+                  className="w-full overflow-hidden rounded-[25px] border border-[#d0cbbc]/70 bg-[linear-gradient(145deg,#fbf9f4_0%,#f5f1e9_100%)] shadow-[0_14px_32px_rgba(66,57,44,0.08)]"
+                >
+                  <header className="flex h-[72px] items-center justify-between gap-3 border-b border-black/[0.075] px-4">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <button
                         type="button"
-                        whileTap={!saving ? { scale: 0.99 } : undefined}
-                        disabled={saving}
-                        onClick={() => openTicket(weeklyInvitationTicket)}
-                        className="relative mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-black/[0.88] px-5 text-[13px] font-bold text-white transition hover:bg-black disabled:bg-black/20"
+                        onClick={() => setScreen("intro")}
+                        aria-label="다시 찾기"
+                        className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center text-black/38"
                       >
-                        나에게 온 초대장 보기
-                        <ChevronRight size={16} aria-hidden />
-                      </motion.button>
-                    </motion.div>
-                  </motion.div>
-                </div>
-              ) : showInvitationCountdown ? (
-                <div className="w-full max-w-[340px]">
-                  <p className="font-ticket-latin text-[11px] italic tracking-[0.2em] text-black/32">
-                    WEEKLY INVITATION
-                  </p>
-                  <h1 className="mt-5 text-[24px] font-black tracking-[-0.05em] text-black">
-                    다음 초대장을 준비하고 있어요.
-                  </h1>
-                  <p className="mt-3 text-[11px] font-black tracking-[-0.02em] text-black/42">
-                    {nextInvitationOpeningLabel} 00:00 OPEN
-                  </p>
-                  <div
-                    className="mt-8 grid grid-cols-[1.15fr_1fr_1fr_1fr] gap-2"
-                    aria-label={`다음 초대까지 ${invitationCountdownDays}일 ${invitationCountdownHours}시간 ${invitationCountdownMinutes}분 ${invitationCountdownSeconds}초`}
-                  >
-                    {[
-                      { value: invitationCountdownDays, unit: "일" },
-                      { value: invitationCountdownHours, unit: "시간" },
-                      { value: invitationCountdownMinutes, unit: "분" },
-                      { value: invitationCountdownSeconds, unit: "초" },
-                    ].map(({ value, unit }) => (
-                      <div
-                        key={unit}
-                        className="border border-black/[0.09] bg-[#f8f4eb] px-2 py-4 shadow-[0_10px_26px_rgba(39,34,24,0.06)]"
+                        <ChevronLeft size={18} strokeWidth={1.6} aria-hidden />
+                      </button>
+                      <h1 className="truncate whitespace-nowrap text-[18px] font-black tracking-[-0.045em] text-black">
+                        가능한 시간을 선택해주세요.
+                      </h1>
+                    </div>
+                  </header>
+                  <div>
+                    {availableTickets.map((ticket, index) => (
+                      <motion.div
+                        key={ticket.id}
+                        initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          duration: shouldReduceMotion ? 0 : 0.32,
+                          delay: shouldReduceMotion ? 0 : Math.min(index * 0.05, 0.2),
+                          ease: [0.22, 1, 0.36, 1],
+                        }}
                       >
-                        <strong className="block text-[24px] font-black tabular-nums tracking-[-0.05em] text-black">
-                          <RollingCountdownValue
-                            value={value}
-                            reduceMotion={shouldReduceMotion}
-                          />
-                        </strong>
-                        <span className="mt-1 block text-[9px] font-black text-black/34">
-                          {unit}
-                        </span>
-                      </div>
+                        <ProgramListOption
+                          ticket={ticket}
+                          application={applicationByDate.get(ticket.date) ?? null}
+                          disabled={saving}
+                          onOpen={() => openTicket(ticket)}
+                        />
+                      </motion.div>
                     ))}
                   </div>
-                  {declinedInvitationTicket && (
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() =>
-                        onOpenDeclinedTicket
-                          ? onOpenDeclinedTicket(declinedInvitationTicket)
-                          : openTicket(declinedInvitationTicket)
-                      }
-                      className="mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-[14px] bg-black/[0.88] px-5 text-[13px] font-bold text-white transition hover:bg-black active:scale-[0.99] disabled:bg-black/20"
-                    >
-                      이번 주 초대장 다시보기
-                      <ChevronRight size={14} aria-hidden />
-                    </button>
-                  )}
-                </div>
+                </motion.div>
               ) : (
-                <div>
+                <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
                   <p className="font-ticket-latin text-[12px] font-bold italic uppercase tracking-[0.18em] text-black/35">
-                    WEEKLY INVITATION
+                    UPCOMING PROGRAMS
                   </p>
                   <h1 className="mt-3 text-[24px] font-black tracking-[-0.04em] text-black">
-                    이번 주 토요일 티켓을 준비 중이에요.
+                    새로운 모임을 준비 중이에요.
                   </h1>
                   <p className="mt-3 text-sm font-semibold leading-6 text-black/42">
-                    티켓이 열리면 이곳에서 바로 보여드릴게요.
+                    공개되면 이곳에서 바로 보여드릴게요.
                   </p>
                   {error && (
                     <p className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
@@ -1886,6 +1855,326 @@ function MeetingDateApplicationFlow({
       </AnimatePresence>
 
     </section>
+  );
+}
+
+const meetingWeekdayLabels = [
+  "일요일",
+  "월요일",
+  "화요일",
+  "수요일",
+  "목요일",
+  "금요일",
+  "토요일",
+] as const;
+
+function programDateLabel(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = meetingWeekdayLabels[date.getUTCDay()] ?? "";
+  return `${month}월 ${day}일 ${weekday}`;
+}
+
+function ProgramListOption({
+  ticket,
+  application,
+  disabled,
+  onOpen,
+}: {
+  ticket: GatheringTicket;
+  application: MeetingDateApplication | null;
+  disabled: boolean;
+  onOpen: () => void;
+}) {
+  const singleLineTitle = ticket.title.replace(/\s+/g, " ").trim();
+
+  return (
+    <motion.button
+      type="button"
+      data-testid={`meeting-program-${ticket.id}`}
+      disabled={disabled}
+      whileTap={!disabled ? { scale: 0.985 } : undefined}
+      onClick={onOpen}
+      className="group relative w-full overflow-hidden border-b border-black/[0.075] px-5 py-[18px] text-left transition last:border-b-0 hover:bg-black/[0.018] disabled:cursor-default disabled:opacity-55"
+    >
+      <span className="flex items-center justify-between gap-4">
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1.5 truncate text-[11px] font-bold tracking-[-0.02em] text-black/90">
+            <span>{programDateLabel(ticket.date)}</span>
+            <span aria-hidden>·</span>
+            <span>{formatTicketTimeLabel(ticket.time)}</span>
+            <span aria-hidden>·</span>
+            <span className="truncate">{application?.region || ticket.area}</span>
+          </span>
+          <span
+            title={singleLineTitle}
+            className="mt-1.5 block truncate whitespace-nowrap text-[17px] font-black leading-6 tracking-[-0.04em] text-black"
+          >
+            {singleLineTitle}
+          </span>
+          {application && (
+            <span className="mt-2 inline-flex rounded-full bg-black/[0.055] px-2 py-0.5 text-[9px] font-black text-black/48">
+              {application.status === "payment_pending" ? "결제 대기" : "신청 완료"}
+            </span>
+          )}
+        </span>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center text-black/42 transition group-hover:translate-x-0.5 group-hover:text-black">
+          <ChevronRight size={18} strokeWidth={1.8} aria-hidden />
+        </span>
+      </span>
+    </motion.button>
+  );
+}
+
+function TicketUnlockSequence({
+  ticket,
+  reducedMotion,
+  onBack,
+  onComplete,
+}: {
+  ticket: GatheringTicket;
+  reducedMotion: boolean;
+  onBack: () => void;
+  onComplete: () => void;
+}) {
+  const cleanTitle = ticket.title.replace(/\s+/g, " ").trim();
+  const dateText = programDateLabel(ticket.date);
+  const timeText = formatTicketTimeLabel(ticket.time);
+  const placeText = ticket.area ? `서울 ${ticket.area}` : "장소 추후 안내";
+  const meta = `${dateText} · ${timeText} · ${placeText}`;
+  const [phase, setPhase] = useState<"locked" | "typing">("locked");
+  const [unlockProgress, setUnlockProgress] = useState(0);
+  const [typedParts, setTypedParts] = useState<[string, string, string, string]>([
+    "",
+    "",
+    "",
+    "",
+  ]);
+  const [activeTypingPart, setActiveTypingPart] = useState(0);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  const unlock = () => {
+    if (phase !== "locked") return;
+    setUnlockProgress(100);
+    window.setTimeout(() => setPhase("typing"), reducedMotion ? 0 : 260);
+  };
+
+  useEffect(() => {
+    if (phase !== "typing") return;
+    if (reducedMotion) {
+      setTypedParts([cleanTitle, dateText, timeText, placeText]);
+      setActiveTypingPart(-1);
+      const finishTimer = window.setTimeout(() => onCompleteRef.current(), 120);
+      return () => window.clearTimeout(finishTimer);
+    }
+
+    const parts = [cleanTitle, dateText, timeText, placeText];
+    let partIndex = 0;
+    let characterIndex = 0;
+    let typingTimer = 0;
+
+    const typeNextCharacter = () => {
+      const targetPartIndex = partIndex;
+      const currentPart = parts[partIndex] ?? "";
+      characterIndex += 1;
+      const visibleCharacterCount = characterIndex;
+      setTypedParts((previous) => {
+        const next = [...previous] as [string, string, string, string];
+        next[targetPartIndex] = currentPart.slice(0, visibleCharacterCount);
+        return next;
+      });
+
+      if (characterIndex < currentPart.length) {
+        typingTimer = window.setTimeout(typeNextCharacter, partIndex === 0 ? 92 : 54);
+        return;
+      }
+
+      if (partIndex < parts.length - 1) {
+        partIndex += 1;
+        characterIndex = 0;
+        setActiveTypingPart(partIndex);
+        typingTimer = window.setTimeout(typeNextCharacter, 190);
+        return;
+      }
+
+      setActiveTypingPart(-1);
+      typingTimer = window.setTimeout(() => onCompleteRef.current(), 720);
+    };
+
+    setTypedParts(["", "", "", ""]);
+    setActiveTypingPart(0);
+    typingTimer = window.setTimeout(typeNextCharacter, 260);
+
+    return () => window.clearTimeout(typingTimer);
+  }, [cleanTitle, dateText, phase, placeText, reducedMotion, timeText]);
+
+  const typingCursor = (partIndex: number, tall = false) =>
+    activeTypingPart === partIndex ? (
+      <span
+        className={`ml-1 inline-block w-px animate-pulse bg-black/60 align-middle ${
+          tall ? "h-7" : "h-3.5"
+        }`}
+      />
+    ) : null;
+
+  return (
+    <motion.section
+      key={`ticket-unlock-${ticket.id}`}
+      initial={reducedMotion ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={reducedMotion ? undefined : { opacity: 0 }}
+      transition={{ duration: reducedMotion ? 0 : 0.24, ease: "easeOut" }}
+      className="relative flex min-h-full flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_42%,#fbf9f4_0%,#f6f2ea_56%,#f0ece3_100%)] px-5 pb-[calc(26px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {phase === "locked" ? (
+          <motion.div
+            key="locked"
+            layoutId="program-selection-panel"
+            initial={reducedMotion ? false : { opacity: 0, scale: 0.985 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={reducedMotion ? undefined : { opacity: 0 }}
+            transition={{
+              duration: reducedMotion ? 0 : 0.52,
+              ease: [0.22, 1, 0.36, 1],
+              layout: { duration: reducedMotion ? 0 : 0.52, ease: [0.22, 1, 0.36, 1] },
+            }}
+            className="flex flex-1 flex-col items-center justify-center"
+          >
+            <div className="w-full max-w-[342px] overflow-hidden rounded-[22px] border border-[#d0cbbc]/80 bg-[#f8f5ee]/92 shadow-[0_18px_44px_rgba(66,57,44,0.1)] backdrop-blur-xl">
+              <div className="relative min-h-[88px] px-5 py-4 pr-12 text-left">
+                <p className="truncate text-[11px] font-bold tracking-[-0.02em] text-black/46">
+                  {meta}
+                </p>
+                <h1 className="mt-1.5 break-keep text-[18px] font-black leading-[1.35] tracking-[-0.045em] text-black">
+                  {cleanTitle}
+                </h1>
+                <button
+                  type="button"
+                  onClick={onBack}
+                  aria-label="선택 취소"
+                  className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-black/38"
+                >
+                  <X size={16} strokeWidth={1.7} aria-hidden />
+                </button>
+              </div>
+
+              <div className="relative h-[56px] overflow-hidden border-t border-black/[0.075] bg-[#ede8de]">
+                <motion.div
+                  className="absolute inset-y-0 left-0 bg-black/[0.045]"
+                  animate={{ width: `${unlockProgress}%` }}
+                  transition={{ duration: 0.05, ease: "linear" }}
+                />
+                <motion.p
+                  className="pointer-events-none absolute inset-0 flex items-center justify-center pl-10 text-[12px] font-bold tracking-[-0.02em]"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(100deg, rgba(36,33,29,0.28) 20%, rgba(36,33,29,0.88) 48%, rgba(255,255,255,0.92) 53%, rgba(36,33,29,0.88) 58%, rgba(36,33,29,0.28) 80%)",
+                    backgroundSize: "240% 100%",
+                    backgroundClip: "text",
+                    WebkitBackgroundClip: "text",
+                    color: "transparent",
+                    WebkitTextFillColor: "transparent",
+                  }}
+                  animate={{ backgroundPosition: ["190% 0%", "-90% 0%"] }}
+                  transition={{ duration: 1.8, ease: "linear", repeat: Infinity, repeatDelay: 0.15 }}
+                >
+                  밀어서 티켓 열기
+                </motion.p>
+                <motion.span
+                  aria-hidden
+                  className="pointer-events-none absolute -top-4 h-20 w-16 -skew-x-12 bg-gradient-to-r from-transparent via-white/75 to-transparent blur-[3px]"
+                  animate={{ left: ["-25%", "115%"] }}
+                  transition={{ duration: 1.75, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                />
+                <motion.span
+                  className="pointer-events-none absolute left-1 top-1 z-10 flex h-12 w-12 items-center justify-center rounded-[15px] border border-black/[0.065] bg-[#f3efe6] text-black/70 shadow-[6px_0_16px_rgba(66,57,44,0.09)]"
+                  animate={{ left: `calc(4px + ${unlockProgress}% - ${unlockProgress * 0.56}px)` }}
+                  transition={{ duration: 0.045, ease: "linear" }}
+                >
+                  <ChevronRight size={20} strokeWidth={1.8} aria-hidden />
+                </motion.span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={unlockProgress}
+                  aria-label="밀어서 티켓 열기"
+                  onInput={(event) => {
+                    const value = Number(event.currentTarget.value);
+                    setUnlockProgress(value);
+                    if (value >= 98) unlock();
+                  }}
+                  onChange={(event) => {
+                    const value = Number(event.currentTarget.value);
+                    setUnlockProgress(value);
+                    if (value >= 98) unlock();
+                  }}
+                  onPointerUp={(event) => {
+                    if (Number(event.currentTarget.value) >= 82) unlock();
+                    else setUnlockProgress(0);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "End") {
+                      event.preventDefault();
+                      unlock();
+                    }
+                  }}
+                  className="absolute inset-0 z-20 h-full w-full cursor-grab opacity-0 active:cursor-grabbing"
+                />
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="typing"
+            initial={reducedMotion ? false : { opacity: 0, y: 24, scale: 0.97 }}
+            animate={{
+              opacity: 1,
+              y: -54,
+              scale: 1,
+            }}
+            exit={reducedMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.38, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-1 items-center justify-center"
+          >
+            <motion.div
+              className="w-full px-10 text-center"
+            >
+              <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+                {typedParts[0]}
+                {typingCursor(0, true)}
+              </h1>
+              <div className="font-ticket-latin mt-4 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[13px] font-medium text-[#24211d]/75">
+                <span className="min-w-1">
+                  {typedParts[1]}
+                  {typingCursor(1)}
+                </span>
+                {typedParts[2] && <span aria-hidden>·</span>}
+                <span className="min-w-1">
+                  {typedParts[2]}
+                  {typingCursor(2)}
+                </span>
+                {typedParts[3] && <span aria-hidden>·</span>}
+                <span className="min-w-1">
+                  {typedParts[3]}
+                  {typingCursor(3)}
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.section>
   );
 }
 

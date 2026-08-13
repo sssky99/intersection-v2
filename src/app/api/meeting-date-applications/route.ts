@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import {
   MEETING_DATE_REGION,
   isMeetingDateClosed,
@@ -241,13 +240,10 @@ export async function POST(request: NextRequest) {
   const { data: applicantProfile, error: applicantProfileError } = await admin
     .from("profiles")
     .select(
-      "profile_completed,questions_completed,profile_experience_version,is_test_participant,membership_status,membership_start_date,membership_end_date",
+      "is_test_participant,membership_status,membership_start_date,membership_end_date",
     )
     .eq("user_id", user.id)
     .maybeSingle<{
-      profile_completed: boolean | null;
-      questions_completed: boolean | null;
-      profile_experience_version: string | null;
       is_test_participant: boolean | null;
       membership_status: string | null;
       membership_start_date: string | null;
@@ -259,10 +255,10 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-  if (!applicantProfile || !hasCompletedPreferenceProfile(applicantProfile)) {
+  if (!applicantProfile) {
     return NextResponse.json(
-      { error: "질문을 완료한 후 신청해주세요." },
-      { status: 409 },
+      { error: "프로필 정보를 찾지 못했어요." },
+      { status: 404 },
     );
   }
 
@@ -305,6 +301,7 @@ export async function POST(request: NextRequest) {
   }
   const dates = requestedMeetingApplicationDates(body.dates, todayInKst(), {
     ticketInstanceProvided: ticketInstanceId !== null || selectedEvent !== null,
+    eventProvided: selectedEvent !== null,
   });
   if (openPayment) {
     return NextResponse.json(
