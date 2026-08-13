@@ -583,6 +583,10 @@ export function AppHome({
     id: number;
     ticketId: string;
   } | null>(null);
+  const [ticketTabFocusRequest, setTicketTabFocusRequest] = useState<{
+    id: number;
+    ticketId: string;
+  } | null>(null);
   const [replayedDeclinedTicket, setReplayedDeclinedTicket] =
     useState<GatheringTicket | null>(null);
   const recommendTabTrackedRef = useRef(false);
@@ -1255,6 +1259,7 @@ export function AppHome({
             onReapplyTicket={requestDeclinedTicketApplication}
             onDeclineTicket={declineTicketFromInbox}
             onFocusModeChange={setTicketTabFocusMode}
+            focusRequest={ticketTabFocusRequest}
           />
         </div>
         <div
@@ -1304,7 +1309,12 @@ export function AppHome({
               }
               onTicketAcceptRequestHandled={() => setTicketAcceptRequest(null)}
               onDateApplicationsChange={setDateApplications}
-              onOpenTicketTab={() => switchTab("browse")}
+              onOpenTicketTab={(ticketId) => {
+                if (ticketId) {
+                  setTicketTabFocusRequest({ id: Date.now(), ticketId });
+                }
+                switchTab("browse");
+              }}
               onBlindDateOpenRequestHandled={() =>
                 setBlindDateOpenRequestPending(false)
               }
@@ -1877,6 +1887,7 @@ function TicketListTab({
   onReapplyTicket,
   onDeclineTicket,
   onFocusModeChange,
+  focusRequest,
 }: {
   tickets: UserTicket[];
   interactions: TicketInteraction[];
@@ -1891,6 +1902,7 @@ function TicketListTab({
   onReapplyTicket: (ticket: GatheringTicket) => void;
   onDeclineTicket: (ticket: GatheringTicket) => Promise<boolean>;
   onFocusModeChange: (focused: boolean) => void;
+  focusRequest: { id: number; ticketId: string } | null;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
@@ -2022,6 +2034,32 @@ function TicketListTab({
   ]);
   const itemCount = ticketItems.length;
   const carouselItemCount = itemCount;
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    const targetIndex = ticketItems.findIndex((item) => {
+      const ticketId =
+        item.kind === "stored-ticket"
+          ? item.userTicket.ticket.id
+          : item.kind === "interaction-ticket"
+            ? item.interaction.ticket.id
+            : item.ticket.id;
+      return ticketId === focusRequest.ticketId;
+    });
+    if (targetIndex < 0) return;
+
+    setActiveIndex(targetIndex);
+    window.requestAnimationFrame(() => {
+      const target = carouselRef.current?.querySelector<HTMLElement>(
+        `[data-ticket-slide-index="${targetIndex}"]`,
+      );
+      target?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    });
+  }, [focusRequest, ticketItems]);
 
   useEffect(() => {
     setActiveIndex((current) =>
@@ -2870,7 +2908,7 @@ function DeclinedTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel="거절한 티켓"
+        badgeLabel={null}
         badgeClassName="border-white/25 bg-white/[0.18] text-white"
         remainingSeatCount={ticket.remainingSeatCount}
         className={cn(ticketPaperImageClass, "grayscale")}
@@ -2913,7 +2951,7 @@ function StoredTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={userTicket.status === "approved" ? null : userTicket.statusLabel}
+        badgeLabel={null}
         badgeClassName={statusBadgeClass(userTicket.status)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3084,11 +3122,7 @@ function AssignedApplicationTicketCard({
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
         tags={ticket.moodTags}
-        badgeLabel={
-          application.status === "approved"
-            ? null
-            : meetingDateApplicationStatusLabels[application.status]
-        }
+        badgeLabel={null}
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3130,11 +3164,7 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={
-          status === "payment_confirmed"
-            ? null
-            : ticketInteractionStatusLabel(status)
-        }
+        badgeLabel={null}
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"

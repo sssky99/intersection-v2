@@ -433,7 +433,7 @@ type MeetingRecommendationProps = {
   ticketAcceptRequestTicketId?: string | null;
   onTicketAcceptRequestHandled?: () => void;
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
-  onOpenTicketTab?: () => void;
+  onOpenTicketTab?: (ticketId?: string) => void;
 };
 
 type DateApplicationScreen =
@@ -1578,6 +1578,13 @@ function MeetingDateApplicationFlow({
             >
               다른 초대장 받기
             </button>
+            <button
+              type="button"
+              onClick={() => onOpenTicketTab?.(selectedTicket?.id)}
+              className="mt-3 h-[52px] w-full border border-[#d0cbbc]/80 bg-[#f8f4ea] text-sm font-black text-black transition active:scale-[0.99]"
+            >
+              초대 확인하기
+            </button>
           </motion.div>
         ) : (
           <motion.div
@@ -1793,16 +1800,8 @@ function MeetingDateApplicationFlow({
                   layoutId={suppressProgramMorph ? undefined : "program-selection-panel"}
                   className="w-full overflow-hidden rounded-[25px] border border-[#d0cbbc]/70 bg-[linear-gradient(145deg,#fbf9f4_0%,#f5f1e9_100%)] shadow-[0_14px_32px_rgba(66,57,44,0.08)]"
                 >
-                  <header className="flex h-[72px] items-center justify-between gap-3 border-b border-black/[0.075] px-4">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setScreen("intro")}
-                        aria-label="다시 찾기"
-                        className="-ml-2 flex h-9 w-9 shrink-0 items-center justify-center text-black/38"
-                      >
-                        <ChevronLeft size={18} strokeWidth={1.6} aria-hidden />
-                      </button>
+                  <header className="flex h-[72px] items-center border-b border-black/[0.075] px-5">
+                    <div className="min-w-0">
                       <h1 className="truncate whitespace-nowrap text-[18px] font-black tracking-[-0.045em] text-black">
                         가능한 시간을 선택해주세요.
                       </h1>
