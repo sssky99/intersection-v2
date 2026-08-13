@@ -533,13 +533,24 @@ export async function POST(request: NextRequest) {
           ? oneTimeMembershipCreditAmount
           : 0;
       const expectedAmount = membershipPlanAmounts.one_month;
+      const application = rows[0];
+      if (!application) throw new Error("application-create-failed");
+      const sellerReference = `mem_${crypto.randomUUID()}`;
+      const variantCookie = request.cookies.get(landingExperimentCookie)?.value;
+      const landingVariant =
+        variantCookie === "a" || variantCookie === "b" ? variantCookie : null;
       const [paymentIntentResult, existingParticipationResult, invitationResult] =
         await Promise.all([
-          admin.rpc("activate_membership_payment_intent", {
+          admin.rpc("prepare_membership_checkout", {
             p_user_id: user.id,
+            p_application_id: application.id,
             p_plan: "one_month",
             p_expected_amount: expectedAmount,
             p_credit_amount: creditAmount,
+            p_seller_reference: sellerReference,
+            p_experiment_id: landingVariant ? landingExperimentId : null,
+            p_landing_variant: landingVariant,
+            p_acquisition_context: checkoutAttribution(body.attribution),
           }),
           selectedTicket
             ? admin
@@ -584,15 +595,6 @@ export async function POST(request: NextRequest) {
       }
       if (invitationResult.error) throw invitationResult.error;
 
-      const application = rows[0];
-      if (!application) throw new Error("application-create-failed");
-      const intentId = paymentIntent[0].intent_id as number | string;
-      const sellerReference = `mem_${crypto.randomUUID()}`;
-      const variantCookie = request.cookies.get(landingExperimentCookie)?.value;
-      const landingVariant =
-        variantCookie === "a" || variantCookie === "b" ? variantCookie : null;
-      const checkoutNow = new Date().toISOString();
-
       const protectedParticipationStatuses = new Set([
         "approved",
         "feedback_done",
@@ -619,33 +621,7 @@ export async function POST(request: NextRequest) {
             })
           : Promise.resolve({ data: null, error: null });
 
-      const [intentLinkResult, profileUpdateResult, participationUpdateResult] =
-        await Promise.all([
-        admin
-          .from("membership_payment_intents")
-          .update({
-            meeting_date_application_id: application.id,
-            seller_reference: sellerReference,
-            experiment_id: landingVariant ? landingExperimentId : null,
-            landing_variant: landingVariant,
-            acquisition_context: checkoutAttribution(body.attribution),
-            updated_at: checkoutNow,
-          })
-          .eq("id", intentId)
-          .eq("user_id", user.id),
-        admin
-          .from("profiles")
-          .update({
-            membership_status: "pending",
-            membership_plan: "one_month",
-            membership_purchase_clicked_at: checkoutNow,
-            membership_updated_at: checkoutNow,
-          })
-          .eq("user_id", user.id),
-        participationUpdate,
-      ]);
-      if (intentLinkResult.error) throw intentLinkResult.error;
-      if (profileUpdateResult.error) throw profileUpdateResult.error;
+      const participationUpdateResult = await participationUpdate;
       if (participationUpdateResult.error) throw participationUpdateResult.error;
 
       return NextResponse.json({

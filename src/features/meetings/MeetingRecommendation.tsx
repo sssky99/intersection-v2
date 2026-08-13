@@ -1431,19 +1431,22 @@ function MeetingDateApplicationFlow({
         </AnimatePresence>
 
         <AnimatePresence>
-          {membershipSheetOpen && (
-            <MembershipPurchaseBottomSheet
-              ticket={selectedTicket}
-              saving={saving}
-              error={error}
-              onSubmit={() => void submitDateApplications(selectedTicket)}
-              onClose={() => {
-                if (saving) return;
-                setMembershipSheetOpen(false);
-                setError(null);
-              }}
-            />
-          )}
+          {membershipSheetOpen &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <MembershipPurchaseBottomSheet
+                ticket={selectedTicket}
+                saving={saving}
+                error={error}
+                onSubmit={() => void submitDateApplications(selectedTicket)}
+                onClose={() => {
+                  if (saving) return;
+                  setMembershipSheetOpen(false);
+                  setError(null);
+                }}
+              />,
+              document.body,
+            )}
         </AnimatePresence>
       </motion.section>
     );
@@ -2195,6 +2198,20 @@ function MembershipPurchaseBottomSheet({
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    const checkoutOrigin = new URL(membershipStoreUrls.one_month).origin;
+    const existingPreconnect = document.head.querySelector(
+      `link[data-membership-checkout-preconnect="${checkoutOrigin}"]`,
+    );
+    if (!existingPreconnect) {
+      const preconnect = document.createElement("link");
+      preconnect.rel = "preconnect";
+      preconnect.href = checkoutOrigin;
+      preconnect.crossOrigin = "anonymous";
+      preconnect.dataset.membershipCheckoutPreconnect = checkoutOrigin;
+      document.head.appendChild(preconnect);
+    }
+
     return () => {
       document.body.style.overflow = previousOverflow;
     };
@@ -2203,7 +2220,7 @@ function MembershipPurchaseBottomSheet({
   return (
     <motion.div
       key={`membership-purchase-sheet-${ticket.id}`}
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/[0.3] backdrop-blur-[5px]"
+      className="fixed inset-0 z-[120] isolate flex items-end justify-center bg-black/[0.3] backdrop-blur-[5px]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -2222,7 +2239,7 @@ function MembershipPurchaseBottomSheet({
         exit={{ y: "100%" }}
         transition={{ type: "spring", stiffness: 330, damping: 34 }}
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-[430px] rounded-t-[32px] border border-b-0 border-black/10 bg-[#f7f4ed] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_80px_rgba(0,0,0,0.28)]"
+        className="relative z-10 w-full max-w-[430px] rounded-t-[32px] border border-b-0 border-black/10 bg-[#f7f4ed] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 opacity-100 shadow-[0_-24px_80px_rgba(0,0,0,0.28)]"
       >
         <div className="mx-auto h-1.5 w-12 rounded-full bg-black/14" />
 
