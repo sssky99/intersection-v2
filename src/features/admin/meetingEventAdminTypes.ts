@@ -39,8 +39,30 @@ export type AdminMeetingGroup = {
   assigned_count: number;
 };
 
+export type AdminMeetingEventStage = {
+  id: string;
+  event_id: string;
+  title: string;
+  stage_type: "meal" | "activity" | "feedback" | "other";
+  sequence: number;
+  starts_at: string | null;
+  location_mode: "shared" | "group_specific" | "hidden";
+  place_name: string | null;
+  address: string | null;
+};
+
+export type AdminGroupStageLocation = {
+  id: string;
+  group_id: string;
+  stage_id: string;
+  place_name: string | null;
+  address: string | null;
+};
+
 export type AdminMeetingEventsData = {
   programs: AdminMeetingProgram[];
   events: AdminMeetingEvent[];
   groups: AdminMeetingGroup[];
+  stages: AdminMeetingEventStage[];
+  groupLocations: AdminGroupStageLocation[];
 };

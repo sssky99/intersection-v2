@@ -1093,7 +1093,7 @@ export function AdminPageClient({
           )}
           {visitedTabs.events && (
             <div className={cn(activeTab === "events" ? "block" : "hidden")}>
-              <MeetingEventAdminPanel />
+              <MeetingEventAdminPanel onOpenWaitlist={() => setActiveTab("waitlist")} />
             </div>
           )}
           {visitedTabs.calendar && (
