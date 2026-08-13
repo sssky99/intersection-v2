@@ -77,9 +77,13 @@ const landingExperimentCookie = "landing_ab_v1";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
+  const [authResult, body] = await Promise.all([
+    supabase.auth.getUser(),
+    request.json().catch(() => null) as Promise<PurchaseRequest | null>,
+  ]);
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = authResult;
 
   if (!user) {
     return NextResponse.json(
@@ -87,8 +91,6 @@ export async function POST(request: NextRequest) {
       { status: 401 },
     );
   }
-
-  const body = (await request.json().catch(() => null)) as PurchaseRequest | null;
 
   if (!isMembershipPlan(body?.plan)) {
     return NextResponse.json(
@@ -159,11 +161,32 @@ export async function POST(request: NextRequest) {
         .eq("user_id", user.id)
         .maybeSingle<TicketInvitationRow>()
     : Promise.resolve({ data: null, error: null });
-  const [applicationResult, ticketInstanceResult, ticketInvitationResult] =
+  const paymentHistoryLookup =
+    body.plan === "one_month"
+      ? admin
+          .from("payment_transactions")
+          .select("payment_kind")
+          .eq("user_id", user.id)
+          .eq("status", "completed")
+          .in("payment_kind", [
+            "membership_initial",
+            "membership_upgrade",
+            "membership_renewal",
+            "one_time",
+          ])
+          .returns<{ payment_kind: string }[]>()
+      : Promise.resolve({ data: [], error: null });
+  const [
+    applicationResult,
+    ticketInstanceResult,
+    ticketInvitationResult,
+    paymentHistoryResult,
+  ] =
     await Promise.all([
       applicationLookup,
       ticketInstanceLookup,
       ticketInvitationLookup,
+      paymentHistoryLookup,
     ]);
 
   if (meetingDateApplicationId !== null) {
@@ -233,23 +256,10 @@ export async function POST(request: NextRequest) {
   let creditAmount = 0;
 
   if (body.plan === "one_month") {
-    const { data: completedMembership, error: completedMembershipError } =
-      await admin
-        .from("payment_transactions")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("status", "completed")
-        .in("payment_kind", [
-          "membership_initial",
-          "membership_upgrade",
-          "membership_renewal",
-        ])
-        .limit(1)
-        .maybeSingle<{ id: number | string }>();
-    if (completedMembershipError) {
+    if (paymentHistoryResult.error) {
       console.error(
         "Membership payment history lookup failed:",
-        completedMembershipError.message,
+        paymentHistoryResult.error.message,
       );
       return NextResponse.json(
         { error: "멤버십 결제 이력을 확인하지 못했습니다." },
@@ -257,29 +267,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!completedMembership) {
-      const { data: completedOneTime, error: completedOneTimeError } =
-        await admin
-          .from("payment_transactions")
-          .select("id")
-          .eq("user_id", user.id)
-          .eq("payment_kind", "one_time")
-          .eq("status", "completed")
-          .limit(1)
-          .maybeSingle<{ id: number | string }>();
-      if (completedOneTimeError) {
-        console.error(
-          "One-time payment history lookup failed:",
-          completedOneTimeError.message,
-        );
-        return NextResponse.json(
-          { error: "1회권 결제 이력을 확인하지 못했습니다." },
-          { status: 500 },
-        );
-      }
-      if (completedOneTime) {
-        creditAmount = oneTimeMembershipCreditAmount;
-      }
+    const completedKinds = new Set(
+      (paymentHistoryResult.data ?? []).map((row) => row.payment_kind),
+    );
+    const hasCompletedMembership = [
+      "membership_initial",
+      "membership_upgrade",
+      "membership_renewal",
+    ].some((kind) => completedKinds.has(kind));
+    if (!hasCompletedMembership && completedKinds.has("one_time")) {
+      creditAmount = oneTimeMembershipCreditAmount;
     }
   }
 

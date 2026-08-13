@@ -932,6 +932,7 @@ function MeetingDateApplicationFlow({
   const recordTicketInteraction = async (
     ticket: GatheringTicket,
     status: TicketInteractionStatus,
+    options?: { keepalive?: boolean },
   ) => {
     if (guestMode) {
       const interaction = saveGuestTicketInteraction(ticket, status);
@@ -943,6 +944,7 @@ function MeetingDateApplicationFlow({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ticketInstanceId: ticket.id, status }),
+      keepalive: options?.keepalive,
     })
       .then(async (response) => {
         if (!response.ok) return null;
@@ -1558,7 +1560,9 @@ function MeetingDateApplicationFlow({
           membershipData?.checkoutUrl ?? membershipStoreUrls.one_month;
 
         if (ticket) {
-          await recordTicketInteraction(ticket, "payment_pending");
+          void recordTicketInteraction(ticket, "payment_pending", {
+            keepalive: true,
+          });
         }
       } else if (membershipStatus === "active") {
         setSubmittedDates(targetDates);
