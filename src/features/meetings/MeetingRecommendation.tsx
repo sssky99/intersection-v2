@@ -1430,24 +1430,25 @@ function MeetingDateApplicationFlow({
           )}
         </AnimatePresence>
 
-        <AnimatePresence>
-          {membershipSheetOpen &&
-            typeof document !== "undefined" &&
-            createPortal(
-              <MembershipPurchaseBottomSheet
-                ticket={selectedTicket}
-                saving={saving}
-                error={error}
-                onSubmit={() => void submitDateApplications(selectedTicket)}
-                onClose={() => {
-                  if (saving) return;
-                  setMembershipSheetOpen(false);
-                  setError(null);
-                }}
-              />,
-              document.body,
-            )}
-        </AnimatePresence>
+        {typeof document !== "undefined" &&
+          createPortal(
+            <AnimatePresence>
+              {membershipSheetOpen && (
+                <MembershipPurchaseBottomSheet
+                  ticket={selectedTicket}
+                  saving={saving}
+                  error={error}
+                  onSubmit={() => void submitDateApplications(selectedTicket)}
+                  onClose={() => {
+                    if (saving) return;
+                    setMembershipSheetOpen(false);
+                    setError(null);
+                  }}
+                />
+              )}
+            </AnimatePresence>,
+            document.body,
+          )}
       </motion.section>
     );
   }
