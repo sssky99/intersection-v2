@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { syncMeetingEventSnapshotStageTitle } from "@/lib/meetingEventSnapshot";
 import type {
   AdminMeetingEvent,
   AdminMeetingEventsData,
@@ -255,6 +256,26 @@ export async function POST(request: NextRequest) {
         : admin.from("meeting_event_stages").insert(payload);
       const { error } = await query;
       if (error) throw error;
+
+      const { data: event, error: eventError } = await admin
+        .from("meeting_events")
+        .select("detail_snapshot")
+        .eq("id", eventId)
+        .single<{ detail_snapshot: Record<string, unknown> | null }>();
+      if (eventError) throw eventError;
+
+      const nextSnapshot = syncMeetingEventSnapshotStageTitle(
+        event.detail_snapshot,
+        payload.sequence,
+        title,
+      );
+      if (nextSnapshot !== event.detail_snapshot) {
+        const { error: snapshotError } = await admin
+          .from("meeting_events")
+          .update({ detail_snapshot: nextSnapshot, updated_at: new Date().toISOString() })
+          .eq("id", eventId);
+        if (snapshotError) throw snapshotError;
+      }
     } else if (action === "save_group") {
       const groupId = text(body?.groupId);
       if (!groupId) return NextResponse.json({ error: "그룹을 선택해주세요." }, { status: 400 });

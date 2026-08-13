@@ -79,7 +79,6 @@ export function displayMembershipStatus({
 
 export function hasCurrentMembershipAccess({
   status,
-  startDate,
   endDate,
 }: {
   status: string | null | undefined;
@@ -87,16 +86,10 @@ export function hasCurrentMembershipAccess({
   endDate: string | null | undefined;
 }) {
   const today = todayKoreaDateString();
-  const isWithinRecordedPeriod = Boolean(
-    startDate && endDate && startDate <= today && endDate >= today,
-  );
 
-  // A membership purchase click used to downgrade an active profile to
-  // `pending` without clearing its already-paid membership period.
-  return (
-    (status === "active" && (!endDate || endDate >= today)) ||
-    (status === "pending" && isWithinRecordedPeriod)
-  );
+  // 결제 확인 전인 pending 상태에는 기존 기간 값이 남아 있더라도
+  // 멤버십 혜택을 적용하지 않는다.
+  return status === "active" && (!endDate || endDate >= today);
 }
 
 function parseDateOnly(dateString: string) {
