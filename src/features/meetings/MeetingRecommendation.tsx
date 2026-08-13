@@ -12,6 +12,7 @@ import {
   Copy,
   Gift,
   Landmark,
+  LoaderCircle,
   MapPin,
   X,
 } from "lucide-react";
@@ -2302,7 +2303,19 @@ function MembershipPurchaseBottomSheet({
           onClick={onSubmit}
           className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
         >
-          {saving ? "결제창을 준비하는 중..." : "멤버십 신청하기"}
+          {saving ? (
+            <span className="inline-flex items-center justify-center gap-2.5">
+              <LoaderCircle
+                size={18}
+                strokeWidth={2.2}
+                className="animate-spin"
+                aria-hidden
+              />
+              <span>결제창을 준비하는 중...</span>
+            </span>
+          ) : (
+            "멤버십 신청하기"
+          )}
         </motion.button>
       </motion.section>
     </motion.div>
