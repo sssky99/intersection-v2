@@ -29,6 +29,7 @@ import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
+import { MeetingEventAdminPanel } from "@/features/admin/MeetingEventAdminPanel";
 import { RoomChatAdminPanel } from "@/features/admin/RoomChatAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
 import { VisitorAdminPanel } from "@/features/admin/VisitorAdminPanel";
@@ -55,6 +56,7 @@ type AdminTab =
   | "visitors"
   | "membership"
   | "tickets"
+  | "events"
   | "calendar"
   | "waitlist"
   | "rooms"
@@ -78,7 +80,8 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
   { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
-  { id: "tickets", label: "코스 관리" },
+  { id: "tickets", label: "프로그램 관리" },
+  { id: "events", label: "행사 관리" },
   { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
@@ -1086,6 +1089,11 @@ export function AdminPageClient({
                 focusTicketId={ticketFocusId}
                 onFocusTicketHandled={() => setTicketFocusId(null)}
               />
+            </div>
+          )}
+          {visitedTabs.events && (
+            <div className={cn(activeTab === "events" ? "block" : "hidden")}>
+              <MeetingEventAdminPanel />
             </div>
           )}
           {visitedTabs.calendar && (

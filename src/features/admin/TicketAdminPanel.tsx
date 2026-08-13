@@ -1276,7 +1276,7 @@ export function TicketAdminPanel({
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold">코스 관리</h2>
+            <h2 className="text-lg font-bold">프로그램 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
               저녁부터 다음 활동까지 이어지는 여정과 일정, 좌석을 관리합니다.
             </p>

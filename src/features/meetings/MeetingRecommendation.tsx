@@ -1139,7 +1139,7 @@ function MeetingDateApplicationFlow({
               dates: targetDates,
               openPayment: false,
               prepareCheckout: true,
-              ticketInstanceId: ticket?.id,
+              eventId: ticket?.id,
               attribution: checkoutAttributionContext(),
             }),
           },

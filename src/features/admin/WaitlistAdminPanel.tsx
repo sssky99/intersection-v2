@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  Check,
   ChevronDown,
   Image as ImageIcon,
+  LockKeyhole,
   RefreshCw,
   Save,
   Search,
@@ -229,6 +231,7 @@ function ticketTitle(row: AdminWaitlistRow) {
 }
 
 function rowGroupId(row: AdminWaitlistRow) {
+  if (row.source === "date_application") return "date-applications";
   return rowTemplateId(row) || `ticket:${row.ticket_id || rowKey(row)}`;
 }
 
@@ -273,16 +276,6 @@ function instanceOptionLabel(
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-function ticketRevealText(instance: WaitlistTicketInstance) {
-  if (!instance.event_date) return "공개 시각 미정";
-  const time = formatTime(instance.event_time) || "00:00";
-  const startsAt = new Date(`${instance.event_date}T${time}:00+09:00`);
-  if (!Number.isFinite(startsAt.getTime())) return "공개 시각 미정";
-  return `${dateTimeFormatter.format(
-    new Date(startsAt.getTime() - 24 * 60 * 60 * 1000),
-  )} 공개`;
 }
 
 function rowKey(row: AdminWaitlistRow) {
@@ -428,10 +421,10 @@ export function WaitlistAdminPanel() {
     useState<MembershipFilter>("all");
   const [query, setQuery] = useState("");
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
+  const [distributionSelection, setDistributionSelection] = useState<Set<string>>(
+    new Set(),
+  );
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
-  const [groupTicketDrafts, setGroupTicketDrafts] = useState<
-    Record<string, string>
-  >({});
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [bulkSavingGroupId, setBulkSavingGroupId] = useState<string | null>(
@@ -635,33 +628,95 @@ export function WaitlistAdminPanel() {
       "운영자 메모를 저장했습니다.",
     );
 
-  const assignGroupToTicket = async (group: WaitlistGroup) => {
+  const distributeSelectedRows = async (
+    group: WaitlistGroup,
+    ticketInstanceId: string | null,
+  ) => {
     if (bulkSavingGroupId) return;
 
-    const eligibleRows = group.rows.filter(
-      (row) => row.source === "date_application" && row.status === "waitlisted",
+    const selectedRows = group.rows.filter(
+      (row) =>
+        distributionSelection.has(rowKey(row)) &&
+        row.source === "date_application" &&
+        row.status === "waitlisted" &&
+        row.ticket_instance_id !== ticketInstanceId,
     );
-    const instanceOptions = eligibleRows[0]
-      ? instancesForRow(eligibleRows[0], instances)
-      : [];
-    const ticketInstanceId =
-      groupTicketDrafts[group.id] ??
-      (instanceOptions.length === 1 ? instanceOptions[0].id : "");
-    const selectedInstance = instanceOptions.find(
-      (instance) => instance.id === ticketInstanceId,
-    );
-    const applicationIds = eligibleRows
+    const applicationIds = selectedRows
       .map((row) => row.source_id)
       .filter((id): id is number => typeof id === "number");
 
-    if (!selectedInstance || applicationIds.length === 0) {
-      setError("옮길 대기 인원과 세부 티켓을 선택해주세요.");
+    if (applicationIds.length === 0) {
+      setError("이동할 신청자를 선택해주세요.");
       return;
     }
 
+    setBulkSavingGroupId(group.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/admin/waitlist", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "distribute_date_applications",
+          applicationIds,
+          ticketInstanceId,
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as
+        | (AdminWaitlistData & { movedCount?: number; error?: string })
+        | null;
+      if (!response.ok || !data) {
+        throw new Error(data?.error ?? "waitlist-distribution-failed");
+      }
+
+      hydrate(data);
+      setDistributionSelection((current) => {
+        const next = new Set(current);
+        selectedRows.forEach((row) => next.delete(rowKey(row)));
+        return next;
+      });
+      setNotice(
+        ticketInstanceId
+          ? `${data.movedCount ?? applicationIds.length}명을 세부 티켓에 배정했습니다.`
+          : `${data.movedCount ?? applicationIds.length}명을 미배정으로 되돌렸습니다.`,
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "선택한 신청자를 이동하지 못했습니다.",
+      );
+    } finally {
+      setBulkSavingGroupId(null);
+    }
+  };
+
+  const confirmSelectedRows = async (
+    group: WaitlistGroup,
+    ticketInstanceId: string,
+  ) => {
+    if (bulkSavingGroupId) return;
+
+    const selectedRows = group.rows.filter(
+      (row) =>
+        distributionSelection.has(rowKey(row)) &&
+        row.source === "date_application" &&
+        row.status === "waitlisted" &&
+        row.ticket_instance_id === ticketInstanceId,
+    );
+    const applicationIds = selectedRows
+      .map((row) => row.source_id)
+      .filter((id): id is number => typeof id === "number");
+    const instance = instances.find((item) => item.id === ticketInstanceId);
+
+    if (!instance || applicationIds.length === 0) {
+      setError("확정할 신청자를 해당 티켓 열에서 선택해주세요.");
+      return;
+    }
     if (
       !window.confirm(
-        `${eligibleRows.length}명을 '${selectedInstance.title}' 티켓으로 옮길까요?\n실제 티켓은 ${ticketRevealText(selectedInstance)}됩니다.`,
+        `${applicationIds.length}명을 '${instance.title}' 참여자로 확정할까요?`,
       )
     ) {
       return;
@@ -677,30 +732,30 @@ export function WaitlistAdminPanel() {
         body: JSON.stringify({
           action: "assign_date_applications",
           applicationIds,
-          ticketInstanceId: selectedInstance.id,
+          ticketInstanceId,
         }),
       });
       const data = (await response.json().catch(() => null)) as
         | (AdminWaitlistData & { assignedCount?: number; error?: string })
         | null;
       if (!response.ok || !data) {
-        throw new Error(data?.error ?? "waitlist-bulk-assignment-failed");
+        throw new Error(data?.error ?? "waitlist-confirmation-failed");
       }
 
       hydrate(data);
-      setGroupTicketDrafts((current) => {
-        const next = { ...current };
-        delete next[group.id];
+      setDistributionSelection((current) => {
+        const next = new Set(current);
+        selectedRows.forEach((row) => next.delete(rowKey(row)));
         return next;
       });
       setNotice(
-        `${data.assignedCount ?? applicationIds.length}명을 세부 티켓으로 옮겼습니다.`,
+        `${data.assignedCount ?? applicationIds.length}명의 티켓 배정을 확정했습니다.`,
       );
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "대기 인원을 티켓으로 옮기지 못했습니다.",
+          : "선택한 신청자의 티켓 배정을 확정하지 못했습니다.",
       );
     } finally {
       setBulkSavingGroupId(null);
@@ -985,20 +1040,39 @@ export function WaitlistAdminPanel() {
                     group={group}
                     instances={instances}
                     templateMap={templateMap}
-                    selectedTicketInstanceId={groupTicketDrafts[group.id] ?? ""}
                     selectedId={selectedId}
                     savingId={savingId}
                     bulkSaving={bulkSavingGroupId === group.id}
+                    distributionSelection={distributionSelection}
                     open={openGroupIds.has(group.id)}
                     onToggle={() => toggleGroup(group.id)}
                     onSelect={(row) => setSelectedId(rowKey(row))}
-                    onTicketInstanceChange={(instanceId) =>
-                      setGroupTicketDrafts((current) => ({
-                        ...current,
-                        [group.id]: instanceId,
-                      }))
+                    onDistributionToggle={(row) =>
+                      setDistributionSelection((current) => {
+                        const next = new Set(current);
+                        const key = rowKey(row);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      })
                     }
-                    onAssign={() => void assignGroupToTicket(group)}
+                    onDistributionSelectMany={(rows, selected) =>
+                      setDistributionSelection((current) => {
+                        const next = new Set(current);
+                        rows.forEach((row) => {
+                          const key = rowKey(row);
+                          if (selected) next.add(key);
+                          else next.delete(key);
+                        });
+                        return next;
+                      })
+                    }
+                    onDistribute={(ticketInstanceId) =>
+                      void distributeSelectedRows(group, ticketInstanceId)
+                    }
+                    onConfirm={(ticketInstanceId) =>
+                      void confirmSelectedRows(group, ticketInstanceId)
+                    }
                   />
                 ))}
               </div>
@@ -1029,40 +1103,59 @@ function WaitlistAccordion({
   group,
   instances,
   templateMap,
-  selectedTicketInstanceId,
   open,
   selectedId,
   savingId,
   bulkSaving,
+  distributionSelection,
   onToggle,
   onSelect,
-  onTicketInstanceChange,
-  onAssign,
+  onDistributionToggle,
+  onDistributionSelectMany,
+  onDistribute,
+  onConfirm,
 }: {
   group: WaitlistGroup;
   instances: WaitlistTicketInstance[];
   templateMap: Map<string, WaitlistTicketTemplate>;
-  selectedTicketInstanceId: string;
   open: boolean;
   selectedId: string | null;
   savingId: string | null;
   bulkSaving: boolean;
+  distributionSelection: Set<string>;
   onToggle: () => void;
   onSelect: (row: AdminWaitlistRow) => void;
-  onTicketInstanceChange: (instanceId: string) => void;
-  onAssign: () => void;
+  onDistributionToggle: (row: AdminWaitlistRow) => void;
+  onDistributionSelectMany: (
+    rows: AdminWaitlistRow[],
+    selected: boolean,
+  ) => void;
+  onDistribute: (ticketInstanceId: string | null) => void;
+  onConfirm: (ticketInstanceId: string) => void;
 }) {
-  const eligibleRows = group.rows.filter(
-    (row) => row.source === "date_application" && row.status === "waitlisted",
+  const distributableRows = group.rows.filter(
+    (row) =>
+      row.source === "date_application" &&
+      row.status === "waitlisted",
   );
-  const instanceOptions = eligibleRows[0]
-    ? instancesForRow(eligibleRows[0], instances)
+  const instanceOptions = distributableRows[0]
+    ? instancesForRow(distributableRows[0], instances)
     : [];
-  const effectiveTicketInstanceId =
-    selectedTicketInstanceId ||
-    (instanceOptions.length === 1 ? instanceOptions[0].id : "");
-  const selectedInstance = instanceOptions.find(
-    (instance) => instance.id === effectiveTicketInstanceId,
+  const selectedCount = distributableRows.filter((row) =>
+    distributionSelection.has(rowKey(row)),
+  ).length;
+  const columns = [
+    { instance: null, rows: distributableRows.filter((row) => !row.ticket_instance_id) },
+    ...instanceOptions.map((instance) => ({
+      instance,
+      rows: distributableRows.filter(
+        (row) => row.ticket_instance_id === instance.id,
+      ),
+    })),
+  ];
+  const handledRowKeys = new Set(distributableRows.map(rowKey));
+  const remainingRows = group.rows.filter(
+    (row) => !handledRowKeys.has(rowKey(row)),
   );
 
   return (
@@ -1099,65 +1192,142 @@ function WaitlistAccordion({
 
       {open && (
         <div className="space-y-2 border-t border-black/10 bg-[#fcfcfb] p-3">
-          {eligibleRows.length > 0 && (
-            <div className="mb-3 rounded-2xl border border-accent/25 bg-accent/[0.07] p-4">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-accent shadow-sm">
-                  <UsersRound size={17} aria-hidden />
+          {distributableRows.length > 0 && (
+            <div className="mb-3 overflow-hidden rounded-2xl border border-black/10 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
+                <div>
+                  <p className="text-sm font-black">세부 티켓 작업 분배</p>
+                  <p className="mt-1 text-xs font-semibold text-black/45">
+                    신청자를 선택한 뒤 원하는 열로 배정하거나 다시 이동하세요.
+                  </p>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-black">
-                    대기 신청 {eligibleRows.length}명 티켓 이동
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
-                    선택한 티켓의 참여자로 확정합니다. 사용자는 행사 24시간
-                    전부터 실제 티켓을 볼 수 있습니다.
-                  </p>
+                <span className="rounded-full bg-black px-3 py-1.5 text-xs font-black text-white">
+                  {selectedCount}명 선택
+                </span>
+              </div>
+
+              <div className="overflow-x-auto p-3">
+                <div
+                  className="grid min-w-max gap-3"
+                  style={{
+                    gridTemplateColumns: `repeat(${columns.length}, minmax(250px, 280px))`,
+                  }}
+                >
+                  {columns.map(({ instance, rows: columnRows }) => {
+                    const allSelected =
+                      columnRows.length > 0 &&
+                      columnRows.every((row) =>
+                        distributionSelection.has(rowKey(row)),
+                      );
+                    const destinationId = instance?.id ?? null;
+                    const movableSelectedCount = distributableRows.filter(
+                      (row) =>
+                        distributionSelection.has(rowKey(row)) &&
+                        row.ticket_instance_id !== destinationId,
+                    ).length;
+                    const confirmableSelectedCount = instance
+                      ? columnRows.filter((row) =>
+                          distributionSelection.has(rowKey(row)),
+                        ).length
+                      : 0;
+
+                    return (
+                      <section
+                        key={instance?.id ?? "unassigned"}
+                        className="flex max-h-[470px] min-h-[240px] flex-col overflow-hidden rounded-xl border border-black/10 bg-[#f7f6f2]"
+                      >
+                        <div className="border-b border-black/10 bg-white px-3 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="flex items-center gap-1.5 truncate text-sm font-black">
+                                {instance ? (
+                                  <UsersRound size={14} aria-hidden />
+                                ) : (
+                                  <LockKeyhole size={14} aria-hidden />
+                                )}
+                                {instance
+                                  ? instance.operation_code || instance.title
+                                  : "미배정"}
+                              </p>
+                              <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-black/45">
+                                {instance
+                                  ? instanceOptionLabel(instance, templateMap)
+                                  : "아직 세부 티켓이 정해지지 않은 신청자"}
+                              </p>
+                            </div>
+                            <span className="shrink-0 rounded-full bg-black/5 px-2 py-1 text-[10px] font-black text-black/55">
+                              {columnRows.length}명
+                            </span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              disabled={columnRows.length === 0 || bulkSaving}
+                              onClick={() =>
+                                onDistributionSelectMany(columnRows, !allSelected)
+                              }
+                              className="h-8 rounded-lg border border-black/10 bg-white text-[11px] font-black text-black/55 transition hover:border-black/25 disabled:opacity-35"
+                            >
+                              {allSelected ? "선택 해제" : "열 전체 선택"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={movableSelectedCount === 0 || bulkSaving}
+                              onClick={() => onDistribute(destinationId)}
+                              className="h-8 rounded-lg bg-black px-2 text-[11px] font-black text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/15"
+                            >
+                              {bulkSaving
+                                ? "이동 중..."
+                                : instance
+                                  ? `여기로 배정 (${movableSelectedCount})`
+                                  : `미배정 복귀 (${movableSelectedCount})`}
+                            </button>
+                          </div>
+                          {instance && (
+                            <button
+                              type="button"
+                              disabled={confirmableSelectedCount === 0 || bulkSaving}
+                              onClick={() => onConfirm(instance.id)}
+                              className="mt-2 h-8 w-full rounded-lg border border-black bg-white px-2 text-[11px] font-black text-black transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:border-black/10 disabled:text-black/25"
+                            >
+                              선택 인원 티켓 확정 ({confirmableSelectedCount})
+                            </button>
+                          )}
+                        </div>
+                        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+                          {columnRows.length === 0 ? (
+                            <p className="px-3 py-8 text-center text-xs font-semibold text-black/30">
+                              배정된 신청자가 없습니다.
+                            </p>
+                          ) : (
+                            columnRows.map((row) => (
+                              <DistributionApplicantCard
+                                key={rowKey(row)}
+                                row={row}
+                                checked={distributionSelection.has(rowKey(row))}
+                                active={selectedId === rowKey(row)}
+                                saving={savingId === rowKey(row)}
+                                disabled={bulkSaving}
+                                onToggle={() => onDistributionToggle(row)}
+                                onOpen={() => onSelect(row)}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="mt-3 grid gap-2 xl:grid-cols-[minmax(0,1fr)_180px]">
-                <select
-                  value={effectiveTicketInstanceId}
-                  disabled={bulkSaving}
-                  onChange={(event) =>
-                    onTicketInstanceChange(event.target.value)
-                  }
-                  className="h-11 min-w-0 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                >
-                  <option value="">옮길 세부 티켓 선택</option>
-                  {instanceOptions.map((instance) => (
-                    <option key={instance.id} value={instance.id}>
-                      {instanceOptionLabel(instance, templateMap)}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  disabled={!selectedInstance || bulkSaving}
-                  onClick={onAssign}
-                  className="h-11 rounded-xl bg-black px-4 text-sm font-black text-white transition hover:bg-black/80 disabled:cursor-not-allowed disabled:bg-black/20"
-                >
-                  {bulkSaving
-                    ? "옮기는 중..."
-                    : `${eligibleRows.length}명 티켓으로 옮기기`}
-                </button>
-              </div>
-
-              {selectedInstance && (
-                <p className="mt-2 text-xs font-bold text-black/50">
-                  실제 티켓 {ticketRevealText(selectedInstance)}
-                </p>
-              )}
               {instanceOptions.length === 0 && (
-                <p className="mt-2 text-xs font-bold text-rose-600">
-                  같은 날짜의 세부 티켓이 없습니다. 티켓 관리에서 일정을 먼저
-                  저장해주세요.
+                <p className="border-t border-black/10 px-4 py-3 text-xs font-bold text-rose-600">
+                  같은 날짜의 세부 티켓이 없습니다. 티켓 관리에서 일정을 먼저 저장해주세요.
                 </p>
               )}
             </div>
           )}
-          {group.rows.map((row) => (
+          {remainingRows.map((row) => (
             <ApplicantRow
               key={rowKey(row)}
               row={row}
@@ -1169,6 +1339,68 @@ function WaitlistAccordion({
         </div>
       )}
     </article>
+  );
+}
+
+function DistributionApplicantCard({
+  row,
+  checked,
+  active,
+  saving,
+  disabled,
+  onToggle,
+  onOpen,
+}: {
+  row: AdminWaitlistRow;
+  checked: boolean;
+  active: boolean;
+  saving: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+}) {
+  const profile = row.profile;
+
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-white px-2 py-2 transition",
+        checked
+          ? "border-accent bg-accent/[0.06] ring-1 ring-accent/20"
+          : active
+            ? "border-black/25"
+            : "border-black/8",
+      )}
+    >
+      <button
+        type="button"
+        aria-label={`${profile?.name ?? "신청자"} 선택`}
+        aria-pressed={checked}
+        disabled={disabled}
+        onClick={onToggle}
+        className={cn(
+          "flex h-7 w-7 items-center justify-center rounded-md border transition",
+          checked
+            ? "border-black bg-black text-white"
+            : "border-black/15 bg-white text-transparent hover:border-black/35",
+        )}
+      >
+        <Check size={14} strokeWidth={3} aria-hidden />
+      </button>
+      <button type="button" onClick={onOpen} className="min-w-0 text-left">
+        <p className="truncate text-xs font-black">
+          {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
+        </p>
+        <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
+          {[profile?.gender, profile?.birth_year, profile?.mbti]
+            .filter(Boolean)
+            .join(" · ") || "기본 정보 미입력"}
+        </p>
+      </button>
+      {saving && (
+        <span className="text-[9px] font-bold text-black/35">저장 중</span>
+      )}
+    </div>
   );
 }
 

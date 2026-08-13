@@ -31,6 +31,19 @@ type PublicTicketInstanceRow = {
   max_participant_count: number | null;
 };
 
+type PublicMeetingEventRow = {
+  id: string;
+  program_id: string;
+  title: string;
+  short_description: string | null;
+  event_date: string;
+  starts_at: string;
+  region: string;
+  capacity: number;
+  confirmed_application_count: number;
+  detail_snapshot: Record<string, unknown> | null;
+};
+
 type PublicTicketTemplateRow = {
   id: string;
   title: string;
@@ -269,6 +282,55 @@ function toPublicPreviewTicket(
   };
 }
 
+function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
+  const snapshot = event.detail_snapshot ?? {};
+  const storedSteps = normalizeStoredTicketCourseSteps(snapshot.courseSteps);
+  const courseSteps = displayTicketCourseSteps(storedSteps, {
+    includePlaceDetails: false,
+  });
+  const stringList = (value: unknown) =>
+    Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+
+  return {
+    id: event.id,
+    templateId: event.program_id,
+    title: event.title,
+    subtitle: event.short_description ?? "교집합이 준비한 실제 운영 모임",
+    date: event.event_date,
+    time: event.starts_at.slice(0, 5),
+    area: event.region,
+    moodTags: stringList(snapshot.moodTags),
+    activityType:
+      typeof snapshot.activityType === "string" ? snapshot.activityType : null,
+    courseSteps,
+    remainingSeatCount: Math.max(
+      0,
+      event.capacity - event.confirmed_application_count,
+    ),
+    minimumParticipantCount: MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
+    maxParticipantCount: event.capacity,
+    peopleHint: event.short_description ?? "교집합이 준비한 모임",
+    reason: event.short_description ?? "교집합이 준비한 모임",
+    recommendationAudience: {
+      preferredActivities: [],
+      recentInterests: [],
+    },
+    detailSummary:
+      typeof snapshot.detailSummary === "string"
+        ? snapshot.detailSummary
+        : event.short_description ?? "",
+    detailActivities: stringList(snapshot.detailActivities),
+    detailFlow: stringList(snapshot.detailFlow),
+    detailGoodFor: stringList(snapshot.detailGoodFor),
+    detailNotice:
+      typeof snapshot.detailNotice === "string"
+        ? snapshot.detailNotice
+        : undefined,
+  };
+}
+
 function unique(values: Array<string | null | undefined>) {
   return Array.from(
     new Set(
@@ -446,6 +508,36 @@ export async function getAvailableMeetingTickets({
     ? ["public", "test_only"]
     : ["public"];
   const today = todayInKst();
+
+  const { data: events, error: eventsError } = await supabase
+    .from("meeting_events")
+    .select(
+      "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,detail_snapshot",
+    )
+    .in("visibility", visibilities)
+    .gte("event_date", today)
+    .order("event_date", { ascending: true })
+    .order("starts_at", { ascending: true })
+    .returns<PublicMeetingEventRow[]>();
+
+  if (!eventsError && events && events.length > 0) {
+    const visibleEvents = events
+      .filter((event) => !hasTicketStarted(event.event_date, event.starts_at))
+      .map(toPublicEventTicket);
+    if (!userId) return visibleEvents;
+
+    const { data: rejections, error: rejectionError } = await supabase
+      .from("meeting_event_rejections")
+      .select("event_id")
+      .eq("user_id", userId)
+      .returns<Array<{ event_id: string }>>();
+    if (rejectionError) throw rejectionError;
+    const rejectedIds = new Set((rejections ?? []).map((row) => row.event_id));
+    return visibleEvents.map((ticket) =>
+      rejectedIds.has(ticket.id) ? { ...ticket, rejected: true } : ticket,
+    );
+  }
+  if (eventsError && eventsError.code !== "PGRST205") throw eventsError;
 
   const { data: instances, error: instancesError } = await supabase
     .from("ticket_instances")

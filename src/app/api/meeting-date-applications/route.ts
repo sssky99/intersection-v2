@@ -25,6 +25,7 @@ type DateApplicationRequest = {
   prepareCheckout?: unknown;
   waitlist?: unknown;
   ticketInstanceId?: unknown;
+  eventId?: unknown;
   attribution?: unknown;
 };
 
@@ -61,6 +62,16 @@ type SelectedTicketInstance = {
   event_date: string | null;
   event_time: string | null;
   region: string | null;
+  visibility: string;
+};
+
+type SelectedMeetingEvent = {
+  id: string;
+  program_id: string;
+  title: string;
+  event_date: string;
+  starts_at: string;
+  region: string;
   visibility: string;
 };
 
@@ -268,8 +279,32 @@ export async function POST(request: NextRequest) {
     typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
       ? body.ticketInstanceId.trim()
       : null;
+  const requestedEventId =
+    typeof body.eventId === "string" && body.eventId.trim()
+      ? body.eventId.trim()
+      : null;
+  let selectedEvent: SelectedMeetingEvent | null = null;
+  if (requestedEventId) {
+    const allowedVisibilities =
+      applicantProfile.is_test_participant === true
+        ? ["public", "test_only"]
+        : ["public"];
+    const { data, error } = await admin
+      .from("meeting_events")
+      .select("id,program_id,title,event_date,starts_at,region,visibility")
+      .eq("id", requestedEventId)
+      .in("visibility", allowedVisibilities)
+      .maybeSingle<SelectedMeetingEvent>();
+    if (error) {
+      return NextResponse.json({ error: "선택한 행사를 확인하지 못했어요." }, { status: 500 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: "선택한 행사를 찾지 못했어요." }, { status: 404 });
+    }
+    selectedEvent = data;
+  }
   const dates = requestedMeetingApplicationDates(body.dates, todayInKst(), {
-    ticketInstanceProvided: ticketInstanceId !== null,
+    ticketInstanceProvided: ticketInstanceId !== null || selectedEvent !== null,
   });
   if (openPayment) {
     return NextResponse.json(
@@ -284,6 +319,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "신청할 날짜를 하나만 선택해주세요." },
       { status: 400 },
+    );
+  }
+  if (selectedEvent && selectedEvent.event_date !== dates[0]) {
+    return NextResponse.json(
+      { error: "선택한 행사와 날짜가 일치하지 않아요." },
+      { status: 409 },
     );
   }
   let selectedTicket: SelectedTicketInstance | null = null;
@@ -334,7 +375,7 @@ export async function POST(request: NextRequest) {
         "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
       .eq("user_id", user.id)
-      .in("meeting_date", dates)
+      .eq(selectedEvent ? "event_id" : "meeting_date", selectedEvent?.id ?? dates[0])
       .returns<DateApplicationRow[]>();
     const paymentHistoryLookup = prepareCheckout && !membershipCovered
       ? admin
@@ -393,10 +434,14 @@ export async function POST(request: NextRequest) {
         const schedule = meetingDateSchedule(date)!;
         return {
           application_group_id: groupId,
+          event_id: selectedEvent?.id ?? null,
           user_id: user.id,
           meeting_date: date,
-          meeting_time: selectedTicket?.event_time?.slice(0, 5) ?? schedule.time,
-          region: selectedTicket?.region ?? MEETING_DATE_REGION,
+          meeting_time:
+            selectedEvent?.starts_at?.slice(0, 5) ??
+            selectedTicket?.event_time?.slice(0, 5) ??
+            schedule.time,
+          region: selectedEvent?.region ?? selectedTicket?.region ?? MEETING_DATE_REGION,
           status:
             joinWaitlist || membershipCovered ? "waitlisted" : "payment_pending",
           deposit_amount: null,
@@ -415,9 +460,21 @@ export async function POST(request: NextRequest) {
 
     let savedRows: DateApplicationRow[] = [];
     if (rowsToSave.length > 0) {
-      const { data, error } = await admin
-        .from("meeting_date_applications")
-        .upsert(rowsToSave, { onConflict: "user_id,meeting_date" })
+      const existingEventApplication = selectedEvent
+        ? (existingRows ?? []).find((row) => row.status === "payment_pending")
+        : null;
+      const saveQuery =
+        selectedEvent && existingEventApplication
+          ? admin
+              .from("meeting_date_applications")
+              .update(rowsToSave[0])
+              .eq("id", existingEventApplication.id)
+          : selectedEvent
+            ? admin.from("meeting_date_applications").insert(rowsToSave)
+            : admin
+                .from("meeting_date_applications")
+                .upsert(rowsToSave, { onConflict: "user_id,meeting_date" });
+      const { data, error } = await saveQuery
         .select(
           "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
         )

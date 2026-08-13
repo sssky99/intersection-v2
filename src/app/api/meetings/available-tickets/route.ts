@@ -114,6 +114,24 @@ export async function POST(request: Request) {
     const allowedVisibilities = context.includeTestOnly
       ? ["public", "test_only"]
       : ["public"];
+    const { data: event, error: eventError } = await context.admin
+      .from("meeting_events")
+      .select("id")
+      .eq("id", body.ticketInstanceId)
+      .in("visibility", allowedVisibilities)
+      .maybeSingle<{ id: string }>();
+    if (eventError && eventError.code !== "PGRST205") throw eventError;
+    if (event) {
+      const { error: rejectionError } = await context.admin
+        .from("meeting_event_rejections")
+        .upsert(
+          { event_id: event.id, user_id: context.userId },
+          { onConflict: "event_id,user_id" },
+        );
+      if (rejectionError) throw rejectionError;
+      return NextResponse.json({ rejected: true });
+    }
+
     const { data: instance, error: instanceError } = await context.admin
       .from("ticket_instances")
       .select("id,template_id,title,event_date,event_time,region,visibility")

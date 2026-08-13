@@ -349,6 +349,115 @@ export async function PATCH(request: NextRequest) {
   const ticketInstanceId =
     body && "ticketInstanceId" in body ? body.ticketInstanceId : undefined;
 
+  if (action === "distribute_date_applications") {
+    const applicationIds = Array.isArray(body?.applicationIds)
+      ? Array.from(
+          new Set(
+            body.applicationIds.filter(
+              (value): value is number =>
+                typeof value === "number" &&
+                Number.isSafeInteger(value) &&
+                value > 0,
+            ),
+          ),
+        )
+      : [];
+    const instanceId = text(ticketInstanceId) || null;
+
+    if (applicationIds.length === 0) {
+      return NextResponse.json(
+        { error: "이동할 날짜 신청자를 선택해주세요." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const supabase = createAdminClient();
+      const { data: applications, error: applicationsError } = await supabase
+        .from("meeting_date_applications")
+        .select("id,meeting_date,status,ticket_participation_id")
+        .in("id", applicationIds);
+      if (applicationsError) throw applicationsError;
+
+      if (!applications || applications.length !== applicationIds.length) {
+        return NextResponse.json(
+          { error: "일부 신청자를 찾을 수 없습니다. 새로고침 후 다시 시도해주세요." },
+          { status: 404 },
+        );
+      }
+
+      const movable = applications.every(
+        (application) =>
+          application.status === "waitlisted" &&
+          application.ticket_participation_id === null,
+      );
+      if (!movable) {
+        return NextResponse.json(
+          { error: "대기 중이며 참여 확정 전인 신청자만 재배정할 수 있습니다." },
+          { status: 409 },
+        );
+      }
+
+      if (instanceId) {
+        const { data: instance, error: instanceError } = await supabase
+          .from("ticket_instances")
+          .select("id,event_date")
+          .eq("id", instanceId)
+          .single<{ id: string; event_date: string | null }>();
+        if (instanceError) throw instanceError;
+
+        if (
+          !instance.event_date ||
+          applications.some(
+            (application) => application.meeting_date !== instance.event_date,
+          )
+        ) {
+          return NextResponse.json(
+            { error: "신청 날짜와 같은 날짜의 세부 티켓에만 배정할 수 있습니다." },
+            { status: 400 },
+          );
+        }
+      }
+
+      const now = new Date().toISOString();
+      let assignedGroupId: string | null = null;
+      if (instanceId) {
+        const { data: group, error: groupError } = await supabase
+          .from("meeting_groups")
+          .select("id")
+          .eq("legacy_ticket_instance_id", instanceId)
+          .maybeSingle<{ id: string }>();
+        if (groupError && groupError.code !== "PGRST205") throw groupError;
+        assignedGroupId = group?.id ?? null;
+      }
+      const { error: updateError } = await supabase
+        .from("meeting_date_applications")
+        .update({
+          assigned_ticket_instance_id: instanceId,
+          assigned_group_id: assignedGroupId,
+          assigned_at: instanceId ? now : null,
+          updated_at: now,
+        })
+        .in("id", applicationIds);
+      if (updateError) throw updateError;
+
+      return NextResponse.json({
+        ...(await loadWaitlistData()),
+        movedCount: applicationIds.length,
+      });
+    } catch (error) {
+      console.error("Admin date application distribution failed:", {
+        applicationCount: applicationIds.length,
+        ticketInstanceId: instanceId,
+        error,
+      });
+      return NextResponse.json(
+        { error: "선택한 신청자를 이동하지 못했습니다." },
+        { status: 500 },
+      );
+    }
+  }
+
   if (action === "assign_date_applications") {
     const applicationIds = Array.isArray(body?.applicationIds)
       ? Array.from(
