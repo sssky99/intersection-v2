@@ -503,7 +503,6 @@ export function AppHome({
   guestMode = false,
   initialAnswerRows = [],
   onRequestBasicInfo,
-  forceInitialRecommendationPreview = false,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
 }: {
@@ -515,7 +514,6 @@ export function AppHome({
   guestMode?: boolean;
   initialAnswerRows?: AnswerRow[];
   onRequestBasicInfo?: (meetingDate?: string) => void;
-  forceInitialRecommendationPreview?: boolean;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
 }) {
@@ -1262,8 +1260,6 @@ export function AppHome({
             <MeetingRecommendation
               userId={userId}
               profileCompleted={Boolean(currentProfile.profile_completed)}
-              profileName={currentProfile.name ?? currentProfile.nickname}
-              profileMbti={currentProfile.mbti}
               profilePhotoUrl={currentProfile.photo_url}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
@@ -1293,9 +1289,6 @@ export function AppHome({
               onOpenTicketTab={() => switchTab("browse")}
               onBlindDateOpenRequestHandled={() =>
                 setBlindDateOpenRequestPending(false)
-              }
-              forceInitialRecommendationPreview={
-                forceInitialRecommendationPreview
               }
             />
           ) : (

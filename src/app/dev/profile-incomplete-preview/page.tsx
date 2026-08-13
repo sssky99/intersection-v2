@@ -71,7 +71,6 @@ export default async function ProfileIncompletePreviewPage({
         profile={incompleteProfile}
         initialTab={tab === "profile" ? "profile" : "recommend"}
         guestMode
-        forceInitialRecommendationPreview
       />
     </MobileFrame>
   );

@@ -18,7 +18,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { NaverPlacePicker } from "@/components/NaverPlacePicker";
-import { AtmosphereDisplayEditor } from "@/features/admin/AtmosphereDisplayEditor";
 import {
   normalizeMeetingAtmosphereAgeBandId,
   normalizeMeetingAtmosphereGenderMood,
@@ -914,7 +913,6 @@ export function TicketAdminPanel({
   );
   const [draft, setDraft] = useState<TicketDraft | null>(null);
   const [query, setQuery] = useState("");
-  const [memberQuery, setMemberQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -965,10 +963,6 @@ export function TicketAdminPanel({
     onFocusTicketHandled?.();
   }, [focusTicketId, onFocusTicketHandled, templates]);
 
-  const operatorProfiles = useMemo(
-    () => profiles.filter((profile) => profile.is_test_participant === true),
-    [profiles],
-  );
   useEffect(() => {
     setSelectedInstanceId((current) => {
       if (
@@ -987,16 +981,8 @@ export function TicketAdminPanel({
         ? draftFromTicket(selectedTicket, selectedInstance)
         : null,
     );
-    setMemberQuery("");
     setProgressPreviewOpen(false);
   }, [selectedInstance, selectedTicket]);
-
-  const instanceById = useMemo(() => {
-    const pairs = templates.flatMap((template) =>
-      template.instances.map((instance) => [instance.id, instance] as const),
-    );
-    return new Map(pairs);
-  }, [templates]);
 
   const assignedProfiles = useMemo(() => {
     if (!selectedInstance) return [];
@@ -1004,56 +990,6 @@ export function TicketAdminPanel({
       .map((participation) => participation.profile)
       .filter((profile): profile is AdminProfile => Boolean(profile));
   }, [selectedInstance]);
-
-  const assignableProfiles = useMemo(() => {
-    if (!selectedTicket || !selectedInstance) return [];
-
-    const assignedIds = new Set(
-      selectedTicket.instances.flatMap((instance) =>
-        instance.participants.map((participation) => participation.user_id),
-      ),
-    );
-    const candidateIds = new Set<string>();
-
-    if (selectedInstance.visibility === "test_only") {
-      for (const profile of operatorProfiles) candidateIds.add(profile.user_id);
-    } else {
-      for (const row of waitlist) {
-        const rowInstance = row.ticket_instance_id
-          ? instanceById.get(row.ticket_instance_id)
-          : row.ticket_id
-            ? instanceById.get(row.ticket_id)
-            : null;
-        const rowTemplateId = row.ticket_template_id ?? rowInstance?.template_id;
-
-        if (
-          row.user_id &&
-          rowTemplateId === selectedTicket.id
-        ) {
-          candidateIds.add(row.user_id);
-        }
-      }
-    }
-
-    const normalized = memberQuery.trim().toLowerCase();
-    return profiles
-      .filter((profile) => candidateIds.has(profile.user_id))
-      .filter((profile) => !assignedIds.has(profile.user_id))
-      .filter((profile) =>
-        `${profile.name ?? ""} ${profile.phone ?? ""}`
-          .toLowerCase()
-          .includes(normalized),
-      )
-      .slice(0, 10);
-  }, [
-    instanceById,
-    memberQuery,
-    operatorProfiles,
-    profiles,
-    selectedInstance,
-    selectedTicket,
-    waitlist,
-  ]);
 
   const previewTicket = draft
     ? ticketPreview(draft, selectedTicket, selectedInstance)
@@ -1335,62 +1271,6 @@ export function TicketAdminPanel({
     setSelectedTicketId(data?.templates[0]?.id ?? null);
   };
 
-  const uploadImage = async (file: File, stepId?: string) => {
-    if (!selectedTicket || !draft || saving) return;
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-
-    try {
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("templateId", selectedTicket.id);
-
-      const uploadResponse = await fetch("/api/admin/tickets/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const uploadData = (await uploadResponse.json().catch(() => null)) as {
-        imageUrl?: string;
-        error?: string;
-      } | null;
-      if (!uploadResponse.ok || !uploadData?.imageUrl) {
-        throw new Error(uploadData?.error ?? "이미지를 업로드하지 못했습니다.");
-      }
-
-      const targetStepId =
-        stepId ?? mainDraftCourseStep(draft.courseSteps).id;
-      const nextDraft = syncDraftCourseFields({
-        ...draft,
-        courseSteps: draft.courseSteps.map((step) =>
-          step.id === targetStepId
-            ? { ...step, imageUrl: uploadData.imageUrl ?? "" }
-            : step,
-        ),
-      });
-      setDraft(nextDraft);
-      const saveResponse = await fetch("/api/admin/tickets", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          entity: "ticket",
-          id: selectedTicket.id,
-          instanceId: selectedInstance?.id ?? null,
-          ...ticketRequestBody(nextDraft),
-        }),
-      });
-      await applyResponse(saveResponse, "대표 이미지를 교체했습니다.");
-    } catch (uploadError) {
-      setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : "이미지를 업로드하지 못했습니다.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <section className="flex h-[calc(100dvh-190px)] min-h-[720px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
@@ -1496,9 +1376,6 @@ export function TicketAdminPanel({
                     draft={draft}
                     saving={saving}
                     onDraftChange={setDraft}
-                    onUploadImage={(file, stepId) =>
-                      void uploadImage(file, stepId)
-                    }
                   />
                 )}
 
@@ -1523,106 +1400,16 @@ export function TicketAdminPanel({
                   />
                 )}
 
-                {!isSampleTicket && selectedInstance && (
-                  <ImmediateRevealControl
-                    instance={selectedInstance}
-                    saving={saving}
-                    onReveal={() => void revealInstanceNow()}
-                  />
-                )}
-
                 <BasicEditor
                   draft={draft}
                   saving={saving}
                   sampleOnly={isSampleTicket}
                   onDraftChange={setDraft}
-                  onUploadImage={(file, stepId) => void uploadImage(file, stepId)}
                 />
 
-                {!isSampleTicket && (
-                  <>
-                    {previewTicket && (
-                      <ContentEditor
-                        draft={draft}
-                        onDraftChange={setDraft}
-                      />
-                    )}
-
-                    <AtmosphereDisplayEditor
-                      genderMood={draft.atmosphereGenderMood}
-                      ageBandId={draft.atmosphereAgeBandId}
-                      defaultGenderMood={
-                        selectedTicket.atmosphere_default_gender_mood
-                      }
-                      defaultAgeBandId={
-                        selectedTicket.atmosphere_default_age_band_id
-                      }
-                      disabled={saving}
-                      onGenderMoodChange={(atmosphereGenderMood) =>
-                        setDraft({ ...draft, atmosphereGenderMood })
-                      }
-                      onAgeBandChange={(atmosphereAgeBandId) =>
-                        setDraft({ ...draft, atmosphereAgeBandId })
-                      }
-                    />
-
-                    <RecommendationAudienceEditor
-                      preferredActivities={
-                        draft.recommendationPreferredActivities
-                      }
-                      recentInterests={draft.recommendationRecentInterests}
-                      disabled={saving}
-                      onPreferredActivitiesChange={
-                        (recommendationPreferredActivities) =>
-                          setDraft({
-                            ...draft,
-                            recommendationPreferredActivities,
-                          })
-                      }
-                      onRecentInterestsChange={(recommendationRecentInterests) =>
-                        setDraft({
-                          ...draft,
-                          recommendationRecentInterests,
-                        })
-                      }
-                    />
-
-                    {progressPreviewTicket && (
-                      <ProgressPreviewLauncher
-                        onClick={() => setProgressPreviewOpen(true)}
-                      />
-                    )}
-                  </>
-                )}
-
-                {!isSampleTicket && selectedInstance && (
-                  <ParticipantPanel
-                    instance={selectedInstance}
-                    ticketWaitlistCount={selectedTicket.waitlist_count}
-                    assignedProfiles={assignedProfiles}
-                    assignableProfiles={assignableProfiles}
-                    memberQuery={memberQuery}
-                    saving={saving}
-                    onMemberQueryChange={setMemberQuery}
-                    onAddMember={(profileId) =>
-                      void runAction(
-                        "POST",
-                        {
-                          action: "add_participant",
-                          instanceId: selectedInstance.id,
-                          profileId,
-                        },
-                        "참여를 확정했습니다.",
-                      )
-                    }
-                    onRemoveMember={(profileId) =>
-                      void runAction(
-                        "DELETE",
-                        null,
-                        "멤버를 제거했습니다.",
-                        `?instanceId=${encodeURIComponent(selectedInstance.id)}&profileId=${encodeURIComponent(profileId)}`,
-                      )
-                    }
+                {!isSampleTicket && progressPreviewTicket && (
+                  <ProgressPreviewLauncher
+                    onClick={() => setProgressPreviewOpen(true)}
                   />
                 )}
               </div>
@@ -2013,13 +1800,11 @@ function BasicEditor({
   saving,
   sampleOnly,
   onDraftChange,
-  onUploadImage,
 }: {
   draft: TicketDraft;
   saving: boolean;
   sampleOnly: boolean;
   onDraftChange: (draft: TicketDraft) => void;
-  onUploadImage: (file: File, stepId: string) => void;
 }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
@@ -2045,7 +1830,6 @@ function BasicEditor({
             draft={draft}
             saving={saving}
             onDraftChange={onDraftChange}
-            onUploadImage={onUploadImage}
           />
         )}
         {!sampleOnly && (
@@ -2140,12 +1924,10 @@ function CourseStepsEditor({
   draft,
   saving,
   onDraftChange,
-  onUploadImage,
 }: {
   draft: TicketDraft;
   saving: boolean;
   onDraftChange: (draft: TicketDraft) => void;
-  onUploadImage: (file: File, stepId: string) => void;
 }) {
   const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
 
@@ -2294,43 +2076,6 @@ function CourseStepsEditor({
                   }))
                 }
               />
-              <FormField
-                label={`${stepLabel} 이미지 URL`}
-                className="col-span-2"
-                value={step.imageUrl}
-                placeholder="이미지 URL을 붙여넣거나 파일을 업로드해주세요"
-                onChange={(imageUrl) =>
-                  updateStep(step.id, (current) => ({ ...current, imageUrl }))
-                }
-              />
-              <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 py-2.5">
-                <div>
-                  <p className="text-xs font-semibold text-black/50">
-                    {stepLabel} 이미지
-                  </p>
-                  <p className="mt-0.5 text-[11px] font-semibold text-black/35">
-                    {step.imageUrl
-                      ? step.isMainActivity
-                        ? "대표 이미지로 사용돼요."
-                        : "여정 이미지로 저장돼요."
-                      : "이미지 없음"}
-                  </p>
-                </div>
-                <label className="flex h-9 cursor-pointer items-center justify-center rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black">
-                  이미지 선택
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={saving}
-                    className="hidden"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) onUploadImage(file, step.id);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              </div>
               <NaverPlacePicker
                 className="col-span-2"
                 title={`${stepLabel} 장소 검색`}

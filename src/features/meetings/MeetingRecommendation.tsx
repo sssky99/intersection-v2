@@ -12,7 +12,6 @@ import {
   Gift,
   Landmark,
   MapPin,
-  RefreshCw,
   X,
 } from "lucide-react";
 import {
@@ -22,13 +21,6 @@ import {
 } from "react";
 import { formatTicketTimeLabel } from "@/components/IntersectionTicketCard";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
-import {
-  SelectionColumn,
-  activityIcons,
-  activityLabels,
-  interestIcons,
-  interestLabels,
-} from "@/features/app/PreferenceProfileTab";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
@@ -219,27 +211,6 @@ const localDateApplicationsStoragePrefix =
   "intersection:local-date-applications";
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
-const initialTicketRecommendationEnabled = false;
-const initialRecommendedTicketDate = "2026-08-08";
-const initialRecommendedTicketTitle = "향수 공방";
-const initialRecommendedTicketHeading = "당신을 위한 티켓이 도착했어요.";
-
-function personalizedTicketHeading(name: string | null | undefined) {
-  const displayName = profileGivenName(name);
-  if (!displayName) return initialRecommendedTicketHeading;
-
-  return `${displayName}${displayName.endsWith("님") ? "" : "님"}을 위한 티켓을 추천해드릴게요.`;
-}
-
-function profileGivenName(name: string | null | undefined) {
-  const fullName = name?.trim();
-  if (!fullName) return "";
-
-  const compactName = fullName.replace(/\s+/g, "");
-  return /^[가-힣]{2,}$/.test(compactName)
-    ? Array.from(compactName).slice(1).join("")
-    : fullName.split(/\s+/).at(-1) ?? fullName;
-}
 
 function oneMonthMembershipPeriod(meetingDate: string) {
   const schedule = meetingDateSchedule(meetingDate);
@@ -269,140 +240,6 @@ function oneMonthMembershipPeriod(meetingDate: string) {
       sameDayNextMonth.getUTCDate(),
     ),
   };
-}
-
-function ProfileCurationOrbit({
-  name,
-  mbti,
-  preferredActivities,
-  recentInterests,
-  reducedMotion,
-}: {
-  name: string | null | undefined;
-  mbti: string | null | undefined;
-  preferredActivities: string[];
-  recentInterests: string[];
-  reducedMotion: boolean;
-}) {
-  const displayName = profileGivenName(name) || "나";
-  const orbitTransition = reducedMotion
-    ? { duration: 0 }
-    : {
-        duration: 2.7,
-        ease: [0.45, 0, 0.2, 1] as const,
-        times: [0, 0.22, 0.9, 1],
-      };
-
-  return (
-    <motion.div
-      key="profile-curation-orbit"
-      initial={reducedMotion ? false : { opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={
-        reducedMotion
-          ? undefined
-          : { opacity: 0, scale: 0.9, filter: "blur(5px)" }
-      }
-      transition={{ duration: reducedMotion ? 0 : 0.38, ease: "easeOut" }}
-      className="relative mx-auto h-[410px] w-full max-w-[360px] overflow-visible"
-      data-curation-stage
-      aria-label={`${displayName}님의 프로필을 바탕으로 티켓을 고르는 중`}
-    >
-      <div
-        aria-hidden
-        className="absolute left-1/2 top-1/2 h-[292px] w-[292px] -translate-x-1/2 -translate-y-1/2"
-      >
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, scale: 0.82 }}
-          animate={{ opacity: [0, 0.22, 0.14], scale: [0.82, 1.04, 1] }}
-          transition={{ duration: reducedMotion ? 0 : 1.1, ease: "easeOut" }}
-          className="h-full w-full rounded-full border border-black/20"
-        />
-      </div>
-
-      <motion.div
-        className="absolute inset-x-2 bottom-6 top-[18px]"
-        initial={reducedMotion ? false : { rotate: 0 }}
-        animate={{ rotate: reducedMotion ? 0 : [0, 0, 360, 360] }}
-        transition={orbitTransition}
-      >
-        <div className="absolute left-1/2 top-1 -translate-x-1/2">
-          <motion.div
-            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
-            animate={{
-              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
-              scale: reducedMotion ? 1 : [1, 1, 0.84, 1],
-            }}
-            transition={orbitTransition}
-            className="rounded-full border border-black/12 bg-[#faf8f2] px-5 py-3 text-center shadow-[0_10px_28px_rgba(24,24,20,0.09)]"
-          >
-            <p className="text-[9px] font-black uppercase tracking-[0.13em] text-black/34">
-              MBTI
-            </p>
-            <p className="mt-0.5 text-[14px] font-black tracking-[-0.025em] text-black">
-              {mbti?.trim().toUpperCase() || "—"}
-            </p>
-          </motion.div>
-        </div>
-
-        <div className="absolute bottom-0 left-0 w-[138px]">
-          <motion.div
-            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
-            animate={{
-              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
-              scale: reducedMotion ? 1 : [1, 1, 0.78, 1],
-            }}
-            transition={orbitTransition}
-          >
-            <SelectionColumn
-              label="선호 활동"
-              values={preferredActivities}
-              labels={activityLabels}
-              icons={activityIcons}
-            />
-          </motion.div>
-        </div>
-
-        <div className="absolute bottom-0 right-0 w-[138px]">
-          <motion.div
-            initial={reducedMotion ? false : { rotate: 0, scale: 1 }}
-            animate={{
-              rotate: reducedMotion ? 0 : [0, 0, -360, -360],
-              scale: reducedMotion ? 1 : [1, 1, 0.78, 1],
-            }}
-            transition={orbitTransition}
-          >
-            <SelectionColumn
-              label="최근 관심사"
-              values={recentInterests}
-              labels={interestLabels}
-              icons={interestIcons}
-            />
-          </motion.div>
-        </div>
-      </motion.div>
-
-      <div className="absolute left-1/2 top-1/2 h-[88px] w-[88px] -translate-x-1/2 -translate-y-1/2">
-        <motion.div
-          initial={reducedMotion ? false : { opacity: 0, scale: 0.72 }}
-          animate={{ opacity: 1, scale: [0.72, 1.06, 1] }}
-          transition={{
-            delay: reducedMotion ? 0 : 0.35,
-            duration: reducedMotion ? 0 : 0.68,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          data-curation-name
-          className="flex h-full w-full items-center justify-center rounded-full border border-black/12 bg-[#171714] text-center text-[18px] font-black tracking-[-0.04em] text-[#f7f4ed] shadow-[0_18px_44px_rgba(24,24,20,0.18)]"
-        >
-          {displayName}
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-}
-
-function initialRecommendedTicketStorageKey(userId: string) {
-  return `intersection:initial-recommended-ticket:v4:${userId || "guest"}`;
 }
 
 function loadGuestDeclinedTicketIds() {
@@ -633,8 +470,6 @@ async function fetchDepositMessageRegistrationSummary() {
 type MeetingRecommendationProps = {
   userId: string;
   profileCompleted?: boolean;
-  profileName?: string | null;
-  profileMbti?: string | null;
   profilePhotoUrl?: string | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
@@ -658,12 +493,10 @@ type MeetingRecommendationProps = {
   onTicketAcceptRequestHandled?: () => void;
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
   onOpenTicketTab?: () => void;
-  forceInitialRecommendationPreview?: boolean;
 };
 
 type DateApplicationScreen =
   | "dates"
-  | "ticketPreview"
   | "ticket"
   | "submitted"
   | "blindDate";
@@ -872,8 +705,6 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 function MeetingDateApplicationFlow({
   userId,
   profileCompleted = true,
-  profileName = null,
-  profileMbti = null,
   profilePhotoUrl = null,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
@@ -897,7 +728,6 @@ function MeetingDateApplicationFlow({
   onTicketAcceptRequestHandled,
   onDateApplicationsChange,
   onOpenTicketTab,
-  forceInitialRecommendationPreview = false,
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -915,20 +745,9 @@ function MeetingDateApplicationFlow({
   const [error, setError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
-  const [ticketPreviewMotionKey, setTicketPreviewMotionKey] = useState(0);
-  const [ticketPreviewImageVisible, setTicketPreviewImageVisible] =
-    useState(false);
-  const [ticketPreviewHeadingText, setTicketPreviewHeadingText] = useState("");
-  const [ticketPreviewHeadingComplete, setTicketPreviewHeadingComplete] =
-    useState(false);
-  const [ticketPreviewCurationComplete, setTicketPreviewCurationComplete] =
-    useState(false);
   const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
-  const [localPreviewControlsVisible, setLocalPreviewControlsVisible] =
-    useState(false);
   const [invitationClockMs, setInvitationClockMs] = useState(() => Date.now());
   const [invitationDrawKey, setInvitationDrawKey] = useState(0);
-  const initialRecommendationHandledRef = useRef(false);
   const invitationWasActiveRef = useRef(active);
 
   const recordTicketInteraction = async (
@@ -974,7 +793,6 @@ function MeetingDateApplicationFlow({
     (ticket) => ticket.date === saturdayDate && ticket.rejected,
   );
   const forceInvitationCountdownPreview =
-    forceInitialRecommendationPreview &&
     searchParams.get("countdownPreview") === "1";
   const declinedInvitationTicket =
     availableTickets.find(
@@ -1010,9 +828,6 @@ function MeetingDateApplicationFlow({
     applications.map((application) => [application.meetingDate, application]),
   );
   const resumeDate = searchParams.get("resumeDate");
-  const ticketPreviewHeading = profileCompleted
-    ? personalizedTicketHeading(profileName)
-    : initialRecommendedTicketHeading;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -1144,10 +959,6 @@ function MeetingDateApplicationFlow({
   }, [applications, onDateApplicationsChange]);
 
   useEffect(() => {
-    setLocalPreviewControlsVisible(isLocalTestHost());
-  }, []);
-
-  useEffect(() => {
     if (active && !invitationWasActiveRef.current) {
       setInvitationDrawKey((current) => current + 1);
     }
@@ -1160,170 +971,6 @@ function MeetingDateApplicationFlow({
     }, 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (screen !== "ticketPreview" || !selectedTicket) return;
-
-    if (shouldReduceMotion) {
-      setTicketPreviewHeadingText(ticketPreviewHeading);
-      setTicketPreviewHeadingComplete(true);
-      return;
-    }
-
-    const characters = Array.from(ticketPreviewHeading);
-    let index = 0;
-    setTicketPreviewHeadingText("");
-    setTicketPreviewHeadingComplete(false);
-
-    const timer = window.setInterval(() => {
-      index += 1;
-      setTicketPreviewHeadingText(characters.slice(0, index).join(""));
-
-      if (index >= characters.length) {
-        window.clearInterval(timer);
-        setTicketPreviewHeadingComplete(true);
-      }
-    }, 58);
-
-    return () => window.clearInterval(timer);
-  }, [
-    screen,
-    selectedTicket?.id,
-    shouldReduceMotion,
-    ticketPreviewMotionKey,
-    ticketPreviewHeading,
-  ]);
-
-  useEffect(() => {
-    if (
-      screen !== "ticketPreview" ||
-      !selectedTicket ||
-      !ticketPreviewHeadingComplete
-    ) {
-      setTicketPreviewCurationComplete(false);
-      return;
-    }
-
-    if (!profileCompleted || shouldReduceMotion) {
-      setTicketPreviewCurationComplete(true);
-      return;
-    }
-
-    setTicketPreviewCurationComplete(false);
-    const timer = window.setTimeout(() => {
-      setTicketPreviewCurationComplete(true);
-    }, 3300);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    profileCompleted,
-    screen,
-    selectedTicket,
-    shouldReduceMotion,
-    ticketPreviewHeadingComplete,
-    ticketPreviewMotionKey,
-  ]);
-
-  useEffect(() => {
-    if (
-      screen !== "ticketPreview" ||
-      !selectedTicket ||
-      !ticketPreviewHeadingComplete ||
-      !ticketPreviewCurationComplete
-    ) {
-      setTicketPreviewImageVisible(false);
-      return;
-    }
-
-    setTicketPreviewImageVisible(shouldReduceMotion);
-    if (shouldReduceMotion) return;
-
-    const timer = window.setTimeout(() => {
-      setTicketPreviewImageVisible(true);
-    }, 720);
-
-    return () => window.clearTimeout(timer);
-  }, [
-    screen,
-    selectedTicket,
-    shouldReduceMotion,
-    ticketPreviewCurationComplete,
-    ticketPreviewHeadingComplete,
-    ticketPreviewMotionKey,
-  ]);
-
-  useEffect(() => {
-    if (
-      (!initialTicketRecommendationEnabled &&
-        !forceInitialRecommendationPreview) ||
-      !active ||
-      availableTicketsLoading ||
-      screen !== "dates" ||
-      resumeDate ||
-      ticketAcceptRequestId ||
-      initialRecommendationHandledRef.current
-    ) {
-      return;
-    }
-
-    const perfumeWorkshopTicket = availableTickets.find(
-      (ticket) =>
-        ticket.date === initialRecommendedTicketDate &&
-        ticket.title.includes(initialRecommendedTicketTitle),
-    );
-    const recommendedTicket = perfumeWorkshopTicket;
-    if (!recommendedTicket) return;
-
-    initialRecommendationHandledRef.current = true;
-    const storageKey = initialRecommendedTicketStorageKey(userId);
-
-    if (!forceInitialRecommendationPreview) {
-      try {
-        if (window.localStorage.getItem(storageKey) === "shown") return;
-      } catch {
-        // The recommendation still opens when browser storage is unavailable.
-      }
-    }
-
-    setSelectedTicket(recommendedTicket);
-    setError(null);
-    setScreen("ticketPreview");
-    trackEvent("meeting_ticket_initial_recommendation_open", {
-      ticket_instance_id: recommendedTicket.id,
-      meeting_date: recommendedTicket.date,
-    });
-  }, [
-    active,
-    availableTickets,
-    availableTicketsLoading,
-    resumeDate,
-    screen,
-    ticketAcceptRequestId,
-    userId,
-    forceInitialRecommendationPreview,
-    profileCompleted,
-  ]);
-
-  const completeInitialTicketRecommendation = () => {
-    try {
-      window.localStorage.setItem(
-        initialRecommendedTicketStorageKey(userId),
-        "shown",
-      );
-    } catch {
-      // First recommendation history is best-effort when storage is unavailable.
-    }
-  };
-
-  const openInitialTicketDetail = (ticket: GatheringTicket) => {
-    completeInitialTicketRecommendation();
-    recordTicketInteraction(ticket, "open");
-    setScreen("ticket");
-    trackEvent("meeting_ticket_initial_recommendation_select", {
-      ticket_instance_id: ticket.id,
-      meeting_date: ticket.date,
-    });
-  };
 
   const toggleDate = (date: string) => {
     const application = applicationByDate.get(date);
@@ -1658,128 +1305,6 @@ function MeetingDateApplicationFlow({
       setSaving(false);
     }
   };
-
-  if (screen === "ticketPreview" && selectedTicket) {
-    return (
-      <motion.section
-        key={`meeting-ticket-preview-${selectedTicket.id}`}
-        initial={shouldReduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-        transition={{ duration: 0.24, ease: "easeOut" }}
-        className={cn(
-          "flex min-h-full flex-col bg-transparent px-5 pb-[calc(94px+env(safe-area-inset-bottom))] pt-7 text-[#24211d]",
-          embedded ? "min-h-[calc(100dvh-16px)]" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
-        )}
-      >
-        <header className="relative shrink-0 text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.12em] text-black/38">
-            first invitation
-          </p>
-          <h1
-            aria-label={ticketPreviewHeading}
-            className="mt-2 min-h-7 text-[22px] font-black tracking-[-0.045em] text-black"
-          >
-            <span aria-hidden>{ticketPreviewHeadingText}</span>
-            {!ticketPreviewHeadingComplete && (
-              <motion.span
-                aria-hidden
-                animate={{ opacity: [1, 0, 1] }}
-                transition={{ duration: 0.72, repeat: Infinity, ease: "linear" }}
-                className="ml-0.5 inline-block h-[0.9em] w-[2px] translate-y-[1px] bg-black"
-              />
-            )}
-          </h1>
-          {localPreviewControlsVisible && (
-            <motion.button
-              type="button"
-              title="애니메이션 다시 보기"
-              aria-label="애니메이션 다시 보기"
-              whileTap={shouldReduceMotion ? undefined : { scale: 0.94 }}
-              onClick={() => {
-                setTicketPreviewImageVisible(false);
-                setTicketPreviewHeadingText("");
-                setTicketPreviewHeadingComplete(false);
-                setTicketPreviewMotionKey((current) => current + 1);
-              }}
-              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-[#faf8f2] text-black/55 shadow-sm transition hover:text-black"
-            >
-              <RefreshCw size={17} strokeWidth={1.8} aria-hidden />
-            </motion.button>
-          )}
-        </header>
-
-        <div className="flex flex-1 flex-col items-center justify-center py-5">
-          <AnimatePresence mode="wait">
-            {ticketPreviewHeadingComplete && !ticketPreviewCurationComplete ? (
-              <ProfileCurationOrbit
-                name={profileName}
-                mbti={profileMbti}
-                preferredActivities={[]}
-                recentInterests={[]}
-                reducedMotion={shouldReduceMotion}
-              />
-            ) : ticketPreviewHeadingComplete ? (
-              <motion.div
-                key={`initial-ticket-stage-${selectedTicket.id}-${ticketPreviewMotionKey}`}
-                initial={shouldReduceMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-                transition={{ duration: 0.16, ease: "easeOut" }}
-                className="w-full"
-              >
-                <motion.button
-                  type="button"
-                  aria-label={`${selectedTicket.title} 추천 이유 확인하기`}
-                  whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
-                  onClick={() => openInitialTicketDetail(selectedTicket)}
-                  className="relative w-full rounded-[28px] outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-4"
-                >
-                  <TicketDrawingFrame
-                    motionKey={`initial-recommendation-${selectedTicket.id}-${ticketPreviewMotionKey}`}
-                    title={selectedTicket.title}
-                    imageUrl={selectedTicket.imageUrl}
-                    imageUrls={ticketBackgroundImageUrls(selectedTicket)}
-                    date={selectedTicket.date}
-                    time={selectedTicket.time}
-                    location={`서울\n${selectedTicket.area}`}
-                    tags={selectedTicket.moodTags}
-                    remainingSeatCount={selectedTicket.remainingSeatCount}
-                    drawn
-                    imageVisible={ticketPreviewImageVisible}
-                    contentVisible={ticketPreviewImageVisible}
-                    reducedMotion={shouldReduceMotion}
-                    className="!w-full"
-                    cardClassName="!bg-transparent"
-                  />
-                  {ticketPreviewImageVisible && (
-                    <span className="absolute left-1/2 top-7 z-20 h-12 w-[calc(100%-40px)] max-w-[290px] -translate-x-1/2">
-                      <motion.span
-                        initial={
-                          shouldReduceMotion
-                            ? false
-                            : { opacity: 0, y: -10, scale: 0.97 }
-                        }
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{
-                          delay: shouldReduceMotion ? 0 : 0.72,
-                          duration: shouldReduceMotion ? 0 : 0.38,
-                          ease: [0.22, 1, 0.36, 1],
-                        }}
-                        className="flex h-full w-full items-center justify-center rounded-[18px] bg-black text-[13px] font-black tracking-[-0.025em] text-white shadow-[0_12px_28px_rgba(0,0,0,0.24)]"
-                      >
-                        추천 이유 확인하기&nbsp;&nbsp;→
-                      </motion.span>
-                    </span>
-                  )}
-                </motion.button>
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      </motion.section>
-    );
-  }
 
   if (screen === "ticket" && selectedTicket) {
     const selectedTicketClosed =
