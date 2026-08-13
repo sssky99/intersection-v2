@@ -658,6 +658,7 @@ type MeetingRecommendationProps = {
   ticketAcceptRequestTicketId?: string | null;
   onTicketAcceptRequestHandled?: () => void;
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
+  onOpenTicketTab?: () => void;
   forceInitialRecommendationPreview?: boolean;
 };
 
@@ -895,6 +896,7 @@ function MeetingDateApplicationFlow({
   ticketAcceptRequestTicketId = null,
   onTicketAcceptRequestHandled,
   onDateApplicationsChange,
+  onOpenTicketTab,
   forceInitialRecommendationPreview = false,
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
@@ -2018,7 +2020,13 @@ function MeetingDateApplicationFlow({
             </div>
             <button
               type="button"
-              onClick={() => setScreen("ticket")}
+              onClick={() => {
+                if (onOpenTicketTab) {
+                  onOpenTicketTab();
+                  return;
+                }
+                setScreen("ticket");
+              }}
               className="mt-7 h-[52px] w-full bg-black text-sm font-black text-white"
             >
               모임 확인하기

@@ -1285,6 +1285,7 @@ export function AppHome({
               }
               onTicketAcceptRequestHandled={() => setTicketAcceptRequest(null)}
               onDateApplicationsChange={setDateApplications}
+              onOpenTicketTab={() => switchTab("browse")}
               onBlindDateOpenRequestHandled={() =>
                 setBlindDateOpenRequestPending(false)
               }
