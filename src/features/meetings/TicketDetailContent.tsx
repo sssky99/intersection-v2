@@ -177,6 +177,10 @@ const dinnerBeerOtherMemberPhotoUrls = [
   "/images/meeting-matches/dinner-beer/other-members/member-6.jpg",
 ] as const;
 
+// The 2026-08-21 secret-bar program uses this fixed member photo set.
+const dinnerSecretBarMatchPhotoUrls = dinnerBeerMatchPhotoUrls;
+const dinnerSecretBarOtherMemberPhotoUrls = dinnerBeerOtherMemberPhotoUrls;
+
 const dinnerCocktailMatchPhotoUrls = [
   "/images/meeting-matches/dinner-cocktail/match-1.jpg",
   "/images/meeting-matches/dinner-cocktail/match-2.jpg",
@@ -206,6 +210,14 @@ function isDinnerBeerTicket(ticket: GatheringTicket) {
     normalizedTitle.includes("디너앤비어");
 }
 
+function isDinnerSecretBarTicket(ticket: GatheringTicket) {
+  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
+  return normalizedTitle === "디너&시크릿바" ||
+    normalizedTitle === "디너앤시크릿바" ||
+    normalizedTitle === "디너&시크릿칵테일바" ||
+    normalizedTitle === "디너앤시크릿칵테일바";
+}
+
 function isDinnerCocktailTicket(ticket: GatheringTicket) {
   const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
   return normalizedTitle.includes("디너&칵테일") ||
@@ -213,6 +225,9 @@ function isDinnerCocktailTicket(ticket: GatheringTicket) {
 }
 
 function ticketMatchPhotoUrls(ticket: GatheringTicket, fallback: string[]) {
+  if (isDinnerSecretBarTicket(ticket)) {
+    return [...dinnerSecretBarMatchPhotoUrls];
+  }
   if (isDinnerBoardgameTicket(ticket)) {
     return [...dinnerBoardgameMatchPhotoUrls];
   }
@@ -229,6 +244,9 @@ function ticketOtherMemberPhotoUrls(
   ticket: GatheringTicket,
   fallback: string[],
 ) {
+  if (isDinnerSecretBarTicket(ticket)) {
+    return [...dinnerSecretBarOtherMemberPhotoUrls];
+  }
   if (isDinnerBoardgameTicket(ticket)) {
     return [...dinnerBoardgameOtherMemberPhotoUrls];
   }
