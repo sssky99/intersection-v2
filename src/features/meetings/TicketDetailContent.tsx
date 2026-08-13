@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Clock3,
@@ -743,9 +744,11 @@ function MatchMembersSheet({
     };
   }, [noticeOpen, onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <motion.div
-      className="fixed inset-0 z-[140] flex justify-center bg-black/28"
+      className="fixed inset-0 z-[140] isolate flex justify-center bg-black/28"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -875,7 +878,7 @@ function MatchMembersSheet({
         <AnimatePresence>
           {noticeOpen && (
             <motion.div
-              className="absolute inset-0 z-20 flex items-center justify-center bg-black/[0.42] px-8 backdrop-blur-md"
+              className="absolute inset-0 z-20 flex items-center justify-center bg-[#24211d]/42 px-8 backdrop-blur-md"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -888,7 +891,7 @@ function MatchMembersSheet({
                 initial={{ scale: 0.96, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.96, opacity: 0 }}
-                className="w-full overflow-hidden rounded-[28px] border border-black/10 bg-[#f7f4ed] text-center shadow-[0_24px_80px_rgba(0,0,0,0.28)]"
+                className="w-full overflow-hidden rounded-[28px] border border-[#d0cbbc] bg-[#faf8f3] text-center text-[#24211d] shadow-[0_24px_80px_rgba(0,0,0,0.28)]"
               >
                 <p className="break-keep px-7 py-7 text-[16px] font-bold leading-7 tracking-[-0.035em] text-black">
                   매칭 멤버는 현장에서 직접 만나보세요.
@@ -905,7 +908,8 @@ function MatchMembersSheet({
           )}
         </AnimatePresence>
       </motion.section>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
