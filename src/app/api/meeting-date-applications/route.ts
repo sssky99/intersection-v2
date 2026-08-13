@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import {
   MEETING_DATE_REGION,
@@ -11,15 +11,48 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasCurrentMembershipAccess } from "@/features/membership/membershipTypes";
 import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
+import {
+  membershipPlanAmounts,
+  oneTimeMembershipCreditAmount,
+} from "@/lib/membershipPlans";
+import { membershipStoreUrls } from "@/lib/membershipStore";
 
 export const dynamic = "force-dynamic";
 
 type DateApplicationRequest = {
   dates?: unknown;
   openPayment?: unknown;
+  prepareCheckout?: unknown;
   waitlist?: unknown;
   ticketInstanceId?: unknown;
+  attribution?: unknown;
 };
+
+const landingExperimentId = "landing_ab_2026_08";
+const landingExperimentCookie = "landing_ab_v1";
+const attributionKeys = [
+  "source_type",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "referrer_host",
+  "landing_path",
+] as const;
+
+function checkoutAttribution(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const result: Record<string, string> = {};
+  for (const key of attributionKeys) {
+    const entry = source[key];
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    result[key] = trimmed.slice(0, key === "landing_path" ? 240 : 160);
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
 
 type SelectedTicketInstance = {
   id: string;
@@ -29,6 +62,12 @@ type SelectedTicketInstance = {
   event_time: string | null;
   region: string | null;
   visibility: string;
+};
+
+type SelectedTicketInvitation = {
+  id: string;
+  source_type: "service" | "admin" | "friend";
+  inviter_id: string | null;
 };
 
 type DateApplicationRow = {
@@ -181,7 +220,7 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const user = await authenticatedUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -218,6 +257,7 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as DateApplicationRequest;
   const openPayment = body.openPayment === true;
+  const prepareCheckout = body.prepareCheckout === true;
   const joinWaitlist = body.waitlist === true;
   const membershipCovered = hasCurrentMembershipAccess({
     status: applicantProfile.membership_status,
@@ -288,7 +328,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data: existingRows, error: existingError } = await admin
+    const existingRowsLookup = admin
       .from("meeting_date_applications")
       .select(
         "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
@@ -296,7 +336,37 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .in("meeting_date", dates)
       .returns<DateApplicationRow[]>();
+    const paymentHistoryLookup = prepareCheckout && !membershipCovered
+      ? admin
+          .from("payment_transactions")
+          .select("payment_kind")
+          .eq("user_id", user.id)
+          .eq("status", "completed")
+          .in("payment_kind", [
+            "membership_initial",
+            "membership_upgrade",
+            "membership_renewal",
+            "one_time",
+          ])
+          .returns<{ payment_kind: string }[]>()
+      : Promise.resolve({ data: [], error: null });
+    const ticketInvitationLookup = prepareCheckout && selectedTicket
+      ? admin
+          .from("ticket_invitations")
+          .select("id,source_type,inviter_id")
+          .eq("ticket_instance_id", selectedTicket.id)
+          .eq("user_id", user.id)
+          .maybeSingle<SelectedTicketInvitation>()
+      : Promise.resolve({ data: null, error: null });
+    const [existingRowsResult, paymentHistoryResult, ticketInvitationResult] =
+      await Promise.all([
+      existingRowsLookup,
+      paymentHistoryLookup,
+      ticketInvitationLookup,
+    ]);
+    const { data: existingRows, error: existingError } = existingRowsResult;
     if (existingError) throw existingError;
+    if (ticketInvitationResult.error) throw ticketInvitationResult.error;
 
     const existingByDate = new Map(
       (existingRows ?? []).map((row) => [row.meeting_date, row]),
@@ -392,6 +462,150 @@ export async function POST(request: Request) {
           null,
       )
       .filter((row): row is DateApplicationRow => Boolean(row));
+
+    if (prepareCheckout && !membershipCovered) {
+      if (paymentHistoryResult.error) throw paymentHistoryResult.error;
+
+      const completedKinds = new Set(
+        (paymentHistoryResult.data ?? []).map((row) => row.payment_kind),
+      );
+      const hasCompletedMembership = [
+        "membership_initial",
+        "membership_upgrade",
+        "membership_renewal",
+      ].some((kind) => completedKinds.has(kind));
+      const creditAmount =
+        !hasCompletedMembership && completedKinds.has("one_time")
+          ? oneTimeMembershipCreditAmount
+          : 0;
+      const expectedAmount = membershipPlanAmounts.one_month;
+      const [paymentIntentResult, existingParticipationResult, invitationResult] =
+        await Promise.all([
+          admin.rpc("activate_membership_payment_intent", {
+            p_user_id: user.id,
+            p_plan: "one_month",
+            p_expected_amount: expectedAmount,
+            p_credit_amount: creditAmount,
+          }),
+          selectedTicket
+            ? admin
+                .from("ticket_participations")
+                .select("id,status")
+                .eq("user_id", user.id)
+                .or(
+                  `ticket_instance_id.eq.${selectedTicket.id},ticket_id.eq.${selectedTicket.id}`,
+                )
+                .limit(1)
+                .maybeSingle<{ id: number | string; status: string }>()
+            : Promise.resolve({ data: null, error: null }),
+          selectedTicket
+            ? admin
+                .from("ticket_invitations")
+                .upsert(
+                  {
+                    ticket_instance_id: selectedTicket.id,
+                    user_id: user.id,
+                    source_type: ticketInvitationResult.data?.source_type ?? "service",
+                    inviter_id: ticketInvitationResult.data?.inviter_id ?? null,
+                    status: "accepted",
+                    responded_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "ticket_instance_id,user_id" },
+                )
+                .select("id")
+                .single<{ id: string }>()
+            : Promise.resolve({ data: null, error: null }),
+        ]);
+      const { data: paymentIntent, error: paymentIntentError } = paymentIntentResult;
+      if (
+        paymentIntentError ||
+        !Array.isArray(paymentIntent) ||
+        paymentIntent.length !== 1
+      ) {
+        throw paymentIntentError ?? new Error("payment-intent-create-failed");
+      }
+      if (existingParticipationResult.error) {
+        throw existingParticipationResult.error;
+      }
+      if (invitationResult.error) throw invitationResult.error;
+
+      const application = rows[0];
+      if (!application) throw new Error("application-create-failed");
+      const intentId = paymentIntent[0].intent_id as number | string;
+      const sellerReference = `mem_${crypto.randomUUID()}`;
+      const variantCookie = request.cookies.get(landingExperimentCookie)?.value;
+      const landingVariant =
+        variantCookie === "a" || variantCookie === "b" ? variantCookie : null;
+      const checkoutNow = new Date().toISOString();
+
+      const protectedParticipationStatuses = new Set([
+        "approved",
+        "feedback_done",
+        "completed",
+      ]);
+      const participationUpdate =
+        selectedTicket &&
+        !protectedParticipationStatuses.has(
+          existingParticipationResult.data?.status ?? "",
+        )
+          ? admin.rpc("set_ticket_participation_status", {
+              p_ticket_instance_id: selectedTicket.id,
+              p_user_id: user.id,
+              p_status: "payment_pending",
+              p_ticket_snapshot: {
+                id: selectedTicket.id,
+                templateId: selectedTicket.template_id,
+                title: selectedTicket.title,
+                date: selectedTicket.event_date,
+                time: selectedTicket.event_time,
+                area: selectedTicket.region,
+              },
+              p_invitation_id: invitationResult.data?.id ?? null,
+            })
+          : Promise.resolve({ data: null, error: null });
+
+      const [intentLinkResult, profileUpdateResult, participationUpdateResult] =
+        await Promise.all([
+        admin
+          .from("membership_payment_intents")
+          .update({
+            meeting_date_application_id: application.id,
+            seller_reference: sellerReference,
+            experiment_id: landingVariant ? landingExperimentId : null,
+            landing_variant: landingVariant,
+            acquisition_context: checkoutAttribution(body.attribution),
+            updated_at: checkoutNow,
+          })
+          .eq("id", intentId)
+          .eq("user_id", user.id),
+        admin
+          .from("profiles")
+          .update({
+            membership_status: "pending",
+            membership_plan: "one_month",
+            membership_purchase_clicked_at: checkoutNow,
+            membership_updated_at: checkoutNow,
+          })
+          .eq("user_id", user.id),
+        participationUpdate,
+      ]);
+      if (intentLinkResult.error) throw intentLinkResult.error;
+      if (profileUpdateResult.error) throw profileUpdateResult.error;
+      if (participationUpdateResult.error) throw participationUpdateResult.error;
+
+      return NextResponse.json({
+        applications: rows.map((row) => toApplication(row)),
+        duplicateDates: protectedRows.map((row) => row.meeting_date),
+        totalDepositAmount: 0,
+        paymentIntentCreated: true,
+        membershipCovered: false,
+        expectedAmount,
+        creditAmount,
+        payableAmount: expectedAmount - creditAmount,
+        checkoutUrl: `${membershipStoreUrls.one_month}?ref=${encodeURIComponent(sellerReference)}`,
+      });
+    }
 
     return NextResponse.json({
       applications: rows.map((row) => toApplication(row)),

@@ -25,6 +25,7 @@ type IntersectionTicketCardProps = {
   imageVisible?: boolean;
   overlayVisible?: boolean;
   priority?: boolean;
+  appearance?: "photo" | "minimal";
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -225,11 +226,13 @@ export function IntersectionTicketCard({
   tags,
   badgeLabel,
   badgeClassName,
+  remainingSeatCount,
   className,
   contentVisible = true,
   imageVisible = true,
   overlayVisible = true,
   priority = false,
+  appearance = "photo",
 }: IntersectionTicketCardProps) {
   const dateLabel = formatTicketDateLabel(date);
   const timeLabel = formatTicketTimeLabel(time);
@@ -243,6 +246,34 @@ export function IntersectionTicketCard({
   const dateTimeLabel = [dateLabel, timeLabel].filter(Boolean).join(" ");
   const locationLabel = inlineLocation(location);
   const metaLabel = [dateTimeLabel, locationLabel].filter(Boolean).join(" · ");
+
+  if (appearance === "minimal") {
+    return (
+      <article
+        data-testid="intersection-ticket-card"
+        className={cn(
+          "relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] border border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)] text-[#24211d] shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]",
+          className,
+        )}
+      >
+        <div className="absolute inset-x-7 top-1/2 flex -translate-y-1/2 flex-col items-center text-center">
+          <h3 className="font-ticket-latin whitespace-pre-line text-[31px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+            {title}
+          </h3>
+          {metaLabel && (
+            <p className="font-ticket-latin mt-5 text-[13px] font-medium leading-5 text-[#24211d]/75">
+              {metaLabel}
+            </p>
+          )}
+        </div>
+        {badgeLabel && (
+          <p className="absolute inset-x-6 bottom-7 text-center text-[12px] font-semibold text-[#24211d]/75">
+            {badgeLabel}
+          </p>
+        )}
+      </article>
+    );
+  }
 
   return (
     <article

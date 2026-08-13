@@ -71,10 +71,7 @@ import {
   TicketDetailContent,
   type TicketDetailSectionKey,
 } from "@/features/meetings/TicketDetailContent";
-import {
-  TicketDetailHero,
-  ticketFadeTransition,
-} from "@/features/meetings/TicketDetailHero";
+import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import {
   displayMembershipStatus,
   hasCurrentMembershipAccess,
@@ -94,7 +91,6 @@ import {
   ticketFeedbackBodyText,
   ticketStageText,
 } from "@/lib/ticketStageCopy";
-import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import {
   clearGuestTicketInteractions,
@@ -1165,7 +1161,12 @@ export function AppHome({
 
   return (
     <section
-      className="relative flex h-dvh flex-col overflow-hidden bg-[#f7f4ed] md:h-[calc(100dvh-32px)]"
+      className={cn(
+        "relative flex h-dvh flex-col overflow-hidden md:h-[calc(100dvh-32px)]",
+        activeTab === "browse" || activeTab === "recommend"
+          ? "bg-[radial-gradient(ellipse_at_50%_42%,#fffdf9_0%,rgba(255,253,249,0.48)_35%,rgba(247,244,238,0)_70%),linear-gradient(180deg,#faf8f3_0%,#f7f4ee_52%,#f2eee6_100%)]"
+          : "bg-[#f7f4ed]",
+      )}
     >
       {activeBlindDateOfferCount > 0 && (
         <button
@@ -1251,7 +1252,11 @@ export function AppHome({
         </div>
         <div
           aria-hidden={activeTab !== "recommend"}
-          className={cn(activeTab === "recommend" ? "block h-full" : "hidden")}
+          className={cn(
+            activeTab === "recommend"
+              ? "application-stone-theme block h-full"
+              : "hidden",
+          )}
         >
           {recommendationProfileReady ? (
             <MeetingRecommendation
@@ -1482,7 +1487,12 @@ export function AppHome({
         !recommendationFocusMode &&
         !ticketTabFocusMode &&
         !replayedDeclinedTicket && (
-        <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]">
+        <nav
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 z-40 px-5 pb-[calc(10px+env(safe-area-inset-bottom))]",
+            (activeTab === "browse" || activeTab === "recommend") && "pt-5",
+          )}
+        >
           <div className="pointer-events-auto relative grid grid-cols-3 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
             {tabItems.map(({ id, label, Icon }) => {
               const selected = activeTab === id;
@@ -2399,7 +2409,7 @@ function TicketListTab({
             aria-busy={loadingMore}
             exit={{ opacity: 0, y: -8 }}
             transition={ticketFadeTransition}
-            className="flex h-full min-h-full flex-col overflow-hidden bg-[#f7f4ed] pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-black"
+            className="flex h-full min-h-full flex-col overflow-hidden bg-transparent pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-[#24211d]"
           >
             {itemCount === 0 ? (
               <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-3 pt-4">
@@ -2444,7 +2454,7 @@ function TicketListTab({
                     scrollBehavior: "smooth",
                     WebkitOverflowScrolling: "touch",
                   }}
-                  className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
+                  className="-my-10 flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] py-10 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
                 >
                   {ticketItems.map((item, index) => (
                     <div
@@ -2791,7 +2801,7 @@ function DeclinedTicketReview({
               scrollBehavior: "smooth",
               WebkitOverflowScrolling: "touch",
             }}
-            className="flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] pb-2 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
+            className="-my-10 flex shrink-0 cursor-grab snap-x snap-mandatory select-none gap-4 overflow-x-auto px-[11%] py-10 scrollbar-none overscroll-x-contain touch-pan-x active:cursor-grabbing"
           >
             {tickets.map((ticket, index) => (
               <div
@@ -2829,9 +2839,9 @@ function DeclinedTicketReview({
 }
 
 const ticketPaperFrameClass =
-  "relative aspect-[1/1.618] w-full bg-[#f8f4eb] p-[10px] shadow-[0_24px_60px_rgba(39,34,24,0.09)] before:pointer-events-none before:absolute before:inset-0 before:z-20 before:border before:border-black/[0.11] after:pointer-events-none after:absolute after:inset-2 after:z-20 after:border after:border-black/[0.055]";
+  "relative aspect-[1/1.618] w-full rounded-[28px]";
 
-const ticketPaperImageClass = "!h-full !aspect-auto !rounded-none shadow-none";
+const ticketPaperImageClass = "!h-full !aspect-auto !rounded-[28px] shadow-none";
 
 function DeclinedTicketCard({
   ticket,
@@ -2860,8 +2870,7 @@ function DeclinedTicketCard({
     >
       <IntersectionTicketCard
         title={ticket.title}
-        imageUrl={ticket.imageUrl}
-        imageUrls={ticketBackgroundImageUrls(ticket)}
+        appearance="minimal"
         date={ticket.date}
         time={ticket.time}
         location={`서울\n${ticket.area}`}
@@ -2904,8 +2913,7 @@ function StoredTicketCard({
     >
       <IntersectionTicketCard
         title={ticket.title}
-        imageUrl={ticket.imageUrl}
-        imageUrls={ticketBackgroundImageUrls(ticket)}
+        appearance="minimal"
         date={ticket.date}
         time={ticket.time}
         location={`서울\n${ticket.area}`}
@@ -2954,36 +2962,54 @@ function AssignedApplicationTicketDetailView({
 
   return (
     <motion.section
-      initial={{ opacity: 0, x: 16 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -12 }}
-      transition={ticketFadeTransition}
-      className="min-h-full bg-[#f7f4ed] px-5 pb-28 pt-7 text-black"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="relative min-h-full overflow-hidden bg-[linear-gradient(180deg,#faf8f3_0%,#f7f4ee_48%,#f2eee6_100%)] px-5 pb-28 pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]"
     >
       <button
         type="button"
         onClick={onClose}
         disabled={responding}
-        className="mb-4 flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm"
+        aria-label="티켓 상세 닫기"
+        className="absolute left-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center text-[#24211d]/58 transition hover:text-[#24211d]"
       >
-        <ChevronLeft size={17} aria-hidden />
-        티켓함으로
+        <X size={18} aria-hidden />
       </button>
 
-      <div className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]">
-        <TicketDetailHero
-          ticket={ticket}
-          backgroundImageUrls={ticket.imageUrl ? undefined : []}
-        />
+      <motion.header
+        initial={{ y: "32vh" }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+        className="px-10 text-center"
+      >
+        <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+          {ticket.title}
+        </h1>
+        <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/58">
+          {[formatTicketDateLabel(ticket.date), formatTicketTimeLabel(ticket.time)]
+            .filter(Boolean)
+            .join(" · ")}
+          {ticket.area ? ` · 서울 ${ticket.area}` : ""}
+        </p>
+      </motion.header>
+
+      <motion.div
+        initial={{ opacity: 0, y: 28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+        className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 text-[#24211d]"
+      >
         <TicketDetailContent
           ticket={ticket}
           participantPhotoUrl={participantPhotoUrl}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           sections={["summary", "course"]}
-          className="px-5 pb-5"
+          className="pb-5"
         />
-      </div>
+      </motion.div>
       {responseError && (
         <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
           {responseError}
@@ -3058,8 +3084,7 @@ function AssignedApplicationTicketCard({
     >
       <IntersectionTicketCard
         title={ticket.title}
-        imageUrl={ticket.imageUrl}
-        imageUrls={ticketBackgroundImageUrls(ticket)}
+        appearance="minimal"
         date={application.meetingDate || ticket.date}
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
@@ -3101,8 +3126,7 @@ function InteractionTicketCard({
     >
       <IntersectionTicketCard
         title={ticket.title}
-        imageUrl={ticket.imageUrl}
-        imageUrls={ticketBackgroundImageUrls(ticket)}
+        appearance="minimal"
         date={ticket.date}
         time={ticket.time}
         location={`서울\n${ticket.area}`}
@@ -3237,6 +3261,7 @@ function MysteryApplicationTicketCard({
     >
       <IntersectionTicketCard
         title={<MysteryConfirmationCountdown application={application} />}
+        appearance="minimal"
         date={application.meetingDate}
         time={schedule?.time ?? application.meetingTime}
         location={application.region}
@@ -3314,7 +3339,6 @@ export function StoredTicketDetailView({
       ),
     );
   const selectedProgressStep = controlledProgressStep ?? internalProgressStep;
-  const heroImageUrl = ticketProgressHeroImageUrl(ticket, selectedProgressStep);
   const activeProgressStep = defaultProgressViewStepKey(
     ticket,
     userTicket.progressStep,
@@ -3357,41 +3381,53 @@ export function StoredTicketDetailView({
 
   return (
     <motion.section
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 8 }}
-      transition={ticketFadeTransition}
-      className="min-h-full bg-[#f7f4ed] px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-black"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="relative min-h-full overflow-hidden bg-[linear-gradient(180deg,#faf8f3_0%,#f7f4ee_48%,#f2eee6_100%)] px-5 pb-[calc(112px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]"
     >
       <button
         type="button"
         onClick={onClose}
         aria-label="티켓 상세 닫기"
-        className="absolute left-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+        className="absolute left-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center text-[#24211d]/58 transition hover:text-[#24211d]"
       >
         <X size={18} aria-hidden />
       </button>
 
-      <motion.article
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.04, duration: 0.22, ease: "easeOut" }}
-        className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]"
+      <motion.header
+        initial={{ y: "32vh" }}
+        animate={{ y: 0 }}
+        transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+        className="px-10 text-center"
       >
-        <TicketDetailHero
-          ticket={ticket}
-          badgeLabel={userTicket.statusLabel}
-          statusExpanded={statusOpen}
-          onToggleStatus={() => setStatusOpen((current) => !current)}
-          backgroundImageUrls={[heroImageUrl]}
-        />
-
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.08, duration: 0.22, ease: "easeOut" }}
-          className="bg-[#f8f4eb] px-5 pb-5 pt-1"
+        <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+          {ticket.title}
+        </h1>
+        <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/58">
+          {[formatTicketDateLabel(ticket.date), formatTicketTimeLabel(ticket.time)]
+            .filter(Boolean)
+            .join(" · ")}
+          {ticket.area ? ` · 서울 ${ticket.area}` : ""}
+        </p>
+        <button
+          type="button"
+          aria-expanded={statusOpen}
+          onClick={() => setStatusOpen((current) => !current)}
+          className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-[#d0cbbc] px-4 py-2 text-[11px] font-semibold text-[#24211d]/58 transition hover:border-[#a9a294] hover:text-[#24211d]"
         >
+          {userTicket.statusLabel}
+          {statusOpen ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
+        </button>
+      </motion.header>
+
+      <motion.article
+        initial={{ opacity: 0, y: 28 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+        className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 pt-1 text-[#24211d]"
+      >
           <TicketStatusOverview
             userTicket={userTicket}
             now={progressNow}
@@ -3407,7 +3443,6 @@ export function StoredTicketDetailView({
             previewMatchPhotoUrls={previewMatchPhotoUrls}
             previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           />
-        </motion.div>
       </motion.article>
 
     </motion.section>
@@ -3611,28 +3646,6 @@ function reachedProgressViewStepIndex(
     steps,
     defaultProgressViewStepKey(ticket, progressStep, meetingStartAt, now),
   );
-}
-
-function ticketProgressHeroImageUrl(
-  ticket: GatheringTicket,
-  stepKey: TicketProgressViewStepKey,
-) {
-  const steps = ticketProgressViewSteps(ticket);
-  const selectedStep = steps.find((step) => step.key === stepKey);
-
-  if (selectedStep?.baseStep === "in_progress") {
-    return selectedStep.courseStep?.imageUrl?.trim() || ticket.imageUrl;
-  }
-
-  if (selectedStep?.baseStep === "feedback") {
-    const lastActivityImage = steps
-      .filter((step) => step.baseStep === "in_progress")
-      .at(-1)
-      ?.courseStep?.imageUrl?.trim();
-    return lastActivityImage || ticket.imageUrl;
-  }
-
-  return ticket.imageUrl;
 }
 
 const introDetailSections: TicketDetailSectionKey[] = [

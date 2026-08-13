@@ -31,7 +31,6 @@ import {
 } from "@/features/app/PreferenceProfileTab";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
@@ -672,6 +671,7 @@ type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
   membershipCovered?: boolean;
+  checkoutUrl?: string;
   error?: string;
 };
 
@@ -1491,7 +1491,9 @@ function MeetingDateApplicationFlow({
             body: JSON.stringify({
               dates: targetDates,
               openPayment: false,
+              prepareCheckout: true,
               ticketInstanceId: ticket?.id,
+              attribution: checkoutAttributionContext(),
             }),
           },
         );
@@ -1537,29 +1539,8 @@ function MeetingDateApplicationFlow({
           return;
         }
 
-        const membershipResponse = await fetch(
-          "/api/membership/purchase-click",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              plan: "one_month",
-              ticket,
-              meetingDateApplicationId: applicationData.applications[0].id,
-              attribution: checkoutAttributionContext(),
-            }),
-          },
-        );
-        const membershipData = (await membershipResponse
-          .json()
-          .catch(() => null)) as { error?: string; checkoutUrl?: string } | null;
-        if (!membershipResponse.ok) {
-          throw new Error(
-            membershipData?.error ?? "membership-purchase-save-failed",
-          );
-        }
         membershipCheckoutUrl =
-          membershipData?.checkoutUrl ?? membershipStoreUrls.one_month;
+          applicationData.checkoutUrl ?? membershipStoreUrls.one_month;
 
         if (ticket) {
           void recordTicketInteraction(ticket, "payment_pending", {
@@ -1687,7 +1668,7 @@ function MeetingDateApplicationFlow({
         exit={shouldReduceMotion ? undefined : { opacity: 0 }}
         transition={{ duration: 0.24, ease: "easeOut" }}
         className={cn(
-          "flex min-h-full flex-col bg-[#f7f4ed] px-5 pb-[calc(94px+env(safe-area-inset-bottom))] pt-7 text-black",
+          "flex min-h-full flex-col bg-transparent px-5 pb-[calc(94px+env(safe-area-inset-bottom))] pt-7 text-[#24211d]",
           embedded ? "min-h-[calc(100dvh-16px)]" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
         )}
       >
@@ -1807,12 +1788,12 @@ function MeetingDateApplicationFlow({
     return (
       <motion.section
         key={`meeting-ticket-detail-${selectedTicket.id}`}
-        initial={{ opacity: 0, x: 16 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -12 }}
-        transition={ticketFadeTransition}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
         className={cn(
-          "min-h-full bg-[#f7f4ed] px-5 pb-[calc(88px+env(safe-area-inset-bottom))] pt-7",
+          "relative min-h-full overflow-hidden bg-transparent px-5 pb-[calc(88px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]",
           embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
         )}
       >
@@ -1826,17 +1807,33 @@ function MeetingDateApplicationFlow({
             setError(null);
           }}
           disabled={saving}
-          className="mb-4 flex h-10 items-center gap-1.5 rounded-full border border-black/10 bg-[#faf8f2] px-3 text-xs font-black text-black/60 shadow-sm transition active:scale-[0.98] disabled:opacity-40"
+          aria-label="이전으로"
+          className="absolute left-4 top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center text-[#24211d]/58 transition hover:text-[#24211d] disabled:opacity-40"
         >
-          <ChevronLeft size={17} aria-hidden />
-          이전으로
+          <X size={18} aria-hidden />
         </button>
 
-        <div className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]">
-          <TicketDetailHero
-            ticket={selectedTicket}
-            backgroundImageUrls={selectedTicket.imageUrl ? undefined : []}
-          />
+        <motion.header
+          initial={{ y: "32vh" }}
+          animate={{ y: 0 }}
+          transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+          className="px-10 text-center"
+        >
+          <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+            {selectedTicket.title}
+          </h1>
+          <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/75">
+            {meetingDateLabel(selectedTicket.date)} · {formatTicketTimeLabel(selectedTicket.time)}
+            {selectedTicket.area ? ` · 서울 ${selectedTicket.area}` : ""}
+          </p>
+        </motion.header>
+
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+          className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 text-[#24211d]"
+        >
           <TicketDetailContent
             ticket={selectedTicket}
             participantPhotoUrl={profilePhotoUrl}
@@ -1847,9 +1844,9 @@ function MeetingDateApplicationFlow({
               "recommendation",
               "course",
             ]}
-            className="px-5 pb-5"
+            className="pb-5"
           />
-        </div>
+        </motion.div>
 
         {error && (
           <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
@@ -1976,7 +1973,7 @@ function MeetingDateApplicationFlow({
   return (
     <section
       className={cn(
-        "flex min-h-full flex-col bg-[#f7f4ed] px-5 pb-8 pt-7",
+        "flex min-h-full flex-col bg-transparent px-5 pb-8 pt-7 text-[#24211d]",
         embedded ? "h-full min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
       )}
     >
@@ -2245,81 +2242,8 @@ function MeetingDateApplicationFlow({
                 <div className="w-full max-w-[340px]">
                   <motion.div
                     key={`weekly-invitation-card-${weeklyInvitationTicket.id}-${invitationDrawKey}`}
-                    className="relative flex aspect-[1/1.618] flex-col justify-center bg-[#f8f4eb] px-7 py-10 shadow-[0_24px_60px_rgba(39,34,24,0.11)]"
+                    className="relative flex aspect-[1/1.618] flex-col justify-center overflow-hidden rounded-[28px] border border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)] px-7 py-10 shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]"
                   >
-                    <svg
-                      viewBox="0 0 100 161.8"
-                      preserveAspectRatio="none"
-                      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-                      aria-hidden
-                    >
-                      <motion.rect
-                        x="0.4"
-                        y="0.4"
-                        width="99.2"
-                        height="161"
-                        fill="none"
-                        stroke="rgba(0,0,0,0.18)"
-                        strokeWidth="0.45"
-                        vectorEffect="non-scaling-stroke"
-                        initial={shouldReduceMotion ? false : { pathLength: 0, opacity: 0.25 }}
-                        animate={{ pathLength: 1, opacity: 1 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 1.05,
-                          ease: "easeInOut",
-                        }}
-                      />
-                      <motion.rect
-                        x="2.8"
-                        y="2.8"
-                        width="94.4"
-                        height="156.2"
-                        fill="none"
-                        stroke="rgba(0,0,0,0.09)"
-                        strokeWidth="0.35"
-                        vectorEffect="non-scaling-stroke"
-                        initial={shouldReduceMotion ? false : { pathLength: 0, opacity: 0 }}
-                        animate={{ pathLength: 1, opacity: 1 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 0.95,
-                          delay: shouldReduceMotion ? 0 : 0.18,
-                          ease: "easeInOut",
-                        }}
-                      />
-                      <motion.rect
-                        x="0.4"
-                        y="0.4"
-                        width="99.2"
-                        height="161"
-                        fill="none"
-                        stroke="rgba(0,0,0,0.18)"
-                        strokeWidth="0.45"
-                        vectorEffect="non-scaling-stroke"
-                        initial={shouldReduceMotion ? false : { opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 0.16,
-                          delay: shouldReduceMotion ? 0 : 1.02,
-                        }}
-                      />
-                      <motion.rect
-                        x="2.8"
-                        y="2.8"
-                        width="94.4"
-                        height="156.2"
-                        fill="none"
-                        stroke="rgba(0,0,0,0.09)"
-                        strokeWidth="0.35"
-                        vectorEffect="non-scaling-stroke"
-                        initial={shouldReduceMotion ? false : { opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 0.16,
-                          delay: shouldReduceMotion ? 0 : 1.12,
-                        }}
-                      />
-                    </svg>
-
                     <motion.div
                       className="relative flex h-full flex-col justify-center"
                       initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
