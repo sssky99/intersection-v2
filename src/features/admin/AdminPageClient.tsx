@@ -68,6 +68,8 @@ type AdminTab =
 type ViewMode = "list" | "cards" | "dropoffs";
 type MembershipFilter = "all" | "active" | "inactive";
 type CompletionFilter = "all" | "complete" | "incomplete";
+type OperatorRatingFilter = "all" | "rated" | "unrated";
+type BirthYearSort = "default" | "birth-asc" | "birth-desc";
 
 const applicantMembershipStatuses: MembershipStatus[] = [
   "none",
@@ -701,6 +703,10 @@ export function AdminPageClient({
     useState<MembershipFilter>("all");
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
+  const [operatorRatingFilter, setOperatorRatingFilter] =
+    useState<OperatorRatingFilter>("all");
+  const [birthYearSort, setBirthYearSort] =
+    useState<BirthYearSort>("default");
   const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
   const [assignmentCriteriaOpen, setAssignmentCriteriaOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<
@@ -901,7 +907,7 @@ export function AdminPageClient({
       return baseProfiles;
     }
 
-    return baseProfiles.filter((profile) => {
+    const matchingProfiles = baseProfiles.filter((profile) => {
       const matchesSearch =
         query.length === 0 ||
         `${profile.name ?? ""} ${profile.phone ?? ""} ${adminProfileArchetypeLabel(profile)}`
@@ -919,18 +925,48 @@ export function AdminPageClient({
       const matchesCompletion =
         completionFilter === "all" ||
         (completionFilter === "complete" ? completed : !completed);
+      const hasOperatorRating =
+        typeof profile.operator_rating === "number" &&
+        Number.isFinite(profile.operator_rating);
+      const matchesOperatorRating =
+        operatorRatingFilter === "all" ||
+        (operatorRatingFilter === "rated"
+          ? hasOperatorRating
+          : !hasOperatorRating);
 
       return (
         matchesSearch &&
         matchesGender &&
         matchesMembership &&
-        matchesCompletion
+        matchesCompletion &&
+        matchesOperatorRating
       );
     });
+
+    if (birthYearSort === "default") {
+      return matchingProfiles;
+    }
+
+    return matchingProfiles.toSorted((left, right) => {
+      const leftYear = Number(left.birth_year);
+      const rightYear = Number(right.birth_year);
+      const leftHasYear = Number.isFinite(leftYear) && leftYear > 0;
+      const rightHasYear = Number.isFinite(rightYear) && rightYear > 0;
+
+      if (!leftHasYear && !rightHasYear) return 0;
+      if (!leftHasYear) return 1;
+      if (!rightHasYear) return -1;
+
+      return birthYearSort === "birth-asc"
+        ? leftYear - rightYear
+        : rightYear - leftYear;
+    });
   }, [
+    birthYearSort,
     completionFilter,
     genderFilter,
     membershipFilter,
+    operatorRatingFilter,
     profiles,
     search,
     viewMode,
@@ -1122,6 +1158,8 @@ export function AdminPageClient({
                 genderFilter={genderFilter}
                 membershipFilter={membershipFilter}
                 completionFilter={completionFilter}
+                operatorRatingFilter={operatorRatingFilter}
+                birthYearSort={birthYearSort}
                 membershipSaveError={membershipSaveError}
                 savingMembershipUserId={savingMembershipUserId}
                 savingProfileUserId={savingProfileUserId}
@@ -1132,6 +1170,8 @@ export function AdminPageClient({
                 onGenderFilterChange={setGenderFilter}
                 onMembershipFilterChange={setMembershipFilter}
                 onCompletionFilterChange={setCompletionFilter}
+                onOperatorRatingFilterChange={setOperatorRatingFilter}
+                onBirthYearSortChange={setBirthYearSort}
                 onSelectProfile={setSelectedProfileId}
                 onCloseDetail={() => setSelectedProfileId(null)}
                 onReload={() => void loadProfiles(true)}
@@ -1217,6 +1257,8 @@ function ApplicantsPanel({
   genderFilter,
   membershipFilter,
   completionFilter,
+  operatorRatingFilter,
+  birthYearSort,
   membershipSaveError,
   savingMembershipUserId,
   savingProfileUserId,
@@ -1227,6 +1269,8 @@ function ApplicantsPanel({
   onGenderFilterChange,
   onMembershipFilterChange,
   onCompletionFilterChange,
+  onOperatorRatingFilterChange,
+  onBirthYearSortChange,
   onSelectProfile,
   onCloseDetail,
   onReload,
@@ -1247,6 +1291,8 @@ function ApplicantsPanel({
   genderFilter: string;
   membershipFilter: MembershipFilter;
   completionFilter: CompletionFilter;
+  operatorRatingFilter: OperatorRatingFilter;
+  birthYearSort: BirthYearSort;
   membershipSaveError: string | null;
   savingMembershipUserId: string | null;
   savingProfileUserId: string | null;
@@ -1257,6 +1303,8 @@ function ApplicantsPanel({
   onGenderFilterChange: (value: string) => void;
   onMembershipFilterChange: (value: MembershipFilter) => void;
   onCompletionFilterChange: (value: CompletionFilter) => void;
+  onOperatorRatingFilterChange: (value: OperatorRatingFilter) => void;
+  onBirthYearSortChange: (value: BirthYearSort) => void;
   onSelectProfile: (profileId: string) => void;
   onCloseDetail: () => void;
   onReload: () => void;
@@ -1356,8 +1404,8 @@ function ApplicantsPanel({
               </button>
             </div>
           ) : (
-            <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_150px_160px_170px_auto] gap-2">
-              <label className="relative block">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <label className="relative block min-w-[220px] flex-1">
                 <Search
                   size={16}
                   aria-hidden
@@ -1374,7 +1422,7 @@ function ApplicantsPanel({
               <select
                 value={genderFilter}
                 onChange={(event) => onGenderFilterChange(event.target.value)}
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+                className="h-10 w-[130px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
               >
                 <option value="all">성별 전체</option>
                 <option value="여성">여성</option>
@@ -1387,7 +1435,7 @@ function ApplicantsPanel({
                 onChange={(event) =>
                   onMembershipFilterChange(event.target.value as MembershipFilter)
                 }
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+                className="h-10 w-[145px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
               >
                 <option value="all">멤버십 전체</option>
                 <option value="active">멤버십 보유</option>
@@ -1399,11 +1447,37 @@ function ApplicantsPanel({
                 onChange={(event) =>
                   onCompletionFilterChange(event.target.value as CompletionFilter)
                 }
-                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+                className="h-10 w-[150px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
               >
                 <option value="all">완성 여부 전체</option>
                 <option value="complete">프로필 완성</option>
                 <option value="incomplete">미완성 포함</option>
+              </select>
+
+              <select
+                value={operatorRatingFilter}
+                onChange={(event) =>
+                  onOperatorRatingFilterChange(
+                    event.target.value as OperatorRatingFilter,
+                  )
+                }
+                className="h-10 w-[145px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="all">별점 전체</option>
+                <option value="rated">별점 있음</option>
+                <option value="unrated">별점 없음</option>
+              </select>
+
+              <select
+                value={birthYearSort}
+                onChange={(event) =>
+                  onBirthYearSortChange(event.target.value as BirthYearSort)
+                }
+                className="h-10 w-[155px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="default">기본 정렬</option>
+                <option value="birth-asc">출생연도 빠른 순</option>
+                <option value="birth-desc">출생연도 늦은 순</option>
               </select>
 
               <button
