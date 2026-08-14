@@ -16,7 +16,10 @@ import {
   formatTicketTimeLabel,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
-import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
+import {
+  courseStepOpenOffsetMinutes,
+  courseStepPlaceRevealOffsetMinutes,
+} from "@/lib/ticketCourse";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
@@ -446,7 +449,18 @@ function TicketCoursePanel({
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
   const selectedStep = mapStepIndex === null ? null : steps[mapStepIndex];
-  const selectedMapPlace = journeyStationMapPlace(ticket.area);
+  const selectedReleasedMapPlace =
+    selectedStep?.place?.name &&
+    typeof selectedStep.place.mapx === "number" &&
+    typeof selectedStep.place.mapy === "number"
+      ? {
+          name: selectedStep.place.name,
+          mapx: selectedStep.place.mapx,
+          mapy: selectedStep.place.mapy,
+        }
+      : null;
+  const selectedMapPlace =
+    selectedReleasedMapPlace ?? journeyStationMapPlace(ticket.area);
 
   useEffect(() => {
     if (mapStepIndex === null) return;
@@ -549,6 +563,20 @@ function TicketCoursePanel({
               ),
             )}
             place={selectedMapPlace}
+            released={Boolean(selectedReleasedMapPlace)}
+            address={selectedStep.address ?? selectedStep.place?.address ?? null}
+            link={selectedStep.place?.link ?? null}
+            revealCopy={
+              (mapStepIndex ?? 0) === 0
+                ? "정확한 장소는 모임 시작 24시간 전에 공개돼요."
+                : `${(mapStepIndex ?? 0) + 1}차 장소는 모임 당일 ${courseStepTimeLabel(
+                    ticket.time,
+                    courseStepPlaceRevealOffsetMinutes(
+                      selectedStep.openOffsetMinutes,
+                      mapStepIndex ?? 0,
+                    ),
+                  )}에 공개돼요.`
+            }
             onClose={() => setMapStepIndex(null)}
           />
         )}
@@ -681,16 +709,26 @@ function UnreleasedMapSheet({
   title,
   timeLabel,
   place,
+  released,
+  address,
+  link,
+  revealCopy,
   onClose,
 }: {
   title: string;
   timeLabel: string;
   place: { name: string; mapx: number; mapy: number } | null;
+  released: boolean;
+  address: string | null;
+  link: string | null;
+  revealCopy: string;
   onClose: () => void;
 }) {
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <motion.div
-      className="fixed inset-0 z-[120] flex justify-center bg-black/25"
+      className="fixed inset-0 z-[160] isolate flex min-h-0 justify-center overflow-hidden bg-black/25"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -704,23 +742,23 @@ function UnreleasedMapSheet({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", stiffness: 340, damping: 34 }}
-        className="relative flex h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-[#f7f4ed] shadow-[0_-24px_80px_rgba(0,0,0,0.22)]"
+        className="relative flex h-full min-h-0 w-full max-w-[430px] flex-col overflow-hidden bg-[#f7f4ed] shadow-[0_-24px_80px_rgba(0,0,0,0.22)]"
       >
         <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-black/[0.08] bg-[#f7f4ed]/95 px-5 pb-4 pt-[calc(14px+env(safe-area-inset-top))] backdrop-blur-xl">
-          <div className="min-w-0">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="지도 닫기"
+            className="mr-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/58 shadow-sm"
+          >
+            <X size={18} strokeWidth={2} aria-hidden />
+          </button>
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-bold text-black/40">{timeLabel}</p>
             <h2 className="mt-1 truncate text-[18px] font-black tracking-[-0.03em] text-black">
               {title}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="지도 닫기"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/58 shadow-sm"
-          >
-            <X size={18} strokeWidth={2} aria-hidden />
-          </button>
         </header>
 
         <div className="relative min-h-0 flex-1 overflow-hidden bg-[#e7e5df]">
@@ -728,23 +766,54 @@ function UnreleasedMapSheet({
             <NaverMapPreview
               place={place}
               heightClassName="h-full"
-              className="pointer-events-none absolute inset-[-8px] scale-[1.03] rounded-none border-0 saturate-[0.88] blur-[1.5px]"
+              className={cn(
+                "pointer-events-none absolute inset-[-8px] scale-[1.03] rounded-none border-0",
+                released
+                  ? "saturate-[0.96]"
+                  : "saturate-[0.88] blur-[1.5px]",
+              )}
             />
           )}
 
-          <div className="absolute inset-0 flex items-center justify-center px-8">
-            <div className="flex max-w-[280px] flex-col items-center rounded-[28px] border border-white/70 bg-[#f7f4ed]/92 px-7 py-7 text-center shadow-[0_22px_60px_rgba(36,45,38,0.18)] backdrop-blur-md">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-lg">
-                <LockKeyhole size={20} strokeWidth={2} aria-hidden />
-              </span>
-              <p className="mt-4 break-keep text-[14px] font-black leading-6 tracking-[-0.025em] text-black">
-                정확한 장소는 모임 시작 24시간 전에 공개돼요.
-              </p>
+          {released ? (
+            <div className="absolute inset-x-0 bottom-0 px-4 pb-[calc(18px+env(safe-area-inset-bottom))]">
+              <div className="rounded-[24px] border border-white/75 bg-[#f7f4ed]/94 px-5 py-4 shadow-[0_22px_60px_rgba(36,45,38,0.2)] backdrop-blur-xl">
+                <p className="text-[16px] font-black tracking-[-0.03em] text-black">
+                  {place?.name}
+                </p>
+                {address && (
+                  <p className="mt-1.5 break-keep text-[12px] font-semibold leading-5 text-black/55">
+                    {address}
+                  </p>
+                )}
+                {link && (
+                  <a
+                    href={link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex rounded-full bg-black px-4 py-2 text-[11px] font-black text-white"
+                  >
+                    네이버에서 보기
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center px-8">
+              <div className="flex max-w-[280px] flex-col items-center rounded-[28px] border border-white/70 bg-[#f7f4ed]/92 px-7 py-7 text-center shadow-[0_22px_60px_rgba(36,45,38,0.18)] backdrop-blur-md">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-lg">
+                  <LockKeyhole size={20} strokeWidth={2} aria-hidden />
+                </span>
+                <p className="mt-4 break-keep text-[14px] font-black leading-6 tracking-[-0.025em] text-black">
+                  {revealCopy}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </motion.section>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
@@ -848,6 +917,14 @@ function MatchMembersSheet({
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const mapPlace = journeyStationMapPlace(ticket.area);
+  const activeStep = steps[activeStepIndex];
+  const activeStepPlaceRevealTime = courseStepTimeLabel(
+    ticket.time,
+    courseStepPlaceRevealOffsetMinutes(
+      activeStep?.openOffsetMinutes,
+      activeStepIndex,
+    ),
+  );
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -992,7 +1069,7 @@ function MatchMembersSheet({
 
               <div className="border-t border-black/[0.07] px-6 py-6 text-center">
                 <p className="break-keep text-[14px] font-semibold leading-7 tracking-[-0.025em] text-black/48">
-                  내 테이블 멤버들과 함께 더 많은 교집합 멤버들을 만나요. 정확한 장소는 저녁 식사 후 공개돼요.
+                  내 테이블 멤버들과 함께 더 많은 교집합 멤버들을 만나요. {activeStepIndex + 1}차 장소는 모임 당일 {activeStepPlaceRevealTime}에 공개돼요.
                 </p>
               </div>
             </section>
