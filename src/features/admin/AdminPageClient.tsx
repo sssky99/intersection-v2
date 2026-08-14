@@ -490,9 +490,9 @@ function OperatorRatingControl({
           );
 
           return (
-            <span key={index} className="relative h-[18px] w-[18px] shrink-0">
+            <span key={index} className="relative h-[22px] w-[22px] shrink-0">
               <Star
-                size={18}
+                size={22}
                 strokeWidth={1.8}
                 aria-hidden
                 className="absolute inset-0 text-black/20"
@@ -502,7 +502,7 @@ function OperatorRatingControl({
                 style={{ width: `${fillPercent}%` }}
                 aria-hidden
               >
-                <Star size={18} strokeWidth={1.8} fill="currentColor" />
+                <Star size={22} strokeWidth={1.8} fill="currentColor" />
               </span>
               {[0.5, 1].map((step) => {
                 const rating = index + step;
