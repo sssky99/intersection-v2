@@ -17,6 +17,7 @@ import {
   ticketStageCopyKeys,
 } from "@/lib/ticketStageCopy";
 import {
+  courseStepPlaceRevealOffsetMinutes,
   displayTicketCourseSteps,
   ensureMinimumStoredTicketCourseSteps,
   legacyStoredTicketCourseSteps,
@@ -291,6 +292,8 @@ function courseStepsForTicket(
   snapshot: GatheringTicket | null | undefined,
   includePlaceDetails: boolean,
   detailTicketPlace?: GatheringTicket["place"],
+  startAt?: Date | null,
+  displayNow?: Date,
 ) {
   const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
   const courseSteps = displayTicketCourseSteps(
@@ -303,25 +306,49 @@ function courseStepsForTicket(
             imageUrl: template.image_url ?? snapshot?.imageUrl,
           }),
     ),
-    { includePlaceDetails },
+    { includePlaceDetails: true },
   );
 
   const displaySteps = courseSteps.length ? courseSteps : snapshot?.courseSteps;
 
-  if (!includePlaceDetails || !detailTicketPlace || !displaySteps?.length) {
+  if (!displaySteps?.length) {
     return displaySteps;
   }
 
-  return displaySteps.map((step, index) =>
-    step.isMainActivity || index === 0
-      ? {
-          ...step,
-          placeName: detailTicketPlace.name,
-          address: detailTicketPlace.address,
-          place: detailTicketPlace,
-        }
-      : step,
-  );
+  return displaySteps.map((step, index) => {
+    const laterPlaceOpen = Boolean(
+      index > 0 &&
+        startAt &&
+        displayNow &&
+        displayNow >=
+          addMinutes(
+            startAt,
+            courseStepPlaceRevealOffsetMinutes(step.openOffsetMinutes, index),
+          ),
+    );
+    const stepPlaceVisible =
+      includePlaceDetails && (index === 0 || laterPlaceOpen);
+
+    if (!stepPlaceVisible) {
+      return {
+        ...step,
+        placeName: null,
+        address: null,
+        place: null,
+      };
+    }
+
+    if ((step.isMainActivity || index === 0) && detailTicketPlace) {
+      return {
+        ...step,
+        placeName: detailTicketPlace.name,
+        address: detailTicketPlace.address,
+        place: detailTicketPlace,
+      };
+    }
+
+    return step;
+  });
 }
 
 function atmosphereForTicket(
@@ -470,6 +497,10 @@ function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
 
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
 function ticketRevealAt(
   startAt: Date,
   revealOverrideAt: string | null | undefined,
@@ -502,6 +533,7 @@ function toTicket(
   template: TemplateRow | null,
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
   placeVisible = false,
+  displayNow = new Date(),
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
@@ -542,6 +574,8 @@ function toTicket(
       : null;
   }
 
+  const startAt = toStartAt(date, time);
+
   const subtitle =
     template.short_description ??
     template.recommendation_copy ??
@@ -562,6 +596,8 @@ function toTicket(
     snapshot,
     placeVisible,
     detailTicketPlace,
+    startAt,
+    displayNow,
   );
   const mainCourseStep =
     courseSteps?.find((step) => step.isMainActivity) ??
@@ -1328,6 +1364,7 @@ export async function GET(request: Request) {
           template,
           instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
           placeVisible,
+          displayNow,
         );
         if (!ticket) return null;
 
