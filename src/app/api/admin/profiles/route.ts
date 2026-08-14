@@ -197,6 +197,59 @@ async function attachProfileAnswers(
   }));
 }
 
+async function attachOperatorRatings(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const ratings = new Map<
+    string,
+    { rating: number; updated_at: string | null }
+  >();
+
+  const rememberRatings = (
+    rows: Array<{ user_id: string; rating: number; updated_at: string | null }>,
+  ) => {
+    for (const row of rows) {
+      ratings.set(row.user_id, {
+        rating: Number(row.rating),
+        updated_at: row.updated_at,
+      });
+    }
+  };
+
+  if (userIds.length <= USER_ID_BATCH_SIZE) {
+    const { data, error } = await supabase
+      .from("profile_operator_ratings")
+      .select("user_id,rating,updated_at")
+      .in("user_id", userIds);
+    if (error) throw error;
+    rememberRatings(data ?? []);
+  } else {
+    for (let from = 0; ; from += PROFILE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("profile_operator_ratings")
+        .select("user_id,rating,updated_at")
+        .range(from, from + PROFILE_PAGE_SIZE - 1);
+      if (error) throw error;
+      const page = data ?? [];
+      rememberRatings(page);
+      if (page.length < PROFILE_PAGE_SIZE) break;
+    }
+  }
+
+  return profiles.map((profile) => {
+    const rating = ratings.get(profile.user_id);
+    return {
+      ...profile,
+      operator_rating: rating?.rating ?? null,
+      operator_rating_updated_at: rating?.updated_at ?? null,
+    };
+  });
+}
+
 function normalizeProfiles(profiles: AdminProfile[]) {
   return profiles.map(normalizeAdminProfile);
 }
@@ -217,6 +270,20 @@ function queryErrorMessage(
 function precisionBonusValue(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return Math.min(5, Math.max(0, Math.round(value)));
+}
+
+function operatorRatingValue(value: unknown) {
+  if (value === null) return null;
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0.5 ||
+    value > 5 ||
+    !Number.isInteger(value * 2)
+  ) {
+    return undefined;
+  }
+  return value;
 }
 
 function trimmedText(value: unknown) {
@@ -292,7 +359,14 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createAdminClient();
     const profiles = await fetchProfiles(supabase);
-    const profilesWithAnswers = await attachProfileAnswers(supabase, profiles);
+    const profilesWithRatings = await attachOperatorRatings(
+      supabase,
+      profiles,
+    );
+    const profilesWithAnswers = await attachProfileAnswers(
+      supabase,
+      profilesWithRatings,
+    );
 
     return NextResponse.json({
       profiles: normalizeProfiles(profilesWithAnswers),
@@ -321,10 +395,12 @@ export async function PATCH(request: NextRequest) {
     publicEmoji?: unknown;
     isTestParticipant?: unknown;
     matchingPrecisionBonus?: unknown;
+    operatorRating?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
   const updates: Record<string, unknown> = {};
+  let operatorRating: number | null | undefined;
 
   if (isMembershipStatus(status)) {
     updates.membership_status = status;
@@ -376,7 +452,18 @@ export async function PATCH(request: NextRequest) {
     updates.matching_precision_bonus = nextBonus;
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (body && "operatorRating" in body) {
+    const nextRating = operatorRatingValue(body.operatorRating);
+    if (nextRating === undefined) {
+      return NextResponse.json(
+        { error: "운영자 평점은 0.5부터 5까지 0.5 단위로 입력해주세요." },
+        { status: 400 },
+      );
+    }
+    operatorRating = nextRating;
+  }
+
+  if (Object.keys(updates).length === 0 && operatorRating === undefined) {
     return NextResponse.json(
       { error: "저장할 프로필 변경 사항이 없습니다." },
       { status: 400 },
@@ -405,12 +492,33 @@ export async function PATCH(request: NextRequest) {
         : null;
     if (operatorUpdate?.error) throw operatorUpdate.error;
 
-    const { error } = await supabase
-      .from("profiles")
-      .update(updates)
-      .eq("user_id", userId);
+    if (Object.keys(updates).length > 0) {
+      const { error } = await supabase
+        .from("profiles")
+        .update(updates)
+        .eq("user_id", userId);
 
-    if (error) throw error;
+      if (error) throw error;
+    }
+
+    if (operatorRating !== undefined) {
+      if (operatorRating === null) {
+        const { error } = await supabase
+          .from("profile_operator_ratings")
+          .delete()
+          .eq("user_id", userId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("profile_operator_ratings")
+          .upsert({
+            user_id: userId,
+            rating: operatorRating,
+            updated_at: new Date().toISOString(),
+          });
+        if (error) throw error;
+      }
+    }
 
     if (operatorUpdate?.data) {
       const { data: authUserData, error: authUserError } =
@@ -450,9 +558,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({
       profile: normalizeAdminProfile(
         (
-          await attachProfileAnswers(supabase, [
-            await fetchProfile(supabase, userId),
-          ])
+          await attachProfileAnswers(
+            supabase,
+            await attachOperatorRatings(supabase, [
+              await fetchProfile(supabase, userId),
+            ]),
+          )
         )[0],
       ),
     });

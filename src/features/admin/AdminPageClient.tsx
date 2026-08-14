@@ -7,6 +7,7 @@ import {
   LogOut,
   Save,
   Search,
+  Star,
   UserRound,
   X,
 } from "lucide-react";
@@ -450,6 +451,7 @@ function membershipStatusValue(profile: AdminProfile): MembershipStatus {
 type ProfileDetailPatch = {
   isTestParticipant?: boolean;
   matchingPrecisionBonus?: number;
+  operatorRating?: number | null;
 };
 
 function clampMatchingPrecisionBonus(value: number) {
@@ -461,6 +463,72 @@ function adminMatchingPrecisionBonus(profile: AdminProfile | null) {
   return typeof value === "number" && Number.isFinite(value)
     ? clampMatchingPrecisionBonus(value)
     : 0;
+}
+
+function OperatorRatingControl({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number | null;
+  disabled?: boolean;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50/70 px-2 py-1"
+      aria-label={
+        value === null ? "운영자 평점 미평가" : `운영자 평점 ${value.toFixed(1)}점`
+      }
+    >
+      <div className="flex items-center" role="group" aria-label="운영자 평점 선택">
+        {Array.from({ length: 5 }, (_, index) => {
+          const starStart = index;
+          const fillPercent = Math.max(
+            0,
+            Math.min(100, ((value ?? 0) - starStart) * 100),
+          );
+
+          return (
+            <span key={index} className="relative h-[18px] w-[18px] shrink-0">
+              <Star
+                size={18}
+                strokeWidth={1.8}
+                aria-hidden
+                className="absolute inset-0 text-black/20"
+              />
+              <span
+                className="pointer-events-none absolute inset-0 overflow-hidden text-amber-500"
+                style={{ width: `${fillPercent}%` }}
+                aria-hidden
+              >
+                <Star size={18} strokeWidth={1.8} fill="currentColor" />
+              </span>
+              {[0.5, 1].map((step) => {
+                const rating = index + step;
+                return (
+                  <button
+                    key={step}
+                    type="button"
+                    disabled={disabled}
+                    aria-label={`${rating.toFixed(1)}점${value === rating ? ", 다시 누르면 미평가" : ""}`}
+                    onClick={() => onChange(value === rating ? null : rating)}
+                    className={cn(
+                      "absolute inset-y-0 z-10 disabled:cursor-wait",
+                      step === 0.5 ? "left-0 w-1/2" : "right-0 w-1/2",
+                    )}
+                  />
+                );
+              })}
+            </span>
+          );
+        })}
+      </div>
+      <span className="min-w-6 text-right text-[11px] font-black tabular-nums text-amber-700">
+        {value === null ? "-" : value.toFixed(1)}
+      </span>
+    </div>
+  );
 }
 
 function AssignmentCriteriaDialog({ onClose }: { onClose: () => void }) {
@@ -1432,7 +1500,7 @@ function ApplicantTable({
       <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
         <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
           <tr>
-            <TableHead className="w-[120px] px-3">이름</TableHead>
+            <TableHead className="w-[170px] px-3">이름</TableHead>
             <TableHead className="w-20 px-3">성별</TableHead>
             <TableHead className="w-24">출생연도</TableHead>
             <TableHead className="w-20">MBTI</TableHead>
@@ -1455,9 +1523,9 @@ function ApplicantTable({
                   selected && "bg-accent/15",
                 )}
               >
-                <TableCell className="w-[120px] px-3">
+                <TableCell className="w-[170px] px-3">
                   <span className="block min-w-0 font-bold text-black">
-                    <AdminMemberName profile={profile} />
+                    <AdminMemberName profile={profile} showOperatorRating />
                   </span>
                 </TableCell>
                 <TableCell className="w-20 px-3">
@@ -1523,7 +1591,7 @@ function ApplicantCards({
               />
               <div className="space-y-2 p-4">
                 <h3 className="truncate text-base font-bold">
-                  <AdminMemberName profile={profile} />
+                  <AdminMemberName profile={profile} showOperatorRating />
                 </h3>
                 <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-black/55">
                   <span>{formatAgeAndBirthYear(profile)}</span>
@@ -1619,14 +1687,25 @@ function ProfileDetailPanel({
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
             applicant detail
           </p>
-          <h2 className="mt-1 text-xl font-bold">
-            <AdminMemberName profile={profile} />
-            {detailNickname && (
-              <span className="ml-1 font-bold text-black/55">
-                ({detailNickname})
-              </span>
-            )}
-          </h2>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="text-xl font-bold">
+              <AdminMemberName profile={profile} />
+              {detailNickname && (
+                <span className="ml-1 font-bold text-black/55">
+                  ({detailNickname})
+                </span>
+              )}
+            </h2>
+            <OperatorRatingControl
+              value={profile.operator_rating ?? null}
+              disabled={profileSaving}
+              onChange={(rating) =>
+                void onProfileDetailSave(profile.user_id, {
+                  operatorRating: rating,
+                })
+              }
+            />
+          </div>
         </div>
         <button
           type="button"

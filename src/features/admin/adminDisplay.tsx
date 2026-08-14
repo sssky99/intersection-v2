@@ -11,6 +11,7 @@ type NameLike = {
   membership_status?: MembershipStatus | null;
   membership_end_date?: string | null;
   public_intro_model?: string | null;
+  operator_rating?: number | null;
 };
 
 type GenderLike = {
@@ -53,7 +54,13 @@ function hasFallbackPublicIntro(profile: NameLike) {
   );
 }
 
-export function AdminMemberName({ profile }: { profile: NameLike }) {
+export function AdminMemberName({
+  profile,
+  showOperatorRating = false,
+}: {
+  profile: NameLike;
+  showOperatorRating?: boolean;
+}) {
   const active = hasActiveMembershipForDisplay(profile);
   const expired = hasExpiredMembershipForDisplay(profile);
   const fallbackIntro = hasFallbackPublicIntro(profile);
@@ -69,6 +76,20 @@ export function AdminMemberName({ profile }: { profile: NameLike }) {
           aria-label="멤버십 만료"
         >
           ♦
+        </span>
+      )}
+      {showOperatorRating && (
+        <span
+          className="shrink-0 text-xs font-black tabular-nums text-amber-600"
+          aria-label={
+            typeof profile.operator_rating === "number"
+              ? `운영자 평점 ${profile.operator_rating.toFixed(1)}점`
+              : "운영자 평점 미평가"
+          }
+        >
+          ★ {typeof profile.operator_rating === "number"
+            ? profile.operator_rating.toFixed(1)
+            : "-"}
         </span>
       )}
     </span>

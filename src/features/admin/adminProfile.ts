@@ -50,6 +50,8 @@ export type AdminProfile = {
   membership_purchase_clicked_at?: string | null;
   membership_updated_at?: string | null;
   matching_precision_bonus?: number | null;
+  operator_rating?: number | null;
+  operator_rating_updated_at?: string | null;
   score_temperature?: number | null;
   score_texture?: number | null;
   score_tone?: number | null;
@@ -84,6 +86,8 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     nickname: profile.nickname ?? null,
     is_test_participant: profile.is_test_participant ?? false,
     matching_precision_bonus: profile.matching_precision_bonus ?? 0,
+    operator_rating: profile.operator_rating ?? null,
+    operator_rating_updated_at: profile.operator_rating_updated_at ?? null,
     answers: profile.answers ?? [],
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
