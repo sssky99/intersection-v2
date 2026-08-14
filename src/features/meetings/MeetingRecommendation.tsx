@@ -1961,15 +1961,40 @@ function TicketUnlockSequence({
   ]);
   const [activeTypingPart, setActiveTypingPart] = useState(0);
   const onCompleteRef = useRef(onComplete);
+  const unlockTrackRef = useRef<HTMLDivElement>(null);
+  const draggingPointerRef = useRef<number | null>(null);
+  const unlockProgressRef = useRef(0);
+  const hasUnlockedRef = useRef(false);
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
   const unlock = () => {
-    if (phase !== "locked") return;
+    if (phase !== "locked" || hasUnlockedRef.current) return;
+    hasUnlockedRef.current = true;
+    unlockProgressRef.current = 100;
     setUnlockProgress(100);
     window.setTimeout(() => setPhase("typing"), reducedMotion ? 0 : 260);
+  };
+
+  const setProgress = (value: number) => {
+    const nextValue = Math.min(100, Math.max(0, value));
+    unlockProgressRef.current = nextValue;
+    setUnlockProgress(nextValue);
+  };
+
+  const updateProgressFromPointer = (clientX: number) => {
+    const track = unlockTrackRef.current;
+    if (!track) return unlockProgressRef.current;
+
+    const bounds = track.getBoundingClientRect();
+    const thumbCenterInset = 28;
+    const dragWidth = Math.max(1, bounds.width - thumbCenterInset * 2);
+    const nextProgress =
+      ((clientX - bounds.left - thumbCenterInset) / dragWidth) * 100;
+    setProgress(nextProgress);
+    return Math.min(100, Math.max(0, nextProgress));
   };
 
   useEffect(() => {
@@ -2072,7 +2097,62 @@ function TicketUnlockSequence({
                 </button>
               </div>
 
-              <div className="relative h-[56px] overflow-hidden border-t border-black/[0.075] bg-[#ede8de]">
+              <div
+                ref={unlockTrackRef}
+                role="slider"
+                tabIndex={0}
+                aria-label="밀어서 티켓 열기"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(unlockProgress)}
+                onPointerDown={(event) => {
+                  if (!event.isPrimary || hasUnlockedRef.current) return;
+                  event.preventDefault();
+                  draggingPointerRef.current = event.pointerId;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  updateProgressFromPointer(event.clientX);
+                }}
+                onPointerMove={(event) => {
+                  if (draggingPointerRef.current !== event.pointerId) return;
+                  event.preventDefault();
+                  updateProgressFromPointer(event.clientX);
+                }}
+                onPointerUp={(event) => {
+                  if (draggingPointerRef.current !== event.pointerId) return;
+                  event.preventDefault();
+                  const progress = updateProgressFromPointer(event.clientX);
+                  draggingPointerRef.current = null;
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  if (progress >= 82) unlock();
+                  else setProgress(0);
+                }}
+                onPointerCancel={(event) => {
+                  if (draggingPointerRef.current !== event.pointerId) return;
+                  draggingPointerRef.current = null;
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  setProgress(0);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setProgress(unlockProgressRef.current + 5);
+                  } else if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setProgress(unlockProgressRef.current - 5);
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    setProgress(0);
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    unlock();
+                  }
+                }}
+                className="relative h-[56px] touch-none select-none overflow-hidden border-t border-black/[0.075] bg-[#ede8de] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35"
+              >
                 <motion.div
                   className="absolute inset-y-0 left-0 bg-black/[0.045]"
                   animate={{ width: `${unlockProgress}%` }}
@@ -2107,34 +2187,6 @@ function TicketUnlockSequence({
                 >
                   <ChevronRight size={20} strokeWidth={1.8} aria-hidden />
                 </motion.span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={unlockProgress}
-                  aria-label="밀어서 티켓 열기"
-                  onInput={(event) => {
-                    const value = Number(event.currentTarget.value);
-                    setUnlockProgress(value);
-                    if (value >= 98) unlock();
-                  }}
-                  onChange={(event) => {
-                    const value = Number(event.currentTarget.value);
-                    setUnlockProgress(value);
-                    if (value >= 98) unlock();
-                  }}
-                  onPointerUp={(event) => {
-                    if (Number(event.currentTarget.value) >= 82) unlock();
-                    else setUnlockProgress(0);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "End") {
-                      event.preventDefault();
-                      unlock();
-                    }
-                  }}
-                  className="absolute inset-0 z-20 h-full w-full cursor-grab opacity-0 active:cursor-grabbing"
-                />
               </div>
             </div>
           </motion.div>
