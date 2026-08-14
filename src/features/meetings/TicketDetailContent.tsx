@@ -4,7 +4,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  Check,
   Clock3,
+  Copy,
   LockKeyhole,
   MapPin,
   Navigation,
@@ -34,6 +36,24 @@ export type TicketDetailSectionKey =
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("copy-failed");
 }
 
 type JourneyStationMapPlace = {
@@ -565,7 +585,6 @@ function TicketCoursePanel({
             place={selectedMapPlace}
             released={Boolean(selectedReleasedMapPlace)}
             address={selectedStep.address ?? selectedStep.place?.address ?? null}
-            link={selectedStep.place?.link ?? null}
             revealCopy={
               (mapStepIndex ?? 0) === 0
                 ? "정확한 장소는 모임 시작 24시간 전에 공개돼요."
@@ -711,7 +730,6 @@ function UnreleasedMapSheet({
   place,
   released,
   address,
-  link,
   revealCopy,
   onClose,
 }: {
@@ -720,11 +738,24 @@ function UnreleasedMapSheet({
   place: { name: string; mapx: number; mapy: number } | null;
   released: boolean;
   address: string | null;
-  link: string | null;
   revealCopy: string;
   onClose: () => void;
 }) {
+  const [addressCopied, setAddressCopied] = useState(false);
+
   if (typeof document === "undefined") return null;
+
+  const handleCopyAddress = async () => {
+    if (!address) return;
+
+    try {
+      await copyTextToClipboard(address);
+      setAddressCopied(true);
+      window.setTimeout(() => setAddressCopied(false), 1800);
+    } catch {
+      setAddressCopied(false);
+    }
+  };
 
   return createPortal(
     <motion.div
@@ -786,15 +817,19 @@ function UnreleasedMapSheet({
                     {address}
                   </p>
                 )}
-                {link && (
-                  <a
-                    href={link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-3 inline-flex rounded-full bg-black px-4 py-2 text-[11px] font-black text-white"
+                {address && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyAddress()}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-black px-4 py-2 text-[11px] font-black text-white"
                   >
-                    네이버에서 보기
-                  </a>
+                    {addressCopied ? (
+                      <Check size={13} strokeWidth={2.5} aria-hidden />
+                    ) : (
+                      <Copy size={13} strokeWidth={2.5} aria-hidden />
+                    )}
+                    {addressCopied ? "주소를 복사했어요" : "주소 복사하기"}
+                  </button>
                 )}
               </div>
             </div>
