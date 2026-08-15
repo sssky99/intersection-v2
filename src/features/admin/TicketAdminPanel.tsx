@@ -1683,6 +1683,29 @@ function OccurrenceManager({
               <p className="mt-1 truncate text-xs font-semibold text-black/42">
                 {instance.place_name || instance.region || "장소 미정"} · 참여 {instance.participant_count}명
               </p>
+              <div className="mt-3 border-t border-black/8 pt-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.08em] text-black/35">
+                  현재 그룹 멤버
+                </p>
+                {instance.participants.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {instance.participants.map((participation) => (
+                      <span
+                        key={participation.id}
+                        className="inline-flex rounded-full border border-black/8 bg-black/[0.035] px-2.5 py-1 text-[11px] font-bold text-black/70"
+                      >
+                        {participation.profile
+                          ? profileName(participation.profile)
+                          : "프로필 확인 필요"}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[11px] font-semibold text-black/32">
+                    아직 배정된 멤버가 없습니다.
+                  </p>
+                )}
+              </div>
             </button>
           ))}
         </div>
