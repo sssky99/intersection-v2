@@ -132,6 +132,7 @@ export type TicketMemberIntro = {
   id: string;
   name: string | null;
   nickname: string | null;
+  photoUrl: string | null;
   gender: Gender | null;
   emoji: string;
   publicIntro: string | null;

@@ -3236,6 +3236,17 @@ export function StoredTicketDetailView({
   onProgressStepChange?: (step: TicketProgressViewStepKey) => void;
 }) {
   const ticket = userTicket.ticket;
+  const matchedMembers = userTicket.members.filter((member) => !member.isSelf);
+  const matchedMemberPhotoUrls = matchedMembers
+    .map((member) => member.photoUrl?.trim())
+    .filter((photoUrl): photoUrl is string => Boolean(photoUrl));
+  const hasAuthoritativeMembers = userTicket.members.length > 0;
+  const displayedMatchPhotoUrls = hasAuthoritativeMembers
+    ? matchedMemberPhotoUrls
+    : previewMatchPhotoUrls;
+  const displayedMatchMemberCount = hasAuthoritativeMembers
+    ? matchedMembers.length
+    : undefined;
   const [progressNow, setProgressNow] = useState(() => new Date());
   const [statusOpen, setStatusOpen] = useState(true);
   const [internalProgressStep, setInternalProgressStep] =
@@ -3348,8 +3359,9 @@ export function StoredTicketDetailView({
             progressStep={selectedProgressStep}
             previewMode={previewMode}
             participantPhotoUrl={participantPhotoUrl}
-            previewMatchPhotoUrls={previewMatchPhotoUrls}
+            previewMatchPhotoUrls={displayedMatchPhotoUrls}
             previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+            matchMemberCount={displayedMatchMemberCount}
           />
       </motion.article>
 
@@ -4039,6 +4051,7 @@ function TicketStageContent({
   participantPhotoUrl = null,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
+  matchMemberCount,
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressViewStepKey;
@@ -4046,6 +4059,7 @@ function TicketStageContent({
   participantPhotoUrl?: string | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
+  matchMemberCount?: number;
 }) {
   const ticket = userTicket.ticket;
   const baseProgressStep = progressViewBaseStep(progressStep);
@@ -4077,6 +4091,7 @@ function TicketStageContent({
           participantPhotoUrl={participantPhotoUrl}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+          matchMemberCount={matchMemberCount}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -4106,6 +4121,7 @@ function TicketStageContent({
           participantPhotoUrl={participantPhotoUrl}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+          matchMemberCount={matchMemberCount}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -4124,6 +4140,7 @@ function TicketStageContent({
           participantPhotoUrl={participantPhotoUrl}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+          matchMemberCount={matchMemberCount}
           sections={introDetailSections}
           afterActivities={
             <PlaceSection userTicket={userTicket} revealDetails />
@@ -4139,6 +4156,7 @@ function TicketStageContent({
       participantPhotoUrl={participantPhotoUrl}
       previewMatchPhotoUrls={previewMatchPhotoUrls}
       previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+      matchMemberCount={matchMemberCount}
       sections={appliedDetailSections}
       className="mt-0"
       afterActivities={<PlaceSection userTicket={userTicket} />}
@@ -4168,7 +4186,7 @@ function PlaceSection({
   return (
     <section className="border-t border-black/8 py-5">
       <h2 className="text-[15px] font-black text-black">만나는 곳</h2>
-      <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4">
+      <div className="mt-4 rounded-2xl border border-[#d8d0c3] bg-[#f3eee5] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.42)]">
         {hasDetailedPlace ? (
           <div className="space-y-3">
             {place?.name && (
@@ -4190,7 +4208,7 @@ function PlaceSection({
                   mapx: place.mapx!,
                   mapy: place.mapy!,
                 }}
-                className="mt-3"
+                className="mt-3 border-[#cec6b8] bg-[#e7e0d4] [&>div:first-child]:brightness-[0.96] [&>div:first-child]:saturate-[0.68] [&>div:first-child]:sepia-[0.08]"
                 heightClassName="h-[172px]"
               />
             )}

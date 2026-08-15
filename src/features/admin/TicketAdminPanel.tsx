@@ -840,6 +840,7 @@ function memberFromProfile({
     id: profile?.user_id ?? `preview-${fallbackDisplayName}`,
     name: profile?.name ?? fallbackDisplayName,
     nickname: profile?.nickname ?? fallbackDisplayName,
+    photoUrl: profile?.photo_url?.trim() || null,
     gender: profileGender(profile),
     emoji: profileEmoji(profile) || fallbackEmoji?.trim() || "🙂",
     publicIntro: profile?.public_intro ?? fallbackIntro ?? null,

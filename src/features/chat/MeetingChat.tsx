@@ -240,6 +240,7 @@ export function MeetingChat({
     string | null
   >(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const loadedRoomIdRef = useRef<string | null>(null);
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId) ?? null;
   const roomKey = rooms.map((room) => room.id).join(",");
 
@@ -333,11 +334,12 @@ export function MeetingChat({
 
   const loadMessages = useCallback(
     async (roomId: string) => {
-      setRoomLoading(true);
+      const showInitialLoading = loadedRoomIdRef.current !== roomId;
+      if (showInitialLoading) setRoomLoading(true);
       const data = await fetchChatData();
       if (!data) {
         setError("대화를 불러오지 못했어요.");
-        setRoomLoading(false);
+        if (showInitialLoading) setRoomLoading(false);
         return;
       }
 
@@ -351,7 +353,8 @@ export function MeetingChat({
           (read) => read.ticket_instance_id === roomId,
         ),
       );
-      setRoomLoading(false);
+      loadedRoomIdRef.current = roomId;
+      if (showInitialLoading) setRoomLoading(false);
     },
     [fetchChatData],
   );
@@ -427,6 +430,8 @@ export function MeetingChat({
 
   useEffect(() => {
     if (!selectedRoomId) {
+      loadedRoomIdRef.current = null;
+      setRoomLoading(false);
       setMessages([]);
       setReads([]);
       return;

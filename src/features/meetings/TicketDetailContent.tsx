@@ -287,6 +287,7 @@ export function TicketDetailContent({
   participantPhotoUrl,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
+  matchMemberCount,
   className,
   sections = defaultSections,
   startWithBorder = false,
@@ -298,6 +299,7 @@ export function TicketDetailContent({
   participantPhotoUrl?: string | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
+  matchMemberCount?: number;
   className?: string;
   sections?: TicketDetailSectionKey[];
   startWithBorder?: boolean;
@@ -305,10 +307,10 @@ export function TicketDetailContent({
   afterNotice?: ReactNode;
   footer?: ReactNode;
 }) {
-  const resolvedMatchPhotoUrls = ticketMatchPhotoUrls(
-    ticket,
-    previewMatchPhotoUrls,
-  );
+  const resolvedMatchPhotoUrls =
+    matchMemberCount === undefined
+      ? ticketMatchPhotoUrls(ticket, previewMatchPhotoUrls)
+      : previewMatchPhotoUrls;
   const resolvedOtherMemberPhotoUrls = ticketOtherMemberPhotoUrls(
     ticket,
     previewOtherMemberPhotoUrls,
@@ -372,6 +374,7 @@ export function TicketDetailContent({
             participantPhotoUrl={participantPhotoUrl}
             previewMatchPhotoUrls={resolvedMatchPhotoUrls}
             previewOtherMemberPhotoUrls={resolvedOtherMemberPhotoUrls}
+            matchMemberCount={matchMemberCount}
           />
         </TicketDetailSection>
       )}
@@ -459,12 +462,14 @@ function TicketCoursePanel({
   participantPhotoUrl,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
+  matchMemberCount,
 }: {
   ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
   participantPhotoUrl?: string | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
+  matchMemberCount?: number;
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
@@ -549,6 +554,7 @@ function TicketCoursePanel({
               participantPhotoUrl={participantPhotoUrl}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+              matchMemberCount={matchMemberCount}
               onOpenMatches={() => setMatchSheetOpen(true)}
             />
           </li>
@@ -569,6 +575,7 @@ function TicketCoursePanel({
             participantPhotoUrl={participantPhotoUrl}
             matchPhotoUrls={previewMatchPhotoUrls.slice(0, 5)}
             otherMemberPhotoUrls={previewOtherMemberPhotoUrls.slice(0, 6)}
+            matchMemberCount={matchMemberCount}
             onClose={() => setMatchSheetOpen(false)}
           />
         )}
@@ -857,12 +864,14 @@ function JourneyPeoplePanel({
   participantPhotoUrl,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
+  matchMemberCount,
   onOpenMatches,
 }: {
   stepIndex: number;
   participantPhotoUrl?: string | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
+  matchMemberCount?: number;
   onOpenMatches: () => void;
 }) {
   if (stepIndex === 0) {
@@ -892,14 +901,14 @@ function JourneyPeoplePanel({
           type="button"
           onClick={onOpenMatches}
           className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left transition hover:bg-black/[0.025] active:bg-black/[0.045]"
-          aria-label="나와 잘 맞는 5명 보기"
+          aria-label={`나와 잘 맞는 ${matchMemberCount ?? 5}명 보기`}
         >
           <JourneyAvatarStack
             tone="warm"
-            photoUrls={previewMatchPhotoUrls.slice(0, 5)}
+            photoUrls={previewMatchPhotoUrls.slice(0, matchMemberCount ?? 5)}
           />
           <p className="text-[10px] font-bold text-black/44">
-            나와 <strong className="font-black text-black/72">잘 맞는 5명</strong>
+            나와 <strong className="font-black text-black/72">잘 맞는 {matchMemberCount ?? 5}명</strong>
           </p>
         </button>
       </div>
@@ -912,7 +921,7 @@ function JourneyPeoplePanel({
         <JourneyAvatarStack
           tone="warm"
           photoUrls={[
-            ...previewMatchPhotoUrls.slice(0, 5),
+            ...previewMatchPhotoUrls.slice(0, matchMemberCount ?? 5),
             ...(participantPhotoUrl ? [participantPhotoUrl] : []),
           ]}
           clearLastPhoto={Boolean(participantPhotoUrl)}
@@ -940,6 +949,7 @@ function MatchMembersSheet({
   participantPhotoUrl,
   matchPhotoUrls,
   otherMemberPhotoUrls,
+  matchMemberCount,
   onClose,
 }: {
   ticket: GatheringTicket;
@@ -947,6 +957,7 @@ function MatchMembersSheet({
   participantPhotoUrl?: string | null;
   matchPhotoUrls: string[];
   otherMemberPhotoUrls: string[];
+  matchMemberCount?: number;
   onClose: () => void;
 }) {
   const [activeStepIndex, setActiveStepIndex] = useState(0);
@@ -1055,7 +1066,7 @@ function MatchMembersSheet({
                   </span>
                   <span className="mt-2 text-[12px] font-black text-black/[0.62]">나</span>
                 </div>
-                {matchPhotoUrls.map((photoUrl, index) => (
+                {matchPhotoUrls.slice(0, matchMemberCount ?? 5).map((photoUrl, index) => (
                   <button
                     key={photoUrl}
                     type="button"

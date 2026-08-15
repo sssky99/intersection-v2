@@ -121,6 +121,7 @@ type ProfileIntroRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
+  photo_url: string | null;
   gender: string | null;
   birth_year: string | number | null;
   public_intro: string | null;
@@ -131,6 +132,7 @@ type ProfileAccessRow = {
   is_test_participant: boolean | null;
   name: string | null;
   nickname: string | null;
+  photo_url: string | null;
   gender: string | null;
   birth_year: string | number | null;
   public_intro: string | null;
@@ -1028,7 +1030,7 @@ export async function GET(request: Request) {
     const { data: profileAccess, error: profileAccessError } = await supabase
       .from("profiles")
       .select(
-        "is_test_participant,name,nickname,gender,birth_year,public_intro,public_emoji",
+        "is_test_participant,name,nickname,photo_url,gender,birth_year,public_intro,public_emoji",
       )
       .eq("user_id", user.id)
       .maybeSingle<ProfileAccessRow>();
@@ -1241,7 +1243,7 @@ export async function GET(request: Request) {
     if (profileIds.length > 0) {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,gender,birth_year,public_intro,public_emoji")
+        .select("user_id,name,nickname,photo_url,gender,birth_year,public_intro,public_emoji")
         .in("user_id", profileIds);
       if (error) throw error;
       profileRows = (data ?? []) as unknown as ProfileIntroRow[];
@@ -1372,7 +1374,7 @@ export async function GET(request: Request) {
         if (!derived.status) return null;
 
         const confirmed = confirmedStatuses.has(effectiveStatus);
-        const memberInfoVisible = confirmed && derived.progressIndex >= 1;
+        const memberInfoVisible = confirmed;
         const memberInstanceId = instanceId
           ? memberSourceByInstance.get(instanceId) ?? instanceId
           : "";
@@ -1402,6 +1404,7 @@ export async function GET(request: Request) {
             id,
             name: memberProfile?.name ?? null,
             nickname: displayNickname(memberProfile),
+            photoUrl: memberProfile?.photo_url?.trim() || null,
             gender: normalizeProfileGender(memberProfile?.gender),
             emoji: displayProfileEmoji(memberProfile, id),
             publicIntro: memberProfile?.public_intro ?? null,

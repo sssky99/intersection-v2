@@ -12,6 +12,7 @@ export function chatOperatorMember(isSelf = false): MeetingChatMember | null {
     id,
     nickname: process.env.CHAT_OPERATOR_NICKNAME?.trim() || "교집합",
     avatarText: "교집",
+    photoUrl: "/images/chat/operator-channel-logo.jpg",
     isSelf,
     role: "operator",
   };
