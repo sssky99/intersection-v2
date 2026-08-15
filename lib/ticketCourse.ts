@@ -22,6 +22,7 @@ export const TICKET_COURSE_PLACE_REVEAL_LEAD_MINUTES = 30;
 export type StoredTicketCourseStep = {
   id: string;
   order: number;
+  reservationName: string | null;
   title: string | null;
   activityType: string | null;
   imageUrl: string | null;
@@ -129,6 +130,7 @@ function normalizeStep(value: unknown, index: number): StoredTicketCourseStep {
   return {
     id: text(source.id) ?? `step-${index + 1}`,
     order: orderValue(source.order, index + 1),
+    reservationName: text(source.reservationName),
     title: text(source.title),
     activityType,
     imageUrl: text(source.imageUrl),
@@ -169,6 +171,7 @@ export function legacyStoredTicketCourseSteps(
     {
       id: "step-1",
       order: 1,
+      reservationName: null,
       title: null,
       activityType,
       imageUrl: text(source.imageUrl),
@@ -190,6 +193,7 @@ export function ensureMinimumStoredTicketCourseSteps(
     next.push({
       id: `step-${order}`,
       order,
+      reservationName: null,
       title: null,
       activityType: null,
       imageUrl: null,
@@ -239,6 +243,7 @@ export function displayTicketCourseSteps(
     .map((step, index) => ({
       id: step.id,
       order: index + 1,
+      reservationName: step.reservationName,
       title: step.title,
       activityType: step.activityType,
       imageUrl: step.imageUrl,

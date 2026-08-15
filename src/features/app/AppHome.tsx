@@ -4049,6 +4049,11 @@ function TicketStageContent({
   const baseProgressStep = progressViewBaseStep(progressStep);
   const selectedCourseStep = selectedActivityCourseStep(ticket, progressStep);
   const selectedPlace = courseStepPlace(selectedCourseStep) ?? userTicket.place;
+  const reservationName =
+    selectedCourseStep?.reservationName?.trim() ||
+    ticket.courseSteps?.[0]?.reservationName?.trim() ||
+    ticket.reservationName?.trim() ||
+    null;
   const [arrivalStatus, setArrivalStatus] = useState<TicketArrivalStatus | null>(
     userTicket.arrivalStatus,
   );
@@ -4066,6 +4071,7 @@ function TicketStageContent({
       <>
         <ArrivalStatusPanel
           userTicket={userTicket}
+          reservationName={reservationName}
           selectedArrivalStatus={arrivalStatus}
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
@@ -4097,6 +4103,7 @@ function TicketStageContent({
       <>
         <ArrivalStatusPanel
           userTicket={userTicket}
+          reservationName={reservationName}
           selectedArrivalStatus={arrivalStatus}
           onArrivalStatusChange={setArrivalStatus}
           previewMode={previewMode}
@@ -4251,11 +4258,13 @@ function arrivalCheckClass(_status: TicketArrivalStatus) {
 
 function ArrivalStatusPanel({
   userTicket,
+  reservationName,
   selectedArrivalStatus,
   onArrivalStatusChange,
   previewMode = false,
 }: {
   userTicket: UserTicket;
+  reservationName?: string | null;
   selectedArrivalStatus?: TicketArrivalStatus | null;
   onArrivalStatusChange?: (arrivalStatus: TicketArrivalStatus) => void;
   previewMode?: boolean;
@@ -4303,7 +4312,7 @@ function ArrivalStatusPanel({
 
   return (
     <section className="border-t border-black/8 py-5">
-      {userTicket.ticket.reservationName && (
+      {reservationName && (
         <div className="mb-5 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3.5">
           <div className="flex min-h-7 items-center justify-between gap-4">
             <span className="flex items-center gap-2 text-sm font-bold text-black/52">
@@ -4311,13 +4320,13 @@ function ArrivalStatusPanel({
               예약자명
             </span>
             <strong
-              aria-label={selected ? userTicket.ticket.reservationName : "도착 상태 선택 후 공개"}
+              aria-label={selected ? reservationName : "도착 상태 선택 후 공개"}
               className={cn(
                 "text-[15px] font-black tracking-[-0.02em] text-black transition-[filter,opacity] duration-300",
                 selected ? "blur-0 opacity-100" : "select-none blur-[5px] opacity-55",
               )}
             >
-              {userTicket.ticket.reservationName}
+              {reservationName}
             </strong>
           </div>
           <p className="mt-2 text-[11px] font-semibold leading-5 text-black/42">

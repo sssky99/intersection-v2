@@ -570,6 +570,10 @@ function courseStepsForTicket(
 
   return displaySteps.slice(startIndex).map((step, visibleIndex) => {
     const index = startIndex + visibleIndex;
+    const snapshotReservationName =
+      snapshot?.reservationNames?.[index]?.trim() ||
+      snapshot?.courseSteps?.[index]?.reservationName?.trim() ||
+      null;
     const rebasedOpenOffsetMinutes = Math.max(
       0,
       courseStepOpenOffsetMinutes(step.openOffsetMinutes, index) -
@@ -581,6 +585,7 @@ function courseStepsForTicket(
     const rebasedStep = {
       ...step,
       order: visibleIndex + 1,
+      reservationName: snapshotReservationName ?? step.reservationName ?? null,
       openOffsetMinutes: rebasedOpenOffsetMinutes,
       isMainActivity: visibleIndex === 0,
     };

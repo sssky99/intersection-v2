@@ -36,6 +36,7 @@ export type TicketPlace = {
 export type TicketCourseStep = {
   id: string;
   order: number;
+  reservationName?: string | null;
   title?: string | null;
   activityType?: string | null;
   imageUrl?: string | null;
@@ -54,6 +55,7 @@ export type GatheringTicket = {
   rejected?: boolean;
   applicationClosed?: boolean;
   reservationName?: string | null;
+  reservationNames?: Array<string | null>;
   title: string;
   subtitle: string;
   date: string;
