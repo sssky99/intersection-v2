@@ -26,6 +26,11 @@ function displayPhone(value: string) {
   return value.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
 }
 
+function existingUserNextPath(profile: ProfileRow) {
+  const nextPath = nextOnboardingPath(profile);
+  return nextPath.startsWith("/meetings") ? "/meetings?tab=browse" : nextPath;
+}
+
 export async function POST() {
   const supabase = await createClient();
   const {
@@ -48,7 +53,7 @@ export async function POST() {
   if (existingProfile) {
     return NextResponse.json({
       loginType: "existing",
-      nextPath: nextOnboardingPath(existingProfile),
+      nextPath: existingUserNextPath(existingProfile),
     });
   }
 
@@ -83,7 +88,7 @@ export async function POST() {
       if (!concurrentLookupError && concurrentProfile) {
         return NextResponse.json({
           loginType: "existing",
-          nextPath: nextOnboardingPath(concurrentProfile),
+          nextPath: existingUserNextPath(concurrentProfile),
         });
       }
     }

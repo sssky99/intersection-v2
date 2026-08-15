@@ -160,7 +160,7 @@ export async function GET(request: Request) {
             cleanOrigin,
           )
         : withLoginSuccessParams(
-            '/meetings?tab=recommend',
+            '/meetings?tab=browse',
             'existing',
             cleanOrigin,
           )

@@ -126,7 +126,7 @@ export function FiftyQLandingClient({
         if (data.user) {
           setIsAuthenticated(true);
           if (!data.user.phone) {
-            window.location.replace("/meetings?tab=recommend");
+            window.location.replace("/meetings?tab=browse");
             return;
           }
           const response = await fetch("/api/auth/phone/complete", { method: "POST" });
