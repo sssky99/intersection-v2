@@ -17,11 +17,12 @@ import {
   ticketStageCopyKeys,
 } from "@/lib/ticketStageCopy";
 import {
-  courseStepPlaceRevealOffsetMinutes,
+  courseStepOpenOffsetMinutes,
   displayTicketCourseSteps,
   ensureMinimumStoredTicketCourseSteps,
   legacyStoredTicketCourseSteps,
   normalizeStoredTicketCourseSteps,
+  TICKET_COURSE_PLACE_REVEAL_LEAD_MINUTES,
 } from "@/lib/ticketCourse";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
@@ -325,6 +326,37 @@ async function fetchGroupStageLocationsByInstance(
   return result;
 }
 
+async function fetchParticipationStartStageByInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  instanceIds: string[],
+) {
+  const result = new Map<string, number>();
+  if (instanceIds.length === 0) return result;
+
+  const { data, error } = await supabase
+    .from("meeting_groups")
+    .select("code,title,legacy_ticket_instance_id")
+    .in("legacy_ticket_instance_id", instanceIds)
+    .returns<
+      Array<{
+        code: string | null;
+        title: string | null;
+        legacy_ticket_instance_id: string | null;
+      }>
+    >();
+  if (error) throw error;
+
+  for (const group of data ?? []) {
+    if (!group.legacy_ticket_instance_id) continue;
+    result.set(
+      group.legacy_ticket_instance_id,
+      participationStartStageSequence(group.code, group.title),
+    );
+  }
+
+  return result;
+}
+
 async function fetchEventInstanceIdsByInstance(
   supabase: ReturnType<typeof createAdminClient>,
   instanceIds: string[],
@@ -414,15 +446,11 @@ async function fetchFeedbackGroupByInstance(
     );
     orderedGroups.forEach((group, index) => {
       if (!group.legacy_ticket_instance_id) return;
-      const groupNumberMatch = `${group.title} ${group.code}`.match(
-        /(?:^|\D)([1-6])\s*(?:그룹|$)/,
-      );
-      const groupNumber = groupNumberMatch
-        ? Number(groupNumberMatch[1])
-        : index + 1;
+      const groupNumber =
+        meetingGroupNumber(group.code, group.title) ?? index + 1;
       result.set(
         group.legacy_ticket_instance_id,
-        groupNumber <= 3 ? "123" : "456",
+        groupNumber <= 3 || groupNumber === 7 ? "123" : "456",
       );
     });
   }
@@ -481,6 +509,17 @@ function unique(values: Array<string | null | undefined>) {
   );
 }
 
+function meetingGroupNumber(code: string | null, title: string | null) {
+  const match = `${title ?? ""} ${code ?? ""}`.match(
+    /(?:^|\D)(\d+)\s*(?:그룹|$)/,
+  );
+  return match ? Number(match[1]) : null;
+}
+
+function participationStartStageSequence(code: string | null, title: string | null) {
+  return meetingGroupNumber(code, title) === 7 ? 2 : 1;
+}
+
 function textList(value: unknown) {
   return Array.isArray(value)
     ? value
@@ -498,6 +537,7 @@ function courseStepsForTicket(
   startAt?: Date | null,
   displayNow?: Date,
   groupStageLocations?: GroupStageLocationOverride[],
+  startsFromStageSequence = 1,
 ) {
   const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
   const courseSteps = displayTicketCourseSteps(
@@ -519,18 +559,39 @@ function courseStepsForTicket(
     return displaySteps;
   }
 
-  return displaySteps.map((step, index) => {
+  const startIndex = Math.max(
+    0,
+    Math.min(displaySteps.length - 1, startsFromStageSequence - 1),
+  );
+  const startOffsetMinutes = courseStepOpenOffsetMinutes(
+    displaySteps[startIndex]?.openOffsetMinutes,
+    startIndex,
+  );
+
+  return displaySteps.slice(startIndex).map((step, visibleIndex) => {
+    const index = startIndex + visibleIndex;
+    const rebasedOpenOffsetMinutes = Math.max(
+      0,
+      courseStepOpenOffsetMinutes(step.openOffsetMinutes, index) -
+        startOffsetMinutes,
+    );
     const groupLocation = groupStageLocations?.find(
       (location) => location.sequence === index + 1,
     );
+    const rebasedStep = {
+      ...step,
+      order: visibleIndex + 1,
+      openOffsetMinutes: rebasedOpenOffsetMinutes,
+      isMainActivity: visibleIndex === 0,
+    };
     const stepWithGroupLocation = groupLocation
       ? {
-          ...step,
+          ...rebasedStep,
           placeName: groupLocation.placeName,
           address: groupLocation.address,
           place: groupLocation.place,
         }
-      : step;
+      : rebasedStep;
     const laterPlaceOpen = Boolean(
       index > 0 &&
         startAt &&
@@ -538,7 +599,8 @@ function courseStepsForTicket(
         displayNow >=
           addMinutes(
             startAt,
-            courseStepPlaceRevealOffsetMinutes(step.openOffsetMinutes, index),
+            rebasedOpenOffsetMinutes -
+              TICKET_COURSE_PLACE_REVEAL_LEAD_MINUTES,
           ),
     );
     const stepPlaceVisible =
@@ -553,7 +615,7 @@ function courseStepsForTicket(
       };
     }
 
-    if ((step.isMainActivity || index === 0) && detailTicketPlace) {
+    if ((rebasedStep.isMainActivity || visibleIndex === 0) && detailTicketPlace) {
       return {
         ...stepWithGroupLocation,
         placeName: detailTicketPlace.name,
@@ -750,6 +812,7 @@ function toTicket(
   placeVisible = false,
   displayNow = new Date(),
   groupStageLocations?: GroupStageLocationOverride[],
+  startsFromStageSequence = 1,
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
@@ -791,6 +854,26 @@ function toTicket(
   }
 
   const startAt = toStartAt(date, time);
+  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const startStepIndex = Math.max(0, startsFromStageSequence - 1);
+  const participationStartOffsetMinutes = courseStepOpenOffsetMinutes(
+    storedSteps[startStepIndex]?.openOffsetMinutes ??
+      snapshot?.courseSteps?.[startStepIndex]?.openOffsetMinutes,
+    startStepIndex,
+  );
+  const participationStartAt = startAt
+    ? addMinutes(startAt, participationStartOffsetMinutes)
+    : null;
+  const participationTime = participationStartAt
+    ? new Intl.DateTimeFormat("ko-KR", {
+        timeZone: "Asia/Seoul",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+        .format(participationStartAt)
+        .replace("24:", "00:")
+    : time;
 
   const subtitle =
     template.short_description ??
@@ -812,9 +895,10 @@ function toTicket(
     snapshot,
     placeVisible,
     detailTicketPlace,
-    startAt,
+    participationStartAt,
     displayNow,
     groupStageLocations,
+    startsFromStageSequence,
   );
   const mainCourseStep =
     courseSteps?.find((step) => step.isMainActivity) ??
@@ -827,7 +911,7 @@ function toTicket(
     title: instance.title || template.title || snapshot?.title || "티켓",
     subtitle,
     date,
-    time,
+    time: participationTime,
     area,
     moodTags: template.mood_tags ?? snapshot?.moodTags ?? [],
     activityType:
@@ -843,6 +927,8 @@ function toTicket(
       snapshot?.activityType,
     imageUrl: mainCourseStep?.imageUrl ?? template.image_url ?? snapshot?.imageUrl,
     courseSteps,
+    startsFromStageSequence,
+    participationStartOffsetMinutes,
     remainingSeatCount:
       instance.remaining_seat_label_count ?? snapshot?.remainingSeatCount ?? 0,
     minimumParticipantCount:
@@ -867,7 +953,10 @@ function toTicket(
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
     reservationName: snapshot?.reservationName?.trim() || null,
-    place: detailTicketPlace,
+    place:
+      startsFromStageSequence > 1
+        ? (mainCourseStep?.place ?? null)
+        : detailTicketPlace,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),
   };
@@ -877,6 +966,11 @@ function deriveStatus(
   rawStatus: string,
   startAt: Date | null,
   now: Date,
+  timing?: {
+    activityStartAt?: Date | null;
+    feedbackOpenAt?: Date | null;
+    chatClosesAt?: Date | null;
+  },
 ): {
   status: UserTicketStatus | null;
   statusLabel: string;
@@ -894,7 +988,9 @@ function deriveStatus(
     };
   }
 
-  if (startAt && now >= startAt && !confirmedStatuses.has(rawStatus)) {
+  const activityStartAt = timing?.activityStartAt ?? startAt;
+
+  if (activityStartAt && now >= activityStartAt && !confirmedStatuses.has(rawStatus)) {
     return {
       status: null,
       statusLabel: "",
@@ -944,10 +1040,10 @@ function deriveStatus(
     };
   }
 
-  const approvalOpenAt = addHours(startAt, -24);
-  const arrivalOpenAt = addHours(startAt, -3);
-  const feedbackOpenAt = addHours(startAt, 3);
-  const chatClosesAt = addHours(startAt, 27);
+  const approvalOpenAt = addHours(activityStartAt ?? startAt, -24);
+  const arrivalOpenAt = addHours(activityStartAt ?? startAt, -3);
+  const feedbackOpenAt = timing?.feedbackOpenAt ?? addHours(startAt, 3);
+  const chatClosesAt = timing?.chatClosesAt ?? addHours(startAt, 27);
   const canSetArrival = rawStatus === "approved" && now >= arrivalOpenAt;
 
   if (now >= chatClosesAt) {
@@ -981,7 +1077,7 @@ function deriveStatus(
     };
   }
 
-  if (now >= startAt) {
+  if (now >= (activityStartAt ?? startAt)) {
     return {
       status: "in_progress",
       statusLabel: statusLabels.in_progress,
@@ -1292,6 +1388,8 @@ export async function GET(request: Request) {
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
     const groupStageLocationsByInstance =
       await fetchGroupStageLocationsByInstance(supabase, instanceIds);
+    const participationStartStageByInstance =
+      await fetchParticipationStartStageByInstance(supabase, instanceIds);
     const eventInstanceIdsByInstance =
       await fetchEventInstanceIdsByInstance(supabase, relationshipLookupInstanceIds);
     const feedbackGroupByInstance =
@@ -1595,10 +1693,25 @@ export async function GET(request: Request) {
           instanceId
             ? groupStageLocationsByInstance.get(instanceId)
             : undefined,
+          instanceId
+            ? participationStartStageByInstance.get(instanceId) ??
+              row.ticket_snapshot?.startsFromStageSequence ??
+              1
+            : row.ticket_snapshot?.startsFromStageSequence ?? 1,
         );
         if (!ticket) return null;
 
-        const derived = deriveStatus(effectiveStatus, startAt, displayNow);
+        const participationStartAt = startAt
+          ? addMinutes(
+              startAt,
+              ticket.participationStartOffsetMinutes ?? 0,
+            )
+          : null;
+        const feedbackOpenAt = startAt ? addHours(startAt, 3) : null;
+        const derived = deriveStatus(effectiveStatus, startAt, displayNow, {
+          activityStartAt: participationStartAt,
+          feedbackOpenAt,
+        });
         if (!derived.status) return null;
 
         const confirmed = confirmedStatuses.has(effectiveStatus);
@@ -1700,15 +1813,19 @@ export async function GET(request: Request) {
           statusLabel: derived.statusLabel,
           progressStep: derived.progressStep,
           progressIndex: derived.progressIndex,
-          meetingStartAt: isoOrNull(startAt),
-          arrivalOpensAt: isoOrNull(startAt ? addHours(startAt, -3) : null),
-          feedbackOpensAt: isoOrNull(startAt ? addHours(startAt, 3) : null),
+          meetingStartAt: isoOrNull(participationStartAt),
+          arrivalOpensAt: isoOrNull(
+            participationStartAt ? addHours(participationStartAt, -3) : null,
+          ),
+          feedbackOpensAt: isoOrNull(feedbackOpenAt),
           canSetArrival:
             confirmed && derived.canSetArrival,
           arrivalStatus: row.arrival_status ?? null,
           arrivalStatusUpdatedAt: row.arrival_status_updated_at ?? null,
           updatedAt: row.updated_at ?? row.created_at ?? null,
-          place: placeVisible
+          place:
+            placeVisible &&
+            ((ticket.startsFromStageSequence ?? 1) <= 1 || ticket.place)
             ? {
                 name: ticket.place?.name ?? instance?.place_name ?? null,
                 address: ticket.place?.address ?? instance?.address ?? null,

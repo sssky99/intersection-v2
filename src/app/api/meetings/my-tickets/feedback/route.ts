@@ -65,10 +65,11 @@ function addHours(date: Date, hours: number) {
 
 function feedbackVenueGroup(code: string | null, title: string | null) {
   const match = `${title ?? ""} ${code ?? ""}`.match(
-    /(?:^|\D)([1-6])\s*(?:그룹|$)/,
+    /(?:^|\D)(\d+)\s*(?:그룹|$)/,
   );
   if (!match) return null;
-  return Number(match[1]) <= 3 ? "123" : "456";
+  const groupNumber = Number(match[1]);
+  return groupNumber <= 3 || groupNumber === 7 ? "123" : "456";
 }
 
 function normalizeSelectedMemberIds(value: unknown) {
@@ -142,7 +143,7 @@ function normalizePlaceFeedback(value: unknown) {
       ? { name, rating: entry.rating }
       : null;
   };
-  const first = normalizePlaceRating(ratings.first);
+  const first = ratings.first == null ? null : normalizePlaceRating(ratings.first);
   const second = normalizePlaceRating(ratings.second);
   const dinnerMemberIds = normalizeSelectedMemberIds(raw.dinner_member_ids);
   const overallMemberIds = normalizeSelectedMemberIds(raw.overall_member_ids);
@@ -154,7 +155,6 @@ function normalizePlaceFeedback(value: unknown) {
         : undefined;
 
   if (
-    !first ||
     !second ||
     !dinnerMemberIds ||
     !overallMemberIds ||

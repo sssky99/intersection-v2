@@ -84,6 +84,8 @@ export type GatheringTicket = {
   detailGoodFor?: string[];
   detailNotice?: string;
   courseSteps?: TicketCourseStep[];
+  startsFromStageSequence?: number;
+  participationStartOffsetMinutes?: number;
   place?: TicketPlace | null;
   stageCopy?: TicketStageCopy | null;
   atmosphere?: {

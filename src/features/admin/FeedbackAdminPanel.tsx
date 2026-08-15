@@ -581,10 +581,12 @@ function MeetingFeedbackSummary({
         <div className="mt-3 space-y-2">
           {placeRatings ? (
             <>
-              <RatingRow
-                label={`첫 장소 · ${placeRatings.first?.name || "장소명 없음"}`}
-                value={placeRatings.first?.rating}
-              />
+              {placeRatings.first ? (
+                <RatingRow
+                  label={`첫 장소 · ${placeRatings.first.name || "장소명 없음"}`}
+                  value={placeRatings.first.rating}
+                />
+              ) : null}
               <RatingRow
                 label={`두 번째 장소 · ${placeRatings.second?.name || "장소명 없음"}`}
                 value={placeRatings.second?.rating}

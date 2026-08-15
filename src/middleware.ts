@@ -9,15 +9,6 @@ import {
 const landingExperimentCookie = 'landing_ab_v1';
 const landingExperimentMaxAge = 60 * 60 * 24 * 30;
 
-function landingExperimentVariant(request: NextRequest) {
-  const existing = request.cookies.get(landingExperimentCookie)?.value;
-  if (existing === 'a' || existing === 'b') return existing;
-
-  const random = new Uint8Array(1);
-  crypto.getRandomValues(random);
-  return random[0] % 2 === 0 ? 'a' : 'b';
-}
-
 function hasOAuthParams(request: NextRequest) {
   const { searchParams } = request.nextUrl;
 
@@ -110,7 +101,7 @@ export function middleware(request: NextRequest) {
   }
 
   if (nextUrl.pathname === '/') {
-    const variant = landingExperimentVariant(request);
+    const variant = 'b';
     request.cookies.set(landingExperimentCookie, variant);
     const response = NextResponse.next({ request });
     response.cookies.set(landingExperimentCookie, variant, {

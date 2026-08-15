@@ -4511,10 +4511,19 @@ function TicketFeedbackForm({
   const dateCandidateMembers = useMemo(() => {
     return otherMembers;
   }, [otherMembers]);
+  const joinsAtSecondActivity =
+    (userTicket.ticket.startsFromStageSequence ?? 1) > 1;
+  const feedbackStepOrder = joinsAtSecondActivity
+    ? ([1, 3, 4] as const)
+    : ([0, 1, 2, 3, 4] as const);
   const firstPlaceName =
-    userTicket.ticket.courseSteps?.[0]?.placeName?.trim() || "1차 장소";
+    joinsAtSecondActivity
+      ? null
+      : userTicket.ticket.courseSteps?.[0]?.placeName?.trim() || "1차 장소";
   const secondPlaceName =
-    userTicket.ticket.courseSteps?.[1]?.placeName?.trim() || "2차 장소";
+    (joinsAtSecondActivity
+      ? userTicket.ticket.courseSteps?.[0]?.placeName?.trim()
+      : userTicket.ticket.courseSteps?.[1]?.placeName?.trim()) || "2차 장소";
   const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
     firstPlace: null,
     secondPlace: null,
@@ -4527,7 +4536,7 @@ function TicketFeedbackForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [feedbackStep, setFeedbackStep] = useState(0);
+  const [feedbackStepIndex, setFeedbackStepIndex] = useState(0);
   const [feedbackStepDirection, setFeedbackStepDirection] = useState(1);
   const [feedbackPhotoPreview, setFeedbackPhotoPreview] = useState<{
     url: string;
@@ -4544,10 +4553,10 @@ function TicketFeedbackForm({
     setSubmitting(false);
     setSubmitted(false);
     setSubmitError(null);
-    setFeedbackStep(0);
+    setFeedbackStepIndex(0);
     setFeedbackStepDirection(1);
     setFeedbackPhotoPreview(null);
-  }, [otherMembers, overallMembers, userTicket.waitlistId]);
+  }, [joinsAtSecondActivity, otherMembers, overallMembers, userTicket.waitlistId]);
 
   useEffect(() => {
     if (!feedbackPhotoPreview) return;
@@ -4563,11 +4572,14 @@ function TicketFeedbackForm({
     };
   }, [feedbackPhotoPreview]);
 
-  const meetingRatingsComplete = Object.values(meetingRatings).every(
-    (value) => typeof value === "number",
-  );
+  const meetingRatingsComplete = joinsAtSecondActivity
+    ? typeof meetingRatings.secondPlace === "number"
+    : Object.values(meetingRatings).every(
+        (value) => typeof value === "number",
+      );
   const canSubmit = meetingRatingsComplete;
-  const feedbackStepCount = 5;
+  const feedbackStepCount = feedbackStepOrder.length;
+  const feedbackStep = feedbackStepOrder[feedbackStepIndex] ?? feedbackStepOrder[0];
   const canAdvanceFeedbackStep =
     (feedbackStep === 0 && (dateMemberIds.length > 0 || dateMembersUnsure)) ||
     (feedbackStep === 1 && (vibeMemberIds.length > 0 || vibeMembersUnsure)) ||
@@ -4596,10 +4608,13 @@ function TicketFeedbackForm({
     });
   };
 
-  const moveFeedbackStep = (nextStep: number) => {
-    const boundedStep = Math.max(0, Math.min(feedbackStepCount - 1, nextStep));
-    setFeedbackStepDirection(boundedStep >= feedbackStep ? 1 : -1);
-    setFeedbackStep(boundedStep);
+  const moveFeedbackStep = (nextStepIndex: number) => {
+    const boundedStep = Math.max(
+      0,
+      Math.min(feedbackStepCount - 1, nextStepIndex),
+    );
+    setFeedbackStepDirection(boundedStep >= feedbackStepIndex ? 1 : -1);
+    setFeedbackStepIndex(boundedStep);
     setSubmitError(null);
   };
 
@@ -4626,10 +4641,12 @@ function TicketFeedbackForm({
 
   const payloadMeetingFeedback = () => ({
     place_ratings: {
-      first: {
-        name: firstPlaceName,
-        rating: meetingRatings.firstPlace,
-      },
+      first: joinsAtSecondActivity
+        ? null
+        : {
+            name: firstPlaceName,
+            rating: meetingRatings.firstPlace,
+          },
       second: {
         name: secondPlaceName,
         rating: meetingRatings.secondPlace,
@@ -4919,22 +4936,22 @@ function TicketFeedbackForm({
         <button
           type="button"
           aria-label="이전 질문"
-          disabled={feedbackStep === 0 || submitting}
-          onClick={() => moveFeedbackStep(feedbackStep - 1)}
+          disabled={feedbackStepIndex === 0 || submitting}
+          onClick={() => moveFeedbackStep(feedbackStepIndex - 1)}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#d8d1c3] bg-[#eee9df] text-[#24211d] transition disabled:invisible"
         >
           <ChevronLeft size={19} aria-hidden />
         </button>
-        {feedbackStep < feedbackStepCount - 1 && canAdvanceFeedbackStep ? (
+        {feedbackStepIndex < feedbackStepCount - 1 && canAdvanceFeedbackStep ? (
           <button
             type="button"
             aria-label="다음 질문"
-            onClick={() => moveFeedbackStep(feedbackStep + 1)}
+            onClick={() => moveFeedbackStep(feedbackStepIndex + 1)}
             className="ml-auto flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#24211d] text-[#faf8f3] shadow-[0_10px_24px_rgba(36,33,29,0.18)] transition hover:bg-black"
           >
             <ArrowRight size={19} aria-hidden />
           </button>
-        ) : feedbackStep === feedbackStepCount - 1 ? (
+        ) : feedbackStepIndex === feedbackStepCount - 1 ? (
           <button
             type="button"
             disabled={submitting || !canSubmit}
