@@ -688,7 +688,7 @@ export function MeetingChat({
                           own && "justify-end",
                         )}
                       >
-                        {own && !deleted && unreadCount > 0 && (
+                        {!deleted && unreadCount > 0 && (
                           <span
                             title={`${unreadCount}명이 아직 읽지 않았어요`}
                             className="text-accent"
