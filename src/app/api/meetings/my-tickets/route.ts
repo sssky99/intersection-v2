@@ -77,6 +77,13 @@ type InstanceRow = {
   visibility: string | null;
 };
 
+type GroupStageLocationOverride = {
+  sequence: number;
+  placeName: string | null;
+  address: string | null;
+  place: GatheringTicket["place"];
+};
+
 type WaitlistRow = {
   id: number | string;
   user_id: string;
@@ -229,6 +236,94 @@ async function fetchTemplateRows(
   return (data ?? []) as unknown as TemplateRow[];
 }
 
+async function fetchGroupStageLocationsByInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  instanceIds: string[],
+) {
+  const result = new Map<string, GroupStageLocationOverride[]>();
+  if (instanceIds.length === 0) return result;
+
+  const { data: groupData, error: groupError } = await supabase
+    .from("meeting_groups")
+    .select("id,event_id,legacy_ticket_instance_id")
+    .in("legacy_ticket_instance_id", instanceIds)
+    .returns<
+      Array<{
+        id: string;
+        event_id: string;
+        legacy_ticket_instance_id: string | null;
+      }>
+    >();
+  if (groupError) throw groupError;
+
+  const groups = groupData ?? [];
+  const groupIds = unique(groups.map((group) => group.id));
+  const eventIds = unique(groups.map((group) => group.event_id));
+  if (groupIds.length === 0 || eventIds.length === 0) return result;
+
+  const { data: stageData, error: stageError } = await supabase
+    .from("meeting_event_stages")
+    .select("id,event_id,sequence")
+    .in("event_id", eventIds)
+    .eq("location_mode", "group_specific")
+    .returns<Array<{ id: string; event_id: string; sequence: number }>>();
+  if (stageError) throw stageError;
+
+  const stages = stageData ?? [];
+  const stageIds = unique(stages.map((stage) => stage.id));
+  if (stageIds.length === 0) return result;
+
+  const { data: locationData, error: locationError } = await supabase
+    .from("meeting_group_stage_locations")
+    .select("group_id,stage_id,place_name,address,place_payload")
+    .in("group_id", groupIds)
+    .in("stage_id", stageIds)
+    .returns<
+      Array<{
+        group_id: string;
+        stage_id: string;
+        place_name: string | null;
+        address: string | null;
+        place_payload: unknown;
+      }>
+    >();
+  if (locationError) throw locationError;
+
+  const stageById = new Map(stages.map((stage) => [stage.id, stage]));
+  const locationsByGroup = new Map<
+    string,
+    GroupStageLocationOverride[]
+  >();
+
+  for (const location of locationData ?? []) {
+    const stage = stageById.get(location.stage_id);
+    if (!stage) continue;
+    const place = ticketPlaceFromLegacyFields({
+      placeName: location.place_name,
+      address: location.address,
+      place: normalizeMeetingPlace(location.place_payload),
+    });
+    const current = locationsByGroup.get(location.group_id) ?? [];
+    current.push({
+      sequence: stage.sequence,
+      placeName: location.place_name,
+      address: location.address,
+      place,
+    });
+    locationsByGroup.set(location.group_id, current);
+  }
+
+  for (const group of groups) {
+    if (!group.legacy_ticket_instance_id) continue;
+    const locations = locationsByGroup.get(group.id);
+    if (locations?.length) {
+      result.set(group.legacy_ticket_instance_id, locations);
+    }
+  }
+
+  return result;
+}
+
 const hiddenStatuses = new Set([
   "cancelled",
   "not_selected",
@@ -296,6 +391,7 @@ function courseStepsForTicket(
   detailTicketPlace?: GatheringTicket["place"],
   startAt?: Date | null,
   displayNow?: Date,
+  groupStageLocations?: GroupStageLocationOverride[],
 ) {
   const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
   const courseSteps = displayTicketCourseSteps(
@@ -318,6 +414,17 @@ function courseStepsForTicket(
   }
 
   return displaySteps.map((step, index) => {
+    const groupLocation = groupStageLocations?.find(
+      (location) => location.sequence === index + 1,
+    );
+    const stepWithGroupLocation = groupLocation
+      ? {
+          ...step,
+          placeName: groupLocation.placeName,
+          address: groupLocation.address,
+          place: groupLocation.place,
+        }
+      : step;
     const laterPlaceOpen = Boolean(
       index > 0 &&
         startAt &&
@@ -333,7 +440,7 @@ function courseStepsForTicket(
 
     if (!stepPlaceVisible) {
       return {
-        ...step,
+        ...stepWithGroupLocation,
         placeName: null,
         address: null,
         place: null,
@@ -342,14 +449,14 @@ function courseStepsForTicket(
 
     if ((step.isMainActivity || index === 0) && detailTicketPlace) {
       return {
-        ...step,
+        ...stepWithGroupLocation,
         placeName: detailTicketPlace.name,
         address: detailTicketPlace.address,
         place: detailTicketPlace,
       };
     }
 
-    return step;
+    return stepWithGroupLocation;
   });
 }
 
@@ -536,6 +643,7 @@ function toTicket(
   atmosphereDefaults?: MeetingAtmosphereDefaults | null,
   placeVisible = false,
   displayNow = new Date(),
+  groupStageLocations?: GroupStageLocationOverride[],
 ): GatheringTicket | null {
   const snapshot = row.ticket_snapshot;
 
@@ -600,6 +708,7 @@ function toTicket(
     detailTicketPlace,
     startAt,
     displayNow,
+    groupStageLocations,
   );
   const mainCourseStep =
     courseSteps?.find((step) => step.isMainActivity) ??
@@ -1079,6 +1188,8 @@ export async function GET(request: Request) {
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+    const groupStageLocationsByInstance =
+      await fetchGroupStageLocationsByInstance(supabase, instanceIds);
     const userAssignedTemplateIds = new Set(
       waitlistRows
         .filter(
@@ -1368,6 +1479,9 @@ export async function GET(request: Request) {
           instanceId ? atmosphereDefaultsMap.get(instanceId) ?? null : null,
           placeVisible,
           displayNow,
+          instanceId
+            ? groupStageLocationsByInstance.get(instanceId)
+            : undefined,
         );
         if (!ticket) return null;
 
