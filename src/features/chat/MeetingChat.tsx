@@ -20,6 +20,7 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  MeetingChatMember,
   MeetingChatMessage,
   MeetingChatRead,
   MeetingChatRoom,
@@ -100,8 +101,43 @@ function memberName(room: MeetingChatRoom, userId: string) {
   return room.members.find((member) => member.id === userId)?.nickname ?? "멤버";
 }
 
-function memberAvatarText(room: MeetingChatRoom, userId: string) {
-  return room.members.find((member) => member.id === userId)?.avatarText ?? "멤버";
+function memberById(room: MeetingChatRoom, userId: string) {
+  return room.members.find((member) => member.id === userId) ?? null;
+}
+
+function ChatMemberAvatar({
+  member,
+  size = "small",
+}: {
+  member: MeetingChatMember | null;
+  size?: "small" | "large";
+}) {
+  const dimension = size === "large" ? "h-10 w-10" : "h-8 w-8";
+  const blurPhoto = Boolean(
+    member?.photoUrl && member.role === "member" && !member.isSelf,
+  );
+
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-[10px] font-black tracking-[-0.04em] text-black/60 shadow-sm",
+        dimension,
+      )}
+    >
+      {member?.photoUrl ? (
+        <span
+          className={cn(
+            "absolute inset-0 scale-[1.12] bg-cover bg-center",
+            blurPhoto && "blur-[5px]",
+          )}
+          style={{ backgroundImage: `url(${member.photoUrl})` }}
+        />
+      ) : (
+        member?.avatarText ?? "멤버"
+      )}
+    </span>
+  );
 }
 
 function latestMessageByRoom(messages: MeetingChatMessage[]) {
@@ -610,12 +646,9 @@ export function MeetingChat({
                     className={cn("flex gap-2.5", own && "justify-end")}
                   >
                     {!own && (
-                      <span
-                        aria-hidden
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black tracking-[-0.04em] text-black/60 shadow-sm"
-                      >
-                        {memberAvatarText(selectedRoom, message.sender_id)}
-                      </span>
+                      <ChatMemberAvatar
+                        member={memberById(selectedRoom, message.sender_id)}
+                      />
                     )}
                     <div className={cn("max-w-[76%]", own && "text-right")}>
                       {!own && (
@@ -818,10 +851,9 @@ export function MeetingChat({
                   {room.members.slice(0, 3).map((member) => (
                     <span
                       key={member.id}
-                      aria-hidden
-                      className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#faf8f2] bg-black/[0.045] text-[11px] font-black tracking-[-0.04em] text-black/55"
+                      className="rounded-full border-2 border-[#faf8f2]"
                     >
-                      {member.avatarText}
+                      <ChatMemberAvatar member={member} size="large" />
                     </span>
                   ))}
                 </div>

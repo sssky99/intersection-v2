@@ -2,6 +2,7 @@ export type MeetingChatMember = {
   id: string;
   nickname: string;
   avatarText: string;
+  photoUrl?: string | null;
   isSelf: boolean;
   role: "member" | "operator";
 };

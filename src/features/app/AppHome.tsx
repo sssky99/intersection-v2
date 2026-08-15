@@ -1955,11 +1955,10 @@ function TicketListTab({
           return [];
         }
 
-        const ticket = application.assignedTicketInstanceId
-          ? availableTicketById.get(application.assignedTicketInstanceId) ?? null
-          : availableTickets.find(
-              (candidate) => candidate.date === application.meetingDate,
-            ) ?? null;
+        if (!application.assignedTicketInstanceId) return [];
+
+        const ticket =
+          availableTicketById.get(application.assignedTicketInstanceId) ?? null;
 
         // Applications without a concrete program are legacy/incomplete data.
         // They must not create placeholder cards in the ticket tab.
@@ -1975,6 +1974,31 @@ function TicketListTab({
         ];
       },
     );
+    const authoritativeProgramDates = new Set(
+      [
+        ...applicationItems
+          .filter(
+            (item) =>
+              item.kind === "date-application" &&
+              Boolean(item.application.assignedTicketInstanceId),
+          )
+          .map((item) =>
+            item.kind === "date-application"
+              ? `${item.ticket.templateId}|${item.ticket.date}`
+              : "",
+          ),
+        ...tickets.map(
+          (userTicket) =>
+            `${userTicket.ticket.templateId}|${userTicket.ticket.date}`,
+        ),
+      ].filter(Boolean),
+    );
+    const visibleInteractions = interactions.filter(
+      (interaction) =>
+        !authoritativeProgramDates.has(
+          `${interaction.ticket.templateId}|${interaction.ticket.date}`,
+        ),
+    );
     const candidates: TicketListItem[] = [
       ...applicationItems,
       ...tickets.map((userTicket): TicketListItem => ({
@@ -1982,7 +2006,7 @@ function TicketListTab({
         id: `stored-ticket:${userTicket.id}`,
         userTicket,
       })),
-      ...interactions.map((interaction): TicketListItem => ({
+      ...visibleInteractions.map((interaction): TicketListItem => ({
           kind: "interaction-ticket",
           id: `interaction-ticket:${interaction.ticket.id}`,
           interaction,
@@ -2027,7 +2051,6 @@ function TicketListTab({
     });
   }, [
     availableTicketById,
-    availableTickets,
     interactions,
     dateApplications,
     tickets,

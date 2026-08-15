@@ -34,6 +34,7 @@ type ProfileRow = {
   user_id: string;
   name: string | null;
   nickname: string | null;
+  photo_url: string | null;
 };
 
 const CHAT_MEMBER_STATUSES = new Set([
@@ -177,7 +178,7 @@ export async function GET() {
     if (activeProfileIds.length > 0) {
       const { data, error: profilesError } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname")
+        .select("user_id,name,nickname,photo_url")
         .in("user_id", activeProfileIds)
         .returns<ProfileRow[]>();
       if (profilesError) throw profilesError;
@@ -224,6 +225,7 @@ export async function GET() {
             id: memberId,
             nickname,
             avatarText: avatarText(profile?.name?.trim() || nickname),
+            photoUrl: profile?.photo_url?.trim() || null,
             isSelf: memberId === user.id,
             role: "member",
           };
