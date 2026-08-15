@@ -41,6 +41,7 @@ type PublicMeetingEventRow = {
   region: string;
   capacity: number;
   confirmed_application_count: number;
+  application_closes_at: string | null;
   detail_snapshot: Record<string, unknown> | null;
 };
 
@@ -296,6 +297,13 @@ function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
   return {
     id: event.id,
     templateId: event.program_id,
+    applicationClosed:
+      Boolean(event.application_closes_at) &&
+      new Date(event.application_closes_at as string).getTime() <= Date.now(),
+    reservationName:
+      typeof snapshot.reservationName === "string"
+        ? snapshot.reservationName.trim() || null
+        : null,
     title: event.title,
     subtitle: event.short_description ?? "교집합이 준비한 실제 운영 모임",
     date: event.event_date,
@@ -512,7 +520,7 @@ export async function getAvailableMeetingTickets({
   const { data: events, error: eventsError } = await supabase
     .from("meeting_events")
     .select(
-      "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,detail_snapshot",
+      "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,application_closes_at,detail_snapshot",
     )
     .in("visibility", visibilities)
     .gte("event_date", today)

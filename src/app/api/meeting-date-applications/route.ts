@@ -72,6 +72,7 @@ type SelectedMeetingEvent = {
   starts_at: string;
   region: string;
   visibility: string;
+  application_closes_at: string | null;
 };
 
 type SelectedTicketInvitation = {
@@ -287,7 +288,7 @@ export async function POST(request: NextRequest) {
         : ["public"];
     const { data, error } = await admin
       .from("meeting_events")
-      .select("id,program_id,title,event_date,starts_at,region,visibility")
+      .select("id,program_id,title,event_date,starts_at,region,visibility,application_closes_at")
       .eq("id", requestedEventId)
       .in("visibility", allowedVisibilities)
       .maybeSingle<SelectedMeetingEvent>();
@@ -321,6 +322,15 @@ export async function POST(request: NextRequest) {
   if (selectedEvent && selectedEvent.event_date !== dates[0]) {
     return NextResponse.json(
       { error: "선택한 행사와 날짜가 일치하지 않아요." },
+      { status: 409 },
+    );
+  }
+  if (
+    selectedEvent?.application_closes_at &&
+    new Date(selectedEvent.application_closes_at).getTime() <= Date.now()
+  ) {
+    return NextResponse.json(
+      { error: "마감된 행사예요." },
       { status: 409 },
     );
   }

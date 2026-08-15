@@ -651,6 +651,7 @@ function toTicket(
       ? textList(template.detail_good_for)
       : snapshot?.detailGoodFor,
     detailNotice: template.detail_notice?.trim() || snapshot?.detailNotice,
+    reservationName: snapshot?.reservationName?.trim() || null,
     place: detailTicketPlace,
     stageCopy: mergedStageCopy(snapshot?.stageCopy, template.stage_copy),
     atmosphere: atmosphereForTicket(template, atmosphereDefaults),

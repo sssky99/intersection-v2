@@ -52,6 +52,8 @@ export type GatheringTicket = {
   invitationId?: string | null;
   invitationStatus?: "sent" | "viewed" | "accepted" | null;
   rejected?: boolean;
+  applicationClosed?: boolean;
+  reservationName?: string | null;
   title: string;
   subtitle: string;
   date: string;

@@ -1279,8 +1279,11 @@ function MeetingDateApplicationFlow({
   }
 
   if (screen === "ticket" && selectedTicket) {
+    const selectedEventClosed = selectedTicket.applicationClosed === true;
     const selectedTicketClosed =
-      selectedTicket.date < today || isMeetingDateClosed(selectedTicket.date);
+      selectedEventClosed ||
+      selectedTicket.date < today ||
+      isMeetingDateClosed(selectedTicket.date);
 
     return (
       <motion.section
@@ -1351,7 +1354,13 @@ function MeetingDateApplicationFlow({
           </p>
         )}
 
-        {typeof document !== "undefined" && createPortal(selectedTicketClosed ? (
+        {typeof document !== "undefined" && createPortal(selectedEventClosed ? (
+          <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+            <div className="flex h-[56px] w-full items-center justify-center rounded-full bg-black/12 text-[15px] font-black tracking-[-0.02em] text-black/42">
+              마감
+            </div>
+          </div>
+        ) : selectedTicketClosed ? (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
             <motion.button
               type="button"
@@ -1620,9 +1629,14 @@ function MeetingDateApplicationFlow({
                     selected={false}
                     application={applicationByDate.get(ticket.date) ?? null}
                     closed={
-                      ticket.date < today || isMeetingDateClosed(ticket.date)
+                      ticket.applicationClosed === true ||
+                      ticket.date < today ||
+                      isMeetingDateClosed(ticket.date)
                     }
-                    waitlistAvailable={isMeetingDateClosed(ticket.date)}
+                    waitlistAvailable={
+                      ticket.applicationClosed !== true &&
+                      isMeetingDateClosed(ticket.date)
+                    }
                     disabled={saving}
                     onToggle={() => openTicket(ticket)}
                     onWaitlist={() => openTicket(ticket)}
@@ -1697,9 +1711,14 @@ function MeetingDateApplicationFlow({
                   selected={false}
                   application={applicationByDate.get(ticket.date) ?? null}
                   closed={
-                    ticket.date < today || isMeetingDateClosed(ticket.date)
+                    ticket.applicationClosed === true ||
+                    ticket.date < today ||
+                    isMeetingDateClosed(ticket.date)
                   }
-                  waitlistAvailable={isMeetingDateClosed(ticket.date)}
+                  waitlistAvailable={
+                    ticket.applicationClosed !== true &&
+                    isMeetingDateClosed(ticket.date)
+                  }
                   disabled={saving}
                   onToggle={() => openTicket(ticket)}
                   onWaitlist={() => openTicket(ticket)}
@@ -1896,6 +1915,7 @@ function ProgramListOption({
   onOpen: () => void;
 }) {
   const singleLineTitle = ticket.title.replace(/\s+/g, " ").trim();
+  const applicationClosed = ticket.applicationClosed === true;
 
   return (
     <motion.button
@@ -1921,9 +1941,13 @@ function ProgramListOption({
           >
             {singleLineTitle}
           </span>
-          {application && (
+          {(applicationClosed || application) && (
             <span className="mt-2 inline-flex rounded-full bg-black/[0.055] px-2 py-0.5 text-[9px] font-black text-black/48">
-              {application.status === "payment_pending" ? "결제 대기" : "신청 완료"}
+              {applicationClosed
+                ? "마감"
+                : application?.status === "payment_pending"
+                  ? "결제 대기"
+                  : "신청 완료"}
             </span>
           )}
         </span>

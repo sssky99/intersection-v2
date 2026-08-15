@@ -3577,7 +3577,7 @@ const appliedDetailSections: TicketDetailSectionKey[] = [
   "course",
 ];
 const ticketGuidanceClass =
-  "mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-bold leading-5 text-emerald-800";
+  "mt-4 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3 text-xs font-bold leading-5 text-[#4b443b]";
 
 function progressStepIndex(step: TicketProgressStep) {
   return Math.max(
@@ -3713,7 +3713,7 @@ function TicketStatusOverview({
           <div className="py-5">
             <div className="flex w-full items-start justify-between gap-3 text-left">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
+                <p className="text-[11px] font-black uppercase tracking-[0.14em] text-black/42">
                   current status
                 </p>
                 <h2 className="mt-1 text-[17px] font-black text-black">
@@ -3725,7 +3725,7 @@ function TicketStatusOverview({
                   key={countdown.text}
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-1 shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-right text-[11px] font-black leading-4 text-emerald-800 shadow-[0_8px_18px_rgba(16,185,129,0.12)]"
+                  className="mt-1 shrink-0 rounded-full border border-[#d0cbbc] bg-[#f7f4ed] px-3 py-1.5 text-right text-[11px] font-black leading-4 text-black/62 shadow-[0_8px_18px_rgba(66,57,44,0.08)]"
                 >
                   {countdown.text}
                 </motion.p>
@@ -3854,7 +3854,7 @@ function TicketProgressSteps({
               <div
                 className={cn(
                   "h-1.5 rounded-full transition",
-                  active ? "bg-accent" : "bg-black/8",
+                  active ? "bg-[#8f877a]" : "bg-black/8",
                 )}
               />
               <div className="mt-2 flex min-h-10 flex-col items-center text-center">
@@ -3869,7 +3869,7 @@ function TicketProgressSteps({
                   className={cn(
                     "flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black transition",
                     selected
-                      ? "bg-accent text-white shadow-[0_4px_12px_rgba(126,179,199,0.42)]"
+                      ? "bg-[#24211d] text-white shadow-[0_4px_12px_rgba(36,33,29,0.22)] ring-2 ring-[#d0cbbc] ring-offset-2 ring-offset-[#f7f4ed]"
                       : active
                         ? "bg-black text-white"
                         : "bg-black/[0.05] text-black/30",
@@ -3936,7 +3936,7 @@ function ProgressWindowButton({
         "mt-[14px] flex h-6 w-6 items-center justify-center rounded-full border text-black/48 transition",
         disabled
           ? "cursor-default border-black/5 bg-black/[0.025] text-black/15"
-          : "border-black/10 bg-white shadow-sm hover:-translate-y-0.5 hover:border-accent/40 hover:text-accent",
+          : "border-black/10 bg-[#faf8f2] shadow-sm hover:-translate-y-0.5 hover:border-black/25 hover:text-black",
       )}
     >
       <Icon size={14} aria-hidden />
@@ -4359,6 +4359,23 @@ function ArrivalStatusPanel({
               {error}
             </p>
           )}
+        </div>
+      )}
+      {userTicket.ticket.reservationName && (
+        <div className="mt-4 flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3">
+          <span className="flex items-center gap-2 text-sm font-bold text-black/52">
+            <UserRound size={15} className="text-black/38" aria-hidden />
+            예약자명
+          </span>
+          <strong
+            aria-label={selected ? userTicket.ticket.reservationName : "도착 상태 선택 후 공개"}
+            className={cn(
+              "text-[15px] font-black tracking-[-0.02em] text-black transition-[filter,opacity] duration-300",
+              selected ? "blur-0 opacity-100" : "select-none blur-[5px] opacity-55",
+            )}
+          >
+            {userTicket.ticket.reservationName}
+          </strong>
         </div>
       )}
       <MemberArrivalStatusAccordion members={userTicket.members} />
