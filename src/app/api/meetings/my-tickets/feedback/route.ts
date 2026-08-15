@@ -7,15 +7,6 @@ export const dynamic = "force-dynamic";
 
 type PersonAxis = "temperature" | "texture" | "tone" | "rhythm";
 
-type NegativeFeedbackReason =
-  | "no_show"
-  | "not_my_vibe"
-  | "uncomfortable_conversation"
-  | "rude_or_aggressive"
-  | "romantic_pressure"
-  | "religion_or_sales"
-  | "other";
-
 type MemberFeedbackValue = {
   status?: "done" | "skipped";
 } & Partial<Record<PersonAxis, number | null>>;
@@ -34,7 +25,9 @@ type WaitlistRow = {
   ticket_id: string;
   ticket_template_id: string | null;
   ticket_instance_id: string | null;
-  ticket_snapshot: GatheringTicket | null;
+  ticket_snapshot:
+    | (GatheringTicket & { feedbackPreviewSourceInstanceId?: string | null })
+    | null;
 };
 
 type InstanceRow = {
@@ -50,16 +43,6 @@ type AssignmentRow = {
 
 const personAxes: PersonAxis[] = ["temperature", "texture", "tone", "rhythm"];
 const allowedPersonScores = new Set([-100, -50, 0, 50, 100]);
-const allowedNegativeFeedbackReasons = new Set<NegativeFeedbackReason>([
-  "no_show",
-  "not_my_vibe",
-  "uncomfortable_conversation",
-  "rude_or_aggressive",
-  "romantic_pressure",
-  "religion_or_sales",
-  "other",
-]);
-
 function isUuid(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -78,6 +61,14 @@ function toStartAt(date: string | null | undefined, time: string | null | undefi
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function feedbackVenueGroup(code: string | null, title: string | null) {
+  const match = `${title ?? ""} ${code ?? ""}`.match(
+    /(?:^|\D)([1-6])\s*(?:그룹|$)/,
+  );
+  if (!match) return null;
+  return Number(match[1]) <= 3 ? "123" : "456";
 }
 
 function normalizeSelectedMemberIds(value: unknown) {
@@ -133,98 +124,64 @@ function isMeetingRating(value: unknown): value is number {
   );
 }
 
-function normalizeNegativeMemberFeedback(value: unknown) {
-  if (value === null || value === undefined) return {};
-  if (typeof value !== "object" || Array.isArray(value)) return null;
-
-  const result: Record<
-    string,
-    { reasons: NegativeFeedbackReason[]; otherText: string | null }
-  > = {};
-
-  for (const [memberId, rawFeedback] of Object.entries(value)) {
-    if (!isUuid(memberId)) return null;
-    if (!rawFeedback || typeof rawFeedback !== "object" || Array.isArray(rawFeedback)) {
-      return null;
-    }
-
-    const entry = rawFeedback as Record<string, unknown>;
-    if (!Array.isArray(entry.reasons)) return null;
-
-    const reasons = Array.from(new Set(entry.reasons));
-    if (
-      reasons.length === 0 ||
-      !reasons.every(
-        (reason): reason is NegativeFeedbackReason =>
-          typeof reason === "string" &&
-          allowedNegativeFeedbackReasons.has(reason as NegativeFeedbackReason),
-      )
-    ) {
-      return null;
-    }
-
-    const otherTextRaw = entry.otherText ?? entry.other_text;
-    const otherText =
-      typeof otherTextRaw === "string" ? otherTextRaw.trim() : "";
-    if (reasons.includes("other") && !otherText) return null;
-
-    result[memberId] = {
-      reasons,
-      otherText: otherText || null,
-    };
-  }
-
-  return result;
-}
-
 function normalizePlaceFeedback(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 
   const raw = value as Record<string, unknown>;
-  const meetingRatings = raw.meeting_ratings;
-  if (
-    meetingRatings &&
-    typeof meetingRatings === "object" &&
-    !Array.isArray(meetingRatings)
-  ) {
-    const ratingRaw = meetingRatings as Record<string, unknown>;
-    const overall = ratingRaw.overall;
-    const expectationMatch = ratingRaw.expectation_match;
-    const negativeMemberFeedback = normalizeNegativeMemberFeedback(
-      raw.negative_member_feedback ?? {},
-    );
-
-    if (
-      !isMeetingRating(overall) ||
-      !isMeetingRating(expectationMatch) ||
-      !negativeMemberFeedback
-    ) {
-      return null;
-    }
-
-    return {
-      meeting_ratings: {
-        overall,
-        expectation_match: expectationMatch,
-      },
-      negative_member_feedback: negativeMemberFeedback,
-    };
+  const placeRatings = raw.place_ratings;
+  if (!placeRatings || typeof placeRatings !== "object" || Array.isArray(placeRatings)) {
+    return null;
   }
 
-  return null;
+  const ratings = placeRatings as Record<string, unknown>;
+  const normalizePlaceRating = (value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const entry = value as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    return name && name.length <= 200 && isMeetingRating(entry.rating)
+      ? { name, rating: entry.rating }
+      : null;
+  };
+  const first = normalizePlaceRating(ratings.first);
+  const second = normalizePlaceRating(ratings.second);
+  const dinnerMemberIds = normalizeSelectedMemberIds(raw.dinner_member_ids);
+  const overallMemberIds = normalizeSelectedMemberIds(raw.overall_member_ids);
+  const disruptiveMemberNote =
+    raw.disruptive_member_note === null || raw.disruptive_member_note === undefined
+      ? null
+      : typeof raw.disruptive_member_note === "string"
+        ? raw.disruptive_member_note.trim() || null
+        : undefined;
+
+  if (
+    !first ||
+    !second ||
+    !dinnerMemberIds ||
+    !overallMemberIds ||
+    overallMemberIds.length > 3 ||
+    disruptiveMemberNote === undefined ||
+    (disruptiveMemberNote?.length ?? 0) > 500
+  ) {
+    return null;
+  }
+
+  return {
+    place_ratings: { first, second },
+    dinner_member_ids: dinnerMemberIds,
+    overall_member_ids: overallMemberIds,
+    disruptive_member_note: disruptiveMemberNote,
+  };
 }
 
-function negativeFeedbackTargetIds(placeFeedback: Record<string, unknown>) {
-  const negativeMemberFeedback = placeFeedback.negative_member_feedback;
-  if (
-    !negativeMemberFeedback ||
-    typeof negativeMemberFeedback !== "object" ||
-    Array.isArray(negativeMemberFeedback)
-  ) {
-    return [];
-  }
-
-  return Object.keys(negativeMemberFeedback);
+function feedbackTargetIds(placeFeedback: Record<string, unknown>) {
+  return [
+    ...(Array.isArray(placeFeedback.dinner_member_ids)
+      ? placeFeedback.dinner_member_ids.filter(isUuid)
+      : []),
+    ...(Array.isArray(placeFeedback.overall_member_ids)
+      ? placeFeedback.overall_member_ids.filter(isUuid)
+      : []),
+  ];
 }
 
 export async function POST(request: Request) {
@@ -244,7 +201,13 @@ export async function POST(request: Request) {
   const memberFeedback = normalizeMemberFeedback(body?.memberFeedback);
   const placeFeedback = normalizePlaceFeedback(body?.placeFeedback);
 
-  if (!waitlistId || !selectedMemberIds || !memberFeedback || !placeFeedback) {
+  if (
+    !waitlistId ||
+    !selectedMemberIds ||
+    !memberFeedback ||
+    Object.keys(memberFeedback).length > 3 ||
+    !placeFeedback
+  ) {
     return NextResponse.json({ error: "Invalid feedback payload." }, { status: 400 });
   }
 
@@ -306,16 +269,59 @@ export async function POST(request: Request) {
 
     let assignedMemberIds: string[] = [];
     if (instance?.id) {
+      const feedbackPreviewSourceInstanceId =
+        row.ticket_snapshot?.feedbackPreviewSourceInstanceId?.trim() || null;
+      const feedbackReferenceInstanceId =
+        feedbackPreviewSourceInstanceId ?? instance.id;
+      let feedbackInstanceIds = [feedbackReferenceInstanceId];
+      const { data: currentGroup, error: currentGroupError } = await supabase
+        .from("meeting_groups")
+        .select("event_id,code,title")
+        .eq("legacy_ticket_instance_id", feedbackReferenceInstanceId)
+        .maybeSingle<{ event_id: string; code: string; title: string }>();
+      if (currentGroupError) throw currentGroupError;
+      if (currentGroup?.event_id) {
+        const { data: eventGroups, error: eventGroupsError } = await supabase
+          .from("meeting_groups")
+          .select("code,title,legacy_ticket_instance_id")
+          .eq("event_id", currentGroup.event_id)
+          .not("legacy_ticket_instance_id", "is", null)
+          .returns<
+            Array<{
+              code: string;
+              title: string;
+              legacy_ticket_instance_id: string | null;
+            }>
+          >();
+        if (eventGroupsError) throw eventGroupsError;
+        const viewerVenueGroup = feedbackVenueGroup(
+          currentGroup.code,
+          currentGroup.title,
+        );
+        feedbackInstanceIds = Array.from(
+          new Set(
+            (eventGroups ?? [])
+              .filter(
+                (group) =>
+                  !viewerVenueGroup ||
+                  feedbackVenueGroup(group.code, group.title) === viewerVenueGroup,
+              )
+              .map((group) => group.legacy_ticket_instance_id)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        );
+      }
+
       const { data, error } = await supabase
         .from("ticket_participations")
         .select("user_id")
-        .eq("ticket_instance_id", instance.id)
+        .in("ticket_instance_id", feedbackInstanceIds)
         .in("status", ["approved", "completed", "feedback_done"])
         .returns<AssignmentRow[]>();
       if (error) throw error;
       assignedMemberIds = (data ?? []).map((assignment) => assignment.user_id);
 
-      if (!assignedMemberIds.includes(user.id)) {
+      if (!feedbackPreviewSourceInstanceId && !assignedMemberIds.includes(user.id)) {
         return NextResponse.json(
           { error: "Feedback is only available for assigned members." },
           { status: 403 },
@@ -329,7 +335,7 @@ export async function POST(request: Request) {
     const allSubmittedMemberIds = new Set([
       ...selectedMemberIds,
       ...Object.keys(memberFeedback),
-      ...negativeFeedbackTargetIds(placeFeedback),
+      ...feedbackTargetIds(placeFeedback),
     ]);
     for (const memberId of allSubmittedMemberIds) {
       if (!allowedTargetIds.has(memberId)) {

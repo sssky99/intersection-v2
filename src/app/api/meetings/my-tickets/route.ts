@@ -93,7 +93,10 @@ type WaitlistRow = {
   meeting_date: string | null;
   status: string;
   ticket_snapshot:
-    | (GatheringTicket & { previewSourceInstanceId?: string | null })
+    | (GatheringTicket & {
+        previewSourceInstanceId?: string | null;
+        feedbackPreviewSourceInstanceId?: string | null;
+      })
     | null;
   arrival_status: TicketArrivalStatus | null;
   arrival_status_updated_at: string | null;
@@ -317,6 +320,111 @@ async function fetchGroupStageLocationsByInstance(
     if (locations?.length) {
       result.set(group.legacy_ticket_instance_id, locations);
     }
+  }
+
+  return result;
+}
+
+async function fetchEventInstanceIdsByInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  instanceIds: string[],
+) {
+  const result = new Map<string, string[]>();
+  if (instanceIds.length === 0) return result;
+
+  const { data: currentGroups, error: currentGroupsError } = await supabase
+    .from("meeting_groups")
+    .select("event_id,legacy_ticket_instance_id")
+    .in("legacy_ticket_instance_id", instanceIds)
+    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
+  if (currentGroupsError) throw currentGroupsError;
+
+  const eventIds = unique((currentGroups ?? []).map((group) => group.event_id));
+  if (eventIds.length === 0) return result;
+
+  const { data: eventGroups, error: eventGroupsError } = await supabase
+    .from("meeting_groups")
+    .select("event_id,legacy_ticket_instance_id")
+    .in("event_id", eventIds)
+    .not("legacy_ticket_instance_id", "is", null)
+    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
+  if (eventGroupsError) throw eventGroupsError;
+
+  const instanceIdsByEvent = new Map<string, string[]>();
+  for (const group of eventGroups ?? []) {
+    if (!group.legacy_ticket_instance_id) continue;
+    const current = instanceIdsByEvent.get(group.event_id) ?? [];
+    current.push(group.legacy_ticket_instance_id);
+    instanceIdsByEvent.set(group.event_id, current);
+  }
+
+  for (const group of currentGroups ?? []) {
+    if (!group.legacy_ticket_instance_id) continue;
+    result.set(
+      group.legacy_ticket_instance_id,
+      unique(instanceIdsByEvent.get(group.event_id) ?? []),
+    );
+  }
+
+  return result;
+}
+
+async function fetchFeedbackGroupByInstance(
+  supabase: ReturnType<typeof createAdminClient>,
+  instanceIds: string[],
+) {
+  const result = new Map<string, "123" | "456">();
+  if (instanceIds.length === 0) return result;
+
+  const { data: currentGroups, error: currentGroupsError } = await supabase
+    .from("meeting_groups")
+    .select("event_id,legacy_ticket_instance_id")
+    .in("legacy_ticket_instance_id", instanceIds)
+    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
+  if (currentGroupsError) throw currentGroupsError;
+
+  const eventIds = unique((currentGroups ?? []).map((group) => group.event_id));
+  if (eventIds.length === 0) return result;
+
+  const { data: eventGroups, error: eventGroupsError } = await supabase
+    .from("meeting_groups")
+    .select("event_id,code,title,legacy_ticket_instance_id")
+    .in("event_id", eventIds)
+    .not("legacy_ticket_instance_id", "is", null)
+    .returns<
+      Array<{
+        event_id: string;
+        code: string;
+        title: string;
+        legacy_ticket_instance_id: string | null;
+      }>
+    >();
+  if (eventGroupsError) throw eventGroupsError;
+
+  const groupsByEvent = new Map<string, typeof eventGroups>();
+  for (const group of eventGroups ?? []) {
+    const current = groupsByEvent.get(group.event_id) ?? [];
+    current.push(group);
+    groupsByEvent.set(group.event_id, current);
+  }
+
+  for (const groups of groupsByEvent.values()) {
+    const orderedGroups = [...groups].sort((a, b) =>
+      `${a.title} ${a.code}`.localeCompare(`${b.title} ${b.code}`, "ko"),
+    );
+    orderedGroups.forEach((group, index) => {
+      if (!group.legacy_ticket_instance_id) return;
+      const groupNumberMatch = `${group.title} ${group.code}`.match(
+        /(?:^|\D)([1-6])\s*(?:그룹|$)/,
+      );
+      const groupNumber = groupNumberMatch
+        ? Number(groupNumberMatch[1])
+        : index + 1;
+      result.set(
+        group.legacy_ticket_instance_id,
+        groupNumber <= 3 ? "123" : "456",
+      );
+    });
   }
 
   return result;
@@ -1166,6 +1274,15 @@ export async function GET(request: Request) {
         ),
       ],
     );
+    const feedbackPreviewSourceInstanceIds = unique(
+      waitlistRows.map(
+        (row) => row.ticket_snapshot?.feedbackPreviewSourceInstanceId,
+      ),
+    );
+    const relationshipLookupInstanceIds = unique([
+      ...instanceIds,
+      ...feedbackPreviewSourceInstanceIds,
+    ]);
 
     let instances: InstanceRow[] = [];
     if (instanceIds.length > 0) {
@@ -1175,6 +1292,10 @@ export async function GET(request: Request) {
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
     const groupStageLocationsByInstance =
       await fetchGroupStageLocationsByInstance(supabase, instanceIds);
+    const eventInstanceIdsByInstance =
+      await fetchEventInstanceIdsByInstance(supabase, relationshipLookupInstanceIds);
+    const feedbackGroupByInstance =
+      await fetchFeedbackGroupByInstance(supabase, relationshipLookupInstanceIds);
     const userAssignedTemplateIds = new Set(
       waitlistRows
         .filter(
@@ -1288,6 +1409,13 @@ export async function GET(request: Request) {
     const memberInstanceIds = unique([
       ...pagedInstanceIds,
       ...memberSourceByInstance.values(),
+      ...feedbackPreviewSourceInstanceIds,
+      ...pagedInstanceIds.flatMap(
+        (instanceId) => eventInstanceIdsByInstance.get(instanceId) ?? [],
+      ),
+      ...feedbackPreviewSourceInstanceIds.flatMap(
+        (instanceId) => eventInstanceIdsByInstance.get(instanceId) ?? [],
+      ),
     ]);
     let assignments: ParticipantRow[] = [];
     if (memberInstanceIds.length > 0) {
@@ -1512,6 +1640,56 @@ export async function GET(request: Request) {
             isSelf: id === user.id,
           };
         });
+        const feedbackPreviewSourceInstanceId =
+          row.ticket_snapshot?.feedbackPreviewSourceInstanceId?.trim();
+        const feedbackReferenceInstanceId =
+          feedbackPreviewSourceInstanceId &&
+          instance?.visibility !== "public"
+            ? feedbackPreviewSourceInstanceId
+            : memberInstanceId;
+        const allFeedbackRelatedInstanceIds = memberInfoVisible
+          ? eventInstanceIdsByInstance.get(feedbackReferenceInstanceId) ?? [
+              feedbackReferenceInstanceId,
+            ]
+          : [];
+        const viewerFeedbackGroup =
+          feedbackGroupByInstance.get(feedbackReferenceInstanceId) ??
+          (instanceId ? feedbackGroupByInstance.get(instanceId) : undefined);
+        const feedbackRelatedInstanceIds = viewerFeedbackGroup
+          ? allFeedbackRelatedInstanceIds.filter(
+              (relatedInstanceId) =>
+                feedbackGroupByInstance.get(relatedInstanceId) === viewerFeedbackGroup,
+            )
+          : allFeedbackRelatedInstanceIds;
+        const feedbackGroupByMemberId = new Map<string, "123" | "456">();
+        for (const relatedInstanceId of feedbackRelatedInstanceIds) {
+          const feedbackGroup = feedbackGroupByInstance.get(relatedInstanceId);
+          if (!feedbackGroup) continue;
+          for (const memberId of assignmentsByInstance.get(relatedInstanceId) ?? []) {
+            feedbackGroupByMemberId.set(memberId, feedbackGroup);
+          }
+        }
+        const feedbackMemberIds = unique(
+          feedbackRelatedInstanceIds.flatMap(
+            (relatedInstanceId) =>
+              assignmentsByInstance.get(relatedInstanceId) ?? [],
+          ),
+        );
+        const feedbackMembers: TicketMemberIntro[] = feedbackMemberIds.map((id) => {
+          const memberProfile = profileMap.get(id);
+          return {
+            id,
+            name: memberProfile?.name ?? null,
+            nickname: displayNickname(memberProfile),
+            photoUrl: memberProfile?.photo_url?.trim() || null,
+            gender: normalizeProfileGender(memberProfile?.gender),
+            publicIntro: memberProfile?.public_intro ?? null,
+            arrivalStatus: null,
+            arrivalStatusUpdatedAt: null,
+            isSelf: id === user.id,
+            feedbackGroup: feedbackGroupByMemberId.get(id) ?? null,
+          };
+        });
 
         return {
           id: String(row.id),
@@ -1544,6 +1722,7 @@ export async function GET(request: Request) {
               }
             : null,
           members,
+          feedbackMembers: feedbackMembers.length ? feedbackMembers : members,
         };
       })
       .filter((ticket): ticket is UserTicket => Boolean(ticket));

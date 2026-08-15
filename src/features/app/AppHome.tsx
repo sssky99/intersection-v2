@@ -21,6 +21,7 @@ import {
   UserRound,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 import {
   type CSSProperties,
   useCallback,
@@ -172,21 +173,8 @@ const profileVibeAxes = [
   "rhythm",
 ] as const satisfies readonly VibeAxis[];
 type ProfileVibeAxis = (typeof profileVibeAxes)[number];
-type MeetingRatingKey = "overall" | "expectationMatch";
+type MeetingRatingKey = "firstPlace" | "secondPlace";
 type MeetingRatings = Record<MeetingRatingKey, number | null>;
-type NegativeFeedbackReason =
-  | "no_show"
-  | "not_my_vibe"
-  | "uncomfortable_conversation"
-  | "rude_or_aggressive"
-  | "romantic_pressure"
-  | "religion_or_sales"
-  | "other";
-
-type NegativeMemberFeedbackDraft = {
-  reasons: NegativeFeedbackReason[];
-  otherText: string;
-};
 
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "recommend", label: "신청", Icon: Sparkles },
@@ -439,7 +427,7 @@ async function fetchUserTickets(options: FetchUserTicketsOptions = {}) {
   const existingRequest = userTicketsRequests.get(key);
   if (!force && existingRequest) return existingRequest;
 
-  const request = fetch(userTicketsRequestPath(options))
+  const request = fetch(userTicketsRequestPath(options), { cache: "no-store" })
     .then(async (response) => {
       const data = (await response.json().catch(() => null)) as
         | Partial<UserTicketsResponse>
@@ -4085,6 +4073,7 @@ function TicketStageContent({
         <TicketDetailContent
           ticket={ticket}
           participantPhotoUrl={participantPhotoUrl}
+          participantArrivalStatus={arrivalStatus}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           matchMemberCount={matchMemberCount}
@@ -4115,6 +4104,7 @@ function TicketStageContent({
         <TicketDetailContent
           ticket={ticket}
           participantPhotoUrl={participantPhotoUrl}
+          participantArrivalStatus={arrivalStatus}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
           matchMemberCount={matchMemberCount}
@@ -4242,24 +4232,20 @@ function arrivalStatusLabel(status: TicketArrivalStatus | null) {
 
 function arrivalStatusToneClass(status: TicketArrivalStatus | null) {
   if (status === "on_time") {
-    return "border-emerald-300 bg-emerald-50/60 text-emerald-800";
+    return "border-[#aaa294] bg-[#e2dccf] text-[#24211d]";
   }
   if (status) {
-    return "border-amber-300 bg-amber-50/70 text-amber-800";
+    return "border-[#b8aa92] bg-[#e8decd] text-[#4a4032]";
   }
-  return "border-black/10 bg-white text-black/45";
+  return "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/48";
 }
 
-function arrivalOptionActiveClass(status: TicketArrivalStatus) {
-  if (status === "on_time") {
-    return "border-emerald-400 bg-emerald-50 text-emerald-900";
-  }
-
-  return "border-amber-400 bg-amber-50 text-amber-900";
+function arrivalOptionActiveClass(_status: TicketArrivalStatus) {
+  return "border-[#24211d] bg-[#24211d] text-[#faf8f3] shadow-[0_8px_18px_rgba(36,33,29,0.14)]";
 }
 
-function arrivalCheckClass(status: TicketArrivalStatus) {
-  return status === "on_time" ? "text-emerald-600" : "text-amber-600";
+function arrivalCheckClass(_status: TicketArrivalStatus) {
+  return "text-[#faf8f3]";
 }
 
 function ArrivalStatusPanel({
@@ -4358,7 +4344,7 @@ function ArrivalStatusPanel({
                   "flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-bold transition disabled:opacity-45",
                   active
                     ? arrivalOptionActiveClass(option.value)
-                    : "border-black/10 bg-white text-black/55 hover:border-black/20",
+                    : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/58 hover:border-[#aaa294] hover:text-[#24211d]",
                 )}
               >
                 <span>{option.label}</span>
@@ -4396,7 +4382,7 @@ function MemberArrivalStatusAccordion({
   if (otherMembers.length === 0) return null;
 
   return (
-    <div className="mt-4 rounded-2xl border border-black/10 bg-white">
+    <div className="mt-4 rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df]">
       <button
         type="button"
         aria-expanded={open}
@@ -4515,64 +4501,84 @@ function TicketFeedbackForm({
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
   );
+  const overallMembers = useMemo(
+    () =>
+      (userTicket.feedbackMembers ?? userTicket.members).filter(
+        (member) => !member.isSelf,
+      ),
+    [userTicket.feedbackMembers, userTicket.members],
+  );
   const dateCandidateMembers = useMemo(() => {
     return otherMembers;
   }, [otherMembers]);
+  const firstPlaceName =
+    userTicket.ticket.courseSteps?.[0]?.placeName?.trim() || "1차 장소";
+  const secondPlaceName =
+    userTicket.ticket.courseSteps?.[1]?.placeName?.trim() || "2차 장소";
   const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
-    overall: null,
-    expectationMatch: null,
+    firstPlace: null,
+    secondPlace: null,
   });
-  const [dateUnknown, setDateUnknown] = useState(false);
   const [dateMemberIds, setDateMemberIds] = useState<string[]>([]);
-  const [vibeUnknown, setVibeUnknown] = useState(false);
   const [vibeMemberIds, setVibeMemberIds] = useState<string[]>([]);
-  const [negativeMemberIds, setNegativeMemberIds] = useState<string[]>([]);
-  const [expandedNegativeMemberId, setExpandedNegativeMemberId] = useState<
-    string | null
-  >(null);
-  const [negativeFeedback, setNegativeFeedback] = useState<
-    Record<string, NegativeMemberFeedbackDraft>
-  >({});
+  const [dateMembersUnsure, setDateMembersUnsure] = useState(false);
+  const [vibeMembersUnsure, setVibeMembersUnsure] = useState(false);
+  const [disruptiveMemberNote, setDisruptiveMemberNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [feedbackStep, setFeedbackStep] = useState(0);
+  const [feedbackStepDirection, setFeedbackStepDirection] = useState(1);
+  const [feedbackPhotoPreview, setFeedbackPhotoPreview] = useState<{
+    url: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
-    setMeetingRatings({ overall: null, expectationMatch: null });
-    setDateUnknown(false);
+    setMeetingRatings({ firstPlace: null, secondPlace: null });
     setDateMemberIds([]);
-    setVibeUnknown(false);
     setVibeMemberIds([]);
-    setNegativeMemberIds([]);
-    setExpandedNegativeMemberId(null);
-    setNegativeFeedback({});
+    setDateMembersUnsure(false);
+    setVibeMembersUnsure(false);
+    setDisruptiveMemberNote("");
     setSubmitting(false);
     setSubmitted(false);
     setSubmitError(null);
-  }, [otherMembers, userTicket.waitlistId]);
+    setFeedbackStep(0);
+    setFeedbackStepDirection(1);
+    setFeedbackPhotoPreview(null);
+  }, [otherMembers, overallMembers, userTicket.waitlistId]);
+
+  useEffect(() => {
+    if (!feedbackPhotoPreview) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFeedbackPhotoPreview(null);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [feedbackPhotoPreview]);
 
   const meetingRatingsComplete = Object.values(meetingRatings).every(
     (value) => typeof value === "number",
   );
-  const vibeSelectionComplete =
-    otherMembers.length === 0 || vibeUnknown || vibeMemberIds.length > 0;
-  const negativeFeedbackComplete = negativeMemberIds.every((memberId) => {
-    const draft = negativeFeedback[memberId];
-    if (!draft || draft.reasons.length === 0) return false;
-    return (
-      !draft.reasons.includes("other") || draft.otherText.trim().length > 0
-    );
-  });
-  const canSubmit =
-    meetingRatingsComplete &&
-    vibeSelectionComplete && negativeFeedbackComplete;
-  const selectedPositiveMemberIds = dateMemberIds;
-  const negativeMembers = negativeMemberIds
-    .map((memberId) => otherMembers.find((member) => member.id === memberId))
-    .filter((member): member is UserTicket["members"][number] => Boolean(member));
+  const canSubmit = meetingRatingsComplete;
+  const feedbackStepCount = 5;
+  const canAdvanceFeedbackStep =
+    (feedbackStep === 0 && (dateMemberIds.length > 0 || dateMembersUnsure)) ||
+    (feedbackStep === 1 && (vibeMemberIds.length > 0 || vibeMembersUnsure)) ||
+    (feedbackStep === 2 && meetingRatings.firstPlace !== null) ||
+    (feedbackStep === 3 && meetingRatings.secondPlace !== null);
+  const selectedPositiveMemberIds = Array.from(
+    new Set([...dateMemberIds, ...vibeMemberIds]),
+  );
 
   const selectDateMember = (memberId: string) => {
-    setDateUnknown(false);
+    setDateMembersUnsure(false);
     setDateMemberIds((current) =>
       current.includes(memberId)
         ? current.filter((id) => id !== memberId)
@@ -4580,84 +4586,26 @@ function TicketFeedbackForm({
     );
   };
 
-  const selectDateUnknown = () => {
-    setDateMemberIds([]);
-    setDateUnknown(true);
-  };
-
   const selectVibeMember = (memberId: string) => {
-    setVibeUnknown(false);
-    setVibeMemberIds((current) =>
-      current.includes(memberId)
-        ? current.filter((id) => id !== memberId)
-        : [...current, memberId],
-    );
-  };
-
-  const selectVibeUnknown = () => {
-    setVibeMemberIds([]);
-    setVibeUnknown(true);
-  };
-
-  const toggleNegativeMember = (memberId: string) => {
-    const isSelected = negativeMemberIds.includes(memberId);
-    if (isSelected && expandedNegativeMemberId !== memberId) {
-      setExpandedNegativeMemberId(memberId);
-      return;
-    }
-
-    setNegativeMemberIds((current) =>
-      current.includes(memberId)
-        ? current.filter((id) => id !== memberId)
-        : [...current, memberId],
-    );
-    setExpandedNegativeMemberId(isSelected ? null : memberId);
-    setNegativeFeedback((current) => ({
-      ...current,
-      [memberId]: current[memberId] ?? { reasons: [], otherText: "" },
-    }));
-  };
-
-  const toggleNegativeReason = (
-    memberId: string,
-    reason: NegativeFeedbackReason,
-  ) => {
-    setNegativeFeedback((current) => {
-      const draft = current[memberId] ?? { reasons: [], otherText: "" };
-      const selected = draft.reasons.includes(reason);
-      const reasons = selected
-        ? draft.reasons.filter((item) => item !== reason)
-        : [...draft.reasons, reason];
-
-      return {
-        ...current,
-        [memberId]: {
-          ...draft,
-          reasons,
-          otherText: reasons.includes("other") ? draft.otherText : "",
-        },
-      };
+    setVibeMembersUnsure(false);
+    setVibeMemberIds((current) => {
+      if (current.includes(memberId)) {
+        return current.filter((id) => id !== memberId);
+      }
+      return current.length >= 3 ? current : [...current, memberId];
     });
   };
 
-  const updateNegativeOtherText = (memberId: string, otherText: string) => {
-    setNegativeFeedback((current) => {
-      const draft = current[memberId] ?? { reasons: [], otherText: "" };
-      return {
-        ...current,
-        [memberId]: {
-          ...draft,
-          otherText,
-        },
-      };
-    });
+  const moveFeedbackStep = (nextStep: number) => {
+    const boundedStep = Math.max(0, Math.min(feedbackStepCount - 1, nextStep));
+    setFeedbackStepDirection(boundedStep >= feedbackStep ? 1 : -1);
+    setFeedbackStep(boundedStep);
+    setSubmitError(null);
   };
 
   const submitLabel = (() => {
     if (submitting) return "저장 중이에요";
-    if (!meetingRatingsComplete) return "모임 별점을 남겨주세요";
-    if (!vibeSelectionComplete) return "결이 비슷한 사람을 선택해주세요";
-    if (!negativeFeedbackComplete) return "부정 피드백 사유를 선택해주세요";
+    if (!meetingRatingsComplete) return "장소 별점을 남겨주세요";
     return "피드백 제출하기";
   })();
 
@@ -4677,26 +4625,21 @@ function TicketFeedbackForm({
   };
 
   const payloadMeetingFeedback = () => ({
-    meeting_ratings: {
-      overall: meetingRatings.overall,
-      expectation_match: meetingRatings.expectationMatch,
+    place_ratings: {
+      first: {
+        name: firstPlaceName,
+        rating: meetingRatings.firstPlace,
+      },
+      second: {
+        name: secondPlaceName,
+        rating: meetingRatings.secondPlace,
+      },
     },
-    negative_member_feedback: Object.fromEntries(
-      negativeMemberIds.map((memberId) => {
-        const draft = negativeFeedback[memberId] ?? {
-          reasons: [],
-          otherText: "",
-        };
-
-        return [
-          memberId,
-          {
-            reasons: draft.reasons,
-            otherText: draft.otherText.trim() || null,
-          },
-        ];
-      }),
-    ),
+    dinner_member_ids: dateMemberIds,
+    overall_member_ids: vibeMemberIds,
+    dinner_member_unsure: dateMembersUnsure,
+    overall_member_unsure: vibeMembersUnsure,
+    disruptive_member_note: disruptiveMemberNote.trim() || null,
   });
 
   const submitFeedback = async () => {
@@ -4754,280 +4697,303 @@ function TicketFeedbackForm({
   }
 
   return (
-    <div className="space-y-5 py-5">
-      <section className="border border-[#eadfc8] bg-[#fff8ea] px-5 py-6">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-accent">
-            feedback
-          </p>
-          <h2 className="mt-1 text-[22px] font-black text-black">
-            {feedbackTitle}
-          </h2>
-          <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
-            {feedbackBody}
-          </p>
-        </div>
-      </section>
-
-      <section className="py-5">
-        <div className="space-y-5">
-          <MeetingStarRating
-            label="오늘 자리는 전반적으로 어땠나요?"
-            value={meetingRatings.overall}
-            onChange={(rating) =>
-              setMeetingRatings((current) => ({ ...current, overall: rating }))
-            }
-          />
-          <MeetingStarRating
-            label="친구한테 교집합을 추천해주실 의향이 있나요?"
-            value={meetingRatings.expectationMatch}
-            onChange={(rating) =>
-              setMeetingRatings((current) => ({
-                ...current,
-                expectationMatch: rating,
-              }))
-            }
-          />
-        </div>
-      </section>
-
-      <section className="border-t border-black/8 py-5">
-        <h3 className="text-[15px] font-black leading-6 text-black">
-          단둘이 만나고 싶어요.
-          <span className="ml-1 font-medium text-black/35">(중복 선택 가능)</span>
-        </h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          서로 선택한 경우 1:1 만남 자리를 준비해드려요.
+    <div className="py-5">
+      <section>
+        <h2 className="text-[22px] font-black text-black">{feedbackTitle}</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
+          {feedbackBody}
         </p>
-        {dateCandidateMembers.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {dateCandidateMembers.map((member) => {
-              const selected = dateMemberIds.includes(member.id);
+      </section>
 
-              return (
+      <div className="mt-8 overflow-hidden">
+        <AnimatePresence mode="wait" initial={false} custom={feedbackStepDirection}>
+          <motion.section
+            key={feedbackStep}
+            custom={feedbackStepDirection}
+            initial={{ opacity: 0, x: feedbackStepDirection * 28 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: feedbackStepDirection * -20 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            className="min-h-[340px] py-2"
+          >
+            {feedbackStep === 0 && (
+              <>
+                <h3 className="text-[17px] font-black leading-7 text-black">
+                  저녁 멤버 중에서 단 둘이 만나고 싶은 사람이 있나요?
+                  <span className="block font-medium text-black/35">(중복 선택 가능)</span>
+                </h3>
+                <p className="mt-2 text-xs font-semibold leading-5 text-black/42">
+                  서로 선택한 경우 1:1 만남 자리를 준비해드려요.
+                </p>
+                {dateCandidateMembers.length > 0 ? (
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {dateCandidateMembers.map((member) => {
+                      const selected = dateMemberIds.includes(member.id);
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => selectDateMember(member.id)}
+                          className={cn(
+                            "min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                            selected
+                              ? "border-black bg-black text-white"
+                              : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
+                          )}
+                        >
+                          {memberRealName(member)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-6 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+                    선택 가능한 멤버가 없어요.
+                  </p>
+                )}
                 <button
-                  key={member.id}
                   type="button"
-                  onClick={() => selectDateMember(member.id)}
+                  onClick={() => {
+                    setDateMemberIds([]);
+                    setDateMembersUnsure(true);
+                  }}
                   className={cn(
-                    "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                    selected
+                    "mt-3 min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                    dateMembersUnsure
                       ? "border-black bg-black text-white"
-                      : "border-black/10 bg-white text-black/62 hover:border-black/25",
+                      : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
                   )}
                 >
-                  {memberRealName(member)}
+                  잘 모르겠어요
                 </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={selectDateUnknown}
-              className={cn(
-                "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                dateUnknown
-                  ? "border-black bg-black text-white"
-                  : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
-              )}
-            >
-              잘 모르겠어요
-            </button>
-          </div>
-        ) : (
-          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-            선택 가능한 멤버가 없어 이 단계는 건너뛰어요.
-          </p>
-        )}
-      </section>
+              </>
+            )}
 
-      <section className="border-t border-black/8 py-5">
-        <h3 className="text-[15px] font-black leading-6 text-black">
-          이런 결의 사람을 만나고 싶어요.
-          <span className="ml-1 font-medium text-black/35">(중복 선택 가능)</span>
-        </h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          다음 만남에서 비슷한 분들로 추천해드려요.
-        </p>
-        {otherMembers.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {otherMembers.map((member) => {
-              const selected = vibeMemberIds.includes(member.id);
-
-              return (
-                <button
-                  key={member.id}
-                  type="button"
-                  onClick={() => selectVibeMember(member.id)}
-                  className={cn(
-                    "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                    selected
-                      ? "border-black bg-black text-white"
-                      : "border-black/10 bg-white text-black/62 hover:border-black/25",
-                  )}
-                >
-                  {memberRealName(member)}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={selectVibeUnknown}
-              className={cn(
-                "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                vibeUnknown
-                  ? "border-black bg-black text-white"
-                  : "border-black/10 bg-black/[0.03] text-black/55 hover:border-black/25",
-              )}
-            >
-              잘 모르겠어요
-            </button>
-          </div>
-        ) : (
-          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-            함께한 멤버 정보가 없어 이 단계는 건너뛰어요.
-          </p>
-        )}
-
-      </section>
-
-      <section className="border-t border-black/8 py-5">
-        <h3 className="text-[15px] font-black leading-6 text-black">
-          이 사람과는 다시 같은 자리에 있고 싶지 않아요.
-        </h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/42">
-          선택하지 않아도 괜찮아요.
-        </p>
-        {otherMembers.length > 0 ? (
-          <>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {otherMembers.map((member) => {
-                const selected = negativeMemberIds.includes(member.id);
-
-                return (
-                  <button
-                    key={member.id}
-                    type="button"
-                    onClick={() => toggleNegativeMember(member.id)}
-                    aria-expanded={
-                      selected && expandedNegativeMemberId === member.id
-                    }
-                    className={cn(
-                      "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                      selected
-                        ? "border-black bg-black text-white"
-                        : "border-black/10 bg-white text-black/62 hover:border-black/25",
-                    )}
-                  >
-                    {memberRealName(member)}
-                  </button>
-                );
-              })}
-            </div>
-
-            {negativeMembers.length > 0 && (
-              <div className="mt-5 space-y-4">
-                {negativeMembers.map((member) => {
-                  if (member.id !== expandedNegativeMemberId) return null;
-
-                  const draft = negativeFeedback[member.id] ?? {
-                    reasons: [],
-                    otherText: "",
-                  };
-
-                  return (
-                    <div
-                      key={member.id}
-                      className="border border-black/8 bg-black/[0.025] px-4 py-4"
-                    >
-                      <h4 className="text-sm font-black text-black">
-                        {memberRealName(member)}
-                      </h4>
-                      <div className="mt-3 grid gap-2">
-                        {negativeFeedbackReasons.map((reason) => {
-                          const selected = draft.reasons.includes(reason.value);
-
-                          return (
+            {feedbackStep === 1 && (
+              <>
+                <h3 className="text-[17px] font-black leading-7 text-black">
+                  전체 멤버 중에서 단 둘이 만나고 싶은 사람이 있나요?
+                  <span className="block font-medium text-black/35">
+                    (최대 3명까지 선택 가능)
+                  </span>
+                </h3>
+                <p className="mt-2 text-xs font-semibold leading-5 text-black/42">
+                  서로 선택한 경우 1:1 만남 자리를 준비해드려요.
+                </p>
+                {overallMembers.length > 0 ? (
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    {overallMembers.map((member) => {
+                      const selected = vibeMemberIds.includes(member.id);
+                      return (
+                        <div
+                          key={member.id}
+                          className={cn(
+                            "inline-flex min-h-10 items-center gap-2 rounded-full border py-1.5 pl-2 text-sm font-bold transition",
+                            selected
+                              ? "border-black bg-black text-white"
+                              : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
+                          )}
+                        >
+                          {member.photoUrl ? (
                             <button
-                              key={reason.value}
                               type="button"
+                              aria-label={`${memberRealName(member)} 사진 크게 보기`}
                               onClick={() =>
-                                toggleNegativeReason(member.id, reason.value)
+                                setFeedbackPhotoPreview({
+                                  url: member.photoUrl!,
+                                  name: memberRealName(member),
+                                })
                               }
                               className={cn(
-                                "flex min-h-10 items-center justify-between border px-3 py-2 text-left text-xs font-bold leading-5 transition",
+                                "relative h-7 w-7 shrink-0 overflow-hidden rounded-full border transition active:scale-95",
                                 selected
-                                  ? "border-black bg-black text-white"
-                                  : "border-black/10 bg-white text-black/62 hover:border-black/25",
+                                  ? "border-white/20 bg-white/12"
+                                  : "border-black/8 bg-[#e2dccf]",
                               )}
                             >
-                              <span>{reason.label}</span>
-                              {selected && <Check size={13} aria-hidden />}
+                              <span
+                                className="absolute inset-0 bg-cover bg-center"
+                                style={{ backgroundImage: `url(${member.photoUrl})` }}
+                              />
                             </button>
-                          );
-                        })}
-                      </div>
-                      {draft.reasons.includes("other") && (
-                        <input
-                          value={draft.otherText}
-                          placeholder="직접 입력해주세요."
-                          onChange={(event) =>
-                            updateNegativeOtherText(member.id, event.target.value)
-                          }
-                          className="mt-3 h-11 w-full border border-black/10 bg-white px-3.5 text-xs font-semibold outline-none placeholder:text-black/25 focus:border-accent"
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                          ) : (
+                            <span
+                              aria-hidden
+                              className={cn(
+                                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[9px] font-black opacity-55",
+                                selected
+                                  ? "border-white/20 bg-white/12"
+                                  : "border-black/8 bg-[#e2dccf]",
+                              )}
+                            >
+                                {fallbackNickname(member.nickname || member.name)}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            disabled={!selected && vibeMemberIds.length >= 3}
+                            onClick={() => selectVibeMember(member.id)}
+                            className="min-h-7 pr-4 text-left disabled:cursor-not-allowed disabled:opacity-35"
+                          >
+                            {memberRealName(member)}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-6 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+                    함께한 멤버 정보가 없어요.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVibeMemberIds([]);
+                    setVibeMembersUnsure(true);
+                  }}
+                  className={cn(
+                    "mt-3 min-h-10 rounded-full border px-4 text-sm font-bold transition",
+                    vibeMembersUnsure
+                      ? "border-black bg-black text-white"
+                      : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
+                  )}
+                >
+                  잘 모르겠어요
+                </button>
+              </>
             )}
-          </>
-        ) : (
-          <p className="mt-4 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-            함께한 멤버 정보가 없어 이 단계는 건너뛰어요.
-          </p>
-        )}
-      </section>
+
+            {feedbackStep === 2 && (
+              <MeetingStarRating
+                label={`첫 장소 피드백 (${firstPlaceName})`}
+                value={meetingRatings.firstPlace}
+                onChange={(rating) =>
+                  setMeetingRatings((current) => ({ ...current, firstPlace: rating }))
+                }
+              />
+            )}
+
+            {feedbackStep === 3 && (
+              <MeetingStarRating
+                label={`두 번째 장소 피드백 (${secondPlaceName})`}
+                value={meetingRatings.secondPlace}
+                onChange={(rating) =>
+                  setMeetingRatings((current) => ({ ...current, secondPlace: rating }))
+                }
+              />
+            )}
+
+            {feedbackStep === 4 && (
+              <>
+                <label
+                  htmlFor={`disruptive-member-note-${userTicket.waitlistId}`}
+                  className="block text-[17px] font-black leading-7 text-black"
+                >
+                  모임 분위기를 해치거나, 주변 사람들의 기분을 상하게 하는 사람이
+                  있다면 적어주세요.
+                  <span className="ml-1 font-medium text-black/35">(선택)</span>
+                </label>
+                <textarea
+                  id={`disruptive-member-note-${userTicket.waitlistId}`}
+                  value={disruptiveMemberNote}
+                  maxLength={500}
+                  rows={6}
+                  placeholder="내용을 입력해주세요."
+                  onChange={(event) => setDisruptiveMemberNote(event.target.value)}
+                  className="mt-6 w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold leading-6 text-[#24211d] outline-none placeholder:text-[#24211d]/28 focus:border-[#aaa294]"
+                />
+              </>
+            )}
+          </motion.section>
+        </AnimatePresence>
+      </div>
 
       {submitError && (
-        <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold leading-6 text-red-600">
+        <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold leading-6 text-red-600">
           {submitError}
         </p>
       )}
 
-      <button
-        type="button"
-        disabled={submitting || !canSubmit}
-        onClick={() => void submitFeedback()}
-        className="h-12 w-full rounded-full bg-black text-sm font-black text-white shadow-[0_10px_24px_rgba(0,0,0,0.2)] transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
-      >
-        {submitLabel}
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          aria-label="이전 질문"
+          disabled={feedbackStep === 0 || submitting}
+          onClick={() => moveFeedbackStep(feedbackStep - 1)}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#d8d1c3] bg-[#eee9df] text-[#24211d] transition disabled:invisible"
+        >
+          <ChevronLeft size={19} aria-hidden />
+        </button>
+        {feedbackStep < feedbackStepCount - 1 && canAdvanceFeedbackStep ? (
+          <button
+            type="button"
+            aria-label="다음 질문"
+            onClick={() => moveFeedbackStep(feedbackStep + 1)}
+            className="ml-auto flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#24211d] text-[#faf8f3] shadow-[0_10px_24px_rgba(36,33,29,0.18)] transition hover:bg-black"
+          >
+            <ArrowRight size={19} aria-hidden />
+          </button>
+        ) : feedbackStep === feedbackStepCount - 1 ? (
+          <button
+            type="button"
+            disabled={submitting || !canSubmit}
+            onClick={() => void submitFeedback()}
+            className="h-12 flex-1 rounded-full bg-[#24211d] text-sm font-black text-[#faf8f3] shadow-[0_10px_24px_rgba(36,33,29,0.18)] transition hover:bg-black disabled:cursor-not-allowed disabled:bg-black/20 disabled:shadow-none"
+          >
+            {submitLabel}
+          </button>
+        ) : null}
+      </div>
+
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {feedbackPhotoPreview && (
+              <motion.div
+                key="feedback-photo-preview"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setFeedbackPhotoPreview(null)}
+                className="fixed inset-0 z-[150] flex items-center justify-center bg-black/58 px-6 backdrop-blur-[3px]"
+              >
+                <motion.div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`${feedbackPhotoPreview.name} 프로필 사진`}
+                  initial={{ opacity: 0, scale: 0.92, y: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: 8 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  onClick={(event) => event.stopPropagation()}
+                  className="relative w-[min(66vw,272px)] overflow-hidden rounded-[22px] border border-white/18 bg-[#eee9df] p-2.5 shadow-[0_28px_80px_rgba(0,0,0,0.34)]"
+                >
+                  <button
+                    type="button"
+                    aria-label="사진 닫기"
+                    onClick={() => setFeedbackPhotoPreview(null)}
+                    className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/72 text-white shadow-sm backdrop-blur transition hover:bg-black"
+                  >
+                    <X size={17} aria-hidden />
+                  </button>
+                  <img
+                    src={feedbackPhotoPreview.url}
+                    alt={`${feedbackPhotoPreview.name} 프로필`}
+                    className="max-h-[58vh] w-full rounded-[16px] object-contain"
+                  />
+                  <p className="px-1 pb-1 pt-3 text-center text-sm font-black text-[#24211d]">
+                    {feedbackPhotoPreview.name}
+                  </p>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
     </div>
   );
 }
-
-const negativeFeedbackReasons: Array<{
-  value: NegativeFeedbackReason;
-  label: string;
-}> = [
-  { value: "no_show", label: "노쇼했어요." },
-  { value: "not_my_vibe", label: "그냥 결이 맞지 않았어요." },
-  { value: "uncomfortable_conversation", label: "대화가 불편했어요." },
-  {
-    value: "rude_or_aggressive",
-    label: "무례하거나 공격적인 표현이 있었어요.",
-  },
-  {
-    value: "romantic_pressure",
-    label: "노골적인 이성 목적이 느껴졌어요.",
-  },
-  {
-    value: "religion_or_sales",
-    label: "종교 포교 / 영업처럼 느껴졌어요.",
-  },
-  { value: "other", label: "기타 / 직접입력" },
-];
 
 function MeetingStarRating({
   label,
@@ -5038,64 +5004,48 @@ function MeetingStarRating({
   onChange: (rating: number) => void;
   value: number | null;
 }) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-
   return (
     <div>
       <p className="text-sm font-black leading-6 text-black">{label}</p>
-      <div className="mt-2 flex items-center gap-1.5" aria-label={label}>
+      <div
+        className="mt-3 grid"
+        style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}
+        role="radiogroup"
+        aria-label={label}
+      >
         {[1, 2, 3, 4, 5].map((rating) => {
-          const filled = typeof value === "number" && rating <= value;
+          const selected = value === rating;
 
           return (
             <motion.button
               key={rating}
               type="button"
-              whileTap={{ scale: 0.9 }}
+              whileTap={{ scale: 0.96 }}
               onClick={() => onChange(rating)}
+              role="radio"
+              aria-checked={selected}
               aria-label={`${label} ${rating}점`}
-              className="relative flex h-9 w-9 items-center justify-center"
+              className={cn(
+                "relative flex h-12 min-w-0 items-center justify-center bg-transparent text-[22px] font-medium tabular-nums transition",
+                selected
+                  ? "scale-125 font-black text-black"
+                  : "text-black/18 hover:text-black/50",
+              )}
             >
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.svg
-                  key={filled ? `filled-${value}` : "empty"}
-                  viewBox="0 0 32 32"
-                  initial={
-                    shouldReduceMotion
-                      ? false
-                      : filled
-                        ? { opacity: 0, scale: 0.38, y: 4, rotate: -5 }
-                        : { opacity: 0, scale: 0.94 }
-                  }
-                  animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
-                  exit={{ opacity: 0, scale: 0.8 }}
-                  transition={{
-                    duration: shouldReduceMotion ? 0 : 0.2,
-                    ease: [0.16, 1, 0.3, 1],
-                    delay:
-                      filled && !shouldReduceMotion ? (rating - 1) * 0.055 : 0,
-                  }}
-                  className={cn(
-                    "h-7 w-7 overflow-visible",
-                    filled ? "text-black" : "text-black/70",
-                  )}
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M16 4.75 L19.35 11.25 L26.55 12.35 L21.35 17.45 L22.6 24.65 L16 21.3 L9.4 24.65 L10.65 17.45 L5.45 12.35 L12.65 11.25 Z"
-                    fill={filled ? "#f8c945" : "none"}
-                    stroke="#0b0b0b"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="1.9"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                </motion.svg>
-              </AnimatePresence>
+              <span>{rating}</span>
+              {selected && (
+                <motion.span
+                  layoutId={`meeting-rating-${label}`}
+                  className="absolute bottom-0 h-0.5 w-5 rounded-full bg-black"
+                />
+              )}
             </motion.button>
           );
         })}
+      </div>
+      <div className="mt-2 flex justify-between px-1 text-[10px] font-semibold text-black/35">
+        <span>아쉬워요</span>
+        <span>좋았어요</span>
       </div>
     </div>
   );

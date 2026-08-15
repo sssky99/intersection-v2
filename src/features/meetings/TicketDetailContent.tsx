@@ -26,6 +26,7 @@ import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
   type GatheringTicket,
+  type TicketArrivalStatus,
 } from "@/types/ticket";
 
 export type TicketDetailSectionKey =
@@ -285,6 +286,7 @@ function ticketOtherMemberPhotoUrls(
 export function TicketDetailContent({
   ticket,
   participantPhotoUrl,
+  participantArrivalStatus,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
   matchMemberCount,
@@ -297,6 +299,7 @@ export function TicketDetailContent({
 }: {
   ticket: GatheringTicket;
   participantPhotoUrl?: string | null;
+  participantArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
   matchMemberCount?: number;
@@ -372,6 +375,7 @@ export function TicketDetailContent({
             ticket={ticket}
             steps={courseSteps}
             participantPhotoUrl={participantPhotoUrl}
+            participantArrivalStatus={participantArrivalStatus}
             previewMatchPhotoUrls={resolvedMatchPhotoUrls}
             previewOtherMemberPhotoUrls={resolvedOtherMemberPhotoUrls}
             matchMemberCount={matchMemberCount}
@@ -460,6 +464,7 @@ function TicketCoursePanel({
   ticket,
   steps,
   participantPhotoUrl,
+  participantArrivalStatus,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
@@ -467,6 +472,7 @@ function TicketCoursePanel({
   ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
   participantPhotoUrl?: string | null;
+  participantArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
@@ -552,6 +558,7 @@ function TicketCoursePanel({
             <JourneyPeoplePanel
               stepIndex={index}
               participantPhotoUrl={participantPhotoUrl}
+              participantArrivalStatus={participantArrivalStatus}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
               matchMemberCount={matchMemberCount}
@@ -859,9 +866,20 @@ function UnreleasedMapSheet({
   );
 }
 
+function participantArrivalStatusLabel(
+  status: TicketArrivalStatus | null | undefined,
+) {
+  if (status === "on_time") return "정상 도착 예정";
+  if (status === "late_10") return "10분 정도 늦어요";
+  if (status === "late_20") return "20분 정도 늦어요";
+  if (status === "late_30_plus") return "30분 이상 늦어요";
+  return "응답 대기";
+}
+
 function JourneyPeoplePanel({
   stepIndex,
   participantPhotoUrl,
+  participantArrivalStatus,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
@@ -869,6 +887,7 @@ function JourneyPeoplePanel({
 }: {
   stepIndex: number;
   participantPhotoUrl?: string | null;
+  participantArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
@@ -893,7 +912,7 @@ function JourneyPeoplePanel({
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
           <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
-            응답 대기
+            {participantArrivalStatusLabel(participantArrivalStatus)}
             <Clock3 size={12} strokeWidth={1.9} aria-hidden />
           </span>
         </div>

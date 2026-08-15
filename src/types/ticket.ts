@@ -140,6 +140,7 @@ export type TicketMemberIntro = {
   arrivalStatus: TicketArrivalStatus | null;
   arrivalStatusUpdatedAt: string | null;
   isSelf: boolean;
+  feedbackGroup?: "123" | "456" | null;
 };
 
 export type UserTicket = {
@@ -160,6 +161,7 @@ export type UserTicket = {
   updatedAt?: string | null;
   place: TicketPlace | null;
   members: TicketMemberIntro[];
+  feedbackMembers?: TicketMemberIntro[];
 };
 
 export type UserTicketsResponse = {

@@ -38,6 +38,13 @@ type NegativeMemberFeedbackEntry = {
 type StructuredPlaceFeedback = Partial<Record<PlaceAxis, number>> & {
   meeting_ratings?: MeetingRatingsFeedback;
   negative_member_feedback?: Record<string, NegativeMemberFeedbackEntry>;
+  place_ratings?: {
+    first?: { name?: string | null; rating?: number | null };
+    second?: { name?: string | null; rating?: number | null };
+  };
+  dinner_member_ids?: string[];
+  overall_member_ids?: string[];
+  disruptive_member_note?: string | null;
 };
 
 type FeedbackProfile = {
@@ -551,6 +558,7 @@ function MeetingFeedbackSummary({
   profileMap: Map<string, FeedbackProfile>;
 }) {
   const ratings = placeFeedback?.meeting_ratings;
+  const placeRatings = placeFeedback?.place_ratings;
   const negativeEntries = Object.entries(
     placeFeedback?.negative_member_feedback ?? {},
   );
@@ -561,7 +569,9 @@ function MeetingFeedbackSummary({
     );
   const hasRatings =
     feedbackScore(ratings?.overall) !== null ||
-    feedbackScore(ratings?.expectation_match) !== null;
+    feedbackScore(ratings?.expectation_match) !== null ||
+    feedbackScore(placeRatings?.first?.rating) !== null ||
+    feedbackScore(placeRatings?.second?.rating) !== null;
 
   return (
     <div className="min-w-0 rounded-xl bg-white px-4 py-4">
@@ -569,8 +579,23 @@ function MeetingFeedbackSummary({
 
       {hasRatings ? (
         <div className="mt-3 space-y-2">
-          <RatingRow label="전반적인 만족도" value={ratings?.overall} />
-          <RatingRow label="친구에게 추천할 의향" value={ratings?.expectation_match} />
+          {placeRatings ? (
+            <>
+              <RatingRow
+                label={`첫 장소 · ${placeRatings.first?.name || "장소명 없음"}`}
+                value={placeRatings.first?.rating}
+              />
+              <RatingRow
+                label={`두 번째 장소 · ${placeRatings.second?.name || "장소명 없음"}`}
+                value={placeRatings.second?.rating}
+              />
+            </>
+          ) : (
+            <>
+              <RatingRow label="전반적인 만족도" value={ratings?.overall} />
+              <RatingRow label="친구에게 추천할 의향" value={ratings?.expectation_match} />
+            </>
+          )}
         </div>
       ) : legacyScores.length === 0 ? (
         <p className="mt-3 text-xs font-semibold text-black/35">모임 평가가 없습니다.</p>
@@ -589,15 +614,25 @@ function MeetingFeedbackSummary({
         </div>
       )}
 
-      <div className="mt-4 border-t border-black/[0.06] pt-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[11px] font-bold text-black/35">
-            다시 같은 자리에 있고 싶지 않은 사람
+      {placeFeedback?.disruptive_member_note && (
+        <div className="mt-4 border-t border-black/[0.06] pt-3">
+          <p className="text-[11px] font-bold text-black/35">운영 참고 내용</p>
+          <p className="mt-2 whitespace-pre-line text-xs font-semibold leading-5 text-black/65">
+            {placeFeedback.disruptive_member_note}
           </p>
-          <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
-            {negativeEntries.length}명
-          </span>
         </div>
+      )}
+
+      {placeFeedback?.negative_member_feedback && (
+        <div className="mt-4 border-t border-black/[0.06] pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-bold text-black/35">
+              다시 같은 자리에 있고 싶지 않은 사람
+            </p>
+            <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
+              {negativeEntries.length}명
+            </span>
+          </div>
 
         {negativeEntries.length === 0 ? (
           <p className="mt-2 text-xs font-semibold text-black/35">선택한 사람이 없습니다.</p>
@@ -635,7 +670,8 @@ function MeetingFeedbackSummary({
             })}
           </div>
         )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
