@@ -44,6 +44,8 @@ type StructuredPlaceFeedback = Partial<Record<PlaceAxis, number>> & {
   };
   dinner_member_ids?: string[];
   overall_member_ids?: string[];
+  dinner_member_unsure?: boolean;
+  overall_member_unsure?: boolean;
   disruptive_member_note?: string | null;
 };
 
@@ -350,7 +352,12 @@ export function FeedbackAdminPanel() {
                 {selectedFeedbacks.map((feedback) => {
                   const writer = profileMap.get(feedback.user_id);
                   const selectedNames = (feedback.selected_member_ids ?? []).map((id) =>
-                    memberName(profileMap.get(id), id),
+                    memberName(profileMap.get(id), "알 수 없는 멤버"),
+                  );
+                  const hasCurrentQuestionnaire = Boolean(
+                    feedback.place_feedback?.place_ratings ||
+                      feedback.place_feedback?.dinner_member_ids ||
+                      feedback.place_feedback?.overall_member_ids,
                   );
 
                   return (
@@ -367,11 +374,30 @@ export function FeedbackAdminPanel() {
                         </p>
                       </div>
                       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
-                        <SelectedMembersSummary selectedNames={selectedNames} />
-                        <PersonFeedbackSummary
-                          memberFeedback={feedback.member_feedback}
-                          profileMap={profileMap}
-                        />
+                        {hasCurrentQuestionnaire ? (
+                          <>
+                            <MemberSelectionSummary
+                              label="저녁 멤버 중 단둘이 만나고 싶은 사람"
+                              memberIds={feedback.place_feedback?.dinner_member_ids ?? []}
+                              unsure={feedback.place_feedback?.dinner_member_unsure}
+                              profileMap={profileMap}
+                            />
+                            <MemberSelectionSummary
+                              label="전체 멤버 중 단둘이 만나고 싶은 사람"
+                              memberIds={feedback.place_feedback?.overall_member_ids ?? []}
+                              unsure={feedback.place_feedback?.overall_member_unsure}
+                              profileMap={profileMap}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <SelectedMembersSummary selectedNames={selectedNames} />
+                            <PersonFeedbackSummary
+                              memberFeedback={feedback.member_feedback}
+                              profileMap={profileMap}
+                            />
+                          </>
+                        )}
                         <MeetingFeedbackSummary
                           placeFeedback={feedback.place_feedback}
                           profileMap={profileMap}
@@ -422,6 +448,52 @@ function feedbackOtherText(entry: NegativeMemberFeedbackEntry) {
 
 function feedbackScore(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function MemberSelectionSummary({
+  label,
+  memberIds,
+  unsure,
+  profileMap,
+}: {
+  label: string;
+  memberIds: string[];
+  unsure?: boolean;
+  profileMap: Map<string, FeedbackProfile>;
+}) {
+  const names = memberIds.map((id) =>
+    memberName(profileMap.get(id), "알 수 없는 멤버"),
+  );
+
+  return (
+    <div className="min-w-0 rounded-xl bg-white px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[11px] font-bold leading-4 text-black/45">{label}</p>
+        <span className="shrink-0 rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
+          {names.length}명
+        </span>
+      </div>
+
+      {unsure ? (
+        <p className="mt-3 text-xs font-bold text-black/55">잘 모르겠어요</p>
+      ) : names.length === 0 ? (
+        <p className="mt-3 text-xs font-semibold text-black/35">
+          선택한 사람이 없습니다.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {names.map((name, index) => (
+            <div
+              key={`${memberIds[index]}-${index}`}
+              className="rounded-xl border border-black/[0.07] bg-[#fbfbfa] px-3 py-3"
+            >
+              <p className="text-sm font-black text-black">{name}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SelectedMembersSummary({ selectedNames }: { selectedNames: string[] }) {

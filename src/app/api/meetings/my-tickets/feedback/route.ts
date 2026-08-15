@@ -147,6 +147,8 @@ function normalizePlaceFeedback(value: unknown) {
   const second = normalizePlaceRating(ratings.second);
   const dinnerMemberIds = normalizeSelectedMemberIds(raw.dinner_member_ids);
   const overallMemberIds = normalizeSelectedMemberIds(raw.overall_member_ids);
+  const dinnerMemberUnsure = raw.dinner_member_unsure === true;
+  const overallMemberUnsure = raw.overall_member_unsure === true;
   const disruptiveMemberNote =
     raw.disruptive_member_note === null || raw.disruptive_member_note === undefined
       ? null
@@ -169,6 +171,8 @@ function normalizePlaceFeedback(value: unknown) {
     place_ratings: { first, second },
     dinner_member_ids: dinnerMemberIds,
     overall_member_ids: overallMemberIds,
+    dinner_member_unsure: dinnerMemberUnsure,
+    overall_member_unsure: overallMemberUnsure,
     disruptive_member_note: disruptiveMemberNote,
   };
 }
