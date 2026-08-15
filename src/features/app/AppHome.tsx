@@ -4224,6 +4224,7 @@ const arrivalOptions: Array<{
 ];
 
 function arrivalStatusLabel(status: TicketArrivalStatus | null) {
+  if (status === "no_show") return "불참";
   return (
     arrivalOptions.find((option) => option.value === status)?.label ??
     "아직 선택 전"

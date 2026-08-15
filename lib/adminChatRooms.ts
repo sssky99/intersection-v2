@@ -21,8 +21,11 @@ type InstanceRow = {
 };
 
 type ParticipationRow = {
+  id: string;
   ticket_instance_id: string;
   user_id: string;
+  arrival_status: import("@/types/ticket").TicketArrivalStatus | null;
+  arrival_status_updated_at: string | null;
 };
 
 type ProfileRow = {
@@ -134,7 +137,7 @@ export async function loadAdminChatRooms({
   const [participationsResult, messagesResult] = await Promise.all([
     supabase
       .from("ticket_participations")
-      .select("ticket_instance_id,user_id")
+      .select("id,ticket_instance_id,user_id,arrival_status,arrival_status_updated_at")
       .in("ticket_instance_id", instanceIds)
       .in("status", [...CHAT_MEMBER_STATUSES])
       .returns<ParticipationRow[]>(),
@@ -165,12 +168,12 @@ export async function loadAdminChatRooms({
   }
 
   const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
-  const memberIdsByInstance = participations.reduce((map, participation) => {
+  const participationsByInstance = participations.reduce((map, participation) => {
     const current = map.get(participation.ticket_instance_id) ?? [];
-    current.push(participation.user_id);
+    current.push(participation);
     map.set(participation.ticket_instance_id, current);
     return map;
-  }, new Map<string, string[]>());
+  }, new Map<string, ParticipationRow[]>());
   const messages = messagesResult.data ?? [];
   const latestByRoom = latestMessageByRoom(messages);
   const countsByRoom = messageCountsByRoom(messages);
@@ -187,19 +190,25 @@ export async function loadAdminChatRooms({
       if (now >= closesAt) return null;
 
       const status = now >= opensAt ? "active" : "upcoming";
-      const memberIds = unique(memberIdsByInstance.get(instance.id) ?? []);
-      if (memberIds.length === 0) return null;
+      const roomParticipations = participationsByInstance.get(instance.id) ?? [];
+      const memberIds = unique(roomParticipations.map((row) => row.user_id));
+      if (roomParticipations.length === 0) return null;
 
-      const members: MeetingChatMember[] = memberIds.map((memberId) => {
+      const members: MeetingChatMember[] = roomParticipations.map((participation) => {
+        const memberId = participation.user_id;
         const profile = profileMap.get(memberId);
         const nickname =
           profile?.nickname?.trim() || fallbackNickname(profile?.name);
         return {
           id: memberId,
+          participationId: String(participation.id),
+          name: profile?.name?.trim() || null,
           nickname,
           avatarText: avatarText(profile?.name?.trim() || nickname),
           isSelf: false,
           role: "member",
+          arrivalStatus: participation.arrival_status,
+          arrivalStatusUpdatedAt: participation.arrival_status_updated_at,
         };
       });
       const operator = chatOperatorMember(false);

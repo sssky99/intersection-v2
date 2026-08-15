@@ -123,7 +123,8 @@ export type TicketArrivalStatus =
   | "on_time"
   | "late_10"
   | "late_20"
-  | "late_30_plus";
+  | "late_30_plus"
+  | "no_show";
 
 export type TicketProgressStep =
   | "applied"

@@ -870,6 +870,7 @@ function participantArrivalStatusLabel(
   status: TicketArrivalStatus | null | undefined,
 ) {
   if (status === "on_time") return "정상 도착 예정";
+  if (status === "no_show") return "불참";
   if (status === "late_10") return "10분 정도 늦어요";
   if (status === "late_20") return "20분 정도 늦어요";
   if (status === "late_30_plus") return "30분 이상 늦어요";

@@ -18,7 +18,8 @@ export type AdminArrivalStatus =
   | "on_time"
   | "late_10"
   | "late_20"
-  | "late_30_plus";
+  | "late_30_plus"
+  | "no_show";
 
 export const waitlistStatuses: WaitlistStatus[] = [
   "waitlisted",
@@ -47,6 +48,7 @@ export const arrivalStatusLabels: Record<AdminArrivalStatus, string> = {
   late_10: "10분 정도 늦음",
   late_20: "20분 정도 늦음",
   late_30_plus: "30분 이상 늦음",
+  no_show: "불참",
 };
 
 export type WaitlistTicketTemplate = {

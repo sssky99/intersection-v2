@@ -1,10 +1,14 @@
 export type MeetingChatMember = {
   id: string;
+  participationId?: string;
+  name?: string | null;
   nickname: string;
   avatarText: string;
   photoUrl?: string | null;
   isSelf: boolean;
   role: "member" | "operator";
+  arrivalStatus?: import("@/types/ticket").TicketArrivalStatus | null;
+  arrivalStatusUpdatedAt?: string | null;
 };
 
 export type MeetingChatRoom = {

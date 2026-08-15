@@ -125,6 +125,7 @@ export function RoomChatAdminPanel() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [updatingArrivalId, setUpdatingArrivalId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -316,6 +317,41 @@ export function RoomChatAdminPanel() {
     void sendMessage();
   };
 
+  const updateArrivalStatus = async (
+    participationId: string,
+    status: "pending" | "on_time" | "late" | "no_show",
+  ) => {
+    if (!selectedRoom || updatingArrivalId) return;
+    setUpdatingArrivalId(participationId);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/admin/chat/rooms/${encodeURIComponent(selectedRoom.id)}/arrival`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participationId, status }),
+        },
+      );
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(result?.error ?? "arrival-status-update-failed");
+      }
+      await loadRooms();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "도착 상태를 저장하지 못했습니다.",
+      );
+    } finally {
+      setUpdatingArrivalId(null);
+    }
+  };
+
   const canSend =
     Boolean(data?.operatorConfigured) &&
     selectedRoom?.status === "active" &&
@@ -459,6 +495,71 @@ export function RoomChatAdminPanel() {
                   </div>
                 </div>
               </header>
+
+              <section className="shrink-0 border-b border-black/10 bg-[#fbfaf7] px-5 py-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-black">그룹별 도착 현황</h4>
+                    <p className="mt-1 text-[11px] font-semibold text-black/42">
+                      사용자 티켓의 도착 상태와 바로 연동됩니다.
+                    </p>
+                  </div>
+                  <ArrivalSummary room={selectedRoom} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+                  {selectedRoom.members
+                    .filter(
+                      (member) =>
+                        member.role === "member" && member.participationId,
+                    )
+                    .map((member) => {
+                      const value =
+                        member.arrivalStatus === "on_time"
+                          ? "on_time"
+                          : member.arrivalStatus === "no_show"
+                            ? "no_show"
+                            : member.arrivalStatus
+                              ? "late"
+                              : "pending";
+                      const saving = updatingArrivalId === member.participationId;
+
+                      return (
+                        <label
+                          key={member.participationId}
+                          className="flex items-center gap-2 rounded-xl border border-black/8 bg-white px-3 py-2"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs font-bold text-black/72">
+                            {member.name || member.nickname}
+                          </span>
+                          {saving && (
+                            <Loader2 size={13} className="animate-spin text-black/35" aria-hidden />
+                          )}
+                          <select
+                            aria-label={`${member.name || member.nickname} 도착 상태`}
+                            value={value}
+                            disabled={Boolean(updatingArrivalId)}
+                            onChange={(event) =>
+                              void updateArrivalStatus(
+                                member.participationId!,
+                                event.target.value as
+                                  | "pending"
+                                  | "on_time"
+                                  | "late"
+                                  | "no_show",
+                              )
+                            }
+                            className="h-8 rounded-lg border border-black/10 bg-[#f3f0e8] px-2 text-[11px] font-bold text-black/65 outline-none focus:border-black/35 disabled:opacity-45"
+                          >
+                            <option value="pending">응답 대기</option>
+                            <option value="on_time">정상 도착</option>
+                            <option value="late">지각</option>
+                            <option value="no_show">불참</option>
+                          </select>
+                        </label>
+                      );
+                    })}
+                </div>
+              </section>
 
               <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f7f8] px-5 py-5">
                 {loadingMessages ? (
@@ -617,6 +718,25 @@ export function RoomChatAdminPanel() {
         </section>
       </div>
     </div>
+  );
+}
+
+function ArrivalSummary({ room }: { room: AdminChatRoom }) {
+  const members = room.members.filter((member) => member.role === "member");
+  const arrived = members.filter((member) => member.arrivalStatus === "on_time").length;
+  const late = members.filter(
+    (member) =>
+      member.arrivalStatus &&
+      member.arrivalStatus !== "on_time" &&
+      member.arrivalStatus !== "no_show",
+  ).length;
+  const absent = members.filter((member) => member.arrivalStatus === "no_show").length;
+  const pending = members.length - arrived - late - absent;
+
+  return (
+    <p className="shrink-0 text-[11px] font-bold text-black/48">
+      정상 {arrived} · 지각 {late} · 불참 {absent} · 대기 {pending}
+    </p>
   );
 }
 
