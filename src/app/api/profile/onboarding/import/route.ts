@@ -8,7 +8,6 @@ import {
   calculateConversationResultCode,
   conversationResultVersion,
 } from "@/lib/conversationResult";
-import { assignedProfileEmoji } from "@/lib/profileEmoji";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
@@ -185,9 +184,6 @@ export async function POST(request: Request) {
       questions_completed_at: new Date().toISOString(),
       basic_info_completed_at: new Date().toISOString(),
       profile_completed_at: new Date().toISOString(),
-      ...(isPreferenceOnboarding
-        ? { public_emoji: assignedProfileEmoji(user.id) }
-        : {}),
       ...(isPreferenceOnboarding
         ? {}
         : {

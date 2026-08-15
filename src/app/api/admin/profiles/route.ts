@@ -20,7 +20,6 @@ const baseProfileFields = [
   "phone",
   "photo_url",
   "public_intro",
-  "public_emoji",
   "public_intro_model",
   "conversation_result_code",
   "conversation_result_version",
@@ -392,7 +391,6 @@ export async function PATCH(request: NextRequest) {
     userId?: unknown;
     status?: unknown;
     publicIntro?: unknown;
-    publicEmoji?: unknown;
     isTestParticipant?: unknown;
     matchingPrecisionBonus?: unknown;
     operatorRating?: unknown;
@@ -418,17 +416,6 @@ export async function PATCH(request: NextRequest) {
     updates.public_intro = publicIntro || null;
     updates.public_intro_generated_at = new Date().toISOString();
     updates.public_intro_model = "admin";
-  }
-
-  if (body && "publicEmoji" in body) {
-    const publicEmoji = trimmedText(body.publicEmoji);
-    if (publicEmoji === undefined || publicEmoji.length > 16) {
-      return NextResponse.json(
-        { error: "이모지는 1~16자 이내로 입력해주세요." },
-        { status: 400 },
-      );
-    }
-    updates.public_emoji = publicEmoji || null;
   }
 
   if (body && "isTestParticipant" in body) {

@@ -44,7 +44,7 @@ function guestProfile(): ProfileRow {
     profile_experience_version: preferenceProfileVersion,
     is_test_participant: false,
     public_intro: null,
-    public_emoji: "✦",
+    public_emoji: null,
     public_intro_generated_at: null,
     public_intro_revealed_generated_at: null,
     public_intro_model: null,

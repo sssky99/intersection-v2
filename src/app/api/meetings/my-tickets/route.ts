@@ -132,7 +132,6 @@ type ProfileIntroRow = {
   gender: string | null;
   birth_year: string | number | null;
   public_intro: string | null;
-  public_emoji?: string | null;
 };
 
 type ProfileAccessRow = {
@@ -143,7 +142,6 @@ type ProfileAccessRow = {
   gender: string | null;
   birth_year: string | number | null;
   public_intro: string | null;
-  public_emoji: string | null;
 };
 
 type TicketSourceRow = WaitlistRow;
@@ -1075,19 +1073,6 @@ function compareTicketCandidates(
   return left.sortTitle.localeCompare(right.sortTitle, "ko");
 }
 
-function profileEmoji(userId: string) {
-  const emojis = ["💎", "🌿", "☕", "🎧", "✨", "🫧", "🪩", "🧭"];
-  const sum = Array.from(userId).reduce(
-    (total, character) => total + character.charCodeAt(0),
-    0,
-  );
-  return emojis[sum % emojis.length];
-}
-
-function displayProfileEmoji(profile: ProfileIntroRow | undefined, userId: string) {
-  return profile?.public_emoji?.trim() || profileEmoji(userId);
-}
-
 function fallbackNickname(name: string | null | undefined) {
   const korean = (name ?? "").replace(/[^가-힣]/g, "");
   return korean.length >= 2 ? korean.slice(-2) : korean || null;
@@ -1140,7 +1125,7 @@ export async function GET(request: Request) {
     const { data: profileAccess, error: profileAccessError } = await supabase
       .from("profiles")
       .select(
-        "is_test_participant,name,nickname,photo_url,gender,birth_year,public_intro,public_emoji",
+        "is_test_participant,name,nickname,photo_url,gender,birth_year,public_intro",
       )
       .eq("user_id", user.id)
       .maybeSingle<ProfileAccessRow>();
@@ -1355,7 +1340,7 @@ export async function GET(request: Request) {
     if (profileIds.length > 0) {
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id,name,nickname,photo_url,gender,birth_year,public_intro,public_emoji")
+        .select("user_id,name,nickname,photo_url,gender,birth_year,public_intro")
         .in("user_id", profileIds);
       if (error) throw error;
       profileRows = (data ?? []) as unknown as ProfileIntroRow[];
@@ -1521,7 +1506,6 @@ export async function GET(request: Request) {
             nickname: displayNickname(memberProfile),
             photoUrl: memberProfile?.photo_url?.trim() || null,
             gender: normalizeProfileGender(memberProfile?.gender),
-            emoji: displayProfileEmoji(memberProfile, id),
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus,
             arrivalStatusUpdatedAt,

@@ -45,14 +45,6 @@ export async function PATCH(request: Request) {
   }
 
   const updates: Partial<ProfileRow> = {};
-  if (body && "publicEmoji" in body) {
-    const publicEmoji = text(body.publicEmoji);
-    if (!publicEmoji || publicEmoji.length > 16) {
-      return NextResponse.json({ error: "Invalid emoji." }, { status: 400 });
-    }
-    updates.public_emoji = publicEmoji;
-  }
-
   if (body && "name" in body) {
     const name = text(body.name);
     const phone = text(body.phone);

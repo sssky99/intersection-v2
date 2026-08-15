@@ -803,10 +803,6 @@ function profileGender(profile: AdminProfile | null | undefined): Gender | null 
   return null;
 }
 
-function profileEmoji(profile: AdminProfile | null | undefined) {
-  return profile?.public_emoji?.trim() || "🙂";
-}
-
 function ticketStartIso(ticket: GatheringTicket) {
   if (!ticket.date || !ticket.time) return null;
   const normalizedTime = ticket.time.slice(0, 5);
@@ -825,14 +821,12 @@ function memberFromProfile({
   profile,
   fallbackDisplayName,
   fallbackIntro,
-  fallbackEmoji,
   isSelf,
   arrivalStatus,
 }: {
   profile: AdminProfile | null;
   fallbackDisplayName: string;
   fallbackIntro?: string | null;
-  fallbackEmoji?: string | null;
   isSelf: boolean;
   arrivalStatus: TicketArrivalStatus | null;
 }): TicketMemberIntro {
@@ -842,7 +836,6 @@ function memberFromProfile({
     nickname: profile?.nickname ?? fallbackDisplayName,
     photoUrl: profile?.photo_url?.trim() || null,
     gender: profileGender(profile),
-    emoji: profileEmoji(profile) || fallbackEmoji?.trim() || "🙂",
     publicIntro: profile?.public_intro ?? fallbackIntro ?? null,
     arrivalStatus,
     arrivalStatusUpdatedAt: arrivalStatus ? new Date().toISOString() : null,

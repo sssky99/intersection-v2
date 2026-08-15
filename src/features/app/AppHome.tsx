@@ -330,10 +330,6 @@ function profileNickname(profile: Pick<ProfileRow, "name" | "nickname">) {
     : fallbackNickname(profile.name);
 }
 
-function profileEmoji(profile: Pick<ProfileRow, "public_emoji">) {
-  return profile.public_emoji?.trim() || "💎";
-}
-
 function isValidNickname(value: string) {
   return /^[가-힣]{2}$/.test(value.trim());
 }
@@ -4320,6 +4316,28 @@ function ArrivalStatusPanel({
 
   return (
     <section className="border-t border-black/8 py-5">
+      {userTicket.ticket.reservationName && (
+        <div className="mb-5 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3.5">
+          <div className="flex min-h-7 items-center justify-between gap-4">
+            <span className="flex items-center gap-2 text-sm font-bold text-black/52">
+              <UserRound size={15} className="text-black/38" aria-hidden />
+              예약자명
+            </span>
+            <strong
+              aria-label={selected ? userTicket.ticket.reservationName : "도착 상태 선택 후 공개"}
+              className={cn(
+                "text-[15px] font-black tracking-[-0.02em] text-black transition-[filter,opacity] duration-300",
+                selected ? "blur-0 opacity-100" : "select-none blur-[5px] opacity-55",
+              )}
+            >
+              {userTicket.ticket.reservationName}
+            </strong>
+          </div>
+          <p className="mt-2 text-[11px] font-semibold leading-5 text-black/42">
+            하단 도착상태를 표시하고, 예약자명을 확인하세요.
+          </p>
+        </div>
+      )}
       <h2 className="text-[15px] font-black text-black">도착 상태</h2>
       {!userTicket.canSetArrival ? (
         <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
@@ -4359,23 +4377,6 @@ function ArrivalStatusPanel({
               {error}
             </p>
           )}
-        </div>
-      )}
-      {userTicket.ticket.reservationName && (
-        <div className="mt-4 flex min-h-14 items-center justify-between gap-4 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3">
-          <span className="flex items-center gap-2 text-sm font-bold text-black/52">
-            <UserRound size={15} className="text-black/38" aria-hidden />
-            예약자명
-          </span>
-          <strong
-            aria-label={selected ? userTicket.ticket.reservationName : "도착 상태 선택 후 공개"}
-            className={cn(
-              "text-[15px] font-black tracking-[-0.02em] text-black transition-[filter,opacity] duration-300",
-              selected ? "blur-0 opacity-100" : "select-none blur-[5px] opacity-55",
-            )}
-          >
-            {userTicket.ticket.reservationName}
-          </strong>
         </div>
       )}
       <MemberArrivalStatusAccordion members={userTicket.members} />
@@ -4439,8 +4440,18 @@ function MemberArrivalStatusAccordion({
                       <span className="truncate">
                         {member.nickname?.trim() || member.name || "멤버"}
                       </span>
-                      <span aria-hidden className="shrink-0 text-xs">
-                        {member.emoji}
+                      <span
+                        aria-hidden
+                        className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/8 bg-[#eee9df] text-[8px] font-black text-black/45"
+                      >
+                        {member.photoUrl ? (
+                          <span
+                            className="absolute -inset-1 scale-125 bg-cover bg-center blur-[5px]"
+                            style={{ backgroundImage: `url(${member.photoUrl})` }}
+                          />
+                        ) : (
+                          fallbackNickname(member.nickname || member.name)
+                        )}
                       </span>
                     </span>
                   </span>
@@ -5113,7 +5124,6 @@ function TicketFeedbackPlaceholder() {
 
 type ProfileGenerateResponse = {
   intro?: string | null;
-  emoji?: string | null;
   generatedAt?: string | null;
   model?: string | null;
   notice?: string;
@@ -5151,7 +5161,6 @@ function ProfileCompletionModal({
   const [phase, setPhase] = useState<"loading" | "typing" | "error">("loading");
   const [messageIndex, setMessageIndex] = useState(0);
   const [intro, setIntro] = useState("");
-  const [emoji, setEmoji] = useState<string | null>(profile.public_emoji);
   const [generatedAt, setGeneratedAt] = useState<string | null>(
     profile.public_intro_generated_at,
   );
@@ -5168,9 +5177,8 @@ function ProfileCompletionModal({
     () => ({
       ...profile,
       public_intro: intro || profile.public_intro,
-      public_emoji: emoji ?? profile.public_emoji,
     }),
-    [emoji, intro, profile],
+    [intro, profile],
   );
   const modalVibeScores = useMemo(
     () => profileVibeScores(modalProfile, answers),
@@ -5184,7 +5192,6 @@ function ProfileCompletionModal({
     setPhase("loading");
     setMessageIndex(0);
     setIntro("");
-    setEmoji(profile.public_emoji);
     setGeneratedAt(profile.public_intro_generated_at);
     setModel(profile.public_intro_model);
     setNotice(null);
@@ -5210,7 +5217,6 @@ function ProfileCompletionModal({
         const profilePromise = !shouldGenerate
           ? Promise.resolve<ProfileGenerateResponse>({
               intro: existingIntro,
-              emoji: profile.public_emoji,
               generatedAt: profile.public_intro_generated_at,
               model: profile.public_intro_model,
             })
@@ -5232,7 +5238,6 @@ function ProfileCompletionModal({
         if (!alive) return;
 
         setIntro(result.intro?.trim() || existingIntro || "");
-        setEmoji(result.emoji ?? profile.public_emoji);
         setGeneratedAt(result.generatedAt ?? profile.public_intro_generated_at);
         setModel(result.model ?? profile.public_intro_model);
         setNotice(result.notice ?? null);
@@ -5259,7 +5264,6 @@ function ProfileCompletionModal({
     };
   }, [
     animationKey,
-    profile.public_emoji,
     profile.public_intro,
     profile.public_intro_generated_at,
     profile.public_intro_model,
@@ -5286,7 +5290,6 @@ function ProfileCompletionModal({
 
     onComplete({
       public_intro: intro || profile.public_intro,
-      public_emoji: emoji ?? profile.public_emoji,
       public_intro_generated_at: revealedGeneratedAt,
       public_intro_revealed_generated_at: revealedGeneratedAt,
       public_intro_model: model ?? profile.public_intro_model,
@@ -5364,11 +5367,8 @@ function ProfileCompletionModal({
                   <span>{displayName}님의 프로필이 만들어졌어요</span>
                 </h2>
                 <div className="mt-5 min-h-[258px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
-                  <div className="mb-4 flex items-center gap-2 text-xl font-black leading-7 text-black">
-                    <span>{displayName}</span>
-                    <span aria-hidden className="text-base leading-none">
-                      {emoji ?? profileEmoji(profile)}
-                    </span>
+                  <div className="mb-4 text-xl font-black leading-7 text-black">
+                    {displayName}
                   </div>
                   <ProfileCompletionTypewriter
                     text={intro}

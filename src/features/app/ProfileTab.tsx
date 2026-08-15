@@ -186,10 +186,6 @@ function profileInitial(profile: ProfileRow) {
   return profileNickname(profile);
 }
 
-function profileEmoji(profile: Pick<ProfileRow, "public_emoji">) {
-  return profile.public_emoji?.trim() || "💎";
-}
-
 function ParticipationDiamondNode({
   step,
   current,
@@ -680,11 +676,8 @@ export function ProfileTab({
             <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
               about me
             </p>
-            <h2 className="mt-2 flex items-center gap-2 text-xl font-bold leading-7 text-black">
-              <span>{profileNickname(profile)}</span>
-              <span aria-hidden className="text-base leading-none">
-                {profileEmoji(profile)}
-              </span>
+            <h2 className="mt-2 text-xl font-bold leading-7 text-black">
+              {profileNickname(profile)}
             </h2>
             <p className="mt-5 whitespace-pre-line text-sm font-medium leading-7 text-black/62">
               {publicIntro ?? "아직 소개가 준비 중이에요."}

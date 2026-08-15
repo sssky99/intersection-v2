@@ -25,7 +25,6 @@ export type AdminProfile = {
   phone: string | null;
   photo_url: string | null;
   public_intro: string | null;
-  public_emoji?: string | null;
   public_intro_model?: string | null;
   conversation_result_code?: string | null;
   conversation_result_version?: string | null;

@@ -68,7 +68,7 @@ async function ensureTestUser() {
       profile_completed: true,
       questions_completed: true,
       public_intro: "새로운 전시와 조용한 대화를 좋아하는 김서현입니다.",
-      public_emoji: "🌷",
+      public_emoji: null,
       meeting_guidelines_agreed: true,
       membership_status: "active",
       membership_plan: "three_months",

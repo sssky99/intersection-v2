@@ -220,7 +220,7 @@ export async function POST(request: Request) {
       p_user_id: user.id,
       p_basic_info: basicInfo,
       p_public_intro: profile.public_intro,
-      p_public_emoji: profile.public_emoji,
+      p_public_emoji: null,
       p_public_intro_model: profile.public_intro_model,
       p_public_intro_generated_at: profile.public_intro_generated_at,
       p_scores: scores,

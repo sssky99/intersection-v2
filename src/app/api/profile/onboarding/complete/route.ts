@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { usesPreferenceProfile } from "@/data/preferenceQuestions";
-import { assignedProfileEmoji } from "@/lib/profileEmoji";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -37,14 +35,6 @@ export async function POST(request: Request) {
   }
 
   const admin = createAdminClient();
-  const { data: profile } = await admin
-    .from("profiles")
-    .select("profile_experience_version,public_emoji")
-    .eq("user_id", user.id)
-    .maybeSingle<{
-      profile_experience_version: string | null;
-      public_emoji: string | null;
-    }>();
   const { error } = await admin.from("profiles").update({
     name,
     phone,
@@ -56,9 +46,6 @@ export async function POST(request: Request) {
     profile_completed: true,
     basic_info_completed_at: new Date().toISOString(),
     profile_completed_at: new Date().toISOString(),
-    ...(profile && usesPreferenceProfile(profile) && !profile.public_emoji
-      ? { public_emoji: assignedProfileEmoji(user.id) }
-      : {}),
   }).eq("user_id", user.id);
 
   if (error) {
