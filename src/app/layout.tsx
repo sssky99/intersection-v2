@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics";
 import { ClarityScript } from "./ClarityScript";
+import { MetaPixelScript } from "./MetaPixelScript";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -47,6 +48,7 @@ export default function RootLayout({
     <html lang="ko">
       <body>
         {children}
+        <MetaPixelScript />
         {GA_MEASUREMENT_ID && (
           <Script
             src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}

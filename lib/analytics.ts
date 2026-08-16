@@ -1,5 +1,6 @@
 export const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 export const CLARITY_PROJECT_ID = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID;
+export const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
 type AnalyticsParamValue = string | number | boolean;
 type AnalyticsParams = Record<
@@ -50,6 +51,7 @@ declare global {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
     clarity?: ClarityFn;
+    fbq?: (...args: unknown[]) => void;
   }
 }
 
@@ -268,6 +270,33 @@ function trackClarityEvent(
   }
 }
 
+const metaStandardEvents: Record<string, string> = {
+  landing_cta_click: "ViewContent",
+  phone_verification_complete: "CompleteRegistration",
+  application_created: "Lead",
+  payment_completed: "Purchase",
+};
+
+function trackMetaEvent(eventName: string) {
+  if (
+    !META_PIXEL_ID ||
+    !shouldTrackBrowserAnalytics() ||
+    typeof window.fbq !== "function"
+  ) {
+    return;
+  }
+
+  try {
+    const context = { page_group: pageGroup(window.location.pathname) };
+    window.fbq("trackCustom", eventName, context);
+
+    const standardEvent = metaStandardEvents[eventName];
+    if (standardEvent) window.fbq("track", standardEvent);
+  } catch {
+    // Meta Pixel should never interrupt the user flow.
+  }
+}
+
 function trackSupabaseEvent(
   eventName: string,
   payload: Record<string, AnalyticsParamValue>,
@@ -318,6 +347,7 @@ export function trackEvent(
   const payload = cleanParams(params);
   window.dataLayer = window.dataLayer ?? [];
   trackClarityEvent(eventName, payload);
+  trackMetaEvent(eventName);
   trackSupabaseEvent(eventName, payload);
 
   if (typeof window.gtag === "function") {

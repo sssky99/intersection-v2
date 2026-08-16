@@ -2,3 +2,4 @@
 NEXT_PUBLIC_SUPABASE_URL = "https://hvyrhwhxbtsgrgodgzms.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_LiDl80FOx74Qjp465A5XnQ_tAKuaohY"
 NEXT_PUBLIC_SITE_URL = "https://interv2.netlify.app"
+NEXT_PUBLIC_META_PIXEL_ID = "1077363121333597"
