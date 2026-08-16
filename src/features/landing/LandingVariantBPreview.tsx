@@ -119,7 +119,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
             </h1>
           </div>
 
-          <div className="absolute inset-x-6 bottom-[calc(20px+env(safe-area-inset-bottom))]">
+          <div className="absolute inset-x-6 bottom-[max(64px,calc(8dvh+env(safe-area-inset-bottom)))]">
             <button
               type="button"
               onClick={() => {
