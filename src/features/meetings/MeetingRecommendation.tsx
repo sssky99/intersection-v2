@@ -66,6 +66,12 @@ function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
 }
 
+function seoulAreaLabel(area?: string | null) {
+  const normalizedArea = area?.trim();
+  if (!normalizedArea) return "장소 추후 안내";
+  return normalizedArea === "서울" ? "서울" : `서울 ${normalizedArea}`;
+}
+
 function CompactParticipationRecord({
   count,
   onOpen,
@@ -1387,7 +1393,7 @@ function MeetingDateApplicationFlow({
         title={selectedTicket.title}
         dateText={programDateLabel(selectedTicket.date)}
         timeText={formatTicketTimeLabel(selectedTicket.time)}
-        placeText={selectedTicket.area ? `서울 ${selectedTicket.area}` : "장소 추후 안내"}
+        placeText={seoulAreaLabel(selectedTicket.area)}
         reducedMotion={shouldReduceMotion}
         onBack={() => {
           setSuppressProgramMorph(true);
@@ -1455,7 +1461,7 @@ function MeetingDateApplicationFlow({
 
         <TicketDetailRevealHeader
           title={selectedTicket.title}
-          meta={`${meetingDateLabel(selectedTicket.date)} · ${formatTicketTimeLabel(selectedTicket.time)}${selectedTicket.area ? ` · 서울 ${selectedTicket.area}` : ""}`}
+          meta={`${meetingDateLabel(selectedTicket.date)} · ${formatTicketTimeLabel(selectedTicket.time)} · ${seoulAreaLabel(selectedTicket.area)}`}
         />
 
         <motion.div

@@ -7,6 +7,7 @@ import {
   Check,
   Clock3,
   Copy,
+  Info,
   LockKeyhole,
   MapPin,
   Navigation,
@@ -201,10 +202,6 @@ const dinnerBeerOtherMemberPhotoUrls = [
   "/images/meeting-matches/dinner-beer/other-members/member-6.jpg",
 ] as const;
 
-// The 2026-08-21 secret-bar program uses this fixed member photo set.
-const dinnerSecretBarMatchPhotoUrls = dinnerBeerMatchPhotoUrls;
-const dinnerSecretBarOtherMemberPhotoUrls = dinnerBeerOtherMemberPhotoUrls;
-
 const dinnerCocktailMatchPhotoUrls = [
   "/images/meeting-matches/dinner-cocktail/match-1.jpg",
   "/images/meeting-matches/dinner-cocktail/match-2.jpg",
@@ -222,65 +219,33 @@ const dinnerCocktailOtherMemberPhotoUrls = [
   "/images/meeting-matches/dinner-cocktail/other-members/member-6.jpg",
 ] as const;
 
-function isDinnerBoardgameTicket(ticket: GatheringTicket) {
-  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
-  return normalizedTitle.includes("디너&보드게임") ||
-    normalizedTitle.includes("디너앤보드게임");
+const providedMemberPhotoPool = [
+  ...dinnerBoardgameMatchPhotoUrls,
+  ...dinnerBoardgameOtherMemberPhotoUrls,
+  ...dinnerBeerMatchPhotoUrls,
+  ...dinnerBeerOtherMemberPhotoUrls,
+  ...dinnerCocktailMatchPhotoUrls,
+  ...dinnerCocktailOtherMemberPhotoUrls,
+] as const;
+
+function stablePhotoOrderKey(seed: string, photoUrl: string) {
+  const value = `${seed}:${photoUrl}`;
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
-function isDinnerBeerTicket(ticket: GatheringTicket) {
-  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
-  return normalizedTitle.includes("디너&비어") ||
-    normalizedTitle.includes("디너앤비어");
-}
-
-function isDinnerSecretBarTicket(ticket: GatheringTicket) {
-  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
-  return normalizedTitle === "디너&시크릿바" ||
-    normalizedTitle === "디너앤시크릿바" ||
-    normalizedTitle === "디너&시크릿칵테일바" ||
-    normalizedTitle === "디너앤시크릿칵테일바";
-}
-
-function isDinnerCocktailTicket(ticket: GatheringTicket) {
-  const normalizedTitle = ticket.title.replace(/\s+/g, "").toLowerCase();
-  return normalizedTitle.includes("디너&칵테일") ||
-    normalizedTitle.includes("디너앤칵테일");
-}
-
-function ticketMatchPhotoUrls(ticket: GatheringTicket, fallback: string[]) {
-  if (isDinnerSecretBarTicket(ticket)) {
-    return [...dinnerSecretBarMatchPhotoUrls];
-  }
-  if (isDinnerBoardgameTicket(ticket)) {
-    return [...dinnerBoardgameMatchPhotoUrls];
-  }
-  if (isDinnerBeerTicket(ticket)) {
-    return [...dinnerBeerMatchPhotoUrls];
-  }
-  if (isDinnerCocktailTicket(ticket)) {
-    return [...dinnerCocktailMatchPhotoUrls];
-  }
-  return fallback;
-}
-
-function ticketOtherMemberPhotoUrls(
-  ticket: GatheringTicket,
-  fallback: string[],
-) {
-  if (isDinnerSecretBarTicket(ticket)) {
-    return [...dinnerSecretBarOtherMemberPhotoUrls];
-  }
-  if (isDinnerBoardgameTicket(ticket)) {
-    return [...dinnerBoardgameOtherMemberPhotoUrls];
-  }
-  if (isDinnerBeerTicket(ticket)) {
-    return [...dinnerBeerOtherMemberPhotoUrls];
-  }
-  if (isDinnerCocktailTicket(ticket)) {
-    return [...dinnerCocktailOtherMemberPhotoUrls];
-  }
-  return fallback;
+function randomMemberPhotoUrls(ticket: GatheringTicket) {
+  return [...providedMemberPhotoPool]
+    .sort(
+      (left, right) =>
+        stablePhotoOrderKey(ticket.id, left) -
+        stablePhotoOrderKey(ticket.id, right),
+    )
+    .slice(0, 11);
 }
 
 export function TicketDetailContent({
@@ -310,14 +275,13 @@ export function TicketDetailContent({
   afterNotice?: ReactNode;
   footer?: ReactNode;
 }) {
-  const resolvedMatchPhotoUrls =
-    matchMemberCount === undefined
-      ? ticketMatchPhotoUrls(ticket, previewMatchPhotoUrls)
-      : previewMatchPhotoUrls;
-  const resolvedOtherMemberPhotoUrls = ticketOtherMemberPhotoUrls(
-    ticket,
-    previewOtherMemberPhotoUrls,
-  );
+  const randomPreviewPhotoUrls = randomMemberPhotoUrls(ticket);
+  const resolvedMatchPhotoUrls = matchMemberCount === undefined
+    ? randomPreviewPhotoUrls.slice(0, 5)
+    : previewMatchPhotoUrls;
+  const resolvedOtherMemberPhotoUrls = matchMemberCount === undefined
+    ? randomPreviewPhotoUrls.slice(5, 11)
+    : previewOtherMemberPhotoUrls;
   const activities = cleanList(ticket.detailActivities);
   const defaultNotices = [...participantNotice(ticket), ...commonNotices];
   const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
@@ -619,7 +583,25 @@ function TicketCoursePanel({
 }
 
 function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
+  const [infoOpen, setInfoOpen] = useState(false);
   const startAt = ticketStartAt(ticket);
+
+  useEffect(() => {
+    if (!infoOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setInfoOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [infoOpen]);
+
   if (!startAt) return null;
   const feedbackAt = new Date(startAt.getTime() + 3 * hourMs);
 
@@ -632,14 +614,69 @@ function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
       <p className="mb-3 text-[11px] font-black tracking-[0.08em] text-black/40">
         {formatKstDateLabel(feedbackAt)}
       </p>
-      <div className="flex items-center justify-between gap-4 rounded-[12px] border border-black/[0.07] bg-[#f1ebe0] px-4 py-4">
+      <div className="relative flex items-center justify-between gap-4 rounded-[12px] border border-black/[0.07] bg-[#f1ebe0] px-4 py-4">
         <span className="text-[12px] font-bold text-black/42">
           {formatKstTimeLabel(feedbackAt)}
         </span>
-        <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
-          피드백 시간
-        </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setInfoOpen((open) => !open)}
+            aria-label="피드백 시간 안내"
+            aria-expanded={infoOpen}
+            className="flex h-5 w-5 items-center justify-center rounded-full border border-black/20 text-black/48 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+          >
+            <Info size={12} strokeWidth={2} aria-hidden />
+          </button>
+          <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
+            피드백 시간
+          </span>
+        </div>
+
       </div>
+
+      {typeof document !== "undefined" && createPortal(
+        <AnimatePresence>
+          {infoOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              role="presentation"
+              onClick={() => setInfoOpen(false)}
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[2px]"
+            >
+              <motion.div
+                initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="피드백 시간 안내"
+                onClick={(event) => event.stopPropagation()}
+                className="w-full max-w-[340px] rounded-[24px] border border-black/10 bg-[#f8f4eb] px-6 pb-5 pt-7 text-center shadow-[0_24px_70px_rgba(0,0,0,0.24)]"
+              >
+                <p className="break-keep text-[16px] font-bold leading-7 tracking-[-0.025em] text-[#24211d]">
+                  다시 만나 이야기 나누고 싶은 멤버를 선택할 수 있어요.
+                </p>
+                <p className="mt-3 break-keep text-[16px] font-bold leading-7 tracking-[-0.025em] text-[#24211d]">
+                  서로를 선택하면, 1:1로 만날 수 있도록 연결해드려요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(false)}
+                  className="mt-6 h-12 w-full rounded-full bg-[#171713] text-[14px] font-black text-white transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
+                >
+                  확인
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
     </div>
   );
 }
