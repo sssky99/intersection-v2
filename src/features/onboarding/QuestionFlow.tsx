@@ -1090,6 +1090,11 @@ export function QuestionFlow({
     }
 
     if (showProfileArchetypeResult) {
+      router.prefetch(
+        isRegeneration
+          ? "/meetings?tab=profile"
+          : "/meetings?tab=recommend",
+      );
       setCompletedProfileRows(completedRows);
       setProfileArchetypeResultId(
         responseBody?.profileArchetypeId ??
@@ -1751,7 +1756,6 @@ export function QuestionFlow({
           router.replace(
             isRegeneration ? "/meetings?tab=profile" : "/meetings?tab=recommend",
           );
-          router.refresh();
         }}
       />
     );

@@ -133,12 +133,12 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
       trackEvent("profile_complete", { mode: "guest_import" });
 
       if (isProfileArchetypeId(body?.profileArchetypeId)) {
+        router.prefetch(destination);
         setNextPath(destination);
         setProfileArchetypeId(body.profileArchetypeId);
         return;
       }
       router.replace(destination);
-      router.refresh();
     } catch (importError) {
       console.error("Guest onboarding import failed:", importError);
       setError("답변을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -153,7 +153,6 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
         archetypeId={profileArchetypeId}
         onContinue={() => {
           router.replace(nextPath);
-          router.refresh();
         }}
       />
     );
@@ -161,7 +160,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
 
   if (!draft) {
     return (
-      <section className="flex min-h-dvh flex-col items-center justify-center px-6 text-center md:min-h-[calc(100dvh-32px)]">
+      <section className="flex min-h-dvh flex-col items-center justify-center bg-[#F5F1E8] px-6 text-center text-[#121212] md:min-h-[calc(100dvh-32px)]">
         {error ? (
           <>
             <p className="text-lg font-bold text-black">답변을 불러오지 못했어요</p>
