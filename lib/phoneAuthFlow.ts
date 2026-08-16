@@ -59,3 +59,10 @@ export async function retryProfileSetup<T>(
 export function isProfileSetupFailure(code: PhoneAuthFailureCode) {
   return code.startsWith("PROFILE_");
 }
+
+export function phoneAuthDestination(
+  nextPath: string,
+  completionPath?: string,
+) {
+  return completionPath || nextPath;
+}

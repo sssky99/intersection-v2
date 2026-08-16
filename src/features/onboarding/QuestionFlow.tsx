@@ -31,6 +31,10 @@ import {
   trackEvent,
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
+import {
+  initialResumeQuestionIndex,
+  shouldResumeAtPhotoStep,
+} from "@/lib/onboardingResume";
 import { createClient } from "@/lib/supabase/client";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import type {
@@ -700,25 +704,33 @@ export function QuestionFlow({
         }),
       ) as AnswerMap)
     : null;
-  const [questionIndex, setQuestionIndex] = useState(
-    initialQuestionIndex ??
-      requestedStartIndex ??
-      (isPreview
-        ? 0
-        : firstIncomplete === -1
-          ? questions.length - 1
-          : firstIncomplete),
+  const resumeAtPhotoStep = shouldResumeAtPhotoStep({
+    mode,
+    initialPhotoStep,
+    explicitQuestionIndex: initialQuestionIndex,
+    firstIncompleteIndex: firstIncomplete,
+  });
+  const [questionIndex, setQuestionIndex] = useState(() =>
+    isPreview && initialQuestionIndex === undefined
+      ? 0
+      : initialResumeQuestionIndex({
+          explicitQuestionIndex: initialQuestionIndex,
+          requestedStartIndex,
+          firstIncompleteIndex: firstIncomplete,
+          questionCount: questions.length,
+          storedAnswerCount: Object.keys(initialAnswers).length,
+        }),
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
   const [collectingName, setCollectingName] = useState(shouldCollectName);
   const [name, setName] = useState(namePreview ? "" : initialName);
   const [collectingGender, setCollectingGender] =
     useState(shouldCollectGender);
-  const [collectingPhoto, setCollectingPhoto] = useState(initialPhotoStep);
+  const [collectingPhoto, setCollectingPhoto] = useState(resumeAtPhotoStep);
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [pendingFinalAnswers, setPendingFinalAnswers] =
-    useState<AnswerMap | null>(initialPhotoStep ? initialAnswers : null);
+    useState<AnswerMap | null>(resumeAtPhotoStep ? initialAnswers : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(

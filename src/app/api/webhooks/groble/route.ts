@@ -7,6 +7,7 @@ import {
   type MembershipPlan,
 } from "@/features/membership/membershipTypes";
 import { incrementMembershipApplicationCounter } from "@/lib/membershipApplicationCounter";
+import { grobleCompletedPaymentKind } from "@/lib/groblePaymentEvent";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -860,47 +861,48 @@ async function processPaymentCompleted(
 ) {
   const details = objectParts(envelope.object);
   const paymentOccurredAt = details.purchasedAt ?? envelope.occurredAt;
-  const membershipMatch =
-    (await existingMembershipMatch(envelope.id)) ??
-    (await pendingMembershipMatch({
-      ...details,
-      paidAt: paymentOccurredAt,
-    }));
+  const completedPaymentKind = grobleCompletedPaymentKind(envelope.type);
+
+  if (completedPaymentKind === "membership") {
+    const membershipMatch =
+      (await existingMembershipMatch(envelope.id)) ??
+      (await pendingMembershipMatch({
+        ...details,
+        paidAt: paymentOccurredAt,
+      }));
+
+    if (
+      membershipMatch.status === "matched" &&
+      membershipMatch.userId &&
+      membershipMatch.intentId !== null &&
+      membershipMatch.plan
+    ) {
+      return processMembershipPayment({
+        envelope,
+        idempotencyKey,
+        details,
+        match: {
+          ...membershipMatch,
+          status: "matched",
+          userId: membershipMatch.userId,
+          intentId: membershipMatch.intentId,
+          plan: membershipMatch.plan,
+        },
+      });
+    }
+
+    await eventStatus(idempotencyKey, {
+      processing_status: membershipMatch.status,
+      matched_user_id: membershipMatch.userId,
+      processed_at: new Date().toISOString(),
+    });
+    return membershipMatch.status;
+  }
+
   const match = await pendingApplicationMatch({
     ...details,
     paidAt: paymentOccurredAt,
   });
-
-  if (
-    membershipMatch.status === "ambiguous" ||
-    (membershipMatch.status === "matched" && match.status === "matched")
-  ) {
-    await eventStatus(idempotencyKey, {
-      processing_status: "ambiguous",
-      matched_user_id: membershipMatch.userId,
-      processed_at: new Date().toISOString(),
-    });
-    return "ambiguous";
-  }
-  if (
-    membershipMatch.status === "matched" &&
-    membershipMatch.userId &&
-    membershipMatch.intentId !== null &&
-    membershipMatch.plan
-  ) {
-    return processMembershipPayment({
-      envelope,
-      idempotencyKey,
-      details,
-      match: {
-        ...membershipMatch,
-        status: "matched",
-        userId: membershipMatch.userId,
-        intentId: membershipMatch.intentId,
-        plan: membershipMatch.plan,
-      },
-    });
-  }
 
   if (match.status !== "matched" || !match.userId || !match.groupId) {
     await eventStatus(idempotencyKey, {

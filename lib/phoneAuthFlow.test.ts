@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isProfileSetupFailure,
   otpFailureCode,
+  phoneAuthDestination,
   phoneAuthErrorMessage,
   profileRecoveryMessage,
   retryProfileSetup,
@@ -38,5 +39,20 @@ describe("phone authentication failures", () => {
       async () => { throw new Error("still unavailable"); },
       { timeoutMs: 5, intervalMs: 1 },
     )).rejects.toThrow("still unavailable");
+  });
+
+  it("keeps the guest-answer import destination after authentication", () => {
+    expect(
+      phoneAuthDestination(
+        "/onboarding/questions?start=1",
+        "/onboarding/import",
+      ),
+    ).toBe("/onboarding/import");
+  });
+
+  it("uses the profile destination for a regular login", () => {
+    expect(phoneAuthDestination("/meetings?tab=browse")).toBe(
+      "/meetings?tab=browse",
+    );
   });
 });

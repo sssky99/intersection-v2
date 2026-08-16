@@ -8,6 +8,7 @@ import {
   isProfileSetupFailure,
   otpFailureCode,
   PhoneAuthError,
+  phoneAuthDestination,
   phoneAuthErrorMessage,
   profileRecoveryMessage,
   retryProfileSetup,
@@ -139,7 +140,9 @@ export function FiftyQLandingClient({
             | null;
           if (!mounted) return;
           if (response.ok && body?.nextPath) {
-            window.location.replace(body.nextPath);
+            window.location.replace(
+              phoneAuthDestination(body.nextPath, completionPath),
+            );
             return;
           }
           const code = body?.errorCode ?? "PROFILE_RESPONSE_INVALID";
@@ -160,7 +163,7 @@ export function FiftyQLandingClient({
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, [previewPhoneOnly, trackLandingView]);
+  }, [completionPath, previewPhoneOnly, trackLandingView]);
 
   useEffect(() => {
     if (
@@ -235,7 +238,7 @@ export function FiftyQLandingClient({
     setPromptKey((value) => value + 1);
   };
 
-  const completePhoneAuth = async () => {
+  const completePhoneAuth = async (trackOtpSuccess = false) => {
     const response = await fetch("/api/auth/phone/complete", { method: "POST" });
     const body = (await response.json().catch(() => null)) as
       | {
@@ -248,13 +251,18 @@ export function FiftyQLandingClient({
       throw new PhoneAuthError(body?.errorCode ?? "PROFILE_RESPONSE_INVALID");
     }
 
+    if (trackOtpSuccess) {
+      trackEvent("otp_verification_success", { source: authSource });
+    }
     trackEvent("phone_verification_complete", {
       login_type: body.loginType ?? "unknown",
       source: authSource,
     });
 
     if (completionPath) {
-      window.location.replace(completionPath);
+      window.location.replace(
+        phoneAuthDestination(body.nextPath, completionPath),
+      );
       return;
     }
 
@@ -276,8 +284,7 @@ export function FiftyQLandingClient({
       type: "sms",
     });
     if (verifyError) throw new PhoneAuthError(otpFailureCode(verifyError.message));
-    trackEvent("otp_verification_success", { source: authSource });
-    await completePhoneAuth();
+    await completePhoneAuth(true);
   };
 
   const recoverProfileSetup = async () => {
