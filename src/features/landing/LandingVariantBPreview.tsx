@@ -8,6 +8,7 @@ import { trackEvent } from "@/lib/analytics";
 const headline =
   "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
 const headlineLead = "아무나 만나지 않도록,\n";
+const contentCueFallbackDelayMs = 600;
 
 type LandingVariantBProps = {
   preview?: boolean;
@@ -57,6 +58,14 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
     return () => window.clearInterval(interval);
   }, [hasReachedContentCue]);
 
+  useEffect(() => {
+    const fallbackTimer = window.setTimeout(() => {
+      setHasReachedContentCue(true);
+    }, contentCueFallbackDelayMs);
+
+    return () => window.clearTimeout(fallbackTimer);
+  }, []);
+
   if (showMemberLogin) {
     return (
       <FiftyQLandingClient
@@ -84,6 +93,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
             poster="/videos/details-preview-poster.webp"
             className="absolute inset-0 h-full w-full object-cover motion-reduce:hidden"
             onLoadedData={() => setHasReachedContentCue(true)}
+            onError={() => setHasReachedContentCue(true)}
             onTimeUpdate={(event) => {
               if (event.currentTarget.currentTime >= 0.8) {
                 setHasReachedContentCue(true);
