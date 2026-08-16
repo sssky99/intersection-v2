@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>;
 
+const profilePageSize = 1000;
+
 type FeedbackRow = {
   id: string;
   waitlist_id: number | string;
@@ -407,10 +409,30 @@ async function expireOldOffers(supabase: SupabaseAdminClient) {
   if (error) throw error;
 }
 
+async function loadAllProfiles(supabase: SupabaseAdminClient) {
+  const profiles: BlindDateAdminProfile[] = [];
+
+  for (let from = 0; ; from += profilePageSize) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id,name,nickname,phone,is_test_participant")
+      .order("name")
+      .order("user_id")
+      .range(from, from + profilePageSize - 1)
+      .returns<BlindDateAdminProfile[]>();
+
+    if (error) throw error;
+
+    const page = data ?? [];
+    profiles.push(...page);
+    if (page.length < profilePageSize) return profiles;
+  }
+}
+
 async function loadData(supabase: SupabaseAdminClient) {
   await expireOldOffers(supabase);
 
-  const [templatesResult, offersResult, feedbacksResult, profilesResult] =
+  const [templatesResult, offersResult, feedbacksResult, profiles] =
     await Promise.all([
       supabase
         .from("blind_date_templates")
@@ -430,25 +452,18 @@ async function loadData(supabase: SupabaseAdminClient) {
         .order("created_at", { ascending: false })
         .limit(1000)
         .returns<FeedbackRow[]>(),
-      supabase
-        .from("profiles")
-        .select("user_id,name,nickname,phone,is_test_participant")
-        .order("name")
-        .limit(1000)
-        .returns<BlindDateAdminProfile[]>(),
+      loadAllProfiles(supabase),
     ]);
 
   const error =
     templatesResult.error ??
     offersResult.error ??
-    feedbacksResult.error ??
-    profilesResult.error;
+    feedbacksResult.error;
   if (error) throw error;
 
   const templates = templatesResult.data ?? [];
   const offers = offersResult.data ?? [];
   const feedbacks = feedbacksResult.data ?? [];
-  const profiles = profilesResult.data ?? [];
   const instanceIds = Array.from(
     new Set(
       feedbacks
