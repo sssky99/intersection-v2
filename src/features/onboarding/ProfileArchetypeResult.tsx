@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import {
@@ -56,8 +56,7 @@ export function ProfileArchetypeResult({
   const resultComplete = koreanName.length === result.koreanName.length;
   const continueLabel = "tap to continue...";
   const continueText = useTypedText(continueLabel, 360, 72, resultComplete);
-  const canContinue =
-    Boolean(onContinue) && continueText.length === continueLabel.length;
+  const canContinue = Boolean(onContinue) && resultComplete;
 
   const continueResult = () => {
     if (!canContinue) return;
@@ -66,18 +65,18 @@ export function ProfileArchetypeResult({
 
   return (
     <section
-      role={onContinue ? "button" : undefined}
-      tabIndex={onContinue ? 0 : undefined}
-      aria-disabled={onContinue ? !canContinue : undefined}
-      aria-label={onContinue ? continueLabel : undefined}
-      onClick={continueResult}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        continueResult();
-      }}
       className={`relative flex min-h-dvh flex-col overflow-hidden bg-black text-white outline-none md:min-h-[calc(100dvh-32px)] ${canContinue ? "cursor-pointer" : "cursor-default"}`}
     >
+      {onContinue && (
+        <button
+          type="button"
+          aria-label={continueLabel}
+          disabled={!canContinue}
+          onClick={continueResult}
+          className="absolute inset-0 z-20 touch-manipulation border-0 bg-transparent p-0 disabled:cursor-default"
+        />
+      )}
+
       <motion.div
         key={archetypeId}
         initial={{ opacity: 0, scale: 1.04 }}
@@ -121,20 +120,6 @@ export function ProfileArchetypeResult({
           </p>
         </div>
 
-        <AnimatePresence>
-          {false && resultComplete && onContinue && (
-            <motion.button
-              type="button"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.42, ease: "easeOut" }}
-              onClick={onContinue}
-              className="flex h-14 w-full items-center justify-center rounded-full border border-white/35 bg-white/92 text-[15px] font-black text-black shadow-[0_16px_36px_rgba(0,0,0,0.24)] backdrop-blur-sm transition active:scale-[0.98]"
-            >
-              계속하기
-            </motion.button>
-          )}
-        </AnimatePresence>
         <p className="min-h-6 font-serif text-[15px] italic tracking-[0.035em] text-white/82 drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]">
           {continueText}
           {continueText.length > 0 &&
