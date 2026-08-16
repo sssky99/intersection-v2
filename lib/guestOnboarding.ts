@@ -1,7 +1,7 @@
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
 
-const DRAFT_KEY = "intersection-guest-onboarding-v2";
+const DRAFT_KEY = "intersection-guest-onboarding-v5";
 const PHOTO_DATABASE = "intersection-guest-onboarding";
 const PHOTO_STORE = "draft-files";
 const PHOTO_KEY = "profile-photo";
@@ -11,13 +11,14 @@ export type GuestBasicInfo = {
   phone: string;
   gender: Gender;
   birthYear: string;
+  birthDate: string;
   mbti: string;
 };
 
 export type GuestOnboardingDraft = {
-  version: 2;
+  version: 5;
   id: string;
-  phase: "questions" | "profile";
+  phase: "guide" | "questions" | "auth";
   answers: StoredAnswerRow[];
   profile: GuestBasicInfo;
   returnMeetingDate?: string;
@@ -37,14 +38,15 @@ export const emptyGuestBasicInfo: GuestBasicInfo = {
   phone: "",
   gender: "",
   birthYear: "",
+  birthDate: "",
   mbti: "",
 };
 
 export function emptyGuestOnboardingDraft(): GuestOnboardingDraft {
   return {
-    version: 2,
+    version: 5,
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    phase: "questions",
+    phase: "guide",
     answers: [],
     profile: { ...emptyGuestBasicInfo },
     updatedAt: new Date().toISOString(),
@@ -69,6 +71,8 @@ function profileFromUnknown(value: unknown): GuestBasicInfo {
         : "",
     birthYear:
       typeof profile.birthYear === "string" ? profile.birthYear : "",
+    birthDate:
+      typeof profile.birthDate === "string" ? profile.birthDate : "",
     mbti: typeof profile.mbti === "string" ? profile.mbti : "",
   };
 }
@@ -77,17 +81,25 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
   if (typeof window === "undefined") return emptyGuestOnboardingDraft();
 
   try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(DRAFT_KEY) ?? "null") as
+    const stored =
+      window.localStorage.getItem(DRAFT_KEY) ??
+      window.sessionStorage.getItem(DRAFT_KEY);
+    const parsed = JSON.parse(stored ?? "null") as
       | Partial<GuestOnboardingDraft>
       | null;
-    if (!parsed || parsed.version !== 2 || typeof parsed.id !== "string") {
+    if (!parsed || parsed.version !== 5 || typeof parsed.id !== "string") {
       return emptyGuestOnboardingDraft();
     }
 
     return {
-      version: 2,
+      version: 5,
       id: parsed.id,
-      phase: parsed.phase === "profile" ? "profile" : "questions",
+      phase:
+        parsed.phase === "auth"
+          ? "auth"
+          : parsed.phase === "questions"
+              ? "questions"
+              : "guide",
       answers: Array.isArray(parsed.answers)
         ? parsed.answers.filter(isStoredAnswerRow)
         : [],
@@ -108,7 +120,7 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
 
 export function saveGuestOnboardingDraft(draft: GuestOnboardingDraft) {
   if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(
+  window.localStorage.setItem(
     DRAFT_KEY,
     JSON.stringify({ ...draft, updatedAt: new Date().toISOString() }),
   );
@@ -179,6 +191,7 @@ export async function loadGuestProfilePhoto(draftId: string) {
 export async function clearGuestOnboardingDraft() {
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem(DRAFT_KEY);
+    window.localStorage.removeItem(DRAFT_KEY);
   }
   if (typeof window === "undefined" || !window.indexedDB) return;
   try {

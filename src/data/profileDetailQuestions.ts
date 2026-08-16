@@ -1,5 +1,5 @@
 import type { ProfileQuestion } from "@/types/question";
-import { preferenceQuestions } from "@/data/preferenceQuestions";
+import { preferenceQuestionCatalog } from "@/data/preferenceQuestions";
 
 export const backgroundQuestions: ProfileQuestion[] = [
   {
@@ -674,7 +674,8 @@ export const profileAdditionalQuestions: ProfileQuestion[] = [
 ];
 
 function coreQuestionsFor(...categories: string[]) {
-  return preferenceQuestions.filter((question) =>
+  return preferenceQuestionCatalog.filter((question) =>
+    (question.order ?? question.id) > 5 &&
     categories.includes(question.category),
   );
 }

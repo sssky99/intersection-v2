@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import {
-  preferenceQuestions,
-  usesPreferenceProfile,
-} from "@/data/preferenceQuestions";
+import { preferenceQuestions, usesPreferenceProfile } from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   calculateConversationResultCode,
   conversationResultVersion,
 } from "@/lib/conversationResult";
+import {
+  classifyProfileArchetype,
+  profileArchetypeVersion,
+} from "@/data/profileArchetypes";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
@@ -104,11 +105,12 @@ export async function POST(request: Request) {
   }
 
   const name = text(body?.profile?.name);
-  const phone = text(body?.profile?.phone);
-  const phoneNormalized = normalizePhone(phone);
+  const phoneNormalized = normalizePhone(user.phone ?? "");
+  const phone = phoneNormalized.replace(/^(010)(\d{4})(\d{4})$/, "$1-$2-$3");
   const gender = text(body?.profile?.gender);
-  const birthYear = text(body?.profile?.birthYear);
-  const mbti = text(body?.profile?.mbti).toUpperCase();
+  const birthDate = rowsByOrder.get(17)?.answer_text?.trim() ?? text(body?.profile?.birthDate);
+  const birthYear = birthDate.slice(0, 4);
+  const mbti = rowsByOrder.get(31)?.answer_value?.trim().toUpperCase() ?? text(body?.profile?.mbti).toUpperCase();
   const photoUrl = text(body?.photoUrl);
   const year = Number(birthYear);
 
@@ -116,6 +118,7 @@ export async function POST(request: Request) {
     name.length <= 1 ||
     phoneNormalized.length !== 11 ||
     (gender !== "여성" && gender !== "남성") ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(birthDate) ||
     !/^\d{4}$/.test(birthYear) ||
     year < 1980 ||
     year > 2007 ||
@@ -146,7 +149,8 @@ export async function POST(request: Request) {
       question_type: question.type,
       answer_value: question.type === "single_choice" ? row.answer_value : null,
       answer_values: question.type === "multi_choice" ? row.answer_values : null,
-      answer_text: question.type === "text" ? row.answer_text?.trim() : null,
+      answer_text:
+        question.type === "text" ? row.answer_text?.trim() ?? null : null,
       other_text: row.other_text?.trim() || null,
       updated_at: new Date().toISOString(),
     };
@@ -154,6 +158,9 @@ export async function POST(request: Request) {
   const resultCode = isPreferenceOnboarding
     ? null
     : calculateConversationResultCode(answerRows);
+  const profileArchetypeId = isPreferenceOnboarding
+    ? classifyProfileArchetype(answerRows, user.id)
+    : null;
   if (!isPreferenceOnboarding && !resultCode) {
     return NextResponse.json(
       { error: "Conversation result could not be calculated." },
@@ -177,6 +184,7 @@ export async function POST(request: Request) {
       phone_normalized: phoneNormalized,
       gender,
       birth_year: birthYear,
+      birth_date: birthDate,
       mbti,
       photo_url: photoUrl,
       questions_completed: true,
@@ -184,6 +192,13 @@ export async function POST(request: Request) {
       questions_completed_at: new Date().toISOString(),
       basic_info_completed_at: new Date().toISOString(),
       profile_completed_at: new Date().toISOString(),
+      ...(isPreferenceOnboarding
+        ? {
+            profile_archetype_id: profileArchetypeId,
+            profile_archetype_version: profileArchetypeVersion,
+            profile_archetype_assigned_at: new Date().toISOString(),
+          }
+        : {}),
       ...(isPreferenceOnboarding
         ? {}
         : {
@@ -201,5 +216,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Profile could not be saved." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, profileArchetypeId });
 }

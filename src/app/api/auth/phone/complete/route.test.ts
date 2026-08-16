@@ -40,7 +40,7 @@ describe("POST /api/auth/phone/complete", () => {
     expect(await response.json()).toEqual({ loginType: "existing", nextPath: "/meetings?tab=browse" });
   });
 
-  it("keeps an incomplete existing account in onboarding", async () => {
+  it("treats an incomplete existing account as resumable onboarding", async () => {
     const existing = { user_id: "user-incomplete", profile_completed: false };
     const profiles = queryResult({ data: existing, error: null });
     createClientMock.mockResolvedValue({
@@ -50,7 +50,7 @@ describe("POST /api/auth/phone/complete", () => {
     const { POST } = await import("./route");
     const response = await POST();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ loginType: "existing", nextPath: "/onboarding/questions" });
+    expect(await response.json()).toEqual({ loginType: "new", nextPath: "/onboarding/questions" });
   });
 
   it("creates a new profile after OTP authentication", async () => {

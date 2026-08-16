@@ -25,6 +25,8 @@ type FiftyQLandingClientProps = {
   initialHasSeenIntro: boolean;
   previewPhoneOnly?: boolean;
   trackLandingView?: boolean;
+  completionPath?: string;
+  authSource?: string;
 };
 
 function useTypedText(text: string, active: boolean, interval = 58) {
@@ -80,6 +82,8 @@ export function FiftyQLandingClient({
   initialHasSeenIntro,
   previewPhoneOnly = false,
   trackLandingView = true,
+  completionPath,
+  authSource = "landing",
 }: FiftyQLandingClientProps) {
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
@@ -208,6 +212,7 @@ export function FiftyQLandingClient({
 
   const requestOtp = async () => {
     const localPhone = phoneDigits(phone);
+    trackEvent("phone_submit", { source: authSource });
     const prepareResponse = await fetch("/api/auth/phone/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -220,6 +225,8 @@ export function FiftyQLandingClient({
       options: { shouldCreateUser: true },
     });
     if (sendError) throw new PhoneAuthError(otpFailureCode(sendError.message));
+
+    trackEvent("otp_send_success", { source: authSource });
 
     setError("");
     setFailureCode(null);
@@ -243,7 +250,13 @@ export function FiftyQLandingClient({
 
     trackEvent("phone_verification_complete", {
       login_type: body.loginType ?? "unknown",
+      source: authSource,
     });
+
+    if (completionPath) {
+      window.location.replace(completionPath);
+      return;
+    }
 
     if (body.nextPath.startsWith("/onboarding/questions")) {
       setNextPath(body.nextPath);
@@ -263,6 +276,7 @@ export function FiftyQLandingClient({
       type: "sms",
     });
     if (verifyError) throw new PhoneAuthError(otpFailureCode(verifyError.message));
+    trackEvent("otp_verification_success", { source: authSource });
     await completePhoneAuth();
   };
 
@@ -297,6 +311,10 @@ export function FiftyQLandingClient({
       if (isProfileSetupFailure(code)) {
         await recoverProfileSetup();
       } else {
+        trackEvent(step === "otp" ? "otp_verification_failed" : "otp_send_failed", {
+          source: authSource,
+          error_code: code,
+        });
         setFailureCode(code);
         setError(phoneAuthErrorMessage(code));
       }

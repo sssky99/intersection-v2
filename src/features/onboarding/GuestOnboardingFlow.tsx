@@ -1,93 +1,81 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { AppHome } from "@/features/app/AppHome";
-import {
-  BasicInfoForm,
-  type BasicInfoValues,
-} from "@/features/onboarding/BasicInfoForm";
+import { ArrowRight } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { FiftyQLandingClient } from "@/app/FiftyQLandingClient";
+import { onboardingGuides } from "@/data/onboardingGuides";
 import { PreferenceQuestionFlow } from "@/features/onboarding/TableCardSurveyPreview";
-import { preferenceProfileVersion } from "@/data/preferenceQuestions";
 import {
   loadGuestOnboardingDraft,
-  loadGuestProfilePhoto,
   saveGuestOnboardingDraft,
-  saveGuestProfilePhoto,
   type GuestOnboardingDraft,
 } from "@/lib/guestOnboarding";
 import { trackEvent } from "@/lib/analytics";
-import { createOAuthRedirectUrl } from "@/lib/authRedirect";
-import { createClient } from "@/lib/supabase/client";
-import type { ProfileRow } from "@/types/profile";
 import type { StoredAnswerRow } from "@/types/question";
+import type { Gender } from "@/types/user";
 
-type GuestScreen = "app" | "basic-info";
+function GuestOnboardingGuide({ onComplete }: { onComplete: () => void }) {
+  const [page, setPage] = useState(0);
+  const text = onboardingGuides[page];
+  const [typedText, setTypedText] = useState("");
 
-function guestProfile(): ProfileRow {
-  return {
-    user_id: "guest-preview",
-    provider: null,
-    kakao_id: null,
-    name: null,
-    nickname: null,
-    phone: null,
-    phone_normalized: null,
-    gender: null,
-    birth_year: null,
-    mbti: null,
-    photo_url: null,
-    details_seen_at: null,
-    browse_seen_at: null,
-    profile_completed: false,
-    questions_completed: true,
-    profile_experience_version: preferenceProfileVersion,
-    is_test_participant: false,
-    public_intro: null,
-    public_emoji: null,
-    public_intro_generated_at: null,
-    public_intro_revealed_generated_at: null,
-    public_intro_model: null,
-    last_profile_regenerated_at: null,
-    profile_regeneration_started_at: null,
-    profile_regeneration_questions_completed_at: null,
-    meeting_guidelines_agreed: false,
-    meeting_guidelines_agreed_at: null,
-    membership_status: null,
-    membership_plan: null,
-    membership_start_date: null,
-    membership_end_date: null,
-    membership_purchase_clicked_at: null,
-    membership_updated_at: null,
-    matching_precision_bonus: 0,
-    community_guidelines_agreed: false,
-    community_guidelines_agreed_at: null,
-  };
+  useEffect(() => {
+    setTypedText("");
+    let length = 0;
+    const timer = window.setInterval(() => {
+      length += 1;
+      setTypedText(text.slice(0, length));
+      if (length >= text.length) window.clearInterval(timer);
+    }, 32);
+    return () => window.clearInterval(timer);
+  }, [text]);
+
+  const typingComplete = typedText.length === text.length;
+  return (
+    <main className="flex h-dvh min-h-[640px] justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4">
+      <section className="relative flex h-full w-full max-w-[430px] items-center overflow-hidden bg-[#F5F1E8] px-8 md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame">
+        <div key={page} className="mx-auto flex w-full max-w-[340px] flex-col">
+          <div className={page === 0 ? "min-h-[190px]" : "min-h-[390px]"}>
+            <p className="whitespace-pre-line break-keep text-[16px] font-medium leading-[1.9] tracking-[-0.035em] text-[#171714]">
+              {typedText}
+              {!typingComplete && (
+                <span className="ml-1 inline-block h-[0.9em] w-px animate-pulse bg-black/55 align-[-0.05em]" />
+              )}
+            </p>
+          </div>
+          <div className="mt-10 flex items-center justify-between border-t border-black/15 pt-5">
+            <span className="text-[12px] font-semibold tracking-[0.16em] text-black/35">
+              0{page + 1} / 02
+            </span>
+            <button
+              type="button"
+              disabled={!typingComplete}
+              aria-label={page === 0 ? "다음 안내 보기" : "질문 시작하기"}
+              onClick={() => {
+                if (page === 0) setPage(1);
+                else onComplete();
+              }}
+              className={`flex h-12 w-12 items-center justify-center transition-all duration-300 ${
+                typingComplete
+                  ? "text-black active:translate-x-0.5"
+                  : "cursor-not-allowed text-black/20"
+              }`}
+            >
+              <ArrowRight size={28} strokeWidth={1.8} />
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 export function GuestOnboardingFlow() {
   const [draft, setDraft] = useState<GuestOnboardingDraft | null>(null);
-  const [screen, setScreen] = useState<GuestScreen>("app");
-  const [photoUrl, setPhotoUrl] = useState("");
 
   useEffect(() => {
-    let mounted = true;
-    let objectUrl = "";
     const storedDraft = loadGuestOnboardingDraft();
-
-    void loadGuestProfilePhoto(storedDraft.id).then((file) => {
-      if (!mounted) return;
-      if (file) {
-        objectUrl = URL.createObjectURL(file);
-        setPhotoUrl(objectUrl);
-      }
-      setDraft(storedDraft);
-    });
-
-    return () => {
-      mounted = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    setDraft(storedDraft);
   }, []);
 
   const updateDraft = useCallback(
@@ -111,8 +99,20 @@ export function GuestOnboardingFlow() {
 
   const handleQuestionsComplete = useCallback(
     (answers: StoredAnswerRow[]) => {
-      updateDraft((current) => ({ ...current, answers, phase: "profile" }));
-      setScreen("app");
+      const birthDate = answers.find((answer) => answer.question_order === 17)?.answer_text?.trim() ?? "";
+      const mbti = answers.find((answer) => answer.question_order === 31)?.answer_value?.trim().toUpperCase() ?? "";
+      updateDraft((current) => ({
+        ...current,
+        answers,
+        phase: "auth",
+        profile: {
+          ...current.profile,
+          birthDate,
+          birthYear: birthDate.slice(0, 4),
+          mbti,
+        },
+      }));
+      trackEvent("guest_profile_ready_for_auth", { source: "guest_onboarding" });
       trackEvent("questions_complete", {
         question_count: answers.length,
         mode: "guest",
@@ -121,82 +121,20 @@ export function GuestOnboardingFlow() {
     [updateDraft],
   );
 
-  const requestBasicInfo = useCallback(
-    (meetingDate?: string) => {
-      updateDraft((current) => ({ ...current, returnMeetingDate: meetingDate }));
-      setScreen("basic-info");
-    },
-    [updateDraft],
-  );
-
-  const handleProfileDraftChange = useCallback(
-    (values: BasicInfoValues) => {
+  const handleIdentityChange = useCallback(
+    (identity: { name?: string; gender?: Gender }) => {
       updateDraft((current) => ({
         ...current,
         profile: {
-          name: values.name,
-          phone: values.phone,
-          gender: values.gender,
-          birthYear: values.birthYear,
-          mbti: values.mbti,
+          ...current.profile,
+          ...(identity.name ? { name: identity.name } : {}),
+          ...(identity.gender === "여성" || identity.gender === "남성"
+            ? { gender: identity.gender }
+            : {}),
         },
       }));
     },
     [updateDraft],
-  );
-
-  const handlePhotoChange = useCallback(
-    async (file: File) => {
-      if (!draft) throw new Error("Guest onboarding draft is unavailable.");
-      await saveGuestProfilePhoto(file, draft.id);
-    },
-    [draft],
-  );
-
-  const handleProfileComplete = useCallback(
-    async (values: BasicInfoValues) => {
-      if (!draft) throw new Error("Guest onboarding draft is unavailable.");
-
-      const finalDraft: GuestOnboardingDraft = {
-        ...draft,
-        phase: "profile",
-        profile: {
-          name: values.name.trim(),
-          phone: values.phone.trim(),
-          gender: values.gender,
-          birthYear: values.birthYear,
-          mbti: values.mbti.toUpperCase(),
-        },
-        updatedAt: new Date().toISOString(),
-      };
-      saveGuestOnboardingDraft(finalDraft);
-
-      const redirectTo = createOAuthRedirectUrl(
-        window.location.origin,
-        "/onboarding/import",
-      );
-      trackEvent("kakao_login_click", {
-        next_path: "/onboarding/import",
-        provider: "kakao",
-        source: "guest_basic_info_complete",
-      });
-
-      const { error } = await createClient().auth.signInWithOAuth({
-        provider: "kakao",
-        options: {
-          redirectTo,
-          queryParams: { scope: "" },
-        },
-      });
-
-      if (error) throw error;
-    },
-    [draft],
-  );
-
-  const initialProfileValues = useMemo(
-    () => (draft ? { ...draft.profile, photoUrl } : null),
-    [draft, photoUrl],
   );
 
   if (!draft) {
@@ -209,61 +147,41 @@ export function GuestOnboardingFlow() {
     );
   }
 
-  if (draft.phase === "questions") {
+  if (draft.phase === "guide") {
     return (
-      <PreferenceQuestionFlow
-        initialRows={draft.answers}
-        mode="guest"
-        onGuestDraftChange={handleAnswerDraftChange}
-        onGuestComplete={handleQuestionsComplete}
+      <GuestOnboardingGuide
+        onComplete={() => {
+          trackEvent("onboarding_guide_complete", { mode: "guest" });
+          updateDraft((current) => ({ ...current, phase: "questions" }));
+        }}
       />
     );
   }
 
-  return (
-    <div className="relative h-dvh overflow-hidden md:h-[calc(100dvh-32px)]">
-      <AppHome
-        userId="guest-preview"
-        profile={guestProfile()}
-        initialTab="recommend"
-        guestMode
-        initialAnswerRows={draft.answers}
-        onRequestBasicInfo={requestBasicInfo}
+  if (draft.phase === "questions") {
+    return (
+      <PreferenceQuestionFlow
+        initialName={draft.profile.name}
+        initialGender={draft.profile.gender}
+        initialRows={draft.answers}
+        mode="guest"
+        onGuestDraftChange={handleAnswerDraftChange}
+        onGuestComplete={handleQuestionsComplete}
+        onGuestIdentityChange={handleIdentityChange}
       />
+    );
+  }
 
-      <AnimatePresence>
-        {screen === "basic-info" && initialProfileValues && (
-          <motion.div
-            key="guest-basic-info-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="absolute inset-0 z-[80] flex items-center justify-center bg-black/30 p-4 backdrop-blur-[3px]"
-            role="dialog"
-            aria-modal="true"
-            aria-label="기본정보 입력"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 24, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 18, scale: 0.98 }}
-              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-              className="h-[min(760px,calc(100dvh-32px))] w-full max-w-[390px] overflow-hidden rounded-[30px] border border-white/45 bg-[#F7F5EF] shadow-[0_28px_90px_rgba(0,0,0,0.28)]"
-            >
-              <BasicInfoForm
-                mode="guest"
-                presentation="modal"
-                initialValues={initialProfileValues}
-                onClose={() => setScreen("app")}
-                onGuestDraftChange={handleProfileDraftChange}
-                onGuestPhotoChange={handlePhotoChange}
-                onGuestComplete={handleProfileComplete}
-              />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+  if (draft.phase === "auth") {
+    return (
+      <FiftyQLandingClient
+        initialHasSeenIntro
+        trackLandingView={false}
+        completionPath="/onboarding/import"
+        authSource="guest_onboarding_complete"
+      />
+    );
+  }
+
+  return null;
 }

@@ -22,6 +22,8 @@ export function PreferenceQuestionFlow({
   mode = "preview",
   onGuestDraftChange,
   onGuestComplete,
+  onGuestIdentityChange,
+  onGuestPhotoChange,
 }: {
   userId?: string;
   initialName?: string;
@@ -32,6 +34,8 @@ export function PreferenceQuestionFlow({
   mode?: PreferenceQuestionFlowMode;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
+  onGuestIdentityChange?: (identity: { name?: string; gender?: Gender }) => void;
+  onGuestPhotoChange?: (file: File) => Promise<void>;
 }) {
   const questionFlowMode =
     mode === "preview" || mode === "guest" || mode === "onboarding"
@@ -56,10 +60,12 @@ export function PreferenceQuestionFlow({
       questionSet={preferenceQuestions}
       completionRequestMode={completionRequestMode}
       skipConversationResult
-      showProfileArchetypeResult
+      showProfileArchetypeResult={mode !== "guest"}
       conversationQuestionCount={0}
       onGuestDraftChange={onGuestDraftChange}
       onGuestComplete={onGuestComplete}
+      onGuestIdentityChange={onGuestIdentityChange}
+      onGuestPhotoChange={onGuestPhotoChange}
     />
   );
 }

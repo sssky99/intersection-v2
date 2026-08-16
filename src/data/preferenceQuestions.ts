@@ -1040,7 +1040,7 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
     "order": 29,
     "category": "배경",
     "type": "text",
-    "question": "당신의 고향은 어디인가요?",
+    "question": "당신의 고향과\n지금 살고 있는 곳을 알려주세요.",
     "prompt": "어릴 적 추억이 가장 많이 담긴 곳을 알려주세요.",
     "placeholder": "예: 부산에서 자랐고, 지금은 서울에 살고 있어요.",
     "allowPrivate": true
@@ -1050,7 +1050,7 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
     "order": 30,
     "category": "배경",
     "type": "text",
-    "question": "살아봤거나 여행해본 나라가 있다면\n알려주세요.",
+    "question": "살아봤거나\n여행해본 나라가 있다면 알려주세요.",
     "placeholder": "예: 일본, 프랑스, 태국 / 아직 해외여행 경험은 없어요"
   },
   {
@@ -1063,14 +1063,18 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
   }
 ];
 
+const coreExcludedQuestionIds = new Set([9, 10, 14, 16, 20, 24]);
+
 export const preferenceQuestions: ProfileQuestion[] =
   preferenceQuestionCatalog.filter(
-    (question) => (question.order ?? question.id) > 5,
+    (question) =>
+      (question.order ?? question.id) > 5 &&
+      !coreExcludedQuestionIds.has(question.id),
   );
 
 function selectedLabels(answer: QuestionAnswer | undefined, questionId: number) {
   if (!answer || !Array.isArray(answer.value)) return [];
-  const question = preferenceQuestions.find((item) => item.id === questionId);
+  const question = preferenceQuestionCatalog.find((item) => item.id === questionId);
   const options = (question?.options ?? []).map((option) =>
     typeof option === "string" ? { value: option, label: option } : option,
   );

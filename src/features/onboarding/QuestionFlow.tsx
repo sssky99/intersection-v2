@@ -617,6 +617,8 @@ export function QuestionFlow({
   onPreviewComplete,
   onGuestDraftChange,
   onGuestComplete,
+  onGuestIdentityChange,
+  onGuestPhotoChange,
 }: {
   userId?: string;
   initialName?: string;
@@ -642,6 +644,8 @@ export function QuestionFlow({
   onPreviewComplete?: () => void | Promise<void>;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
+  onGuestIdentityChange?: (identity: { name?: string; gender?: Gender }) => void;
+  onGuestPhotoChange?: (file: File) => Promise<void>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -750,14 +754,20 @@ export function QuestionFlow({
     normalizedName.length <= 30;
   const isPreferenceFlow = questions === preferenceQuestions;
   const identityStepCount = isPreferenceFlow ? 2 : 0;
-  const photoStepCount = isPreferenceFlow ? 1 : 0;
+  const photoStepCount = isPreferenceFlow && !isGuest ? 1 : 0;
   const totalFlowSteps =
     questions.length + identityStepCount + photoStepCount;
   const nameProgressPercent = isPreferenceFlow
-    ? (Math.min(normalizedName.length / 2, 1) / totalFlowSteps) * 100
+    ? isGuest
+      ? ((questions.length + Math.min(normalizedName.length / 2, 1)) /
+          totalFlowSteps) *
+        100
+      : (Math.min(normalizedName.length / 2, 1) / totalFlowSteps) * 100
     : 0;
   const genderProgressPercent = isPreferenceFlow
-    ? (1 / totalFlowSteps) * 100
+    ? isGuest
+      ? 100
+      : (1 / totalFlowSteps) * 100
     : 0;
   const photoProgressPercent = isPreferenceFlow
     ? ((identityStepCount + questions.length + (photoUrl ? 1 : 0)) /
@@ -767,7 +777,8 @@ export function QuestionFlow({
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
   const progressPercent = isPreferenceFlow
-    ? ((identityStepCount + questionIndex) / totalFlowSteps) * 100
+    ? (((isGuest ? 0 : identityStepCount) + questionIndex) / totalFlowSteps) *
+      100
     : perceivedProgress(questionIndex, questions.length);
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
@@ -1101,6 +1112,12 @@ export function QuestionFlow({
         return;
       }
 
+      if (isGuest && isPreferenceFlow) {
+        setPendingFinalAnswers(nextAnswers);
+        setCollectingName(true);
+        return;
+      }
+
       if (!isGuest) {
         setPendingFinalAnswers(nextAnswers);
         setCollectingPhoto(true);
@@ -1299,6 +1316,18 @@ export function QuestionFlow({
       setCollectingName(false);
       return;
     }
+    if (isGuest) {
+      trackEvent("question_answered", {
+        question_key: "name",
+        flow_order: 1,
+        total_flow_steps: totalFlowSteps,
+      });
+      setName(normalizedName);
+      onGuestIdentityChange?.({ name: normalizedName });
+      setCollectingName(false);
+      setCollectingGender(true);
+      return;
+    }
     if (!beginSaving()) return;
 
     setError(null);
@@ -1333,6 +1362,20 @@ export function QuestionFlow({
       endSaving();
       return;
     }
+    if (isGuest) {
+      trackEvent("question_answered", {
+        question_key: "gender",
+        flow_order: 2,
+        total_flow_steps: totalFlowSteps,
+      });
+      onGuestIdentityChange?.({ gender });
+      setCollectingGender(false);
+      if (pendingFinalAnswers) {
+        onGuestComplete?.(answersToStoredRows(pendingFinalAnswers, questions));
+      }
+      endSaving();
+      return;
+    }
 
     try {
       const response = await fetch("/api/profile/gender", {
@@ -1356,12 +1399,27 @@ export function QuestionFlow({
   };
 
   const uploadFinalPhoto = async (file: File | null) => {
-    if (!file || !userId || photoUploading) return;
+    if (!file || photoUploading || (!isGuest && !userId)) return;
 
     setPhotoUploading(true);
     setError(null);
     try {
-      const nextPhotoUrl = await uploadProfilePhoto(userId, file);
+      if (isGuest) {
+        await onGuestPhotoChange?.(file);
+        const nextPhotoUrl = URL.createObjectURL(file);
+        setPhotoUrl(nextPhotoUrl);
+        trackEvent("profile_photo_submitted", {
+          flow_order: totalFlowSteps,
+          total_flow_steps: totalFlowSteps,
+        });
+        trackEvent("question_answered", {
+          question_key: "photo",
+          flow_order: totalFlowSteps,
+          total_flow_steps: totalFlowSteps,
+        });
+        return;
+      }
+      const nextPhotoUrl = await uploadProfilePhoto(userId!, file);
       const { error: profileError } = await createClient()
         .from("profiles")
         .update({ photo_url: nextPhotoUrl })
@@ -1975,8 +2033,8 @@ export function QuestionFlow({
                         option.fullWidth &&
                         "col-span-2",
                       selected
-                        ? "border-black bg-black font-extrabold text-white shadow-[0_16px_42px_rgba(18,18,18,0.16)]"
-                        : "border-black/[0.07] bg-white/68 text-black/68 shadow-[0_12px_35px_rgba(18,18,18,0.045)] hover:border-black/15",
+                        ? "border-black bg-[#FCFAF6] font-extrabold text-black shadow-[0_14px_36px_rgba(39,34,24,0.10)]"
+                        : "border-black/[0.07] bg-[#FCFAF6] text-black/68 shadow-[0_12px_35px_rgba(39,34,24,0.04)] hover:border-black/15",
                     )}
                   >
                     <span className="font-question-option max-w-[310px] text-[15px] font-normal leading-[1.6] tracking-normal">
@@ -2007,15 +2065,15 @@ export function QuestionFlow({
                         "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center backdrop-blur transition",
                         exclusive && "col-span-2 min-h-[58px]",
                         selected
-                          ? "border-black bg-black font-extrabold text-white shadow-[0_14px_32px_rgba(18,18,18,0.14)]"
-                          : "border-black/[0.07] bg-white/65 text-black/65 shadow-[0_10px_28px_rgba(18,18,18,0.04)]",
+                          ? "border-black bg-[#FCFAF6] font-extrabold text-black shadow-[0_14px_32px_rgba(39,34,24,0.09)]"
+                          : "border-black/[0.07] bg-[#FCFAF6] text-black/65 shadow-[0_10px_28px_rgba(39,34,24,0.04)]",
                       )}
                     >
                       <span className="font-question-option text-[15px] font-normal leading-[1.6] tracking-normal">
                         {optionLabel(option)}
                       </span>
                       {selected && !exclusive && (
-                        <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-white/18 px-1 text-[9px] font-black text-white">
+                        <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[9px] font-black text-[#FCFAF6]">
                           {priorityIndex + 1}
                         </span>
                       )}
@@ -2039,7 +2097,7 @@ export function QuestionFlow({
                       otherText: event.target.value,
                     })
                   }
-                  className="mt-3 h-14 w-full rounded-[20px] border border-black/[0.09] bg-white/72 px-5 text-[13px] font-semibold text-black/72 outline-none placeholder:text-black/28 focus:border-black/25"
+                  className="mt-3 h-14 w-full rounded-[20px] border border-black/[0.09] bg-[#FCFAF6] px-5 text-[13px] font-semibold text-black/72 outline-none placeholder:text-black/28 focus:border-black/25"
                 />
               )}
             </div>
@@ -2064,7 +2122,7 @@ export function QuestionFlow({
                     value: event.target.value,
                   })
                 }
-                className="min-h-[210px] w-full resize-none rounded-[28px] border border-black/[0.07] bg-white/68 px-5 py-5 text-[14px] font-medium leading-6 text-black/75 shadow-[0_18px_50px_rgba(18,18,18,0.055)] backdrop-blur outline-none placeholder:text-black/28 focus:border-black/20 disabled:bg-black/[0.025] disabled:text-black/30"
+                className="min-h-[210px] w-full resize-none rounded-[28px] border border-black/[0.07] bg-[#FCFAF6] px-5 py-5 text-[14px] font-medium leading-6 text-black/75 shadow-[0_18px_50px_rgba(39,34,24,0.05)] backdrop-blur outline-none placeholder:text-black/28 focus:border-black/20 disabled:bg-black/[0.025] disabled:text-black/30"
               />
               <div className="mt-2 flex items-center justify-between gap-4 px-1">
                 {question.allowPrivate ? (

@@ -18,7 +18,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
   const [isContentVisible, setIsContentVisible] = useState(false);
   const [isCtaVisible, setIsCtaVisible] = useState(false);
   const [hasReachedContentCue, setHasReachedContentCue] = useState(false);
-  const [showPhoneInput, setShowPhoneInput] = useState(false);
+  const [showMemberLogin, setShowMemberLogin] = useState(false);
 
   useEffect(() => {
     if (!preview) {
@@ -57,7 +57,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
     return () => window.clearInterval(interval);
   }, [hasReachedContentCue]);
 
-  if (showPhoneInput) {
+  if (showMemberLogin) {
     return (
       <FiftyQLandingClient
         initialHasSeenIntro
@@ -126,17 +126,30 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
                   experiment_id: "landing_ab_2026_08",
                   landing_variant: "b",
                 });
-                setShowPhoneInput(true);
+                window.location.assign("/onboarding/start");
               }}
               className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98]"
             >
-              나와 맞는 사람들 추천받기
+              교집합 시작하기
               <ArrowRight
                 size={20}
                 strokeWidth={2}
                 aria-hidden
                 className="absolute right-6"
               />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent("existing_member_login_click", {
+                  experiment_id: "landing_ab_2026_08",
+                  landing_variant: "b",
+                });
+                setShowMemberLogin(true);
+              }}
+              className="mx-auto mt-4 block text-[12px] font-semibold text-white/70 underline decoration-white/35 underline-offset-4 transition hover:text-white"
+            >
+              이미 교집합 멤버예요
             </button>
           </div>
         </div>

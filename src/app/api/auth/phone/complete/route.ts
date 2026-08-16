@@ -52,7 +52,7 @@ export async function POST() {
 
   if (existingProfile) {
     return NextResponse.json({
-      loginType: "existing",
+      loginType: existingProfile.profile_completed ? "existing" : "new",
       nextPath: existingUserNextPath(existingProfile),
     });
   }
