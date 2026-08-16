@@ -17,7 +17,6 @@ type LandingVariantBProps = {
 export function LandingVariantB({ preview = false }: LandingVariantBProps) {
   const [typedHeadline, setTypedHeadline] = useState(headlineLead);
   const [isContentVisible, setIsContentVisible] = useState(false);
-  const [isCtaVisible, setIsCtaVisible] = useState(false);
   const [hasReachedContentCue, setHasReachedContentCue] = useState(false);
   const [showMemberLogin, setShowMemberLogin] = useState(false);
 
@@ -36,7 +35,6 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
 
     setTypedHeadline(headline);
     setIsContentVisible(true);
-    setIsCtaVisible(true);
   }, [preview]);
 
   useEffect(() => {
@@ -51,7 +49,6 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
       setTypedHeadline(headline.slice(0, length));
       if (length >= headline.length) {
         window.clearInterval(interval);
-        setIsCtaVisible(true);
       }
     }, 1300 / (headline.length - headlineLead.length));
 
@@ -77,7 +74,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
   }
 
   return (
-    <main className="flex h-dvh min-h-[640px] justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4">
+    <main className="flex h-dvh min-h-0 justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4">
       <section
         aria-label="교집합 B 랜딩 미리보기"
         className="relative h-full w-full max-w-[430px] overflow-hidden bg-black md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
@@ -122,13 +119,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
             </h1>
           </div>
 
-          <div
-            className={`absolute inset-x-6 top-[72%] transition-all duration-500 ${
-              isCtaVisible
-                ? "translate-y-0 opacity-100"
-                : "pointer-events-none translate-y-3 opacity-0"
-            }`}
-          >
+          <div className="absolute inset-x-6 bottom-[calc(20px+env(safe-area-inset-bottom))]">
             <button
               type="button"
               onClick={() => {
