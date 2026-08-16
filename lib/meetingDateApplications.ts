@@ -1,4 +1,5 @@
 export const MEETING_DATE_DEPOSIT_AMOUNT = 10_000;
+export const MEETING_DATE_SINGLE_USE_AMOUNT = 20_000;
 export const MEETING_DATE_REGION = "서울";
 const CLOSED_MEETING_DATES = new Set([
   "2026-08-05",

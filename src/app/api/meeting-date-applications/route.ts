@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   MEETING_DATE_REGION,
+  MEETING_DATE_SINGLE_USE_AMOUNT,
   isMeetingDateClosed,
   meetingDateSchedule,
   requestedMeetingApplicationDates,
@@ -15,6 +16,7 @@ import {
   oneTimeMembershipCreditAmount,
 } from "@/lib/membershipPlans";
 import { membershipStoreUrls } from "@/lib/membershipStore";
+import { oneTimeTicketStoreUrl } from "@/lib/paymentStore";
 
 export const dynamic = "force-dynamic";
 
@@ -304,15 +306,6 @@ export async function POST(request: NextRequest) {
     ticketInstanceProvided: ticketInstanceId !== null || selectedEvent !== null,
     eventProvided: selectedEvent !== null,
   });
-  if (openPayment) {
-    return NextResponse.json(
-      {
-        error: "1회권 결제는 더 이상 지원하지 않습니다. 멤버십으로 참여해주세요.",
-        code: "membership_required",
-      },
-      { status: 410 },
-    );
-  }
   if (dates.length !== 1) {
     return NextResponse.json(
       { error: "신청할 날짜를 하나만 선택해주세요." },
@@ -398,7 +391,7 @@ export async function POST(request: NextRequest) {
           ])
           .returns<{ payment_kind: string }[]>()
       : Promise.resolve({ data: [], error: null });
-    const ticketInvitationLookup = prepareCheckout && selectedTicket
+    const ticketInvitationLookup = (prepareCheckout || openPayment) && selectedTicket
       ? admin
           .from("ticket_invitations")
           .select("id,source_type,inviter_id")
@@ -451,9 +444,13 @@ export async function POST(request: NextRequest) {
           region: selectedEvent?.region ?? selectedTicket?.region ?? MEETING_DATE_REGION,
           status:
             joinWaitlist || membershipCovered ? "waitlisted" : "payment_pending",
-          deposit_amount: null,
-          deposit_status: null,
-          deposit_requested_at: null,
+          deposit_amount: membershipCovered
+            ? 0
+            : openPayment
+              ? MEETING_DATE_SINGLE_USE_AMOUNT
+              : null,
+          deposit_status: openPayment ? "payment_pending" : null,
+          deposit_requested_at: openPayment ? now : null,
           deposit_confirmed_at: null,
           refund_completed_at: null,
           assigned_ticket_instance_id: selectedTicket?.id ?? null,
@@ -526,6 +523,55 @@ export async function POST(request: NextRequest) {
           null,
       )
       .filter((row): row is DateApplicationRow => Boolean(row));
+
+    if (openPayment && !joinWaitlist && !membershipCovered) {
+      const application = rows[0];
+      if (
+        !application ||
+        application.deposit_amount !== MEETING_DATE_SINGLE_USE_AMOUNT ||
+        application.deposit_status !== "payment_pending" ||
+        !["payment_pending", "waitlisted", "on_hold", "approved"].includes(
+          application.status,
+        )
+      ) {
+        return NextResponse.json(
+          { error: "결제 대상을 확인할 수 없습니다." },
+          { status: 409 },
+        );
+      }
+
+      const applicationId =
+        typeof application.id === "number"
+          ? application.id
+          : Number(application.id);
+      if (!Number.isSafeInteger(applicationId)) {
+        throw new Error("Invalid meeting date application id.");
+      }
+
+      const { data: paymentIntent, error: paymentIntentError } = await admin.rpc(
+        "activate_meeting_date_payment_intent",
+        {
+          p_user_id: user.id,
+          p_application_id: applicationId,
+        },
+      );
+      if (
+        paymentIntentError ||
+        !Array.isArray(paymentIntent) ||
+        paymentIntent.length !== 1
+      ) {
+        throw paymentIntentError ?? new Error("payment-intent-create-failed");
+      }
+
+      return NextResponse.json({
+        applications: rows.map((row) => toApplication(row)),
+        duplicateDates: protectedRows.map((row) => row.meeting_date),
+        totalDepositAmount: MEETING_DATE_SINGLE_USE_AMOUNT,
+        paymentIntentCreated: true,
+        membershipCovered: false,
+        checkoutUrl: oneTimeTicketStoreUrl,
+      });
+    }
 
     if (prepareCheckout && !membershipCovered) {
       if (paymentHistoryResult.error) throw paymentHistoryResult.error;

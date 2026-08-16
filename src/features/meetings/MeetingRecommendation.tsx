@@ -30,6 +30,7 @@ import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
+  MEETING_DATE_SINGLE_USE_AMOUNT,
   MEETING_DATE_REGION,
   isMeetingDateClosed,
   meetingDateApplicationDates,
@@ -37,6 +38,7 @@ import {
   meetingDateSchedule,
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
+import { oneTimeTicketStoreUrl } from "@/lib/paymentStore";
 import { todayInKst } from "@/lib/ticketDate";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import { saveGuestTicketInteraction } from "@/lib/ticketInteractions";
@@ -1190,6 +1192,101 @@ function MeetingDateApplicationFlow({
     }
   };
 
+  const submitSingleUseApplication = async (ticket: GatheringTicket) => {
+    if (saving) return;
+
+    setSaving(true);
+    setError(null);
+    trackEvent("application_submit_click", {
+      application_type: "meeting_date",
+      date_count: 1,
+      deposit_amount: MEETING_DATE_SINGLE_USE_AMOUNT,
+      membership_status: membershipStatus,
+      payment_option: "one_time",
+    });
+
+    try {
+      let checkoutUrl = oneTimeTicketStoreUrl;
+
+      if (!isLocalTestHost()) {
+        const response = await fetch("/api/meeting-date-applications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dates: [ticket.date],
+            openPayment: true,
+            eventId: ticket.id,
+            attribution: checkoutAttributionContext(),
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | DateApplicationsResponse
+          | null;
+        if (!response.ok || !data?.applications) {
+          throw new Error(data?.error ?? "date-applications-save-failed");
+        }
+
+        setApplications((current) => {
+          const next = mergeDateApplications(current, data.applications ?? []);
+          onDateApplicationsChange?.(next);
+          return next;
+        });
+        checkoutUrl = data.checkoutUrl ?? oneTimeTicketStoreUrl;
+      } else {
+        const now = new Date().toISOString();
+        const localApplication: MeetingDateApplication = {
+          id: `local:single:${ticket.id}`,
+          meetingDate: ticket.date,
+          meetingTime: ticket.time,
+          region: ticket.area,
+          status: "payment_pending",
+          depositAmount: MEETING_DATE_SINGLE_USE_AMOUNT,
+          depositStatus: "payment_pending",
+          assignedTicketInstanceId: ticket.id,
+          ticketRevealsAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        setApplications((current) => {
+          const next = mergeDateApplications(current, [localApplication]);
+          saveLocalDateApplications(userId, next);
+          onDateApplicationsChange?.(next);
+          return next;
+        });
+      }
+
+      await recordTicketInteraction(ticket, "payment_pending", {
+        keepalive: true,
+      });
+      trackEvent("application_created", {
+        application_type: "meeting_date",
+        date_count: 1,
+        deposit_amount: MEETING_DATE_SINGLE_USE_AMOUNT,
+        payment_option: "one_time",
+      });
+      trackEvent("invitation_yes", {
+        ticket_instance_id: ticket.id,
+        meeting_date: ticket.date,
+        payment_option: "one_time",
+      });
+      trackEvent("payment_page_open", {
+        application_type: "meeting_date",
+        payment_provider: "groble",
+        meeting_date: ticket.date,
+        payment_option: "one_time",
+      });
+      window.location.assign(checkoutUrl);
+    } catch (singleUseError) {
+      setError(
+        singleUseError instanceof Error &&
+          singleUseError.message !== "date-applications-save-failed"
+          ? singleUseError.message
+          : "1회 이용권 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+      setSaving(false);
+    }
+  };
+
   const joinClosedDateWaitlist = async (date: string) => {
     const existingApplication = applicationByDate.get(date);
     if (existingApplication) {
@@ -1449,6 +1546,9 @@ function MeetingDateApplicationFlow({
                   saving={saving}
                   error={error}
                   onSubmit={() => void submitDateApplications(selectedTicket)}
+                  onSingleUseSubmit={() =>
+                    void submitSingleUseApplication(selectedTicket)
+                  }
                   onClose={() => {
                     if (saving) return;
                     setMembershipSheetOpen(false);
@@ -2258,20 +2358,30 @@ function TicketUnlockSequence({
   );
 }
 
-function MembershipPurchaseBottomSheet({
+export function MembershipPurchaseBottomSheet({
   ticket,
   saving,
   error,
   onSubmit,
+  onSingleUseSubmit,
   onClose,
 }: {
   ticket: GatheringTicket;
   saving: boolean;
   error: string | null;
   onSubmit: () => void;
+  onSingleUseSubmit?: () => void;
   onClose: () => void;
 }) {
   const period = oneMonthMembershipPeriod(ticket.date);
+  const [purchaseType, setPurchaseType] = useState<"membership" | "single">(
+    "membership",
+  );
+  const membershipSelected = purchaseType === "membership";
+  const totalPrice = membershipSelected
+    ? 20_000
+    : MEETING_DATE_SINGLE_USE_AMOUNT;
+  const singleUseUnavailable = !membershipSelected && !onSingleUseSubmit;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -2324,13 +2434,13 @@ function MembershipPurchaseBottomSheet({
         <div className="mt-5 flex items-start justify-between gap-4">
           <div>
             <p className="font-ticket-latin text-[11px] font-bold italic uppercase tracking-[0.2em] text-black/34">
-              MEMBERSHIP
+              PAYMENT
             </p>
             <h2
               id="membership-purchase-title"
               className="font-ticket-display mt-2 text-[27px] font-bold leading-[1.25] tracking-[-0.045em] text-black"
             >
-              멤버십을 신청하세요.
+              참여 방식을 선택해주세요.
             </h2>
           </div>
           <button
@@ -2344,27 +2454,91 @@ function MembershipPurchaseBottomSheet({
           </button>
         </div>
 
-        <p className="mt-3 break-keep text-[13px] font-semibold leading-5 text-black/46">
-          모임 시작일부터 한 달 동안 교집합의 모임에 참여할 수 있어요.
-        </p>
-
-        <div className="mt-6 overflow-hidden rounded-[24px] border border-black/10 bg-white/36">
-          <div className="flex items-center justify-between gap-4 border-b border-black/[0.08] px-5 py-5">
-            <span className="text-[12px] font-bold text-black/42">금액</span>
-            <strong className="tabular-nums text-[21px] font-bold tracking-[-0.025em] text-black">
-              20,000원
-            </strong>
-          </div>
-          <div className="px-5 py-5">
-            <span className="text-[12px] font-bold text-black/42">기간</span>
-            <p className="mt-2 tabular-nums text-[18px] font-bold tracking-[-0.015em] text-black">
-              {period.start} – {period.end}
-            </p>
-            <p className="mt-2 text-[11px] font-semibold text-black/38">
-              {meetingDateLabel(ticket.date)} 모임 시작 기준
-            </p>
-          </div>
+        <div className="mt-6 grid grid-cols-2 rounded-full border border-black/10 bg-black/[0.035] p-1.5">
+          <button
+            type="button"
+            onClick={() => setPurchaseType("membership")}
+            className={cn(
+              "min-h-[58px] rounded-full px-3 py-2 text-left transition",
+              membershipSelected
+                ? "bg-[#24211d] text-white shadow-[0_6px_18px_rgba(0,0,0,0.16)]"
+                : "text-black/42",
+            )}
+            aria-pressed={membershipSelected}
+          >
+            <span className="block text-center text-[13px] font-black">1개월 멤버십</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPurchaseType("single")}
+            className={cn(
+              "min-h-[58px] rounded-full px-3 py-2 text-left transition",
+              !membershipSelected
+                ? "bg-[#24211d] text-white shadow-[0_6px_18px_rgba(0,0,0,0.16)]"
+                : "text-black/42",
+            )}
+            aria-pressed={!membershipSelected}
+          >
+            <span className="block text-center text-[13px] font-black">1회 이용권</span>
+          </button>
         </div>
+
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={purchaseType}
+            initial={{ opacity: 0, x: membershipSelected ? -8 : 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: membershipSelected ? 8 : -8 }}
+            transition={{ duration: 0.18 }}
+            className="mt-5 overflow-hidden rounded-[24px] border border-black/10 bg-white/34"
+          >
+            <div className="px-5 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[12px] font-bold text-black/42">
+                    {membershipSelected ? "1개월 멤버십" : "1회 이용권"}
+                  </p>
+                  <p className="mt-2 break-keep text-[15px] font-black leading-6 text-black">
+                    {membershipSelected
+                      ? "한 달 동안 횟수 제한 없이 참여해요."
+                      : "선택한 이번 모임에 한 번 참여해요."}
+                  </p>
+                  {membershipSelected && (
+                    <p className="mt-1.5 break-keep text-[12px] font-semibold leading-5 text-black/48">
+                      매칭된 1:1 데이트도 추가 비용 없이 참여할 수 있어요.
+                    </p>
+                  )}
+                </div>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black text-white">
+                  <Check size={14} strokeWidth={3} aria-hidden />
+                </span>
+              </div>
+
+              <div className="mt-5 border-t border-black/[0.08] pt-4">
+                <p className="text-[11px] font-bold text-black/38">
+                  {membershipSelected ? "이용 기간" : "이용 일정"}
+                </p>
+                <p className="mt-1.5 tabular-nums text-[15px] font-bold tracking-[-0.015em] text-black">
+                  {membershipSelected
+                    ? `${period.start} – ${period.end}`
+                    : `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`}
+                </p>
+                <p className="mt-1.5 text-[11px] font-semibold text-black/38">
+                  {membershipSelected
+                    ? `${meetingDateLabel(ticket.date)} 모임 시작 기준`
+                    : ticket.title}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-black/[0.08] px-5 py-4">
+              <span className="text-[12px] font-bold text-black/42">총 결제금액</span>
+              <strong className="tabular-nums text-[22px] font-black tracking-[-0.035em] text-black">
+                {totalPrice.toLocaleString("ko-KR")}원
+              </strong>
+            </div>
+          </motion.div>
+        </AnimatePresence>
 
         {error && (
           <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
@@ -2374,9 +2548,9 @@ function MembershipPurchaseBottomSheet({
 
         <motion.button
           type="button"
-          whileTap={!saving ? { scale: 0.985 } : undefined}
-          disabled={saving}
-          onClick={onSubmit}
+          whileTap={!saving && !singleUseUnavailable ? { scale: 0.985 } : undefined}
+          disabled={saving || singleUseUnavailable}
+          onClick={membershipSelected ? onSubmit : onSingleUseSubmit}
           className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
         >
           {saving ? (
@@ -2390,9 +2564,12 @@ function MembershipPurchaseBottomSheet({
               <span>결제창을 준비하는 중...</span>
             </span>
           ) : (
-            "멤버십 신청하기"
+            singleUseUnavailable
+              ? "1회 이용권 결제 준비 중"
+              : `${totalPrice.toLocaleString("ko-KR")}원 결제하기`
           )}
         </motion.button>
+
       </motion.section>
     </motion.div>
   );
