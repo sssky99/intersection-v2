@@ -24,7 +24,10 @@ import {
 import { formatTicketTimeLabel } from "@/components/IntersectionTicketCard";
 import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
-import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
+import {
+  RouletteDeadlineCountdown,
+  TicketDetailContent,
+} from "@/features/meetings/TicketDetailContent";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { membershipStoreUrls } from "@/lib/membershipStore";
@@ -414,6 +417,7 @@ async function fetchDepositMessageRegistrationSummary() {
 type MeetingRecommendationProps = {
   userId: string;
   profileCompleted?: boolean;
+  profileName?: string | null;
   profilePhotoUrl?: string | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
@@ -421,6 +425,7 @@ type MeetingRecommendationProps = {
   participationPrecisionCount?: number;
   onOpenParticipationRecord?: () => void;
   onFocusModeChange?: (focused: boolean) => void;
+  onBottomNavHiddenChange?: (hidden: boolean) => void;
   onAvailableTicketsChange?: (tickets: GatheringTicket[]) => void;
   onTicketInteractionChange?: (interaction: TicketInteraction) => void;
   onOpenDeclinedTicket?: (ticket: GatheringTicket) => void;
@@ -445,6 +450,7 @@ type DateApplicationScreen =
   | "unlock"
   | "ticket"
   | "submitted"
+  | "blindDateUnlock"
   | "blindDate";
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
@@ -651,6 +657,7 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 function MeetingDateApplicationFlow({
   userId,
   profileCompleted = true,
+  profileName = null,
   profilePhotoUrl = null,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
@@ -658,6 +665,7 @@ function MeetingDateApplicationFlow({
   participationPrecisionCount = 0,
   onOpenParticipationRecord = () => undefined,
   onFocusModeChange,
+  onBottomNavHiddenChange,
   onAvailableTicketsChange,
   onTicketInteractionChange,
   onOpenDeclinedTicket,
@@ -788,6 +796,8 @@ function MeetingDateApplicationFlow({
     null;
 
   const focusMode = screen === "ticket";
+  const bottomNavHidden =
+    screen === "blindDate" || screen === "blindDateUnlock";
 
   useEffect(() => {
     onFocusModeChange?.(focusMode);
@@ -795,15 +805,26 @@ function MeetingDateApplicationFlow({
   }, [focusMode, onFocusModeChange]);
 
   useEffect(() => {
+    onBottomNavHiddenChange?.(bottomNavHidden);
+    return () => onBottomNavHiddenChange?.(false);
+  }, [bottomNavHidden, onBottomNavHiddenChange]);
+
+  useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
       return;
     }
 
-    setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
-    setScreen("blindDate");
+    const offerToOpen = answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
+    setSelectedBlindDateOfferId(offerToOpen.id);
+    setScreen(
+      offerToOpen.ownResponse === "pending"
+        ? "blindDateUnlock"
+        : "blindDate",
+    );
     onBlindDateOpenRequestHandled?.();
   }, [
     activeBlindDateOffers,
+    answerableBlindDateOffers,
     blindDateOpenRequestId,
     blindDateOpenRequestPending,
     onBlindDateOpenRequestHandled,
@@ -1362,7 +1383,11 @@ function MeetingDateApplicationFlow({
   if (screen === "unlock" && selectedTicket) {
     return (
       <TicketUnlockSequence
-        ticket={selectedTicket}
+        motionKey={selectedTicket.id}
+        title={selectedTicket.title}
+        dateText={programDateLabel(selectedTicket.date)}
+        timeText={formatTicketTimeLabel(selectedTicket.time)}
+        placeText={selectedTicket.area ? `서울 ${selectedTicket.area}` : "장소 추후 안내"}
         reducedMotion={shouldReduceMotion}
         onBack={() => {
           setSuppressProgramMorph(true);
@@ -1371,6 +1396,24 @@ function MeetingDateApplicationFlow({
           setError(null);
         }}
         onComplete={() => setScreen("ticket")}
+      />
+    );
+  }
+
+  if (screen === "blindDateUnlock" && selectedBlindDateOffer) {
+    return (
+      <TicketUnlockSequence
+        motionKey={`blind-date-${selectedBlindDateOffer.id}`}
+        title={selectedBlindDateOffer.template.title}
+        dateText={blindDateCandidateDateLabel(selectedBlindDateOffer.candidateDates)}
+        timeText={selectedBlindDateOffer.timeLabel}
+        placeText={selectedBlindDateOffer.region}
+        reducedMotion={shouldReduceMotion}
+        onBack={() => {
+          setSelectedBlindDateOfferId(null);
+          setScreen("dates");
+        }}
+        onComplete={() => setScreen("blindDate")}
       />
     );
   }
@@ -1410,20 +1453,10 @@ function MeetingDateApplicationFlow({
           <X size={18} aria-hidden />
         </button>
 
-        <motion.header
-          initial={{ y: "32vh" }}
-          animate={{ y: 0 }}
-          transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
-          className="px-10 text-center"
-        >
-          <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
-            {selectedTicket.title.replace(/\s+/g, " ").trim()}
-          </h1>
-          <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/75">
-            {meetingDateLabel(selectedTicket.date)} · {formatTicketTimeLabel(selectedTicket.time)}
-            {selectedTicket.area ? ` · 서울 ${selectedTicket.area}` : ""}
-          </p>
-        </motion.header>
+        <TicketDetailRevealHeader
+          title={selectedTicket.title}
+          meta={`${meetingDateLabel(selectedTicket.date)} · ${formatTicketTimeLabel(selectedTicket.time)}${selectedTicket.area ? ` · 서울 ${selectedTicket.area}` : ""}`}
+        />
 
         <motion.div
           initial={{ opacity: 0, y: 28 }}
@@ -1573,6 +1606,8 @@ function MeetingDateApplicationFlow({
       >
         <BlindDateInvitationFlow
           offer={selectedBlindDateOffer}
+          bundledOffers={answerableBlindDateOffers}
+          userName={profileName}
           onClose={() => setScreen("dates")}
           onOffersChange={onBlindDateOffersChange}
         />
@@ -1894,8 +1929,14 @@ function MeetingDateApplicationFlow({
               <button
                 type="button"
                 onClick={() => {
-                  setSelectedBlindDateOfferId(activeBlindDateOffers[0].id);
-                  setScreen("blindDate");
+                  const offerToOpen =
+                    answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
+                  setSelectedBlindDateOfferId(offerToOpen.id);
+                  setScreen(
+                    offerToOpen.ownResponse === "pending"
+                      ? "blindDateUnlock"
+                      : "blindDate",
+                  );
                 }}
                 className="mt-4 flex min-h-12 w-full items-center justify-between gap-3 border border-black/10 bg-white px-4 py-3 text-left text-sm font-bold text-black"
               >
@@ -2059,21 +2100,50 @@ function ProgramListOption({
   );
 }
 
+function TicketDetailRevealHeader({
+  title,
+  meta,
+}: {
+  title: string;
+  meta: string;
+}) {
+  return (
+    <motion.header
+      initial={{ y: "32vh" }}
+      animate={{ y: 0 }}
+      transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1] }}
+      className="px-10 text-center"
+    >
+      <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
+        {title.replace(/\s+/g, " ").trim()}
+      </h1>
+      <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/75">
+        {meta}
+      </p>
+    </motion.header>
+  );
+}
+
 function TicketUnlockSequence({
-  ticket,
+  motionKey,
+  title,
+  dateText,
+  timeText,
+  placeText,
   reducedMotion,
   onBack,
   onComplete,
 }: {
-  ticket: GatheringTicket;
+  motionKey: string;
+  title: string;
+  dateText: string;
+  timeText: string;
+  placeText: string;
   reducedMotion: boolean;
   onBack: () => void;
   onComplete: () => void;
 }) {
-  const cleanTitle = ticket.title.replace(/\s+/g, " ").trim();
-  const dateText = programDateLabel(ticket.date);
-  const timeText = formatTicketTimeLabel(ticket.time);
-  const placeText = ticket.area ? `서울 ${ticket.area}` : "장소 추후 안내";
+  const cleanTitle = title.replace(/\s+/g, " ").trim();
   const meta = `${dateText} · ${timeText} · ${placeText}`;
   const [phase, setPhase] = useState<"locked" | "typing">("locked");
   const [unlockProgress, setUnlockProgress] = useState(0);
@@ -2181,7 +2251,7 @@ function TicketUnlockSequence({
 
   return (
     <motion.section
-      key={`ticket-unlock-${ticket.id}`}
+      key={`ticket-unlock-${motionKey}`}
       initial={reducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={reducedMotion ? undefined : { opacity: 0 }}
@@ -2997,6 +3067,13 @@ function blindDateDateLabel(value: string) {
   ).padStart(2, "0")} ${weekday}`;
 }
 
+function blindDateCandidateDateLabel(dates: string[]) {
+  if (dates.length === 0) return "날짜 선택 전";
+  const sortedDates = [...dates].sort();
+  if (sortedDates.length === 1) return blindDateDateLabel(sortedDates[0]);
+  return `${blindDateDateLabel(sortedDates[0])} – ${blindDateDateLabel(sortedDates[sortedDates.length - 1])}`;
+}
+
 const blindDateCalendarWeekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
 function isoDateParts(value: string) {
@@ -3016,35 +3093,21 @@ function dateKey(year: number, month: number, day: number) {
   )}`;
 }
 
-function calendarCellsForMonth(year: number, month: number) {
-  const firstWeekday = new Date(year, month - 1, 1).getDay();
-  const dayCount = new Date(year, month, 0).getDate();
-  const cells: Array<string | null> = Array.from(
-    { length: firstWeekday },
-    () => null,
-  );
-
-  for (let day = 1; day <= dayCount; day += 1) {
-    cells.push(dateKey(year, month, day));
-  }
-
-  const remainder = cells.length % 7;
-  if (remainder > 0) {
-    cells.push(...Array.from({ length: 7 - remainder }, () => null));
-  }
-
-  return cells;
-}
-
 function remainingTimeText(expiresAt: string, nowMs = Date.now()) {
   const target = new Date(expiresAt);
   const remainingMs = target.getTime() - nowMs;
   if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
 
   const totalMinutes = Math.ceil(remainingMs / 60000);
-  const hours = Math.floor(totalMinutes / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
   const minutes = totalMinutes % 60;
-  const timeText = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+  const timeText = days > 0
+    ? `${days}일 ${hours}시간 ${minutes}분`
+    : hours > 0
+      ? `${hours}시간 ${minutes}분`
+      : `${minutes}분`;
 
   return `응답 마감까지 ${timeText} 남았어요.`;
 }
@@ -3062,34 +3125,41 @@ function useBlindDateRemainingText(expiresAt: string) {
 
 function BlindDateInvitationFlow({
   offer,
+  bundledOffers,
+  userName,
   onClose,
   onOffersChange,
 }: {
   offer: BlindDateUserOffer;
+  bundledOffers: BlindDateUserOffer[];
+  userName?: string | null;
   onClose: () => void;
   onOffersChange?: (offers: BlindDateUserOffer[]) => void;
 }) {
   const [currentOffer, setCurrentOffer] = useState(offer);
-  const [step, setStep] = useState<"invite" | "dates" | "result">(
+  const [step, setStep] = useState<"invite" | "result">(
     offer.ownResponse === "pending" && !offer.isExpired ? "invite" : "result",
   );
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [desiredMeetingCount, setDesiredMeetingCount] = useState<number | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const displayUserName = Array.from(userName?.trim() || "회원")
+    .slice(-2)
+    .join("");
   const remainingText = useBlindDateRemainingText(currentOffer.expiresAt);
   const responseWindowClosed =
     currentOffer.isExpired ||
     (!remainingText &&
       ["offered", "waiting_response"].includes(currentOffer.status));
-  const inviteCopy =
-    currentOffer.template.stageCopy?.invite?.trim() ||
-    currentOffer.template.shortDescription ||
-    "지난 교집합 자리에서 서로 다시 만나보고 싶다고 선택된 분과 단둘이 만날 수 있는 자리가 준비되었어요.\n상대방은 현장에서 알 수 있어요.";
 
   useEffect(() => {
     setCurrentOffer(offer);
     setStep(offer.ownResponse === "pending" && !offer.isExpired ? "invite" : "result");
     setSelectedDates([]);
+    setDesiredMeetingCount(null);
     setError(null);
   }, [offer]);
 
@@ -3099,29 +3169,44 @@ function BlindDateInvitationFlow({
     setError(null);
 
     try {
-      const response = await fetch("/api/meetings/blind-dates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          offerId: currentOffer.id,
-          action,
-          availableDates,
-        }),
-      });
-      const data = (await response.json().catch(() => null)) as
-        | {
-            offer?: BlindDateUserOffer;
-            offers?: BlindDateUserOffer[];
-            error?: string;
-          }
-        | null;
+      const offersToRespond = bundledOffers.length
+        ? bundledOffers
+        : [currentOffer];
+      let updatedCurrentOffer: BlindDateUserOffer | null = null;
+      let updatedOffers: BlindDateUserOffer[] | null = null;
 
-      if (!response.ok || !data?.offer) {
-        throw new Error(data?.error ?? "blind-date-response-failed");
+      for (const targetOffer of offersToRespond) {
+        const response = await fetch("/api/meetings/blind-dates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            offerId: targetOffer.id,
+            action,
+            availableDates,
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | {
+              offer?: BlindDateUserOffer;
+              offers?: BlindDateUserOffer[];
+              error?: string;
+            }
+          | null;
+
+        if (!response.ok || !data?.offer) {
+          throw new Error(data?.error ?? "blind-date-response-failed");
+        }
+
+        if (targetOffer.id === currentOffer.id) updatedCurrentOffer = data.offer;
+        updatedOffers = data.offers ?? updatedOffers;
       }
 
-      setCurrentOffer(data.offer);
-      onOffersChange?.(data.offers ?? [data.offer]);
+      const resultOffer =
+        updatedCurrentOffer ??
+        updatedOffers?.find((item) => item.id === currentOffer.id) ??
+        currentOffer;
+      setCurrentOffer(resultOffer);
+      if (updatedOffers) onOffersChange?.(updatedOffers);
       setStep("result");
     } catch (responseError) {
       setError(
@@ -3167,120 +3252,106 @@ function BlindDateInvitationFlow({
           title="응답 시간이 지나 초대장이 만료되었어요."
           body="만료된 초대장은 추천탭 알림에서 제외돼요."
         />
-      ) : step === "dates" ? (
-        <section>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-            available dates
-          </p>
-          <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
-            가능한 날짜를
-            <br />
-            골라주세요.
-          </h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
-            가능한 날짜는 여러 개 선택할 수 있어요. 상대방과 가능한 날짜가
-            겹치면 가장 빠른 날짜로 확정돼요.
-          </p>
-
-          <BlindDateDateCalendar
-            dates={currentOffer.candidateDates}
-            selectedDates={selectedDates}
-            saving={saving}
-            onToggle={toggleDate}
-          />
-
-          {error && (
-            <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="button"
-            disabled={saving || selectedDates.length === 0}
-            onClick={() => void respond("yes", selectedDates)}
-            className="mt-5 h-[54px] w-full rounded-full bg-black text-sm font-bold text-white transition disabled:bg-black/20"
-          >
-            {saving ? "저장 중..." : "가능한 날짜 제출하기"}
-          </button>
-        </section>
       ) : step === "result" ? (
         <BlindDateResponseResult offer={currentOffer} remainingText={remainingText} />
       ) : (
         <section>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-            blind date invitation
-          </p>
-          <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
-            블라인드 데이트 제안이
-            <br />
-            도착했어요.
-          </h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-black/48">
-            <span className="whitespace-pre-line">{inviteCopy}</span>
-          </p>
+          <TicketDetailRevealHeader
+            title={currentOffer.template.title}
+            meta={`${blindDateCandidateDateLabel(currentOffer.candidateDates)} · ${currentOffer.timeLabel} · ${currentOffer.region}`}
+          />
 
-          <div className="mt-6">
-            <TicketDrawingFrame
-              motionKey={currentOffer.id}
-              title={currentOffer.template.title}
-              imageUrl={currentOffer.template.imageUrl}
-              time={currentOffer.timeLabel}
-              location={`서울\n${currentOffer.region}`}
-              tags={["블라인드", "비공개"]}
-              drawn
-              imageVisible
-              className="!mt-0"
+          <motion.div
+            initial={{ opacity: 0, y: 28 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+            className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] pt-5 text-[#24211d]"
+          >
+            <p className="break-keep px-1 text-[13px] font-semibold leading-6 text-black/52">
+              <span>
+                지난 모임에서 {displayUserName}님이 단 둘이 만나고 싶다고 선택한 사람도, {displayUserName}님을 선택했어요.
+              </span>
+              <span className="mt-2 block">
+                교집합이 블라인드 데이트 자리를 마련해드립니다.
+              </span>
+            </p>
+
+            <BlindDateDateCalendar
+              dates={currentOffer.candidateDates}
+              selectedDates={selectedDates}
+              saving={saving}
+              onToggle={toggleDate}
             />
-          </div>
 
-          <div className="mt-5 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-4 text-xs font-bold text-black/58">
-            <p className="flex items-center gap-2">
-              <Clock3 size={14} className="text-black/35" aria-hidden />
-              <span>{currentOffer.timeLabel}</span>
-            </p>
-            <p className="flex items-center gap-2">
-              <MapPin size={14} className="text-black/35" aria-hidden />
-              <span>{currentOffer.region}</span>
-            </p>
-            <p className="flex items-center gap-2">
-              <CalendarDays size={14} className="text-black/35" aria-hidden />
-              <span>{remainingText}</span>
-            </p>
-          </div>
+            <section className="mt-5 rounded-[22px] border border-[#d0cbbc]/70 bg-[#f8f5ee]/80 p-4">
+              <h2 className="text-sm font-black text-black">
+                참여 여부
+              </h2>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {[
+                  { label: "YES", value: 1 },
+                  { label: "NO", value: 0 },
+                ].map(({ label, value }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-pressed={desiredMeetingCount === value}
+                    onClick={() => setDesiredMeetingCount(value)}
+                    className={cn(
+                      "flex h-12 items-center justify-center rounded-[14px] border text-sm font-black transition",
+                      desiredMeetingCount === value
+                        ? "border-black bg-black text-white shadow-sm"
+                        : "border-black/10 bg-[#f7f4ed] text-black/45 hover:border-black/25 hover:text-black",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 min-h-[18px]">
+                <p className="text-[11px] font-semibold leading-[18px] text-black/42">
+                  서로 YES를 누른 경우에만 블라인드 데이트가 진행돼요.
+                </p>
+              </div>
+            </section>
 
-          {error && (
-            <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-              {error}
-            </p>
-          )}
+            <RouletteDeadlineCountdown
+              deadlineAt={new Date(currentOffer.expiresAt)}
+              activeLabel="응답 마감까지 남은 시간"
+              closedLabel="응답이 마감됐어요"
+            />
 
-          <div className="mt-5 grid grid-cols-2 gap-2.5">
+            {error && (
+              <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+                {error}
+              </p>
+            )}
+
             <motion.button
-              whileTap={!saving ? { scale: 0.98 } : undefined}
+              whileTap={
+                !saving &&
+                desiredMeetingCount !== null &&
+                (desiredMeetingCount === 0 || selectedDates.length > 0)
+                  ? { scale: 0.985 }
+                  : undefined
+              }
               type="button"
-              disabled={saving}
-              onClick={() => void respond("no")}
-              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] border border-black/12 bg-white text-black disabled:opacity-40"
+              disabled={
+                saving ||
+                desiredMeetingCount === null ||
+                (desiredMeetingCount > 0 && selectedDates.length === 0)
+              }
+              onClick={() =>
+                void respond(
+                  desiredMeetingCount === 0 ? "no" : "yes",
+                  desiredMeetingCount === 0 ? [] : selectedDates,
+                )
+              }
+              className="mt-5 h-[56px] w-full rounded-full bg-black text-sm font-black text-white shadow-[0_10px_26px_rgba(0,0,0,0.12)] transition disabled:bg-black/15 disabled:text-white/35 disabled:shadow-none"
             >
-              <span className="text-sm font-bold">No</span>
-              <span className="mt-0.5 text-[10px] font-medium text-black/40">
-                이번엔 지나갈게요
-              </span>
+              {saving ? "저장 중..." : "응답 제출하기"}
             </motion.button>
-            <motion.button
-              whileTap={!saving ? { scale: 0.98 } : undefined}
-              type="button"
-              disabled={saving}
-              onClick={() => setStep("dates")}
-              className="flex h-[58px] flex-col items-center justify-center rounded-[16px] bg-black text-white shadow-sm disabled:bg-black/20"
-            >
-              <span className="text-sm font-bold">Yes</span>
-              <span className="mt-0.5 text-[10px] font-medium text-white/60">
-                가능한 날짜 선택
-              </span>
-            </motion.button>
-          </div>
+          </motion.div>
         </section>
       )}
     </motion.div>
@@ -3300,18 +3371,11 @@ function BlindDateDateCalendar({
 }) {
   const enabledDates = new Set(dates);
   const selectedDateSet = new Set(selectedDates);
-  const months = dates.length
-    ? Array.from(new Set(dates.map((date) => date.slice(0, 7)))).sort()
-    : [];
-  const [month, setMonth] = useState(months[0] ?? "");
+  const sortedDates = [...dates].sort();
+  const firstDate = sortedDates[0];
+  const firstDateParts = firstDate ? isoDateParts(firstDate) : null;
 
-  useEffect(() => {
-    if (months.length > 0 && !months.includes(month)) {
-      setMonth(months[0]);
-    }
-  }, [month, months]);
-
-  if (months.length === 0) {
+  if (!firstDateParts) {
     return (
       <p className="mt-6 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold text-black/45">
         선택 가능한 날짜가 아직 열리지 않았어요.
@@ -3319,65 +3383,44 @@ function BlindDateDateCalendar({
     );
   }
 
-  const visibleMonth = months.includes(month) ? month : months[0];
-  const [year, monthNumber] = visibleMonth.split("-").map(Number);
-  const activeWeekdays = new Set(
-    dates
-      .filter((date) => date.startsWith(`${visibleMonth}-`))
-      .map((date) => {
-        const parts = isoDateParts(date);
-        if (!parts) return -1;
-        return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
-      }),
-  );
+  const visibleDates = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date(
+      Date.UTC(
+        firstDateParts.year,
+        firstDateParts.month - 1,
+        firstDateParts.day + index,
+      ),
+    );
+    return dateKey(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  });
+  const lastDate = visibleDates[visibleDates.length - 1];
+  const weekdayHeaders = visibleDates.slice(0, 7).map((date) => {
+    const parts = isoDateParts(date);
+    if (!parts) return "";
+    return blindDateCalendarWeekdays[
+      new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
+    ];
+  });
 
   return (
-    <section className="mt-6 rounded-[24px] border border-black/10 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-black text-black">
-          {year}년 {monthNumber}월
-        </h2>
-        <div className="flex rounded-full bg-black/[0.04] p-1 text-[10px] font-bold">
-          {months.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setMonth(value)}
-              className={cn(
-                "rounded-full px-3 py-1 transition-all",
-                visibleMonth === value
-                  ? "bg-white text-black shadow-sm"
-                  : "text-black/40",
-              )}
-            >
-              {Number(value.slice(5, 7))}월
-            </button>
-          ))}
-        </div>
+    <section className="mt-5 rounded-[24px] border border-[#d0cbbc]/70 bg-[#f8f5ee]/80 p-4">
+      <div>
+        <h2 className="text-sm font-black text-black">가능한 날짜를 모두 선택해주세요.</h2>
+        <p className="mt-1 text-[11px] font-semibold text-black/42">
+          {blindDateDateLabel(firstDate)} – {blindDateDateLabel(lastDate)}
+        </p>
       </div>
 
-      <div className="mt-4 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-black/35">
-        {blindDateCalendarWeekdays.map((weekday, index) => (
-          <span
-            key={weekday}
-            className={cn(
-              "rounded-full py-1 transition-colors",
-              activeWeekdays.has(index)
-                ? "bg-[#7eb3c7]/15 font-extrabold text-[#4f9bb8]"
-                : "text-black/35",
-            )}
-          >
+      <div className="mt-4 grid grid-cols-7 gap-1.5 text-center text-[10px] font-bold text-black/32">
+        {weekdayHeaders.map((weekday, index) => (
+          <span key={`${weekday}-${index}`} className="py-1">
             {weekday}
           </span>
         ))}
       </div>
 
       <div className="mt-2 grid grid-cols-7 gap-1.5">
-        {calendarCellsForMonth(year, monthNumber).map((date, index) => {
-          if (!date) {
-            return <span key={`empty-${index}`} className="aspect-square" />;
-          }
-
+        {visibleDates.map((date) => {
           const parts = isoDateParts(date);
           const enabled = enabledDates.has(date);
           const selected = selectedDateSet.has(date);
@@ -3395,14 +3438,14 @@ function BlindDateDateCalendar({
                 selected
                   ? "border-black bg-black text-white shadow-sm"
                   : enabled
-                    ? "border-black/10 bg-white text-black hover:border-black/25"
+                    ? "border-black/10 bg-[#f7f4ed] text-black hover:border-black/25"
                     : "border-transparent text-black/15",
                 saving && enabled && "opacity-45",
               )}
             >
               <span>{parts?.day ?? ""}</span>
               {enabled && !selected && (
-                <span className="absolute bottom-1 h-1.5 w-1.5 rounded-full bg-[#7eb3c7] shadow-sm" />
+                <span className="absolute bottom-1 h-1 w-1 rounded-full bg-black/35" />
               )}
               {selected && (
                 <Check
@@ -3532,10 +3575,7 @@ function BlindDateResponseResult({
 
   return (
     <section>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-        waiting
-      </p>
-      <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
+      <h1 className="text-[24px] font-bold leading-8 tracking-tight text-black">
         상대방의 응답을
         <br />
         기다리는 중이에요.
@@ -3547,20 +3587,6 @@ function BlindDateResponseResult({
           "상대방도 참여 의사를 남기고 가능한 날짜가 겹치면 블라인드 데이트 일정이 확정돼요.",
         )}
       </p>
-
-      <div className="mt-6">
-        <TicketDrawingFrame
-          motionKey={`${offer.id}-waiting`}
-          title={offer.template.title}
-          imageUrl={offer.template.imageUrl}
-          time={offer.timeLabel}
-          location={`서울\n${offer.region}`}
-          tags={["블라인드", "대기"]}
-          drawn
-          imageVisible
-          className="!mt-0"
-        />
-      </div>
 
       <BlindDateDetailList
         items={[

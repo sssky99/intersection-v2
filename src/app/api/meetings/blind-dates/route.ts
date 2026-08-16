@@ -137,6 +137,7 @@ function isExpired(row: BlindDateOfferRow) {
   return (
     row.status === "expired" ||
     (["pending_admin", "offered", "waiting_response"].includes(row.status) &&
+      (row.a_response === "pending" || row.b_response === "pending") &&
       new Date(row.expires_at).getTime() < Date.now())
   );
 }
@@ -180,11 +181,6 @@ function sanitizeOffer(
   };
 }
 
-function overlappingEarliestDate(left: string[], right: string[]) {
-  const rightSet = new Set(right);
-  return left.filter((date) => rightSet.has(date)).sort()[0] ?? null;
-}
-
 async function expireOldOffers(supabase: SupabaseAdminClient) {
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -195,7 +191,8 @@ async function expireOldOffers(supabase: SupabaseAdminClient) {
       updated_at: now,
     })
     .lt("expires_at", now)
-    .in("status", ["pending_admin", "offered", "waiting_response"]);
+    .in("status", ["pending_admin", "offered", "waiting_response"])
+    .or("a_response.eq.pending,b_response.eq.pending");
 
   if (error) throw error;
 }
@@ -412,34 +409,12 @@ export async function POST(request: Request) {
         );
       }
 
-      const nextAResponse = isParticipantA ? "yes" : offer.a_response;
-      const nextBResponse = isParticipantA ? offer.b_response : "yes";
-      const nextAAvailableDates = isParticipantA
-        ? validDates
-        : dateList(offer.a_available_dates);
-      const nextBAvailableDates = isParticipantA
-        ? dateList(offer.b_available_dates)
-        : validDates;
-      const scheduledDate =
-        nextAResponse === "yes" && nextBResponse === "yes"
-          ? overlappingEarliestDate(nextAAvailableDates, nextBAvailableDates)
-          : null;
-
       updates[ownResponseColumn] = "yes";
       updates[ownDatesColumn] = validDates;
       updates[ownRespondedAtColumn] = now;
-
-      if (nextAResponse === "yes" && nextBResponse === "yes") {
-        if (scheduledDate) {
-          updates.status = "scheduled";
-          updates.scheduled_date = scheduledDate;
-          updates.scheduled_at = now;
-        } else {
-          updates.status = "needs_reschedule";
-        }
-      } else {
-        updates.status = "waiting_response";
-      }
+      // 두 참가자가 모두 YES여도 운영진이 일정을 별도로 확정하기 전까지는
+      // 사용자에게 후속 상태나 상대 정보를 공개하지 않는다.
+      updates.status = "waiting_response";
     }
 
     const { data: updatedOffer, error: updateError } = await supabase

@@ -150,6 +150,24 @@ type ProfileAccessRow = {
 
 type TicketSourceRow = WaitlistRow;
 
+const feedbackPreviewDate = "2026-08-15";
+const feedbackPreviewUserIds = new Set([
+  "134de325-a77a-4e55-a646-cc0e267687e2",
+  "9a726fad-a4ae-4672-afd5-a8bce5501ed2",
+]);
+
+function forceFeedbackPreview(
+  userId: string,
+  row: TicketSourceRow,
+  instance: InstanceRow | null,
+) {
+  const eventDate =
+    instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
+  return (
+    feedbackPreviewUserIds.has(userId) && eventDate === feedbackPreviewDate
+  );
+}
+
 
 const templateSelect = [
   "id",
@@ -1203,7 +1221,10 @@ function effectiveSourceStatus(
   row: TicketSourceRow,
   instanceId: string | null,
   userAssignedInstanceIds: Set<string>,
+  previewFeedback = false,
 ) {
+  if (previewFeedback) return "approved";
+
   if (row.status === "approved" && instanceId) {
     return sourceRowAssigned(row, instanceId, userAssignedInstanceIds)
       ? row.status
@@ -1229,6 +1250,7 @@ function sourceTicketCandidate(
   userAssignedInstanceIds: Set<string>,
   now: Date,
   previewReveal = false,
+  previewFeedbackUserId?: string,
 ): SourceTicketCandidate | null {
   const instanceId = sourceRowInstanceId(row);
   const instance = instanceId ? instanceMap.get(instanceId) ?? null : null;
@@ -1239,6 +1261,9 @@ function sourceTicketCandidate(
     row,
     instanceId,
     userAssignedInstanceIds,
+    previewFeedbackUserId
+      ? forceFeedbackPreview(previewFeedbackUserId, row, instance)
+      : false,
   );
   const displayNow = ticketDisplayNow(now, startAt, previewReveal);
 
@@ -1451,6 +1476,7 @@ export async function GET(request: Request) {
               userAssignedInstanceIds,
               now,
               previewReveal,
+              user.id,
             ),
           )
           .filter(
@@ -1676,6 +1702,7 @@ export async function GET(request: Request) {
           row,
           instanceId,
           userAssignedInstanceIds,
+          forceFeedbackPreview(user.id, row, instance),
         );
         const sourceDate =
           instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;

@@ -401,7 +401,8 @@ async function expireOldOffers(supabase: SupabaseAdminClient) {
       updated_at: now,
     })
     .lt("expires_at", now)
-    .in("status", ["pending_admin", "offered", "waiting_response"]);
+    .in("status", ["pending_admin", "offered", "waiting_response"])
+    .or("a_response.eq.pending,b_response.eq.pending");
 
   if (error) throw error;
 }

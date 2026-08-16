@@ -12,6 +12,7 @@ import {
   Clock3,
   LogOut,
   Loader2,
+  Mail,
   MapPin,
   MessageCircle,
   X,
@@ -556,6 +557,8 @@ export function AppHome({
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [chatRoomOpen, setChatRoomOpen] = useState(false);
   const [recommendationFocusMode, setRecommendationFocusMode] = useState(false);
+  const [recommendationBottomNavHidden, setRecommendationBottomNavHidden] =
+    useState(false);
   const [ticketTabFocusMode, setTicketTabFocusMode] = useState(false);
   const [availableMeetingTickets, setAvailableMeetingTickets] = useState<
     GatheringTicket[]
@@ -1159,17 +1162,15 @@ export function AppHome({
           title="블라인드 데이트"
           aria-label={
             pendingBlindDateOfferCount > 0
-              ? `메시지 ${pendingBlindDateOfferCount}개`
+              ? "메시지 1개"
               : "블라인드 데이트 상태 확인"
           }
-          className="absolute right-[120px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+          className="absolute right-[72px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
         >
-          <span className="text-lg leading-none" aria-hidden>
-            ✉️
-          </span>
+          <Mail size={20} strokeWidth={1.8} aria-hidden />
           {pendingBlindDateOfferCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[10px] font-black leading-none text-white">
-              {pendingBlindDateOfferCount}
+              1
             </span>
           )}
         </button>
@@ -1208,7 +1209,10 @@ export function AppHome({
         ref={scrollAreaRef}
         className={cn(
           "relative min-h-0 flex-1 overflow-hidden",
-          chatRoomOpen || recommendationFocusMode || ticketTabFocusMode
+          chatRoomOpen ||
+          recommendationFocusMode ||
+          recommendationBottomNavHidden ||
+          ticketTabFocusMode
             ? "pb-0"
             : "pb-[calc(90px+env(safe-area-inset-bottom))]",
         )}
@@ -1267,6 +1271,7 @@ export function AppHome({
           <MeetingRecommendation
               userId={userId}
               profileCompleted
+              profileName={currentProfile.name}
               profilePhotoUrl={currentProfile.photo_url}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
@@ -1277,6 +1282,7 @@ export function AppHome({
               }
               onOpenParticipationRecord={openParticipationRecord}
               onFocusModeChange={setRecommendationFocusMode}
+              onBottomNavHiddenChange={setRecommendationBottomNavHidden}
               onAvailableTicketsChange={setAvailableMeetingTickets}
               onTicketInteractionChange={applyTicketInteraction}
               onOpenDeclinedTicket={setReplayedDeclinedTicket}
@@ -1503,6 +1509,7 @@ export function AppHome({
 
       {!chatRoomOpen &&
         !recommendationFocusMode &&
+        !recommendationBottomNavHidden &&
         !ticketTabFocusMode &&
         !replayedDeclinedTicket && (
         <nav

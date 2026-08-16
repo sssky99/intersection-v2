@@ -688,10 +688,18 @@ function CountdownPair({ value }: { value: number | null }) {
   );
 }
 
-function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
+export function RouletteDeadlineCountdown({
+  deadlineAt,
+  activeLabel,
+  closedLabel,
+  visibleWithinMs,
+}: {
+  deadlineAt: Date;
+  activeLabel: string;
+  closedLabel: string;
+  visibleWithinMs?: number;
+}) {
   const [nowMs, setNowMs] = useState<number | null>(null);
-  const startAt = ticketStartAt(ticket);
-  const deadlineAt = startAt ? new Date(startAt.getTime() - dayMs) : null;
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -699,9 +707,9 @@ function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  if (!deadlineAt || nowMs === null) return null;
+  if (nowMs === null) return null;
   const rawRemainingMs = deadlineAt.getTime() - nowMs;
-  if (rawRemainingMs > joinCountdownWindowMs) return null;
+  if (visibleWithinMs !== undefined && rawRemainingMs > visibleWithinMs) return null;
 
   const remainingMs = Math.max(0, rawRemainingMs);
   const totalSeconds = Math.ceil(remainingMs / 1000);
@@ -713,7 +721,7 @@ function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
   return (
     <div className="mt-9 border-t border-black/[0.08] pt-7 text-center">
       <p className="text-[12px] font-bold tracking-[-0.01em] text-black/42">
-        {isClosed ? "참여 신청이 마감됐어요" : "참여 마감까지 남은 시간"}
+        {isClosed ? closedLabel : activeLabel}
       </p>
       <div
         className="mt-4 flex items-center justify-center gap-2"
@@ -735,6 +743,21 @@ function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
         {formatKstDateLabel(deadlineAt)} {formatKstTimeLabel(deadlineAt)} 마감
       </p>
     </div>
+  );
+}
+
+function JoinDeadlineCountdown({ ticket }: { ticket: GatheringTicket }) {
+  const startAt = ticketStartAt(ticket);
+  const deadlineAt = startAt ? new Date(startAt.getTime() - dayMs) : null;
+  if (!deadlineAt) return null;
+
+  return (
+    <RouletteDeadlineCountdown
+      deadlineAt={deadlineAt}
+      activeLabel="참여 마감까지 남은 시간"
+      closedLabel="참여 신청이 마감됐어요"
+      visibleWithinMs={joinCountdownWindowMs}
+    />
   );
 }
 
