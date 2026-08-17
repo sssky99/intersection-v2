@@ -22,10 +22,11 @@ import {
   useState,
 } from "react";
 import { formatTicketTimeLabel } from "@/components/IntersectionTicketCard";
-import { TicketDrawingFrame } from "@/components/TicketDrawingFrame";
+import { NaverMapPreview } from "@/components/NaverMapPreview";
 import type { MembershipStatus } from "@/features/membership/membershipTypes";
 import {
   RouletteDeadlineCountdown,
+  TicketCoursePanel,
   TicketDetailContent,
 } from "@/features/meetings/TicketDetailContent";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
@@ -51,6 +52,7 @@ import type {
   TicketInteractionStatus,
 } from "@/types/ticket";
 import type { BlindDateUserOffer } from "@/types/blindDate";
+import type { NaverPlace } from "@/types/place";
 
 type DepositMessageRegistration = {
   count: number;
@@ -823,7 +825,7 @@ function MeetingDateApplicationFlow({
     const offerToOpen = answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
     setSelectedBlindDateOfferId(offerToOpen.id);
     setScreen(
-      offerToOpen.ownResponse === "pending"
+      shouldPlayBlindDateUnlock(offerToOpen)
         ? "blindDateUnlock"
         : "blindDate",
     );
@@ -1411,7 +1413,11 @@ function MeetingDateApplicationFlow({
       <TicketUnlockSequence
         motionKey={`blind-date-${selectedBlindDateOffer.id}`}
         title={selectedBlindDateOffer.template.title}
-        dateText={blindDateCandidateDateLabel(selectedBlindDateOffer.candidateDates)}
+        dateText={
+          selectedBlindDateOffer.scheduledDate
+            ? blindDateDateLabel(selectedBlindDateOffer.scheduledDate)
+            : blindDateCandidateDateLabel(selectedBlindDateOffer.candidateDates)
+        }
         timeText={selectedBlindDateOffer.timeLabel}
         placeText={selectedBlindDateOffer.region}
         reducedMotion={shouldReduceMotion}
@@ -1614,6 +1620,7 @@ function MeetingDateApplicationFlow({
           offer={selectedBlindDateOffer}
           bundledOffers={answerableBlindDateOffers}
           userName={profileName}
+          profilePhotoUrl={profilePhotoUrl}
           onClose={() => setScreen("dates")}
           onOffersChange={onBlindDateOffersChange}
         />
@@ -1939,7 +1946,7 @@ function MeetingDateApplicationFlow({
                     answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
                   setSelectedBlindDateOfferId(offerToOpen.id);
                   setScreen(
-                    offerToOpen.ownResponse === "pending"
+                    shouldPlayBlindDateUnlock(offerToOpen)
                       ? "blindDateUnlock"
                       : "blindDate",
                   );
@@ -3080,6 +3087,40 @@ function blindDateCandidateDateLabel(dates: string[]) {
   return `${blindDateDateLabel(sortedDates[0])} – ${blindDateDateLabel(sortedDates[sortedDates.length - 1])}`;
 }
 
+function shouldPlayBlindDateUnlock(offer: BlindDateUserOffer) {
+  return offer.ownResponse === "pending" || offer.status === "scheduled";
+}
+
+function blindDateStartAt(offer: BlindDateUserOffer) {
+  if (!offer.scheduledDate) return null;
+
+  const timeLabel = offer.timeLabel.trim();
+  const twentyFourHourMatch = timeLabel.match(/^(\d{1,2}):(\d{2})/);
+  const koreanTimeMatch = timeLabel.match(
+    /^(오전|오후|저녁|밤)\s*(\d{1,2})시(?:\s*(\d{1,2})분)?/,
+  );
+  let hours: number;
+  let minutes: number;
+
+  if (twentyFourHourMatch) {
+    hours = Number(twentyFourHourMatch[1]);
+    minutes = Number(twentyFourHourMatch[2]);
+  } else if (koreanTimeMatch) {
+    const period = koreanTimeMatch[1];
+    const rawHours = Number(koreanTimeMatch[2]) % 12;
+    hours = rawHours + (period === "오전" ? 0 : 12);
+    minutes = Number(koreanTimeMatch[3] ?? 0);
+  } else {
+    return null;
+  }
+
+  if (hours > 23 || minutes > 59) return null;
+  const startAt = new Date(
+    `${offer.scheduledDate}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+09:00`,
+  );
+  return Number.isFinite(startAt.getTime()) ? startAt : null;
+}
+
 const blindDateCalendarWeekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
 function isoDateParts(value: string) {
@@ -3133,12 +3174,14 @@ function BlindDateInvitationFlow({
   offer,
   bundledOffers,
   userName,
+  profilePhotoUrl,
   onClose,
   onOffersChange,
 }: {
   offer: BlindDateUserOffer;
   bundledOffers: BlindDateUserOffer[];
   userName?: string | null;
+  profilePhotoUrl?: string | null;
   onClose: () => void;
   onOffersChange?: (offers: BlindDateUserOffer[]) => void;
 }) {
@@ -3259,7 +3302,11 @@ function BlindDateInvitationFlow({
           body="만료된 초대장은 추천탭 알림에서 제외돼요."
         />
       ) : step === "result" ? (
-        <BlindDateResponseResult offer={currentOffer} remainingText={remainingText} />
+        <BlindDateResponseResult
+          offer={currentOffer}
+          remainingText={remainingText}
+          profilePhotoUrl={profilePhotoUrl}
+        />
       ) : (
         <section>
           <TicketDetailRevealHeader
@@ -3471,80 +3518,55 @@ function BlindDateDateCalendar({
 function BlindDateResponseResult({
   offer,
   remainingText,
+  profilePhotoUrl,
 }: {
   offer: BlindDateUserOffer;
   remainingText: string | null;
+  profilePhotoUrl?: string | null;
 }) {
   const stage = blindDateDisplayStage(offer);
 
   if (stage === "scheduled" || stage === "guidance" || stage === "completed") {
-    const isGuidance = stage === "guidance";
     const isCompleted = stage === "completed";
     const placeName = offer.actualPlaceName || "장소 확인 중";
     const address = offer.actualPlaceAddress || "주소 확인 중";
-    const title = isCompleted
-      ? "블라인드 데이트가 완료되었어요."
-      : isGuidance
-        ? "오늘 만남을 다시 확인해주세요."
-        : "블라인드 데이트 일정이 확정되었어요.";
-    const body = blindDateStageCopy(
-      offer,
-      isCompleted ? "completed" : isGuidance ? "guidance" : "scheduled",
-      isCompleted
-        ? "짧은 피드백을 남길 수 있도록 준비 중이에요."
-        : isGuidance
-          ? "장소와 시간을 다시 확인해주세요. 상대방은 현장에서 알 수 있어요."
-          : "확정된 날짜와 장소를 확인해주세요. 상대방은 현장에서 알 수 있어요.",
-    );
+    const startAt = blindDateStartAt(offer);
 
     return (
       <section>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-          {isCompleted ? "feedback" : isGuidance ? "date guidance" : "scheduled"}
-        </p>
-        <h1 className="mt-2 text-[24px] font-bold leading-8 tracking-tight text-black">
-          {title}
-        </h1>
-        <p className="mt-3 whitespace-pre-line text-sm font-semibold leading-6 text-black/48">
-          {body}
-        </p>
-
-        <div className="mt-6">
-          <TicketDrawingFrame
-            motionKey={`${offer.id}-${stage}`}
-            title={offer.template.title}
-            imageUrl={offer.template.imageUrl}
-            time={offer.timeLabel}
-            location={`${offer.region}\n${placeName}`}
-            tags={["블라인드", "확정"]}
-            drawn
-            imageVisible
-            className="!mt-0"
-          />
-        </div>
-
-        <BlindDateDetailList
-          items={[
-            ["날짜", offer.scheduledDate ? blindDateDateLabel(offer.scheduledDate) : "-"],
-            ["시간", offer.timeLabel],
-            ["지역", offer.region],
-            ["장소", placeName],
-            ["주소", address],
-            ["상대", "현장에서 공개"],
-          ]}
+        <TicketDetailRevealHeader
+          title={offer.template.title}
+          meta={`${offer.scheduledDate ? blindDateDateLabel(offer.scheduledDate) : "날짜 확인 중"} · ${offer.timeLabel} · ${offer.region}`}
         />
 
-        {offer.template.guideText && (
-          <p className="mt-4 rounded-2xl bg-black/[0.03] px-4 py-4 text-xs font-semibold leading-5 text-black/55">
-            {offer.template.guideText}
-          </p>
-        )}
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
+          className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 pt-1 text-[#24211d]"
+        >
+          <BlindDateJourneySections
+            offer={offer}
+            placeName={placeName}
+            address={address}
+            profilePhotoUrl={profilePhotoUrl}
+          />
 
-        {isCompleted && (
-          <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-xs font-semibold leading-5 text-black/55">
-            피드백 기능은 곧 열릴 예정이에요.
-          </p>
-        )}
+          {startAt && (
+            <RouletteDeadlineCountdown
+              deadlineAt={startAt}
+              activeLabel="시작까지 남은 시간"
+              closedLabel="만남이 시작되었어요"
+              deadlineSuffix="시작"
+            />
+          )}
+
+          {isCompleted && (
+            <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-xs font-semibold leading-5 text-black/55">
+              피드백 기능은 곧 열릴 예정이에요.
+            </p>
+          )}
+        </motion.div>
       </section>
     );
   }
@@ -3604,6 +3626,243 @@ function BlindDateResponseResult({
         ]}
       />
     </section>
+  );
+}
+
+function BlindDateJourneySections({
+  offer,
+  placeName,
+  address,
+  profilePhotoUrl,
+}: {
+  offer: BlindDateUserOffer;
+  placeName: string;
+  address: string;
+  profilePhotoUrl?: string | null;
+}) {
+  const dateTimeLabel = [
+    offer.scheduledDate ? blindDateDateLabel(offer.scheduledDate) : null,
+    offer.timeLabel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const counterpartPhotoUrl = `/api/meetings/blind-dates/${encodeURIComponent(offer.id)}/counterpart-photo`;
+  const startAt = blindDateStartAt(offer);
+  const journeyTime = startAt
+    ? new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Seoul",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(startAt)
+    : offer.timeLabel;
+  const journeyPlace = {
+    name: offer.actualPlaceName,
+    address: offer.actualPlaceAddress,
+  };
+  const journeySteps: NonNullable<GatheringTicket["courseSteps"]> = [
+    {
+      id: `blind-date-${offer.id}`,
+      order: 1,
+      title: "블라인드 데이트",
+      activityType: "만남",
+      placeName,
+      address,
+      place: journeyPlace,
+      openOffsetMinutes: 0,
+      isMainActivity: true,
+    },
+  ];
+  const journeyTicket: GatheringTicket = {
+    id: `blind-date-${offer.id}`,
+    templateId: offer.template.id,
+    title: offer.template.title,
+    subtitle: "",
+    date: offer.scheduledDate ?? "",
+    time: journeyTime,
+    area: offer.region,
+    moodTags: [],
+    peopleHint: "",
+    reason: "",
+    courseSteps: journeySteps,
+    place: journeyPlace,
+  };
+
+  return (
+    <div className="mt-5">
+      <section className="py-5">
+        <div className="flex items-end justify-between gap-3">
+          <h2 className="font-ticket-display text-[17px] font-bold tracking-[-0.04em] text-black">
+            여정
+          </h2>
+          <p className="font-ticket-latin text-[10px] italic tracking-[0.12em] text-black/36">
+            {dateTimeLabel}
+          </p>
+        </div>
+
+        <div className="mt-4">
+          <TicketCoursePanel
+            ticket={journeyTicket}
+            steps={journeySteps}
+            participantPhotoUrl={profilePhotoUrl}
+            previewMatchPhotoUrls={[counterpartPhotoUrl]}
+            previewOtherMemberPhotoUrls={[]}
+            matchMemberCount={1}
+            variant="blind-date"
+            showFeedbackTime={false}
+            showJoinCountdown={false}
+          />
+        </div>
+      </section>
+
+      <section className="border-t border-black/8 py-5">
+        <h2 className="font-ticket-display text-[17px] font-bold tracking-[-0.04em] text-black">
+          장소
+        </h2>
+        <div className="mt-4 rounded-3xl border border-black/8 bg-white px-4 py-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/48">
+              <MapPin size={16} strokeWidth={1.8} aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-base font-black leading-6 text-black">{placeName}</p>
+              <p className="mt-1 text-[11px] font-bold text-black/40">{offer.region}</p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-black/62">
+                {address}
+              </p>
+            </div>
+          </div>
+          {offer.actualPlaceName && (
+            <BlindDateNaverMap
+              placeName={offer.actualPlaceName}
+              region={offer.region}
+              address={offer.actualPlaceAddress}
+            />
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function normalizeBlindDatePlaceText(value: string) {
+  return value.toLocaleLowerCase("ko-KR").replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function selectBlindDateNaverPlace(
+  places: NaverPlace[],
+  placeName: string,
+  region: string,
+) {
+  const targetName = normalizeBlindDatePlaceText(placeName);
+  const targetRegion = normalizeBlindDatePlaceText(region.replace(/^서울\s*/, ""));
+
+  return (
+    [...places].sort((left, right) => {
+      const score = (place: NaverPlace) => {
+        const resultName = normalizeBlindDatePlaceText(place.name);
+        const address = normalizeBlindDatePlaceText(
+          `${place.roadAddress ?? ""} ${place.jibunAddress ?? ""}`,
+        );
+        let value = 0;
+        if (resultName === targetName) value += 100;
+        else if (
+          resultName.includes(targetName) ||
+          targetName.includes(resultName)
+        ) {
+          value += 60;
+        }
+        if (targetRegion && address.includes(targetRegion)) value += 10;
+        return value;
+      };
+
+      return score(right) - score(left);
+    })[0] ?? null
+  );
+}
+
+function BlindDateNaverMap({
+  placeName,
+  region,
+  address,
+}: {
+  placeName: string;
+  region: string;
+  address?: string | null;
+}) {
+  const [place, setPlace] = useState<NaverPlace | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = placeName;
+
+    setPlace(null);
+    setFailed(false);
+    setIsLoading(true);
+
+    fetch(`/api/places/search?query=${encodeURIComponent(query)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("blind-date-place-search-failed");
+        return (await response.json()) as { places?: NaverPlace[] };
+      })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        const nextPlace = selectBlindDateNaverPlace(
+          data.places ?? [],
+          placeName,
+          region,
+        );
+        setPlace(nextPlace);
+        setFailed(!nextPlace);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [placeName, region]);
+
+  if (isLoading) {
+    return (
+      <div
+        className="mt-3 h-[190px] animate-pulse rounded-2xl border border-black/8 bg-black/[0.035]"
+        aria-label="네이버 지도 불러오는 중"
+      />
+    );
+  }
+
+  if (failed || !place) {
+    if (address) {
+      return (
+        <NaverMapPreview
+          place={{ name: placeName, address }}
+          className="mt-3"
+          heightClassName="h-[190px]"
+        />
+      );
+    }
+
+    return (
+      <div className="mt-3 flex h-[96px] items-center justify-center rounded-2xl border border-black/8 bg-black/[0.025] px-5 text-center text-xs font-bold text-black/42">
+        네이버 지도를 불러오지 못했어요.
+      </div>
+    );
+  }
+
+  return (
+    <NaverMapPreview
+      place={place}
+      className="mt-3"
+      heightClassName="h-[190px]"
+    />
   );
 }
 

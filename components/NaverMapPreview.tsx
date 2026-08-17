@@ -25,26 +25,31 @@ function loadNaverMaps() {
     if (!clientId) return Promise.reject(new Error("missing-naver-map-client-id"));
 
     window.__interV5NaverMapsPromise = new Promise<void>((resolve, reject) => {
-      const callbackName = `__interV5NaverMapsReady_${Date.now()}`;
       const script = document.createElement("script");
+      const fail = (error: Error) => {
+        window.clearTimeout(timeout);
+        window.__interV5NaverMapsPromise = undefined;
+        reject(error);
+      };
       const timeout = window.setTimeout(() => {
-        reject(new Error("naver-map-timeout"));
+        fail(new Error("naver-map-timeout"));
       }, 12000);
 
-      (window as unknown as Record<string, () => void>)[callbackName] = () => {
+      script.onload = () => {
         window.clearTimeout(timeout);
-        delete (window as unknown as Record<string, () => void>)[callbackName];
-        resolve();
+        if (window.naver?.maps) {
+          resolve();
+        } else {
+          fail(new Error("naver-map-not-initialized"));
+        }
       };
 
       script.src =
         `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(clientId)}` +
-        `&submodules=geocoder&callback=${callbackName}`;
+        "&submodules=geocoder";
       script.async = true;
       script.onerror = () => {
-        window.clearTimeout(timeout);
-        delete (window as unknown as Record<string, () => void>)[callbackName];
-        reject(new Error("naver-map-load-failed"));
+        fail(new Error("naver-map-load-failed"));
       };
 
       document.head.appendChild(script);
@@ -59,7 +64,11 @@ export function NaverMapPreview({
   className,
   heightClassName = "h-[180px]",
 }: {
-  place: Pick<NaverPlace, "name" | "mapx" | "mapy">;
+  place: Pick<NaverPlace, "name"> & {
+    mapx?: number | null;
+    mapy?: number | null;
+    address?: string | null;
+  };
   className?: string;
   heightClassName?: string;
 }) {
@@ -73,23 +82,51 @@ export function NaverMapPreview({
 
     setFailed(false);
     loadNaverMaps()
-      .then(() => {
+      .then(async () => {
         if (cancelled || !containerRef.current || !window.naver?.maps) return;
 
         const maps = window.naver.maps;
-        const usesScaledLongitudeLatitude =
-          Math.abs(place.mapx) > 1_000_000_000 &&
-          Math.abs(place.mapy) > 100_000_000;
-        const position = usesScaledLongitudeLatitude
-          ? new maps.LatLng(
-              place.mapy / 10_000_000,
-              place.mapx / 10_000_000,
-            )
-          : maps.TransCoord?.fromTM128ToLatLng
-            ? maps.TransCoord.fromTM128ToLatLng(
-                new maps.Point(place.mapx, place.mapy),
+        const hasCoordinates =
+          typeof place.mapx === "number" && typeof place.mapy === "number";
+        let position = null;
+
+        if (hasCoordinates) {
+          const usesScaledLongitudeLatitude =
+            Math.abs(place.mapx as number) > 1_000_000_000 &&
+            Math.abs(place.mapy as number) > 100_000_000;
+          position = usesScaledLongitudeLatitude
+            ? new maps.LatLng(
+                (place.mapy as number) / 10_000_000,
+                (place.mapx as number) / 10_000_000,
               )
-            : null;
+            : maps.TransCoord?.fromTM128ToLatLng
+              ? maps.TransCoord.fromTM128ToLatLng(
+                  new maps.Point(place.mapx, place.mapy),
+                )
+              : null;
+        } else if (place.address && maps.Service?.geocode) {
+          position = await new Promise<any>((resolve) => {
+            maps.Service.geocode(
+              { query: place.address },
+              (status: unknown, response: any) => {
+                if (status !== maps.Service.Status.OK) {
+                  resolve(null);
+                  return;
+                }
+                const result = response?.v2?.addresses?.[0];
+                const longitude = Number(result?.x);
+                const latitude = Number(result?.y);
+                resolve(
+                  Number.isFinite(longitude) && Number.isFinite(latitude)
+                    ? new maps.LatLng(latitude, longitude)
+                    : null,
+                );
+              },
+            );
+          });
+        }
+
+        if (cancelled) return;
         if (!position) {
           setFailed(true);
           return;
@@ -127,7 +164,7 @@ export function NaverMapPreview({
         window.naver.maps.Event.clearInstanceListeners(map);
       }
     };
-  }, [place.mapx, place.mapy, place.name]);
+  }, [place.address, place.mapx, place.mapy, place.name]);
 
   return (
     <div

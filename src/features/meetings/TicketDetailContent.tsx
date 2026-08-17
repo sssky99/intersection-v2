@@ -29,6 +29,7 @@ import {
   type GatheringTicket,
   type TicketArrivalStatus,
 } from "@/types/ticket";
+import type { NaverPlace } from "@/types/place";
 
 export type TicketDetailSectionKey =
   | "summary"
@@ -424,7 +425,7 @@ function formatKstTimeLabel(value: Date) {
   }).format(value);
 }
 
-function TicketCoursePanel({
+export function TicketCoursePanel({
   ticket,
   steps,
   participantPhotoUrl,
@@ -432,6 +433,9 @@ function TicketCoursePanel({
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
+  variant = "default",
+  showFeedbackTime = true,
+  showJoinCountdown = true,
 }: {
   ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
@@ -440,11 +444,57 @@ function TicketCoursePanel({
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
+  variant?: "default" | "blind-date";
+  showFeedbackTime?: boolean;
+  showJoinCountdown?: boolean;
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
+  const [blindDateMapPlace, setBlindDateMapPlace] =
+    useState<NaverPlace | null>(null);
+  const blindDatePlaceName =
+    variant === "blind-date" ? steps[0]?.place?.name?.trim() : null;
+
+  useEffect(() => {
+    if (!blindDatePlaceName) {
+      setBlindDateMapPlace(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const normalizedTarget = blindDatePlaceName.replace(/[^\p{L}\p{N}]/gu, "");
+
+    fetch(
+      `/api/places/search?query=${encodeURIComponent(blindDatePlaceName)}`,
+      {
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error("blind-date-map-search-failed");
+        return (await response.json()) as { places?: NaverPlace[] };
+      })
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        const places = data.places ?? [];
+        const exactPlace = places.find(
+          (place) =>
+            place.name.replace(/[^\p{L}\p{N}]/gu, "") === normalizedTarget,
+        );
+        setBlindDateMapPlace(exactPlace ?? places[0] ?? null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setBlindDateMapPlace(null);
+      });
+
+    return () => controller.abort();
+  }, [blindDatePlaceName]);
+
   const selectedStep = mapStepIndex === null ? null : steps[mapStepIndex];
-  const selectedReleasedMapPlace =
+  const selectedStepAddress =
+    selectedStep?.address ?? selectedStep?.place?.address ?? null;
+  const selectedStoredMapPlace =
     selectedStep?.place?.name &&
     typeof selectedStep.place.mapx === "number" &&
     typeof selectedStep.place.mapy === "number"
@@ -452,8 +502,27 @@ function TicketCoursePanel({
           name: selectedStep.place.name,
           mapx: selectedStep.place.mapx,
           mapy: selectedStep.place.mapy,
+          address: selectedStepAddress,
         }
       : null;
+  const selectedBlindDateMapPlace =
+    variant === "blind-date" &&
+    selectedStep?.place?.name === blindDatePlaceName
+      ? blindDateMapPlace
+      : null;
+  const selectedAddressMapPlace =
+    variant === "blind-date" &&
+    selectedStep?.place?.name &&
+    selectedStepAddress
+      ? {
+          name: selectedStep.place.name,
+          address: selectedStepAddress,
+        }
+      : null;
+  const selectedReleasedMapPlace =
+    selectedStoredMapPlace ??
+    selectedBlindDateMapPlace ??
+    selectedAddressMapPlace;
   const selectedMapPlace =
     selectedReleasedMapPlace ?? journeyStationMapPlace(ticket.area);
 
@@ -526,6 +595,7 @@ function TicketCoursePanel({
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
               matchMemberCount={matchMemberCount}
+              variant={variant}
               onOpenMatches={() => setMatchSheetOpen(true)}
             />
           </li>
@@ -533,13 +603,13 @@ function TicketCoursePanel({
       })}
         </ol>
 
-        <FeedbackTimeCard ticket={ticket} />
+        {showFeedbackTime && <FeedbackTimeCard ticket={ticket} />}
       </div>
 
-      <JoinDeadlineCountdown ticket={ticket} />
+      {showJoinCountdown && <JoinDeadlineCountdown ticket={ticket} />}
 
       <AnimatePresence>
-        {matchSheetOpen && (
+        {variant === "default" && matchSheetOpen && (
           <MatchMembersSheet
             ticket={ticket}
             steps={steps}
@@ -562,7 +632,7 @@ function TicketCoursePanel({
             )}
             place={selectedMapPlace}
             released={Boolean(selectedReleasedMapPlace)}
-            address={selectedStep.address ?? selectedStep.place?.address ?? null}
+            address={selectedStepAddress}
             revealCopy={
               (mapStepIndex ?? 0) === 0
                 ? "정확한 장소는 모임 시작 24시간 전에 공개돼요."
@@ -730,11 +800,13 @@ export function RouletteDeadlineCountdown({
   activeLabel,
   closedLabel,
   visibleWithinMs,
+  deadlineSuffix = "마감",
 }: {
   deadlineAt: Date;
   activeLabel: string;
   closedLabel: string;
   visibleWithinMs?: number;
+  deadlineSuffix?: string;
 }) {
   const [nowMs, setNowMs] = useState<number | null>(null);
 
@@ -764,7 +836,7 @@ export function RouletteDeadlineCountdown({
         className="mt-4 flex items-center justify-center gap-2"
         aria-label={
           isClosed
-            ? "참여 신청 마감"
+            ? closedLabel
             : `${hours}시간 ${minutes}분 ${seconds}초 남음`
         }
       >
@@ -777,7 +849,7 @@ export function RouletteDeadlineCountdown({
         </span>
       </div>
       <p className="mt-3 text-[10px] font-semibold text-black/32">
-        {formatKstDateLabel(deadlineAt)} {formatKstTimeLabel(deadlineAt)} 마감
+        {formatKstDateLabel(deadlineAt)} {formatKstTimeLabel(deadlineAt)} {deadlineSuffix}
       </p>
     </div>
   );
@@ -809,7 +881,12 @@ function UnreleasedMapSheet({
 }: {
   title: string;
   timeLabel: string;
-  place: { name: string; mapx: number; mapy: number } | null;
+  place: {
+    name: string;
+    mapx?: number | null;
+    mapy?: number | null;
+    address?: string | null;
+  } | null;
   released: boolean;
   address: string | null;
   revealCopy: string;
@@ -944,6 +1021,7 @@ function JourneyPeoplePanel({
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
+  variant,
   onOpenMatches,
 }: {
   stepIndex: number;
@@ -952,9 +1030,27 @@ function JourneyPeoplePanel({
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
+  variant: "default" | "blind-date";
   onOpenMatches: () => void;
 }) {
   if (stepIndex === 0) {
+    const matchCount = matchMemberCount ?? 5;
+    const matchPhotos = previewMatchPhotoUrls.slice(0, matchCount);
+    const matchRowContent = (
+      <>
+        <JourneyAvatarStack tone="warm" photoUrls={matchPhotos} />
+        <p className="text-[10px] font-bold text-black/44">
+          {variant === "blind-date" ? (
+            <strong className="font-black text-black/72">블라인드 데이트 상대</strong>
+          ) : (
+            <>
+              나와 <strong className="font-black text-black/72">잘 맞는 {matchCount}명</strong>
+            </>
+          )}
+        </p>
+      </>
+    );
+
     return (
       <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
         <div className="flex min-h-12 items-center justify-between gap-3 px-3.5">
@@ -972,25 +1068,27 @@ function JourneyPeoplePanel({
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
-            {participantArrivalStatusLabel(participantArrivalStatus)}
-            <Clock3 size={12} strokeWidth={1.9} aria-hidden />
-          </span>
+          {variant !== "blind-date" && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
+              {participantArrivalStatusLabel(participantArrivalStatus)}
+              <Clock3 size={12} strokeWidth={1.9} aria-hidden />
+            </span>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={onOpenMatches}
-          className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left transition hover:bg-black/[0.025] active:bg-black/[0.045]"
-          aria-label={`나와 잘 맞는 ${matchMemberCount ?? 5}명 보기`}
-        >
-          <JourneyAvatarStack
-            tone="warm"
-            photoUrls={previewMatchPhotoUrls.slice(0, matchMemberCount ?? 5)}
-          />
-          <p className="text-[10px] font-bold text-black/44">
-            나와 <strong className="font-black text-black/72">잘 맞는 {matchMemberCount ?? 5}명</strong>
-          </p>
-        </button>
+        {variant === "blind-date" ? (
+          <div className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left">
+            {matchRowContent}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpenMatches}
+            className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left transition hover:bg-black/[0.025] active:bg-black/[0.045]"
+            aria-label={`나와 잘 맞는 ${matchCount}명 보기`}
+          >
+            {matchRowContent}
+          </button>
+        )}
       </div>
     );
   }
@@ -1258,12 +1356,13 @@ function JourneyAvatarStack({
     <span
       className={cn(
         "flex shrink-0 items-center",
-        photoUrls.length > 0
-          ? photoUrls.length >= 6
-            ? "w-[108px]"
-            : "w-[92px]"
-          : "w-[52px]",
+        photoUrls.length === 0 && "w-[52px]",
       )}
+      style={
+        photoUrls.length > 0
+          ? { width: `${28 + (photoUrls.length - 1) * 16}px` }
+          : undefined
+      }
       aria-hidden
     >
       {(photoUrls.length > 0 ? photoUrls : colors).map((value, index) => (
