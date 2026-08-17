@@ -50,6 +50,7 @@ export function PaymentSheetPreview() {
             ticket={previewTicket}
             saving={false}
             error={null}
+            onSubmit={() => undefined}
             onSingleUseSubmit={() => window.location.assign(oneTimeTicketStoreUrl)}
             onClose={() => setOpen(false)}
           />,
