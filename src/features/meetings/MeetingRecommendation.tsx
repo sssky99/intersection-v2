@@ -458,6 +458,7 @@ type DateApplicationScreen =
   | "unlock"
   | "ticket"
   | "submitted"
+  | "blindDateList"
   | "blindDateUnlock"
   | "blindDate";
 type DateApplicationsResponse = {
@@ -798,6 +799,17 @@ function MeetingDateApplicationFlow({
       offer.ownResponse === "pending" &&
       ["offered", "waiting_response"].includes(offer.status),
   );
+  const listedBlindDateOffers = [...activeBlindDateOffers].sort((left, right) => {
+    const leftNeedsResponse = left.ownResponse === "pending" ? 0 : 1;
+    const rightNeedsResponse = right.ownResponse === "pending" ? 0 : 1;
+    if (leftNeedsResponse !== rightNeedsResponse) {
+      return leftNeedsResponse - rightNeedsResponse;
+    }
+
+    const leftDate = left.scheduledDate ?? left.candidateDates[0] ?? "9999-12-31";
+    const rightDate = right.scheduledDate ?? right.candidateDates[0] ?? "9999-12-31";
+    return leftDate.localeCompare(rightDate);
+  });
   const selectedBlindDateOffer =
     blindDateOffers.find((offer) => offer.id === selectedBlindDateOfferId) ??
     activeBlindDateOffers[0] ??
@@ -805,7 +817,9 @@ function MeetingDateApplicationFlow({
 
   const focusMode = screen === "ticket";
   const bottomNavHidden =
-    screen === "blindDate" || screen === "blindDateUnlock";
+    screen === "blindDateList" ||
+    screen === "blindDate" ||
+    screen === "blindDateUnlock";
 
   useEffect(() => {
     onFocusModeChange?.(focusMode);
@@ -822,13 +836,19 @@ function MeetingDateApplicationFlow({
       return;
     }
 
-    const offerToOpen = answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
-    setSelectedBlindDateOfferId(offerToOpen.id);
-    setScreen(
-      shouldPlayBlindDateUnlock(offerToOpen)
-        ? "blindDateUnlock"
-        : "blindDate",
-    );
+    if (activeBlindDateOffers.length > 1) {
+      setSelectedBlindDateOfferId(null);
+      setScreen("blindDateList");
+    } else {
+      const offerToOpen =
+        answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
+      setSelectedBlindDateOfferId(offerToOpen.id);
+      setScreen(
+        shouldPlayBlindDateUnlock(offerToOpen)
+          ? "blindDateUnlock"
+          : "blindDate",
+      );
+    }
     onBlindDateOpenRequestHandled?.();
   }, [
     activeBlindDateOffers,
@@ -1408,6 +1428,27 @@ function MeetingDateApplicationFlow({
     );
   }
 
+  if (screen === "blindDateList") {
+    return (
+      <BlindDateOfferList
+        offers={listedBlindDateOffers}
+        embedded={embedded}
+        onClose={() => {
+          setSelectedBlindDateOfferId(null);
+          setScreen("dates");
+        }}
+        onSelect={(offer) => {
+          setSelectedBlindDateOfferId(offer.id);
+          setScreen(
+            shouldPlayBlindDateUnlock(offer)
+              ? "blindDateUnlock"
+              : "blindDate",
+          );
+        }}
+      />
+    );
+  }
+
   if (screen === "blindDateUnlock" && selectedBlindDateOffer) {
     return (
       <TicketUnlockSequence
@@ -1423,7 +1464,9 @@ function MeetingDateApplicationFlow({
         reducedMotion={shouldReduceMotion}
         onBack={() => {
           setSelectedBlindDateOfferId(null);
-          setScreen("dates");
+          setScreen(
+            activeBlindDateOffers.length > 1 ? "blindDateList" : "dates",
+          );
         }}
         onComplete={() => setScreen("blindDate")}
       />
@@ -1621,7 +1664,12 @@ function MeetingDateApplicationFlow({
           bundledOffers={answerableBlindDateOffers}
           userName={profileName}
           profilePhotoUrl={profilePhotoUrl}
-          onClose={() => setScreen("dates")}
+          onClose={() => {
+            setSelectedBlindDateOfferId(null);
+            setScreen(
+              activeBlindDateOffers.length > 1 ? "blindDateList" : "dates",
+            );
+          }}
           onOffersChange={onBlindDateOffersChange}
         />
       </section>
@@ -1942,25 +1990,35 @@ function MeetingDateApplicationFlow({
               <button
                 type="button"
                 onClick={() => {
-                  const offerToOpen =
-                    answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
-                  setSelectedBlindDateOfferId(offerToOpen.id);
-                  setScreen(
-                    shouldPlayBlindDateUnlock(offerToOpen)
-                      ? "blindDateUnlock"
-                      : "blindDate",
-                  );
+                  if (activeBlindDateOffers.length > 1) {
+                    setSelectedBlindDateOfferId(null);
+                    setScreen("blindDateList");
+                  } else {
+                    const offerToOpen =
+                      answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
+                    setSelectedBlindDateOfferId(offerToOpen.id);
+                    setScreen(
+                      shouldPlayBlindDateUnlock(offerToOpen)
+                        ? "blindDateUnlock"
+                        : "blindDate",
+                    );
+                  }
                 }}
                 className="mt-4 flex min-h-12 w-full items-center justify-between gap-3 border border-black/10 bg-white px-4 py-3 text-left text-sm font-bold text-black"
               >
                 <span>
                   {answerableBlindDateOffers.length > 0
                     ? "나에게 온 블라인드 데이트 초대장 보기"
+                    : activeBlindDateOffers.length > 1
+                      ? `블라인드 데이트 일정 ${activeBlindDateOffers.length}개 확인하기`
                     : "블라인드 데이트 상태 확인하기"}
                 </span>
-                {answerableBlindDateOffers.length > 0 && (
+                {(answerableBlindDateOffers.length > 0 ||
+                  activeBlindDateOffers.length > 1) && (
                   <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-black px-2 text-[11px] font-black text-white">
-                    {answerableBlindDateOffers.length}
+                    {answerableBlindDateOffers.length > 0
+                      ? answerableBlindDateOffers.length
+                      : activeBlindDateOffers.length}
                   </span>
                 )}
               </button>
@@ -3085,6 +3143,124 @@ function blindDateCandidateDateLabel(dates: string[]) {
   const sortedDates = [...dates].sort();
   if (sortedDates.length === 1) return blindDateDateLabel(sortedDates[0]);
   return `${blindDateDateLabel(sortedDates[0])} – ${blindDateDateLabel(sortedDates[sortedDates.length - 1])}`;
+}
+
+function blindDateListStatusLabel(offer: BlindDateUserOffer) {
+  if (offer.ownResponse === "pending") return "응답 필요";
+  if (offer.status === "scheduled") return "일정 확정";
+  if (offer.status === "needs_reschedule") return "일정 조율 중";
+  return "응답 대기";
+}
+
+function BlindDateOfferList({
+  offers,
+  embedded,
+  onClose,
+  onSelect,
+}: {
+  offers: BlindDateUserOffer[];
+  embedded: boolean;
+  onClose: () => void;
+  onSelect: (offer: BlindDateUserOffer) => void;
+}) {
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 18 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+      className={cn(
+        "relative bg-transparent px-5 pb-10 pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]",
+        embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="블라인드 데이트 일정 목록 닫기"
+        className="absolute left-4 top-[calc(14px+env(safe-area-inset-top))] flex h-10 w-10 items-center justify-center rounded-full border border-black/10 bg-white/70 text-black/55 shadow-sm backdrop-blur-md"
+      >
+        <X size={18} strokeWidth={1.9} aria-hidden />
+      </button>
+
+      <div className="mx-auto w-full max-w-[390px]">
+        <p className="font-ticket-latin text-[11px] font-bold uppercase tracking-[0.14em] text-black/35">
+          Blind Date
+        </p>
+        <h1 className="font-ticket-display mt-2 text-[28px] font-bold tracking-[-0.045em] text-black">
+          예정된 일정을 선택해주세요.
+        </h1>
+        <p className="mt-3 break-keep text-[13px] font-semibold leading-6 text-black/46">
+          일정을 선택하면 해당 블라인드 데이트 티켓을 열 수 있어요.
+        </p>
+
+        <div className="mt-8 space-y-3">
+          {offers.map((offer, index) => {
+            const dateLabel = offer.scheduledDate
+              ? blindDateDateLabel(offer.scheduledDate)
+              : blindDateCandidateDateLabel(offer.candidateDates);
+            const statusLabel = blindDateListStatusLabel(offer);
+
+            return (
+              <motion.button
+                key={offer.id}
+                type="button"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  delay: Math.min(index * 0.06, 0.24),
+                  duration: 0.34,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
+                whileTap={{ scale: 0.985 }}
+                onClick={() => onSelect(offer)}
+                aria-label={`${dateLabel} ${offer.timeLabel} ${offer.region} 블라인드 데이트 티켓 열기`}
+                className="group w-full rounded-[24px] border border-black/10 bg-white/72 px-5 py-5 text-left shadow-[0_12px_34px_rgba(35,31,24,0.06)] backdrop-blur-md"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-black px-2.5 py-1 text-[9px] font-black tracking-[0.04em] text-white">
+                        {statusLabel}
+                      </span>
+                      <span className="text-[11px] font-bold text-black/38">
+                        {dateLabel}
+                      </span>
+                    </div>
+
+                    <p className="font-ticket-display mt-4 text-[21px] font-bold tracking-[-0.04em] text-black">
+                      {offer.template.title}
+                    </p>
+
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] font-bold text-black/48">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Clock3 size={13} strokeWidth={1.8} aria-hidden />
+                        {offer.timeLabel}
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin size={13} strokeWidth={1.8} aria-hidden />
+                        {offer.region}
+                      </span>
+                    </div>
+
+                    {offer.actualPlaceName && (
+                      <p className="mt-3 truncate text-[12px] font-bold text-black/62">
+                        {offer.actualPlaceName}
+                      </p>
+                    )}
+                  </div>
+
+                  <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#f7f4ed] text-black/42 transition group-hover:text-black/65">
+                    <ChevronRight size={17} strokeWidth={1.8} aria-hidden />
+                  </span>
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+    </motion.section>
+  );
 }
 
 function shouldPlayBlindDateUnlock(offer: BlindDateUserOffer) {
