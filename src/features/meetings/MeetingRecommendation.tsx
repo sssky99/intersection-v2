@@ -31,7 +31,6 @@ import {
 } from "@/features/meetings/TicketDetailContent";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
-import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_SINGLE_USE_AMOUNT,
@@ -166,36 +165,6 @@ const localDateApplicationsStoragePrefix =
   "intersection:local-date-applications";
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
-
-function oneMonthMembershipPeriod(meetingDate: string) {
-  const schedule = meetingDateSchedule(meetingDate);
-  if (!schedule) return { start: meetingDate, end: meetingDate };
-
-  const nextMonth = schedule.month === 12 ? 1 : schedule.month + 1;
-  const nextYear = schedule.month === 12 ? schedule.year + 1 : schedule.year;
-  const lastDayOfNextMonth = new Date(
-    Date.UTC(nextYear, nextMonth, 0),
-  ).getUTCDate();
-  const sameDayNextMonth = new Date(
-    Date.UTC(
-      nextYear,
-      nextMonth - 1,
-      Math.min(schedule.day, lastDayOfNextMonth),
-    ),
-  );
-  sameDayNextMonth.setUTCDate(sameDayNextMonth.getUTCDate() - 1);
-  const format = (year: number, month: number, day: number) =>
-    `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")}`;
-
-  return {
-    start: format(schedule.year, schedule.month, schedule.day),
-    end: format(
-      sameDayNextMonth.getUTCFullYear(),
-      sameDayNextMonth.getUTCMonth() + 1,
-      sameDayNextMonth.getUTCDate(),
-    ),
-  };
-}
 
 function loadGuestDeclinedTicketIds() {
   if (typeof window === "undefined") return new Set<string>();
@@ -1094,9 +1063,13 @@ function MeetingDateApplicationFlow({
     const targetDates = ticket ? [ticket.date] : [...selectedDates];
     if (targetDates.length !== 1 || saving) return;
 
+    if (membershipStatus !== "active") {
+      if (ticket) void submitSingleUseApplication(ticket);
+      return;
+    }
+
     setSaving(true);
     setError(null);
-    let membershipCheckoutUrl = membershipStoreUrls.one_month;
     trackEvent("application_submit_click", {
       application_type: "meeting_date",
       date_count: targetDates.length,
@@ -1114,7 +1087,6 @@ function MeetingDateApplicationFlow({
             body: JSON.stringify({
               dates: targetDates,
               openPayment: false,
-              prepareCheckout: true,
               eventId: ticket?.id,
               attribution: checkoutAttributionContext(),
             }),
@@ -1129,6 +1101,10 @@ function MeetingDateApplicationFlow({
           );
         }
 
+        if (!applicationData.membershipCovered) {
+          throw new Error("membership-not-active");
+        }
+
         setApplications((current) => {
           const next = new Map(
             [...current, ...applicationData.applications!].map(
@@ -1139,37 +1115,6 @@ function MeetingDateApplicationFlow({
             left.meetingDate.localeCompare(right.meetingDate),
           );
         });
-
-        if (applicationData.membershipCovered) {
-          if (ticket) {
-            await recordTicketInteraction(ticket, "payment_confirmed");
-          }
-          setSubmittedDates(targetDates);
-          setMembershipSheetOpen(false);
-          setScreen("submitted");
-          trackEvent("application_created", {
-            application_type: "meeting_date",
-            date_count: targetDates.length,
-            deposit_amount: 0,
-            payment_option: "existing_membership",
-          });
-          trackEvent("invitation_yes", {
-            ticket_instance_id: ticket?.id,
-            meeting_date: ticket?.date ?? targetDates[0],
-            payment_option: "existing_membership",
-          });
-          setSaving(false);
-          return;
-        }
-
-        membershipCheckoutUrl =
-          applicationData.checkoutUrl ?? membershipStoreUrls.one_month;
-
-        if (ticket) {
-          void recordTicketInteraction(ticket, "payment_pending", {
-            keepalive: true,
-          });
-        }
       } else {
         const now = new Date().toISOString();
         const localApplication: MeetingDateApplication = {
@@ -1177,9 +1122,9 @@ function MeetingDateApplicationFlow({
           meetingDate: targetDates[0],
           meetingTime: ticket?.time ?? "19:00",
           region: ticket?.area ?? MEETING_DATE_REGION,
-          status: membershipStatus === "active" ? "approved" : "payment_pending",
+          status: "approved",
           depositAmount: 0,
-          depositStatus: membershipStatus === "active" ? "confirmed" : "payment_pending",
+          depositStatus: "confirmed",
           assignedTicketInstanceId: ticket?.id ?? null,
           ticketRevealsAt: null,
           createdAt: now,
@@ -1192,50 +1137,32 @@ function MeetingDateApplicationFlow({
           onDateApplicationsChange?.(next);
           return next;
         });
-
-        if (ticket) {
-          await recordTicketInteraction(
-            ticket,
-            membershipStatus === "active" ? "payment_confirmed" : "payment_pending",
-          );
-        }
-
-        if (membershipStatus === "active") {
-          setSubmittedDates(targetDates);
-          setMembershipSheetOpen(false);
-          setScreen("submitted");
-          setSaving(false);
-          return;
-        }
       }
 
+      if (ticket) await recordTicketInteraction(ticket, "payment_confirmed");
+      setSubmittedDates(targetDates);
+      setMembershipSheetOpen(false);
+      setScreen("submitted");
       trackEvent("application_created", {
         application_type: "meeting_date",
         date_count: targetDates.length,
         deposit_amount: 0,
-        payment_option: "one_month_membership",
+        payment_option: "existing_membership",
       });
       trackEvent("invitation_yes", {
         ticket_instance_id: ticket?.id,
         meeting_date: ticket?.date ?? targetDates[0],
-        payment_option: "one_month_membership",
+        payment_option: "existing_membership",
       });
-      trackEvent("membership_purchase_click", {
-        plan: "one_month",
-        months: 1,
-        application_type: "meeting_date",
-        meeting_date: targetDates[0],
-      });
-      window.location.assign(membershipCheckoutUrl);
+      setSaving(false);
     } catch (membershipPurchaseError) {
       const message =
         membershipPurchaseError instanceof Error &&
-        ![
-          "date-applications-save-failed",
-          "membership-purchase-save-failed",
-        ].includes(membershipPurchaseError.message)
+        !["date-applications-save-failed", "membership-not-active"].includes(
+          membershipPurchaseError.message,
+        )
           ? membershipPurchaseError.message
-          : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.";
+          : "멤버십 상태를 확인하지 못했어요. 1회 이용권으로 다시 시도해주세요.";
       setError(message);
       setSaving(false);
     }
@@ -1633,7 +1560,6 @@ function MeetingDateApplicationFlow({
                   ticket={selectedTicket}
                   saving={saving}
                   error={error}
-                  onSubmit={() => void submitDateApplications(selectedTicket)}
                   onSingleUseSubmit={() =>
                     void submitSingleUseApplication(selectedTicket)
                   }
@@ -1928,62 +1854,6 @@ function MeetingDateApplicationFlow({
               <p className="mt-4 bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
                 {error}
               </p>
-            )}
-
-            {selectedDates.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-6 border-t border-black/10 pb-[96px] pt-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-[15px] font-bold tracking-[-0.03em] text-black">
-                    멤버십으로 참여해요
-                  </h3>
-                  <span className="text-[10px] font-medium text-black/38">
-                    구독권 전용
-                  </span>
-                </div>
-
-                <div className="mt-3 space-y-2.5">
-                  <div className="relative w-full rounded-[18px] border border-black bg-black/[0.035] px-4 py-4 text-left shadow-[inset_0_0_0_1px_#111]">
-                    <span className="flex items-start gap-3">
-                      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-black bg-black text-white">
-                        <Check size={12} strokeWidth={3} aria-hidden />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="text-[14px] font-bold text-black">
-                            1개월 멤버십
-                          </span>
-                          <span className="rounded-full bg-black px-2 py-0.5 text-[9px] font-bold text-white">
-                            구독권
-                          </span>
-                        </span>
-                        <span className="mt-2 block text-[12px] font-medium leading-[1.55] text-black/52">
-                          30일 동안 참여 횟수와 관계 없이
-                          <br />
-                          모임 참가비가 면제됩니다.
-                        </span>
-                      </span>
-                      <span className="whitespace-nowrap pt-0.5 text-[20px] font-extrabold tracking-[-0.04em] text-black">
-                        20,000원
-                      </span>
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void submitDateApplications()}
-                  className="mt-3 h-[56px] w-full rounded-[18px] bg-black text-sm font-bold text-white shadow-[0_12px_24px_rgba(0,0,0,0.12)] transition active:scale-[0.985] disabled:bg-black/15 disabled:text-black/35 disabled:shadow-none"
-                >
-                  {saving
-                    ? "결제창을 준비하는 중..."
-                    : "20,000원 결제하고 멤버십 시작하기"}
-                </button>
-              </motion.div>
             )}
 
             {activeBlindDateOffers.length > 0 && (
@@ -2503,32 +2373,23 @@ export function MembershipPurchaseBottomSheet({
   ticket,
   saving,
   error,
-  onSubmit,
   onSingleUseSubmit,
   onClose,
 }: {
   ticket: GatheringTicket;
   saving: boolean;
   error: string | null;
-  onSubmit: () => void;
   onSingleUseSubmit?: () => void;
   onClose: () => void;
 }) {
-  const period = oneMonthMembershipPeriod(ticket.date);
-  const [purchaseType, setPurchaseType] = useState<"membership" | "single">(
-    "membership",
-  );
-  const membershipSelected = purchaseType === "membership";
-  const totalPrice = membershipSelected
-    ? 20_000
-    : MEETING_DATE_SINGLE_USE_AMOUNT;
-  const singleUseUnavailable = !membershipSelected && !onSingleUseSubmit;
+  const totalPrice = MEETING_DATE_SINGLE_USE_AMOUNT;
+  const singleUseUnavailable = !onSingleUseSubmit;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const checkoutOrigin = new URL(membershipStoreUrls.one_month).origin;
+    const checkoutOrigin = new URL(oneTimeTicketStoreUrl).origin;
     const existingPreconnect = document.head.querySelector(
       `link[data-membership-checkout-preconnect="${checkoutOrigin}"]`,
     );
@@ -2562,7 +2423,7 @@ export function MembershipPurchaseBottomSheet({
       <motion.section
         role="dialog"
         aria-modal="true"
-        aria-labelledby="membership-purchase-title"
+        aria-label="1개월 이용권 결제"
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -2577,12 +2438,6 @@ export function MembershipPurchaseBottomSheet({
             <p className="font-ticket-latin text-[11px] font-bold italic uppercase tracking-[0.2em] text-black/34">
               PAYMENT
             </p>
-            <h2
-              id="membership-purchase-title"
-              className="font-ticket-display mt-2 text-[27px] font-bold leading-[1.25] tracking-[-0.045em] text-black"
-            >
-              참여 방식을 선택해주세요.
-            </h2>
           </div>
           <button
             type="button"
@@ -2595,41 +2450,12 @@ export function MembershipPurchaseBottomSheet({
           </button>
         </div>
 
-        <div className="mt-6 grid grid-cols-2 rounded-full border border-black/10 bg-black/[0.035] p-1.5">
-          <button
-            type="button"
-            onClick={() => setPurchaseType("membership")}
-            className={cn(
-              "min-h-[58px] rounded-full px-3 py-2 text-left transition",
-              membershipSelected
-                ? "bg-[#24211d] text-white shadow-[0_6px_18px_rgba(0,0,0,0.16)]"
-                : "text-black/42",
-            )}
-            aria-pressed={membershipSelected}
-          >
-            <span className="block text-center text-[13px] font-black">1개월 멤버십</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setPurchaseType("single")}
-            className={cn(
-              "min-h-[58px] rounded-full px-3 py-2 text-left transition",
-              !membershipSelected
-                ? "bg-[#24211d] text-white shadow-[0_6px_18px_rgba(0,0,0,0.16)]"
-                : "text-black/42",
-            )}
-            aria-pressed={!membershipSelected}
-          >
-            <span className="block text-center text-[13px] font-black">1회 이용권</span>
-          </button>
-        </div>
-
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={purchaseType}
-            initial={{ opacity: 0, x: membershipSelected ? -8 : 8 }}
+            key="single-use"
+            initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: membershipSelected ? 8 : -8 }}
+            exit={{ opacity: 0, x: -8 }}
             transition={{ duration: 0.18 }}
             className="mt-5 overflow-hidden rounded-[24px] border border-black/10 bg-white/34"
           >
@@ -2637,18 +2463,11 @@ export function MembershipPurchaseBottomSheet({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[12px] font-bold text-black/42">
-                    {membershipSelected ? "1개월 멤버십" : "1회 이용권"}
+                    1개월 이용권
                   </p>
                   <p className="mt-2 break-keep text-[15px] font-black leading-6 text-black">
-                    {membershipSelected
-                      ? "한 달 동안 횟수 제한 없이 참여해요."
-                      : "선택한 이번 모임에 한 번 참여해요."}
+                    1개월 간 교집합 모든 콘텐츠에 참여할 수 있어요.
                   </p>
-                  {membershipSelected && (
-                    <p className="mt-1.5 break-keep text-[12px] font-semibold leading-5 text-black/48">
-                      매칭된 1:1 데이트도 추가 비용 없이 참여할 수 있어요.
-                    </p>
-                  )}
                 </div>
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-black text-white">
                   <Check size={14} strokeWidth={3} aria-hidden />
@@ -2657,17 +2476,13 @@ export function MembershipPurchaseBottomSheet({
 
               <div className="mt-5 border-t border-black/[0.08] pt-4">
                 <p className="text-[11px] font-bold text-black/38">
-                  {membershipSelected ? "이용 기간" : "이용 일정"}
+                  이용 일정
                 </p>
                 <p className="mt-1.5 tabular-nums text-[15px] font-bold tracking-[-0.015em] text-black">
-                  {membershipSelected
-                    ? `${period.start} – ${period.end}`
-                    : `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`}
+                  {`${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`}
                 </p>
                 <p className="mt-1.5 text-[11px] font-semibold text-black/38">
-                  {membershipSelected
-                    ? `${meetingDateLabel(ticket.date)} 모임 시작 기준`
-                    : ticket.title}
+                  {ticket.title}
                 </p>
               </div>
             </div>
@@ -2691,7 +2506,7 @@ export function MembershipPurchaseBottomSheet({
           type="button"
           whileTap={!saving && !singleUseUnavailable ? { scale: 0.985 } : undefined}
           disabled={saving || singleUseUnavailable}
-          onClick={membershipSelected ? onSubmit : onSingleUseSubmit}
+          onClick={onSingleUseSubmit}
           className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
         >
           {saving ? (
