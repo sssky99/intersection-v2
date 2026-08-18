@@ -701,7 +701,7 @@ export const profileSectionValuesQuestions: ProfileQuestion[] = [
 ];
 
 export const profileSectionPreferenceQuestions: ProfileQuestion[] = [
-  ...coreQuestionsFor("관계 기대"),
+  ...coreQuestionsFor("관계 기대", "관계"),
   ...preferenceDetailQuestions,
 ];
 
@@ -711,7 +711,7 @@ export const profileSectionValueQuestions: ProfileQuestion[] = [
 ];
 
 export const profileSectionTraitsQuestions: ProfileQuestion[] = [
-  ...coreQuestionsFor("성향"),
+  ...coreQuestionsFor("성향", "대화"),
   ...traitsQuestions,
 ];
 

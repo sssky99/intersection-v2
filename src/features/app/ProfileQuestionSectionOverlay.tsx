@@ -52,6 +52,8 @@ export function ProfileQuestionSectionOverlay({
   onClose,
   onAnswersChanged,
   onPhotoChanged,
+  nextSectionLabel,
+  onNextSection,
 }: {
   userId: string;
   title: string;
@@ -62,6 +64,8 @@ export function ProfileQuestionSectionOverlay({
   onClose: () => void;
   onAnswersChanged: () => void | Promise<void>;
   onPhotoChanged?: (photoUrl: string) => void;
+  nextSectionLabel?: string;
+  onNextSection?: () => void;
 }) {
   const [selectedQuestion, setSelectedQuestion] =
     useState<ProfileQuestion | null>(null);
@@ -172,32 +176,47 @@ export function ProfileQuestionSectionOverlay({
               </div>
 
               <section className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] shadow-[0_18px_50px_rgba(24,24,20,0.05)]">
-                {questions.map((question) => (
-                  <button
-                    key={question.id}
-                    type="button"
-                    onClick={() => {
-                      savedScrollTopRef.current =
-                        questionListScrollRef.current?.scrollTop ?? 0;
-                      setSelectedQuestion(question);
-                    }}
-                    className="flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition last:border-b-0 hover:bg-[#f1eee6]"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[15px] font-extrabold leading-6 tracking-[-0.025em] text-black/78">
-                        {question.question.replace(/\s+/g, " ")}
+                {questions.map((question) => {
+                  const answered =
+                    answerValues(question, answerRows).length > 0;
+
+                  return (
+                    <button
+                      key={question.id}
+                      type="button"
+                      onClick={() => {
+                        savedScrollTopRef.current =
+                          questionListScrollRef.current?.scrollTop ?? 0;
+                        setSelectedQuestion(question);
+                      }}
+                      className="flex w-full items-center gap-4 border-b border-black/[0.06] px-5 py-5 text-left transition last:border-b-0 hover:bg-[#f1eee6]"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[15px] font-extrabold leading-6 tracking-[-0.025em] text-black/78">
+                          {question.question.replace(/\s+/g, " ")}
+                        </span>
+                        <span
+                          className={`mt-1 flex items-center gap-1.5 truncate text-[12px] font-semibold ${
+                            answered ? "text-black/38" : "text-[#9c5b3e]"
+                          }`}
+                        >
+                          {!answered && (
+                            <span
+                              aria-hidden
+                              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#b66a48]"
+                            />
+                          )}
+                          {answerSummary(question, answerRows)}
+                        </span>
                       </span>
-                      <span className="mt-1 block truncate text-[12px] font-semibold text-black/38">
-                        {answerSummary(question, answerRows)}
-                      </span>
-                    </span>
-                    <ChevronRight
-                      size={18}
-                      aria-hidden
-                      className="shrink-0 text-black/36"
-                    />
-                  </button>
-                ))}
+                      <ChevronRight
+                        size={18}
+                        aria-hidden
+                        className="shrink-0 text-black/36"
+                      />
+                    </button>
+                  );
+                })}
                 {includePhoto && (
                   <button
                     type="button"
@@ -213,7 +232,17 @@ export function ProfileQuestionSectionOverlay({
                         <Camera size={16} aria-hidden />
                         당신의 사진을 등록해주세요.
                       </span>
-                      <span className="mt-1 block truncate text-[12px] font-semibold text-black/38">
+                      <span
+                        className={`mt-1 flex items-center gap-1.5 truncate text-[12px] font-semibold ${
+                          photoUrl ? "text-black/38" : "text-[#9c5b3e]"
+                        }`}
+                      >
+                        {!photoUrl && (
+                          <span
+                            aria-hidden
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#b66a48]"
+                          />
+                        )}
                         {photoUrl ? "사진 등록 완료" : "아직 등록하지 않았어요"}
                       </span>
                     </span>
@@ -225,6 +254,24 @@ export function ProfileQuestionSectionOverlay({
                   </button>
                 )}
               </section>
+
+              {nextSectionLabel && onNextSection && (
+                <button
+                  type="button"
+                  onClick={onNextSection}
+                  className="mt-5 flex w-full items-center justify-between rounded-[22px] border border-black/[0.08] bg-[#24211d] px-5 py-4 text-left text-[#faf6ed] shadow-[0_12px_28px_rgba(36,33,29,0.14)] transition active:scale-[0.99]"
+                >
+                  <span>
+                    <span className="block text-[10px] font-bold tracking-[0.1em] text-white/45">
+                      다음 섹션
+                    </span>
+                    <span className="mt-1 block text-[15px] font-black tracking-[-0.025em]">
+                      {nextSectionLabel}
+                    </span>
+                  </span>
+                  <ChevronRight size={19} strokeWidth={2} aria-hidden />
+                </button>
+              )}
             </main>
           </motion.div>
         )}

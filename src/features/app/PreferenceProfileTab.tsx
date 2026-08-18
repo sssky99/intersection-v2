@@ -294,8 +294,8 @@ function BasicQuestionsSection({
       ? value.length > 0
       : value !== undefined && value !== "";
   }).length;
-  const coreAnsweredCount = answeredCount + (photoCompleted ? 1 : 0);
-  const coreQuestionCount = preferenceQuestions.length + 1;
+  const coreAnsweredCount = answeredCount;
+  const coreQuestionCount = preferenceQuestions.length;
   const backgroundPercent = Math.round(
     (backgroundAnsweredCount / profileSectionBackgroundQuestions.length) * 100,
   );
@@ -317,8 +317,9 @@ function BasicQuestionsSection({
   const traitsPercent = Math.round(
     (traitsAnsweredCount / profileSectionTraitsQuestions.length) * 100,
   );
+  const selfQuestionCount = profileSectionSelfQuestions.length + 1;
   const selfPercent = Math.round(
-    (selfAnsweredCount / profileSectionSelfQuestions.length) * 100,
+    ((selfAnsweredCount + (photoCompleted ? 1 : 0)) / selfQuestionCount) * 100,
   );
   const detailQuestionCount =
     profileSectionBackgroundQuestions.length +
@@ -560,7 +561,7 @@ function BasicQuestionsSection({
                   자기정보
                 </span>
                 <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionSelfQuestions.length}개 질문
+                  {selfQuestionCount}개 항목
                 </span>
               </span>
             </span>

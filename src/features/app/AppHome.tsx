@@ -20,6 +20,7 @@ import {
   Sparkles,
   Ticket as TicketIcon,
   UserRound,
+  WandSparkles,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
@@ -72,6 +73,7 @@ import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab"
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import { OnboardingGuidePreview } from "@/features/onboarding/OnboardingGuidePreview";
 import { ProfileQuestionSectionOverlay } from "@/features/app/ProfileQuestionSectionOverlay";
+import { AlgorithmParametersOverlay } from "@/features/app/AlgorithmParametersOverlay";
 import {
   TicketDetailContent,
   type TicketDetailSectionKey,
@@ -192,6 +194,45 @@ const appTabPositions: Record<AppTab, number> = {
   browse: 1,
   chat: 2,
   profile: 3,
+};
+
+const algorithmQuestionSections = [
+  { id: "background", questions: profileSectionBackgroundQuestions },
+  { id: "activity", questions: profileSectionActivityQuestions },
+  { id: "interest", questions: profileSectionInterestQuestions },
+  { id: "values", questions: profileSectionValuesQuestions },
+  { id: "preference", questions: profileSectionPreferenceQuestions },
+  { id: "value", questions: profileSectionValueQuestions },
+  { id: "traits", questions: profileSectionTraitsQuestions },
+  { id: "self", questions: profileSectionSelfQuestions },
+] as const;
+type AlgorithmQuestionSectionId =
+  | (typeof algorithmQuestionSections)[number]["id"]
+  | "basic";
+const profileQuestionSectionSequence = [
+  "basic",
+  "background",
+  "activity",
+  "interest",
+  "values",
+  "preference",
+  "value",
+  "traits",
+  "self",
+] as const;
+const profileQuestionSectionLabels: Record<
+  (typeof profileQuestionSectionSequence)[number],
+  string
+> = {
+  basic: "코어 질문",
+  background: "배경",
+  activity: "활동성",
+  interest: "흥미",
+  values: "관점",
+  preference: "선호",
+  value: "가치",
+  traits: "성향",
+  self: "자기정보",
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -495,6 +536,9 @@ export function AppHome({
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>(initialAnswerRows);
+  const [algorithmParametersOpen, setAlgorithmParametersOpen] = useState(false);
+  const [algorithmQuestionAnswering, setAlgorithmQuestionAnswering] =
+    useState(false);
   const [answers, setAnswers] = useState<AnswerMap>(() =>
     Object.fromEntries(
       initialAnswerRows.map((row) => {
@@ -507,6 +551,38 @@ export function AppHome({
   const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
   const profileQuestionsReady = currentProfile.questions_completed === true;
   const recommendationProfileReady = true;
+  const algorithmQuestionProgress = useMemo(() => {
+    const sections = algorithmQuestionSections.map((section) => ({
+      ...section,
+      answeredCount: answeredQuestionCount(answerRows, section.questions),
+    }));
+    const questionCount = sections.reduce(
+      (total, section) => total + section.questions.length,
+      0,
+    );
+    const answeredQuestionTotal = sections.reduce(
+      (total, section) => total + section.answeredCount,
+      0,
+    );
+    const photoCompleted = Boolean(currentProfile.photo_url);
+    const totalCount = questionCount + 1;
+    const answeredCount = answeredQuestionTotal + (photoCompleted ? 1 : 0);
+    const completionPercent = totalCount
+      ? Math.min(100, Math.round((answeredCount / totalCount) * 100))
+      : 0;
+    const nextSectionId: AlgorithmQuestionSectionId | null =
+      sections.find(
+        (section) => section.answeredCount < section.questions.length,
+      )?.id ?? (!photoCompleted ? "basic" : null);
+
+    return {
+      totalCount,
+      answeredCount,
+      completionPercent,
+      unlocked: completionPercent >= 80,
+      nextSectionId,
+    };
+  }, [answerRows, currentProfile.photo_url]);
   const [profileVibeAnimationKey, setProfileVibeAnimationKey] = useState(0);
   const [questionReviewOpen, setQuestionReviewOpen] = useState(false);
   const [questionReviewStartIndex, setQuestionReviewStartIndex] = useState<
@@ -1004,6 +1080,14 @@ export function AppHome({
     }
     setProfileQuestionSection(section);
   };
+  const currentProfileQuestionSectionIndex = profileQuestionSection
+    ? profileQuestionSectionSequence.indexOf(profileQuestionSection)
+    : -1;
+  const nextProfileQuestionSection =
+    currentProfileQuestionSectionIndex >= 0 &&
+    currentProfileQuestionSectionIndex < profileQuestionSectionSequence.length - 1
+      ? profileQuestionSectionSequence[currentProfileQuestionSectionIndex + 1]
+      : null;
 
   const applyAccountSession = async ({
     accessToken,
@@ -1123,7 +1207,24 @@ export function AppHome({
           : "bg-[#f7f4ed]",
       )}
     >
-      {activeBlindDateOfferCount > 0 && (
+      {activeTab === "recommend" &&
+        !chatRoomOpen &&
+        !recommendationFocusMode &&
+        !recommendationBottomNavHidden &&
+        !ticketTabFocusMode &&
+        !replayedDeclinedTicket && (
+          <button
+            type="button"
+            onClick={() => setAlgorithmParametersOpen(true)}
+            title="알고리즘 조절"
+            aria-label="알고리즘 파라미터 조절"
+            className="absolute right-[72px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#d8d1c4] bg-[#f8f4eb] text-[#5f594f] shadow-[0_5px_14px_rgba(71,62,48,0.1)] transition hover:-translate-y-0.5 hover:text-[#24211d] hover:shadow-[0_8px_18px_rgba(71,62,48,0.14)]"
+          >
+            <WandSparkles size={20} strokeWidth={1.7} aria-hidden />
+          </button>
+        )}
+
+      {activeTab === "browse" && activeBlindDateOfferCount > 0 && (
         <button
           type="button"
           onClick={openBlindDateStatus}
@@ -1133,7 +1234,7 @@ export function AppHome({
               ? "메시지 1개"
               : "블라인드 데이트 상태 확인"
           }
-          className="absolute right-[72px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white text-black/68 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md"
+          className="absolute right-[72px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#d8d1c4] bg-[#f8f4eb] text-[#5f594f] shadow-[0_5px_14px_rgba(71,62,48,0.1)] transition hover:-translate-y-0.5 hover:text-[#24211d] hover:shadow-[0_8px_18px_rgba(71,62,48,0.14)]"
         >
           <Mail size={20} strokeWidth={1.8} aria-hidden />
           {pendingBlindDateOfferCount > 0 && (
@@ -1561,6 +1662,29 @@ export function AppHome({
       )}
 
       <AnimatePresence>
+        {algorithmParametersOpen && (
+          <AlgorithmParametersOverlay
+            completionPercent={algorithmQuestionProgress.completionPercent}
+            answeredCount={algorithmQuestionProgress.answeredCount}
+            totalCount={algorithmQuestionProgress.totalCount}
+            answeredQuestionOrders={answerRows
+              .filter(hasStoredAnswer)
+              .map((row) => row.question_order)}
+            answerRows={answerRows}
+            unlocked={algorithmQuestionProgress.unlocked}
+            onClose={() => setAlgorithmParametersOpen(false)}
+            onAnswerMore={() => {
+              const nextSectionId =
+                algorithmQuestionProgress.nextSectionId ?? "background";
+              setAlgorithmParametersOpen(false);
+              setAlgorithmQuestionAnswering(true);
+              openProfileQuestionSection(nextSectionId);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {recommendationProfileReady && profileQuestionSection && (
           <ProfileQuestionSectionOverlay
             key={profileQuestionSection}
@@ -1604,9 +1728,25 @@ export function AppHome({
                           : profileSectionSelfQuestions
             }
             answerRows={answerRows}
-            includePhoto={profileQuestionSection === "basic"}
+            includePhoto={profileQuestionSection === "self"}
             photoUrl={currentProfile.photo_url ?? ""}
-            onClose={() => setProfileQuestionSection(null)}
+            onClose={() => {
+              setProfileQuestionSection(null);
+              if (algorithmQuestionAnswering) {
+                setAlgorithmQuestionAnswering(false);
+                setAlgorithmParametersOpen(true);
+              }
+            }}
+            nextSectionLabel={
+              nextProfileQuestionSection
+                ? profileQuestionSectionLabels[nextProfileQuestionSection]
+                : undefined
+            }
+            onNextSection={
+              nextProfileQuestionSection
+                ? () => setProfileQuestionSection(nextProfileQuestionSection)
+                : undefined
+            }
             onAnswersChanged={refreshAnswers}
             onPhotoChanged={(photoUrl) =>
               setCurrentProfile((current) => ({ ...current, photo_url: photoUrl }))
