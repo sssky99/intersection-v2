@@ -271,7 +271,6 @@ export function AlgorithmParametersOverlay({
                     </button>
                   )}
                   {parameters.length === 0 && <p className="px-4 text-center text-[11px] font-semibold leading-5 text-black/34">답변한 질문 중 중요한 항목을 직접 골라보세요.</p>}
-                  <p className="px-2 pt-1 text-center text-[11px] font-semibold leading-5 text-black/35">현재는 미리보기 단계이며 추천 결과에는 아직 반영되지 않아요.</p>
                 </div>
               ) : (
                 <LockedParameters onAnswerMore={onAnswerMore} />
