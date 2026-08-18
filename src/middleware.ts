@@ -5,6 +5,11 @@ import {
   productionOAuthOrigin,
   safeInternalPath,
 } from '@/lib/authRedirect';
+import {
+  isNativeAndroidRequest,
+  isNativeRestrictedPath,
+  isProductionPreviewPath,
+} from '@/lib/nativeAppRequest';
 
 const landingExperimentCookie = 'landing_ab_v1';
 const landingExperimentMaxAge = 60 * 60 * 24 * 30;
@@ -66,6 +71,24 @@ export function middleware(request: NextRequest) {
     nextUrl.searchParams.has('error_code') ||
     nextUrl.searchParams.has('error_description');
 
+  if (
+    process.env.NODE_ENV === 'production' &&
+    isProductionPreviewPath(nextUrl.pathname)
+  ) {
+    return NextResponse.json({ error: 'Not Found' }, { status: 404 });
+  }
+
+  if (
+    isNativeAndroidRequest(request.headers.get('user-agent')) &&
+    isNativeRestrictedPath(nextUrl.pathname)
+  ) {
+    if (nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Not Found' }, { status: 404 });
+    }
+
+    return NextResponse.redirect(new URL('/', request.url));
+  }
+
   const isAdminPreviewPath =
     nextUrl.pathname === '/admin' ||
     nextUrl.pathname.startsWith('/admin/') ||
@@ -119,5 +142,7 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     '/((?!api|_next/static|_next/image|favicon.ico|images).*)',
+    '/api/admin/:path*',
+    '/api/dev/:path*',
   ],
 };

@@ -63,6 +63,10 @@ import {
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
 import { useDragScroll } from "@/features/app/useDragScroll";
+import {
+  CompactParticipationSparkleProgress,
+  ParticipationProgressOverlay,
+} from "@/features/app/ParticipationSparkleProgress";
 import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
 import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
@@ -358,30 +362,6 @@ function answeredQuestionCount(
   ).length;
 }
 
-function animateParticipationRecordGlow(element: HTMLElement) {
-  const computedStyle = window.getComputedStyle(element);
-  const restingShadow =
-    computedStyle.boxShadow === "none"
-      ? "0 0 0 0 rgba(18,18,18,0)"
-      : computedStyle.boxShadow;
-  const activeShadow =
-    "0 0 0 7px rgba(18,18,18,0.16), 0 18px 46px rgba(18,18,18,0.22)";
-
-  element.animate(
-    [
-      { transform: "scale(1)", boxShadow: restingShadow, offset: 0 },
-      { transform: "scale(1.008)", boxShadow: activeShadow, offset: 0.2 },
-      { transform: "scale(1)", boxShadow: restingShadow, offset: 0.42 },
-      { transform: "scale(1.008)", boxShadow: activeShadow, offset: 0.65 },
-      { transform: "scale(1)", boxShadow: restingShadow, offset: 1 },
-    ],
-    {
-      duration: 2800,
-      easing: "ease-in-out",
-    },
-  );
-}
-
 const userTicketsCacheTtlMs = 20_000;
 const initialUserTicketsLimit = 3;
 const userTicketsCache = new Map<
@@ -508,6 +488,8 @@ export function AppHome({
   >([]);
   const [loadingRemainingTickets, setLoadingRemainingTickets] = useState(false);
   const [participationCount, setParticipationCount] = useState(0);
+  const [participationProgressOpen, setParticipationProgressOpen] =
+    useState(false);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
@@ -909,21 +891,7 @@ export function AppHome({
   };
 
   const openParticipationRecord = () => {
-    switchTab("profile");
-    window.setTimeout(() => {
-      const participationRecord =
-        document.querySelector<HTMLElement>("[data-participation-record]");
-      if (!participationRecord) return;
-
-      participationRecord.scrollIntoView({ behavior: "smooth", block: "center" });
-      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        return;
-      }
-
-      window.setTimeout(() => {
-        animateParticipationRecordGlow(participationRecord);
-      }, 360);
-    }, 80);
+    setParticipationProgressOpen(true);
   };
 
   const openBlindDateStatus = () => {
@@ -1175,6 +1143,30 @@ export function AppHome({
           )}
         </button>
       )}
+
+      {(activeTab === "browse" || activeTab === "recommend") &&
+        !chatRoomOpen &&
+        !recommendationFocusMode &&
+        !recommendationBottomNavHidden &&
+        !ticketTabFocusMode &&
+        !replayedDeclinedTicket && (
+          <div className="absolute left-5 top-[calc(14px+env(safe-area-inset-top))] z-40">
+            <CompactParticipationSparkleProgress
+              count={participationCount}
+              onOpen={openParticipationRecord}
+            />
+          </div>
+        )}
+
+      <AnimatePresence>
+        {participationProgressOpen && (
+          <ParticipationProgressOverlay
+            open
+            count={participationCount}
+            onClose={() => setParticipationProgressOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {!chatRoomOpen &&
         !recommendationFocusMode &&
@@ -5194,29 +5186,16 @@ function ProfileCompletionModal({
     const loadProfile = async () => {
       const existingIntro = profile.public_intro?.trim();
       try {
-        const shouldGenerate =
-          !existingIntro ||
-          profile.public_intro_model === "fallback" ||
-          profile.public_intro_model?.startsWith("fallback:") === true;
-        const profilePromise = !shouldGenerate
-          ? Promise.resolve<ProfileGenerateResponse>({
-              intro: existingIntro,
-              generatedAt: profile.public_intro_generated_at,
-              model: profile.public_intro_model,
-            })
-          : fetch("/api/profile/generate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({}),
-            }).then(async (response) => {
-              const body = (await response.json().catch(() => null)) as
-                | ProfileGenerateResponse
-                | null;
-              if (!response.ok || !body?.intro) {
-                throw new Error(body?.error ?? "profile-generate-failed");
-              }
-              return body;
-            });
+        const fallbackIntro =
+          "프로필을 준비하고 있어요.\n\n잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.";
+        const profilePromise = Promise.resolve<ProfileGenerateResponse>({
+          intro: existingIntro || fallbackIntro,
+          generatedAt: profile.public_intro_generated_at,
+          model: profile.public_intro_model,
+          notice: existingIntro
+            ? undefined
+            : "잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.",
+        });
 
         const [result] = await Promise.all([profilePromise, wait(2500)]);
         if (!alive) return;

@@ -45,15 +45,27 @@ async function ensureTestUser() {
       email: testEmail,
       password,
       email_confirm: true,
-      user_metadata: { name: testName, local_test_user: true },
+      app_metadata: { local_test_user: true },
+      user_metadata: { name: testName },
     });
     if (error || !data.user) throw error ?? new Error("test-user-create-failed");
     user = data.user;
   } else {
+    const {
+      local_test_user: _legacyLocalTestUser,
+      operator_switch_enabled: _legacyOperatorSwitchEnabled,
+      ...safeUserMetadata
+    } = user.user_metadata ?? {};
     const { error } = await admin.auth.admin.updateUserById(user.id, {
       password,
       email_confirm: true,
-      user_metadata: { ...user.user_metadata, name: testName, local_test_user: true },
+      app_metadata: { ...user.app_metadata, local_test_user: true },
+      user_metadata: {
+        ...safeUserMetadata,
+        name: testName,
+        local_test_user: null,
+        operator_switch_enabled: null,
+      },
     });
     if (error) throw error;
   }

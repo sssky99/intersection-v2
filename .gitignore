@@ -1,7 +1,13 @@
 .next/
+.next-stale-*/
 node_modules/
 out/
 dist/
+android/local.properties
+android/.gradle/
+android/**/build/
+android/.idea/
+.idea/
 
 .env
 .env.local
@@ -25,4 +31,12 @@ Thumbs.db
 # codex temp
 codex-dev/
 .codex-dev/
+.codex-tmp/
 .next-dev*.log
+
+# local research and generated artifacts
+outputs/
+interview_transcript/
+public/images/conversation-types/3u Export Photos/
+supabase/.temp/
+*.tsbuildinfo

@@ -118,7 +118,7 @@ export async function GET() {
     );
     const previewAllowed =
       profileResult.data?.is_test_participant === true &&
-      authResult.data.user?.user_metadata?.operator_switch_enabled === true;
+      authResult.data.user?.app_metadata?.operator_profile === true;
     const previewLinks = previewAllowed
       ? (ownParticipationData ?? [])
           .map((participation) => {

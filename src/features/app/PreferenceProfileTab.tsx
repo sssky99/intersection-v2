@@ -22,6 +22,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import {
+  ParticipationSparkle,
+  participationPrecisionLevel,
+} from "@/features/app/ParticipationSparkleProgress";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import {
   isProfileArchetypeId,
@@ -106,11 +110,6 @@ function initialProfileDraft(profile: ProfileRow): ProfileDraft {
     birthYear: profile.birth_year == null ? "" : String(profile.birth_year),
     mbti: profile.mbti ?? "",
   };
-}
-
-function participationPrecisionLevel(count: number) {
-  if (!Number.isFinite(count)) return 0;
-  return Math.min(5, Math.max(0, Math.floor(count)));
 }
 
 function ParticipationGiftButton() {
@@ -224,48 +223,21 @@ function ParticipationRecord({ precisionCount }: { precisionCount: number }) {
           const step = index + 1;
           const reached = step <= level;
           const current = step === currentStep;
-          const fill = reached ? "#121212" : "#F1EEE6";
-          const stroke =
-            reached || current ? "#121212" : "rgba(0,0,0,0.16)";
-          const textFill = reached
-            ? "#FFFFFF"
-            : current
-              ? "#121212"
-              : "rgba(0,0,0,0.34)";
-
           return (
             <span
               key={step}
               className="relative inline-flex h-10 w-10 items-center justify-center"
             >
-              <svg
-                viewBox="0 0 32 42"
+              <ParticipationSparkle
+                reached={reached}
+                current={current}
                 className={cn(
-                  "h-10 w-8 shrink-0 overflow-visible transition",
+                  "shrink-0 overflow-visible transition",
+                  reached ? "h-9 w-9" : current ? "h-8 w-8" : "h-7 w-7",
                   current &&
                     "drop-shadow-[0_5px_10px_rgba(18,18,18,0.18)]",
                 )}
-                aria-hidden
-              >
-                <path
-                  d="M16 2.5 29 21 16 39.5 3 21Z"
-                  fill={fill}
-                  stroke={stroke}
-                  strokeLinejoin="round"
-                  strokeWidth={current ? 2.6 : 2}
-                />
-                <text
-                  x="16"
-                  y="22"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fill={textFill}
-                  fontSize="10.5"
-                  fontWeight="900"
-                >
-                  {step}
-                </text>
-              </svg>
+              />
               {step === 5 && <ParticipationGiftButton />}
             </span>
           );

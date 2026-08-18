@@ -3,6 +3,7 @@ import Script from "next/script";
 import { GA_MEASUREMENT_ID } from "@/lib/analytics";
 import { ClarityScript } from "./ClarityScript";
 import { MetaPixelScript } from "./MetaPixelScript";
+import { NativeAppBridge } from "./NativeAppBridge";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -48,6 +50,7 @@ export default function RootLayout({
     <html lang="ko">
       <body>
         {children}
+        <NativeAppBridge />
         <MetaPixelScript />
         {GA_MEASUREMENT_ID && (
           <Script

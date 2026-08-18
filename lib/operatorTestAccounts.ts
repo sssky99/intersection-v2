@@ -16,8 +16,8 @@ export type OperatorTestAccount = {
 
 export function isOperatorSwitchEnabled(user: User) {
   return (
-    user.user_metadata?.local_test_user === true ||
-    user.user_metadata?.operator_switch_enabled === true
+    user.app_metadata?.local_test_user === true ||
+    user.app_metadata?.operator_switch_enabled === true
   );
 }
 
