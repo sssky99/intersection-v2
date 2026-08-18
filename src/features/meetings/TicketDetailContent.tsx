@@ -603,7 +603,15 @@ export function TicketCoursePanel({
       })}
         </ol>
 
-        {showFeedbackTime && <FeedbackTimeCard ticket={ticket} />}
+        {showFeedbackTime && ticketStartAt(ticket) && (
+          <>
+            <FeedbackTimeCard ticket={ticket} />
+            <BlindDateFollowupCard
+              ticket={ticket}
+              participantPhotoUrl={participantPhotoUrl}
+            />
+          </>
+        )}
       </div>
 
       {showJoinCountdown && <JoinDeadlineCountdown ticket={ticket} />}
@@ -653,24 +661,7 @@ export function TicketCoursePanel({
 }
 
 function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
-  const [infoOpen, setInfoOpen] = useState(false);
   const startAt = ticketStartAt(ticket);
-
-  useEffect(() => {
-    if (!infoOpen) return;
-
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setInfoOpen(false);
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [infoOpen]);
 
   if (!startAt) return null;
   const feedbackAt = new Date(startAt.getTime() + 3 * hourMs);
@@ -689,65 +680,190 @@ function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
           {formatKstTimeLabel(feedbackAt)}
         </span>
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setInfoOpen((open) => !open)}
-            aria-label="피드백 시간 안내"
-            aria-expanded={infoOpen}
-            className="flex h-5 w-5 items-center justify-center rounded-full border border-black/20 text-black/48 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
-          >
-            <Info size={12} strokeWidth={2} aria-hidden />
-          </button>
+          <JourneyInfoButton
+            label="피드백 시간 안내"
+            paragraphs={[
+              "이번 만남에서 더 알아가보고 싶은 사람을 고를 수 있어요.",
+              "친구가 되고 싶거나, 단 둘이 만나고 싶은 사람을 선택하세요.",
+              "서로 선택한 경우 1:1 블라인드 데이트가 열려요.",
+            ]}
+          />
           <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
             피드백 시간
           </span>
         </div>
-
       </div>
-
-      {typeof document !== "undefined" && createPortal(
-        <AnimatePresence>
-          {infoOpen && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              role="presentation"
-              onClick={() => setInfoOpen(false)}
-              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[2px]"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 14, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                role="dialog"
-                aria-modal="true"
-                aria-label="피드백 시간 안내"
-                onClick={(event) => event.stopPropagation()}
-                className="w-full max-w-[340px] rounded-[24px] border border-black/10 bg-[#f8f4eb] px-6 pb-5 pt-7 text-center shadow-[0_24px_70px_rgba(0,0,0,0.24)]"
-              >
-                <p className="break-keep text-[16px] font-bold leading-7 tracking-[-0.025em] text-[#24211d]">
-                  다시 만나 이야기 나누고 싶은 멤버를 선택할 수 있어요.
-                </p>
-                <p className="mt-3 break-keep text-[16px] font-bold leading-7 tracking-[-0.025em] text-[#24211d]">
-                  서로를 선택하면, 1:1로 만날 수 있도록 연결해드려요.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setInfoOpen(false)}
-                  className="mt-6 h-12 w-full rounded-full bg-[#171713] text-[14px] font-black text-white transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
-                >
-                  확인
-                </button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
     </div>
+  );
+}
+
+function BlindDateFollowupCard({
+  ticket,
+  participantPhotoUrl,
+}: {
+  ticket: GatheringTicket;
+  participantPhotoUrl?: string | null;
+}) {
+  const startAt = ticketStartAt(ticket);
+  if (!startAt) return null;
+
+  const feedbackAt = new Date(startAt.getTime() + 3 * hourMs);
+  const blindDateWindowStart = new Date(feedbackAt.getTime() + dayMs);
+  const blindDateWindowEnd = new Date(
+    blindDateWindowStart.getTime() + 13 * dayMs,
+  );
+  const blindDateDateFormatter = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "long",
+    day: "numeric",
+  });
+  const blindDateWindowLabel = `${blindDateDateFormatter.format(blindDateWindowStart)}~${blindDateDateFormatter.format(blindDateWindowEnd)}`;
+
+  return (
+    <div className="relative mt-8 pt-1">
+      <span
+        aria-hidden
+        className="absolute -left-[20px] top-[10px] z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f8f4eb] bg-[#8f8778] shadow-[0_0_0_1px_rgba(23,23,19,0.14)]"
+      />
+      <p className="mb-3 text-[11px] font-black tracking-[0.08em] text-black/40">
+        {blindDateWindowLabel}
+      </p>
+      <div className="overflow-hidden rounded-[12px] border border-black/[0.07] bg-[#f1ebe0]">
+        <div className="flex items-center justify-between gap-4 px-4 py-4">
+          <span className="text-[12px] font-bold text-black/42">
+            서로 선택한 경우
+          </span>
+          <div className="flex items-center gap-1.5">
+            <JourneyInfoButton
+              label="1:1 블라인드 데이트 안내"
+              paragraphs={[
+                "누가 올지는 공개되지 않아요. 현장에서 직접 확인해보세요.",
+                "한 가지 확실한 건 나도 상대방을 선택했고, 상대방도 나를 선택했어요.",
+                "여러 명과 서로 선택한 경우, 여러 번의 블라인드 데이트를 할 수 있어요.",
+              ]}
+            />
+            <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
+              1:1 블라인드 데이트
+            </span>
+          </div>
+        </div>
+
+        <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
+          <div className="flex min-h-12 items-center gap-2.5 px-3.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
+              {participantPhotoUrl ? (
+                <span
+                  className="h-full w-full bg-cover bg-center"
+                  style={{ backgroundImage: `url(${participantPhotoUrl})` }}
+                  aria-hidden
+                />
+              ) : (
+                <UserRound size={13} strokeWidth={2} aria-hidden />
+              )}
+            </span>
+            <span className="text-[11px] font-black text-black/68">나</span>
+          </div>
+          <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
+            <span
+              aria-hidden
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#ded8cc] text-[14px] font-black text-black/44"
+            >
+              ?
+            </span>
+            <span className="text-[11px] font-black text-black/68">
+              나를 선택한 상대방
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JourneyInfoButton({
+  label,
+  paragraphs,
+}: {
+  label: string;
+  paragraphs: string[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={label}
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-black/20 text-black/48 transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25"
+      >
+        <Info size={12} strokeWidth={2} aria-hidden />
+      </button>
+
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                role="presentation"
+                onClick={() => setOpen(false)}
+                className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-6 backdrop-blur-[2px]"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 14, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={label}
+                  onClick={(event) => event.stopPropagation()}
+                  className="w-full max-w-[340px] rounded-[24px] border border-black/10 bg-[#f8f4eb] px-6 pb-5 pt-7 text-left shadow-[0_24px_70px_rgba(0,0,0,0.24)]"
+                >
+                  <div className="space-y-3">
+                    {paragraphs.map((paragraph) => (
+                      <p
+                        key={paragraph}
+                        className="break-keep text-[16px] font-bold leading-7 tracking-[-0.025em] text-[#24211d]"
+                      >
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="mt-6 h-12 w-full rounded-full bg-[#171713] text-center text-[14px] font-black text-white transition active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
+                  >
+                    확인
+                  </button>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
+    </>
   );
 }
 

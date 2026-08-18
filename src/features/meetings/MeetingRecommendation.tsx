@@ -197,6 +197,92 @@ function oneMonthMembershipPeriod(meetingDate: string) {
   };
 }
 
+function koreanTicketTimeLabel(value: string) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
+  if (!match) return formatTicketTimeLabel(value);
+
+  const hour = Number.parseInt(match[1], 10);
+  const minute = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return formatTicketTimeLabel(value);
+  }
+
+  const period = hour < 12 ? "오전" : "오후";
+  const displayHour = hour % 12 || 12;
+  return minute === 0
+    ? `${period} ${displayHour}시`
+    : `${period} ${displayHour}시 ${minute}분`;
+}
+
+function mondayUtcStamp(date: Date) {
+  const day = date.getUTCDay();
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  return Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate() - daysFromMonday,
+  );
+}
+
+function calendarDateParts(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, month, day };
+}
+
+export function paymentSelectionDeadlineLabel(
+  meetingDate: string,
+  meetingTime: string,
+  today = todayInKst(),
+) {
+  const schedule = calendarDateParts(meetingDate);
+  const todaySchedule = calendarDateParts(today);
+  if (!schedule || !todaySchedule) {
+    return `모임 시작 하루 전 ${koreanTicketTimeLabel(meetingTime)}`;
+  }
+
+  const deadline = new Date(
+    Date.UTC(schedule.year, schedule.month - 1, schedule.day - 1),
+  );
+  const todayDate = new Date(
+    Date.UTC(todaySchedule.year, todaySchedule.month - 1, todaySchedule.day),
+  );
+  const weekDifference = Math.round(
+    (mondayUtcStamp(deadline) - mondayUtcStamp(todayDate)) /
+      (7 * 24 * 60 * 60 * 1000),
+  );
+  const weekdays = [
+    "일요일",
+    "월요일",
+    "화요일",
+    "수요일",
+    "목요일",
+    "금요일",
+    "토요일",
+  ];
+  const datePrefix =
+    weekDifference === 0
+      ? "이번 주"
+      : weekDifference === 1
+        ? "다음 주"
+        : `${deadline.getUTCMonth() + 1}월 ${deadline.getUTCDate()}일`;
+
+  return `${datePrefix} ${weekdays[deadline.getUTCDay()]} ${koreanTicketTimeLabel(meetingTime)}`;
+}
+
 function loadGuestDeclinedTicketIds() {
   if (typeof window === "undefined") return new Set<string>();
 
@@ -2518,11 +2604,19 @@ export function MembershipPurchaseBottomSheet({
   const [purchaseType, setPurchaseType] = useState<"membership" | "single">(
     "membership",
   );
+  const [sheetStep, setSheetStep] = useState<
+    "purchase" | "payment_terms" | "cancellation_policy"
+  >("purchase");
   const membershipSelected = purchaseType === "membership";
   const totalPrice = membershipSelected
     ? 20_000
     : MEETING_DATE_SINGLE_USE_AMOUNT;
   const singleUseUnavailable = !membershipSelected && !onSingleUseSubmit;
+  const selectionDeadline = paymentSelectionDeadlineLabel(
+    ticket.date,
+    ticket.time,
+  );
+  const finalSubmit = membershipSelected ? onSubmit : onSingleUseSubmit;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -2568,33 +2662,58 @@ export function MembershipPurchaseBottomSheet({
         exit={{ y: "100%" }}
         transition={{ type: "spring", stiffness: 330, damping: 34 }}
         onClick={(event) => event.stopPropagation()}
-        className="relative z-10 w-full max-w-[430px] rounded-t-[32px] border border-b-0 border-black/10 bg-[#f7f4ed] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 opacity-100 shadow-[0_-24px_80px_rgba(0,0,0,0.28)]"
+        className="relative z-10 max-h-[calc(100dvh-18px)] w-full max-w-[430px] overflow-y-auto rounded-t-[32px] border border-b-0 border-black/10 bg-[#f7f4ed] px-5 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 opacity-100 shadow-[0_-24px_80px_rgba(0,0,0,0.28)] scrollbar-none"
       >
         <div className="mx-auto h-1.5 w-12 rounded-full bg-black/14" />
 
         <div className="mt-5 flex items-start justify-between gap-4">
           <div>
             <p className="font-ticket-latin text-[11px] font-bold italic uppercase tracking-[0.2em] text-black/34">
-              PAYMENT
+              {sheetStep === "purchase" ? "PAYMENT" : "BEFORE PAYMENT"}
             </p>
             <h2
               id="membership-purchase-title"
               className="font-ticket-display mt-2 text-[27px] font-bold leading-[1.25] tracking-[-0.045em] text-black"
             >
-              참여 방식을 선택해주세요.
+              {sheetStep === "purchase"
+                ? "참여 방식을 선택해주세요."
+                : sheetStep === "payment_terms"
+                  ? "결제 조건"
+                  : "취소 정책"}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            aria-label="멤버십 신청 닫기"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white/55 text-black/48 disabled:opacity-35"
-          >
-            <X size={17} aria-hidden />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {sheetStep !== "purchase" && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSheetStep((current) =>
+                    current === "cancellation_policy"
+                      ? "payment_terms"
+                      : "purchase",
+                  )
+                }
+                disabled={saving}
+                aria-label="이전 단계"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/55 text-black/48 disabled:opacity-35"
+              >
+                <ChevronLeft size={18} aria-hidden />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              aria-label="멤버십 신청 닫기"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 bg-white/55 text-black/48 disabled:opacity-35"
+            >
+              <X size={17} aria-hidden />
+            </button>
+          </div>
         </div>
 
+        {sheetStep === "purchase" ? (
+          <>
         <div className="mt-6 grid grid-cols-2 rounded-full border border-black/10 bg-black/[0.035] p-1.5">
           <button
             type="button"
@@ -2691,7 +2810,7 @@ export function MembershipPurchaseBottomSheet({
           type="button"
           whileTap={!saving && !singleUseUnavailable ? { scale: 0.985 } : undefined}
           disabled={saving || singleUseUnavailable}
-          onClick={membershipSelected ? onSubmit : onSingleUseSubmit}
+          onClick={() => setSheetStep("payment_terms")}
           className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
         >
           {saving ? (
@@ -2711,7 +2830,160 @@ export function MembershipPurchaseBottomSheet({
           )}
         </motion.button>
 
+          </>
+        ) : sheetStep === "payment_terms" ? (
+          <PaymentTermsStep
+            deadlineLabel={selectionDeadline}
+            onNext={() => setSheetStep("cancellation_policy")}
+          />
+        ) : (
+          <CancellationPolicyStep
+            deadlineLabel={selectionDeadline}
+            totalPrice={totalPrice}
+            saving={saving}
+            error={error}
+            onSubmit={() => finalSubmit?.()}
+          />
+        )}
+
       </motion.section>
+    </motion.div>
+  );
+}
+
+function PaymentTermsStep({
+  deadlineLabel,
+  onNext,
+}: {
+  deadlineLabel: string;
+  onNext: () => void;
+}) {
+  return (
+    <motion.div
+      key="payment-terms-step"
+      initial={{ opacity: 0, x: 10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <p className="mt-3 text-right text-[11px] font-bold tabular-nums text-black/32">
+        1 / 2
+      </p>
+      <div className="mt-4 rounded-[26px] border border-black/10 bg-white/34 px-5 py-6">
+        <div className="space-y-6 break-keep text-[15px] font-semibold leading-[1.75] tracking-[-0.025em] text-black/58">
+          <p className="text-black/78">
+            계속 진행하면 교집합이 당신에게 맞는 사람들을 찾아드립니다.
+          </p>
+          <p>
+            어울리는 조합이 준비된 경우, <strong className="font-black text-black/82">{deadlineLabel}</strong>까지
+            최종 선정 여부를 안내받게 됩니다.
+          </p>
+          <p>
+            선정되지 않을 경우 결제 금액은 자동으로 환불됩니다.
+          </p>
+        </div>
+      </div>
+
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.985 }}
+        onClick={onNext}
+        className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)]"
+      >
+        다음
+      </motion.button>
+    </motion.div>
+  );
+}
+
+function CancellationPolicyStep({
+  deadlineLabel,
+  totalPrice,
+  saving,
+  error,
+  onSubmit,
+}: {
+  deadlineLabel: string;
+  totalPrice: number;
+  saving: boolean;
+  error: string | null;
+  onSubmit: () => void;
+}) {
+  return (
+    <motion.div
+      key="cancellation-policy-step"
+      initial={{ opacity: 0, x: 10 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <p className="mt-3 text-right text-[11px] font-bold tabular-nums text-black/32">
+        2 / 2
+      </p>
+      <div className="mt-4 rounded-[26px] border border-black/10 bg-white/34 px-5 py-6">
+        <div className="space-y-5 break-keep text-[14px] font-semibold leading-[1.7] tracking-[-0.02em] text-black/58">
+          <p className="text-black/78">
+            교집합은 확정 후 취소를 허용하지 않습니다. 갑작스러운 취소는
+            당신이 오기를 기대했던 함께할 멤버들의 경험을 망칠 수 있습니다.
+          </p>
+          <p>
+            <strong className="font-black text-black/82">{deadlineLabel}</strong>까지 확정 여부가 안내됩니다.
+          </p>
+        </div>
+
+        <div className="mt-6 overflow-hidden rounded-[20px] border border-black/[0.09] bg-[#f7f4ed]/70">
+          <div className="px-4 py-4">
+            <p className="text-[13px] font-black leading-5 text-black/78">
+              {deadlineLabel} 이전 취소
+            </p>
+            <p className="mt-1.5 text-[12px] font-semibold leading-5 text-black/45">
+              결제 금액 전액 자동 환불, 추가 수수료 없음
+            </p>
+          </div>
+          <div className="border-t border-black/[0.08] px-4 py-4">
+            <p className="text-[13px] font-black leading-5 text-black/78">
+              {deadlineLabel} 이후 취소
+            </p>
+            <p className="mt-1.5 text-[12px] font-semibold leading-5 text-black/45">
+              환불 불가
+            </p>
+          </div>
+          <div className="border-t border-black/[0.08] px-4 py-4">
+            <p className="text-[13px] font-black leading-5 text-black/78">
+              사전 연락 없이 불참
+            </p>
+            <p className="mt-1.5 text-[12px] font-semibold leading-5 text-black/45">
+              환불 불가, 교집합 모든 서비스 이용이 제한될 수 있음
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
+          {error}
+        </p>
+      )}
+
+      <motion.button
+        type="button"
+        whileTap={!saving ? { scale: 0.985 } : undefined}
+        disabled={saving}
+        onClick={onSubmit}
+        className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
+      >
+        {saving ? (
+          <span className="inline-flex items-center justify-center gap-2.5">
+            <LoaderCircle
+              size={18}
+              strokeWidth={2.2}
+              className="animate-spin"
+              aria-hidden
+            />
+            <span>결제창을 준비하는 중...</span>
+          </span>
+        ) : (
+          `${totalPrice.toLocaleString("ko-KR")}원 결제하기`
+        )}
+      </motion.button>
     </motion.div>
   );
 }
