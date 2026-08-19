@@ -60,7 +60,6 @@ export function ProfileInfoPreview() {
         profile={profile}
         loggingOut={false}
         logoutError={null}
-        participationCount={2}
         onProfileUpdated={setProfile}
         onLogout={async () => undefined}
         previewMode

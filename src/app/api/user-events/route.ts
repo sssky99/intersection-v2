@@ -52,6 +52,8 @@ const allowedEventNames = new Set([
   "conversation_result_view",
   "recommendation_view",
   "ticket_detail_view",
+  "application_funnel_step_view",
+  "application_funnel_exit",
   "application_intro_continue_click",
   "application_date_selected",
   "application_submit_click",

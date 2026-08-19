@@ -1,9 +1,8 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronRight,
-  Gift,
   Info,
   LogOut,
   MessageCircle,
@@ -157,19 +156,6 @@ function resolvedConversationResultCode(
   );
 }
 
-function participationPrecisionLevel(count: number) {
-  if (!Number.isFinite(count)) return 0;
-  return Math.min(5, Math.max(0, Math.floor(count)));
-}
-
-function profileMatchingPrecisionCount(
-  profile: Pick<ProfileRow, "matching_precision_bonus">,
-  participationCount: number,
-) {
-  const bonus = profile.matching_precision_bonus ?? 0;
-  return participationCount + bonus;
-}
-
 function fallbackNickname(name: string | null | undefined) {
   const korean = (name ?? "").replace(/[^가-힣]/g, "");
   return korean.length >= 2 ? korean.slice(-2) : korean || "??";
@@ -184,126 +170,6 @@ function profileNickname(profile: Pick<ProfileRow, "name" | "nickname">) {
 
 function profileInitial(profile: ProfileRow) {
   return profileNickname(profile);
-}
-
-function ParticipationDiamondNode({
-  step,
-  current,
-  reached,
-  showGift = false,
-  monochrome = false,
-}: {
-  step: number;
-  current: boolean;
-  reached: boolean;
-  showGift?: boolean;
-  monochrome?: boolean;
-}) {
-  const activeColor = monochrome ? "#121212" : "var(--accent)";
-  const fill = reached ? activeColor : "#FFFFFF";
-  const stroke = reached || current ? activeColor : "rgba(0,0,0,0.16)";
-  const textFill = reached
-    ? "#FFFFFF"
-    : current
-      ? activeColor
-      : "rgba(0,0,0,0.34)";
-
-  return (
-    <span className="relative inline-flex h-10 w-10 items-center justify-center">
-      <svg
-        viewBox="0 0 32 42"
-        className={cn(
-          "h-10 w-8 shrink-0 overflow-visible transition",
-          current &&
-            (monochrome
-              ? "drop-shadow-[0_5px_10px_rgba(18,18,18,0.18)]"
-              : "drop-shadow-[0_5px_10px_rgba(126,179,199,0.24)]"),
-        )}
-        aria-hidden
-      >
-        <path
-          d="M16 2.5 29 21 16 39.5 3 21Z"
-          fill={fill}
-          stroke={stroke}
-          strokeLinejoin="round"
-          strokeWidth={current ? 2.6 : 2}
-        />
-        <text
-          x="16"
-          y="22"
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill={textFill}
-          fontSize="10.5"
-          fontWeight="900"
-        >
-          {step}
-        </text>
-      </svg>
-      {showGift && <ParticipationGiftButton monochrome={monochrome} />}
-    </span>
-  );
-}
-
-function ParticipationMilestoneProgress({
-  precisionCount,
-  monochrome = false,
-}: {
-  precisionCount: number;
-  monochrome?: boolean;
-}) {
-  const level = participationPrecisionLevel(precisionCount);
-  const currentStep = level < 5 ? level + 1 : null;
-
-  return (
-    <div
-      className="mt-4 w-full"
-      title="참여할수록 추천과 분석이 5단계까지 정교해져요."
-      aria-label={`참여 정교화 ${level}/5단계`}
-    >
-      <div className="grid grid-cols-5 place-items-center gap-3">
-        {Array.from({ length: 5 }, (_, index) => {
-          const step = index + 1;
-          const reached = step <= level;
-          const current = step === currentStep;
-
-          return (
-            <ParticipationDiamondNode
-              key={step}
-              step={step}
-              current={current}
-              reached={reached}
-              monochrome={monochrome}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ParticipationRecord({
-  precisionCount,
-  monochrome = false,
-}: {
-  precisionCount: number;
-  monochrome?: boolean;
-}) {
-  return (
-    <div data-participation-record>
-      <div className="flex items-center gap-1.5">
-        <h3 className="text-[14px] font-black text-black">참여 기록</h3>
-        <ParticipationRecordInfoButton />
-      </div>
-      <p className="mt-1 text-xs font-semibold leading-5 text-black/40">
-        참여할수록 나의 대화결이 정교해져요.
-      </p>
-      <ParticipationMilestoneProgress
-        precisionCount={precisionCount}
-        monochrome={monochrome}
-      />
-    </div>
-  );
 }
 
 function InfoTooltipButton({
@@ -383,117 +249,6 @@ function VibeGraphInfoButton() {
   );
 }
 
-function ParticipationRecordInfoButton() {
-  return (
-    <InfoTooltipButton ariaLabel="참여 기록 설명 보기">
-      참여와 피드백을 바탕으로 나의 대화결 점수를 정교하게 조정해요. 이를
-      바탕으로 나에게 더 맞는 사람들과 장소가 추천돼요.
-    </InfoTooltipButton>
-  );
-}
-
-function ParticipationGiftButton({ monochrome = false }: { monochrome?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const shouldReduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        containerRef.current?.contains(event.target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <span ref={containerRef} className="absolute -right-2.5 -top-3 z-10">
-      <motion.button
-        type="button"
-        aria-label="5번 참여 멤버십 혜택 보기"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        animate={
-          shouldReduceMotion
-            ? undefined
-            : {
-                scale: [1, 1.08, 1],
-                boxShadow: [
-                  monochrome
-                    ? "0 4px 10px rgba(18,18,18,0.14)"
-                    : "0 4px 10px rgba(126,179,199,0.24)",
-                  monochrome
-                    ? "0 0 0 7px rgba(18,18,18,0.08), 0 8px 18px rgba(18,18,18,0.18)"
-                    : "0 0 0 7px rgba(126,179,199,0.16), 0 8px 18px rgba(126,179,199,0.32)",
-                  monochrome
-                    ? "0 4px 10px rgba(18,18,18,0.14)"
-                    : "0 4px 10px rgba(126,179,199,0.24)",
-                ],
-              }
-        }
-        transition={
-          shouldReduceMotion
-            ? undefined
-            : {
-                duration: 2.2,
-                ease: "easeInOut",
-                repeat: Infinity,
-                repeatDelay: 0.45,
-              }
-        }
-        whileTap={{ scale: 0.94 }}
-        className={cn(
-          "flex h-8 w-8 items-center justify-center rounded-full bg-white transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-          monochrome
-            ? "border border-black/35 text-black/65 shadow-[0_4px_10px_rgba(18,18,18,0.14)] hover:border-black/60 hover:text-black focus-visible:ring-black/25"
-            : "border border-accent/55 text-accent shadow-[0_4px_10px_rgba(126,179,199,0.24)] hover:border-accent hover:text-accent focus-visible:ring-accent/45",
-        )}
-      >
-        <Gift size={16} strokeWidth={2.5} aria-hidden />
-      </motion.button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute right-0 top-[calc(100%+10px)] z-40 w-[224px] rounded-2xl border border-black/10 bg-white px-4 py-3 text-xs font-semibold leading-5 text-black/62 shadow-[0_14px_36px_rgba(0,0,0,0.14)]"
-          >
-            <span
-              aria-hidden
-              className="absolute -top-[6px] right-2 h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white"
-            />
-            <strong className="font-black text-black/78">
-              5번 참여 시 1개월 멤버십
-            </strong>
-            을
-            <br />
-            지급해드려요.
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-}
-
 function TabMotion({ children }: { children: ReactNode }) {
   return (
     <motion.div
@@ -511,7 +266,6 @@ function TabMotion({ children }: { children: ReactNode }) {
 export function ProfileTab({
   profile,
   answers,
-  participationCount,
   vibeAnimationKey,
   loggingOut,
   logoutError,
@@ -525,7 +279,6 @@ export function ProfileTab({
 }: {
   profile: ProfileRow;
   answers: AnswerMap;
-  participationCount: number;
   vibeAnimationKey: number;
   loggingOut: boolean;
   logoutError: string | null;
@@ -551,10 +304,6 @@ export function ProfileTab({
   const conversationResult = conversationCode
     ? conversationResults[conversationCode]
     : null;
-  const matchingPrecisionCount = profileMatchingPrecisionCount(
-    profile,
-    participationCount,
-  );
   const vibeScores = useMemo(
     () =>
       usesNewConversationProfile && conversationCode
@@ -688,12 +437,6 @@ export function ProfileTab({
         <VibeGraph
           title="나의 대화결"
           titleInlineAccessory={<VibeGraphInfoButton />}
-          footer={
-            <ParticipationRecord
-              precisionCount={matchingPrecisionCount}
-              monochrome={usesNewConversationProfile}
-            />
-          }
           description="교집합이 자리를 제안할 때 참고하는 분위기예요."
           scores={vibeScores}
           visibleAxes={profileVibeAxes}

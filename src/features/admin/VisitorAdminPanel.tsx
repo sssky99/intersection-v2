@@ -86,6 +86,8 @@ const eventLabels: Record<string, string> = {
   conversation_result_view: "대화 타입 결과 확인",
   recommendation_view: "추천 보기",
   ticket_detail_view: "티켓 상세 보기",
+  application_funnel_step_view: "신청 단계 진입",
+  application_funnel_exit: "신청 단계 이탈",
   application_intro_continue_click: "신청 안내 통과",
   application_date_selected: "참여 날짜 선택",
   application_submit_click: "신청 클릭",
@@ -137,8 +139,53 @@ function metadataText(value: unknown) {
   }
 }
 
-function eventLabel(eventName: string) {
-  return eventLabels[eventName] ?? eventName;
+const applicationStepLabels: Record<string, string> = {
+  loading: "추천 불러오기",
+  recommendation_list: "추천 목록",
+  ticket_unlock: "초대장 열기",
+  ticket_detail: "초대 상세",
+  payment_options: "결제 방식 선택",
+  application_complete: "신청 완료",
+};
+
+const applicationExitReasonLabels: Record<string, string> = {
+  another_flow: "다른 신청 흐름 이동",
+  back_to_list: "목록으로 돌아감",
+  page_leave: "페이지 나감",
+  payment_sheet_close: "결제 선택 닫음",
+  step_changed: "다른 단계 이동",
+  tab_switch: "다른 탭 이동",
+  ticket_declined: "초대 거절",
+  ticket_detail_close: "초대 상세 닫음",
+  ticket_unlock_back: "초대장 열기 취소",
+};
+
+function eventLabel(eventName: string, metadata?: unknown) {
+  const baseLabel = eventLabels[eventName] ?? eventName;
+  if (
+    (eventName !== "application_funnel_step_view" &&
+      eventName !== "application_funnel_exit") ||
+    !metadata ||
+    typeof metadata !== "object" ||
+    Array.isArray(metadata)
+  ) {
+    return baseLabel;
+  }
+
+  const values = metadata as Record<string, unknown>;
+  const step = typeof values.step === "string" ? values.step : "";
+  const stepLabel = applicationStepLabels[step] ?? step;
+  if (!stepLabel) return baseLabel;
+  if (eventName === "application_funnel_step_view") {
+    return `${baseLabel} · ${stepLabel}`;
+  }
+
+  const reason =
+    typeof values.exit_reason === "string" ? values.exit_reason : "";
+  const reasonLabel = applicationExitReasonLabels[reason] ?? reason;
+  return reasonLabel
+    ? `${baseLabel} · ${stepLabel} (${reasonLabel})`
+    : `${baseLabel} · ${stepLabel}`;
 }
 
 function identifierClassName(hasApplicantName: boolean) {
@@ -462,7 +509,7 @@ export function VisitorAdminPanel() {
                             {formatDateTime(event.created_at)}
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 font-semibold">
-                            {eventLabel(event.event_name)}
+                            {eventLabel(event.event_name, event.metadata)}
                           </td>
                           <td className="max-w-[220px] break-all px-4 py-3 text-black/65">
                             {event.path ?? "-"}
@@ -509,7 +556,7 @@ export function VisitorAdminPanel() {
                       {formatDateTime(event.created_at)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 font-semibold">
-                      {eventLabel(event.event_name)}
+                      {eventLabel(event.event_name, event.metadata)}
                     </td>
                     <td className="break-all px-4 py-3 font-mono text-xs text-black/65">
                       {textOrDash(event.profile_id)}

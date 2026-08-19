@@ -16,6 +16,7 @@ const landingExperimentId = "landing_ab_2026_08";
 
 const supabaseEventNameAliases: Record<string, string> = {
   kakao_start_click: "kakao_login_click",
+  meeting_ticket_detail_open: "ticket_detail_view",
   recommend_tab_view: "recommendation_view",
   profile_intro_complete: "profile_generated",
 };

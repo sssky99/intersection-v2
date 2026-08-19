@@ -1509,7 +1509,6 @@ export function AppHome({
                     profileSectionSelfQuestions,
                   )
                 }
-                participationCount={participationCount}
                 onProfileUpdated={setCurrentProfile}
                 onOpenBasicQuestions={() => openProfileQuestionSection("basic")}
                 onOpenBackgroundQuestions={() =>
@@ -1548,7 +1547,6 @@ export function AppHome({
               <LazyProfileTab
                 profile={currentProfile}
                 answers={answers}
-                participationCount={participationCount}
                 vibeAnimationKey={profileVibeAnimationKey}
                 loggingOut={loggingOut}
                 logoutError={logoutError}

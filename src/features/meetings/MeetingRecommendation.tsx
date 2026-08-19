@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -547,6 +548,36 @@ type DateApplicationScreen =
   | "blindDateList"
   | "blindDateUnlock"
   | "blindDate";
+type ApplicationFunnelStep =
+  | "loading"
+  | "recommendation_list"
+  | "ticket_unlock"
+  | "ticket_detail"
+  | "payment_options"
+  | "application_complete";
+
+function applicationFunnelStep(
+  screen: DateApplicationScreen,
+  membershipSheetOpen: boolean,
+): ApplicationFunnelStep | null {
+  if (screen === "intro") return "loading";
+  if (screen === "dates") return "recommendation_list";
+  if (screen === "unlock") return "ticket_unlock";
+  if (screen === "ticket") {
+    return membershipSheetOpen ? "payment_options" : "ticket_detail";
+  }
+  if (screen === "submitted") return "application_complete";
+  return null;
+}
+
+const applicationFunnelForwardTransitions = new Set([
+  "loading:recommendation_list",
+  "recommendation_list:ticket_unlock",
+  "ticket_unlock:ticket_detail",
+  "ticket_detail:payment_options",
+  "payment_options:application_complete",
+]);
+
 type DateApplicationsResponse = {
   applications?: MeetingDateApplication[];
   totalDepositAmount?: number;
@@ -798,6 +829,115 @@ function MeetingDateApplicationFlow({
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
   const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
+  const funnelEntryRef = useRef<{
+    step: ApplicationFunnelStep;
+    enteredAt: number;
+    ticketInstanceId: string | null;
+    meetingDate: string | null;
+  } | null>(null);
+  const funnelStep = applicationFunnelStep(screen, membershipSheetOpen);
+
+  const exitApplicationFunnel = useCallback((exitReason: string) => {
+    const entry = funnelEntryRef.current;
+    if (!entry) return;
+
+    if (entry.step !== "application_complete") {
+      trackEvent("application_funnel_exit", {
+        step: entry.step,
+        exit_reason: exitReason,
+        elapsed_ms: Math.max(0, Date.now() - entry.enteredAt),
+        ticket_instance_id: entry.ticketInstanceId,
+        meeting_date: entry.meetingDate,
+      });
+    }
+    funnelEntryRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const previous = funnelEntryRef.current;
+
+    if (!active || !funnelStep) {
+      if (previous) {
+        exitApplicationFunnel(active ? "another_flow" : "tab_switch");
+      }
+      return;
+    }
+
+    const ticketInstanceId = selectedTicket?.id ?? null;
+    const meetingDate = selectedTicket?.date ?? null;
+    if (
+      previous?.step === funnelStep &&
+      previous.ticketInstanceId === ticketInstanceId
+    ) {
+      return;
+    }
+
+    if (previous) {
+      const transition = `${previous.step}:${funnelStep}`;
+      if (!applicationFunnelForwardTransitions.has(transition)) {
+        const reason =
+          previous.step === "payment_options" && funnelStep === "ticket_detail"
+            ? "payment_sheet_close"
+            : funnelStep === "recommendation_list"
+              ? "back_to_list"
+              : "step_changed";
+        exitApplicationFunnel(reason);
+      }
+    }
+
+    trackEvent("application_funnel_step_view", {
+      step: funnelStep,
+      previous_step: previous?.step,
+      ticket_instance_id: ticketInstanceId,
+      meeting_date: meetingDate,
+    });
+    funnelEntryRef.current = {
+      step: funnelStep,
+      enteredAt: Date.now(),
+      ticketInstanceId,
+      meetingDate,
+    };
+  }, [
+    active,
+    exitApplicationFunnel,
+    funnelStep,
+    selectedTicket?.date,
+    selectedTicket?.id,
+  ]);
+
+  useEffect(() => {
+    const handlePageHide = () => exitApplicationFunnel("page_leave");
+    const handlePageShow = () => {
+      if (!active || !funnelStep || funnelEntryRef.current) return;
+      const ticketInstanceId = selectedTicket?.id ?? null;
+      const meetingDate = selectedTicket?.date ?? null;
+      trackEvent("application_funnel_step_view", {
+        step: funnelStep,
+        entry_reason: "page_restore",
+        ticket_instance_id: ticketInstanceId,
+        meeting_date: meetingDate,
+      });
+      funnelEntryRef.current = {
+        step: funnelStep,
+        enteredAt: Date.now(),
+        ticketInstanceId,
+        meetingDate,
+      };
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, [
+    active,
+    exitApplicationFunnel,
+    funnelStep,
+    selectedTicket?.date,
+    selectedTicket?.id,
+  ]);
 
   useEffect(() => {
     if (screen !== "intro") return;
@@ -1120,6 +1260,7 @@ function MeetingDateApplicationFlow({
           onAvailableTicketsChange?.(next);
           return next;
         });
+        exitApplicationFunnel("ticket_declined");
         setSelectedTicket(null);
         setScreen("dates");
         trackEvent("meeting_ticket_response", {
@@ -1155,6 +1296,7 @@ function MeetingDateApplicationFlow({
         onAvailableTicketsChange?.(next);
         return next;
       });
+      exitApplicationFunnel("ticket_declined");
       setSelectedTicket(null);
       setScreen("dates");
       trackEvent("meeting_ticket_response", {
@@ -1312,6 +1454,7 @@ function MeetingDateApplicationFlow({
         application_type: "meeting_date",
         meeting_date: targetDates[0],
       });
+      funnelEntryRef.current = null;
       window.location.assign(membershipCheckoutUrl);
     } catch (membershipPurchaseError) {
       const message =
@@ -1410,6 +1553,7 @@ function MeetingDateApplicationFlow({
         meeting_date: ticket.date,
         payment_option: "one_time",
       });
+      funnelEntryRef.current = null;
       window.location.assign(checkoutUrl);
     } catch (singleUseError) {
       setError(
@@ -1504,6 +1648,7 @@ function MeetingDateApplicationFlow({
         placeText={seoulAreaLabel(selectedTicket.area)}
         reducedMotion={shouldReduceMotion}
         onBack={() => {
+          exitApplicationFunnel("ticket_unlock_back");
           setSuppressProgramMorph(true);
           setSelectedTicket(null);
           setScreen("dates");
@@ -1582,6 +1727,7 @@ function MeetingDateApplicationFlow({
           type="button"
           onClick={() => {
             if (saving) return;
+            exitApplicationFunnel("ticket_detail_close");
             setMembershipSheetOpen(false);
             setSelectedTicket(null);
             setScreen("dates");

@@ -1,13 +1,12 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
   Check,
   ChevronRight,
   Footprints,
   Gem,
-  Gift,
   Heart,
   Info,
   Loader2,
@@ -22,10 +21,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
-import {
-  ParticipationSparkle,
-  participationPrecisionLevel,
-} from "@/features/app/ParticipationSparkleProgress";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import {
   isProfileArchetypeId,
@@ -110,141 +105,6 @@ function initialProfileDraft(profile: ProfileRow): ProfileDraft {
     birthYear: profile.birth_year == null ? "" : String(profile.birth_year),
     mbti: profile.mbti ?? "",
   };
-}
-
-function ParticipationGiftButton() {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const shouldReduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        containerRef.current?.contains(event.target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <span ref={containerRef} className="absolute -right-2.5 -top-3 z-10">
-      <motion.button
-        type="button"
-        aria-label="5번 참여 구독권 혜택 보기"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        animate={
-          shouldReduceMotion
-            ? undefined
-            : {
-                scale: [1, 1.08, 1],
-                boxShadow: [
-                  "0 4px 10px rgba(18,18,18,0.14)",
-                  "0 0 0 7px rgba(18,18,18,0.08), 0 8px 18px rgba(18,18,18,0.18)",
-                  "0 4px 10px rgba(18,18,18,0.14)",
-                ],
-              }
-        }
-        transition={
-          shouldReduceMotion
-            ? undefined
-            : {
-                duration: 2.2,
-                ease: "easeInOut",
-                repeat: Infinity,
-                repeatDelay: 0.45,
-              }
-        }
-        whileTap={{ scale: 0.94 }}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-black/35 bg-white text-black/65 shadow-[0_4px_10px_rgba(18,18,18,0.14)] transition hover:-translate-y-0.5 hover:border-black/60 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/25 focus-visible:ring-offset-2"
-      >
-        <Gift size={16} strokeWidth={2.5} aria-hidden />
-      </motion.button>
-
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
-            className="absolute right-0 top-[calc(100%+10px)] z-40 w-[224px] rounded-2xl border border-black/10 bg-white px-4 py-3 text-xs font-semibold leading-5 text-black/62 shadow-[0_14px_36px_rgba(0,0,0,0.14)]"
-          >
-            <span
-              aria-hidden
-              className="absolute -top-[6px] right-2 h-3 w-3 rotate-45 border-l border-t border-black/10 bg-white"
-            />
-            <strong className="font-black text-black/78">
-              5번 참여 시 1개월 구독권
-            </strong>
-            을
-            <br />
-            지급해드려요.
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-}
-
-function ParticipationRecord({ precisionCount }: { precisionCount: number }) {
-  const level = participationPrecisionLevel(precisionCount);
-  const currentStep = level < 5 ? level + 1 : null;
-
-  return (
-    <section
-      data-participation-record
-      className="mt-5 rounded-[24px] border border-black/[0.07] bg-[#faf8f2] px-5 py-5 shadow-[0_14px_40px_rgba(24,24,20,0.05)]"
-    >
-      <h2 className="text-[14px] font-black text-black">참여 기록</h2>
-      <p className="mt-1 text-xs font-semibold leading-5 text-black/40">
-        참여할수록 추천이 더 정교해져요.
-      </p>
-      <div
-        className="mt-4 grid grid-cols-5 place-items-center gap-3"
-        aria-label={`참여 정교화 ${level}/5단계`}
-      >
-        {Array.from({ length: 5 }, (_, index) => {
-          const step = index + 1;
-          const reached = step <= level;
-          const current = step === currentStep;
-          return (
-            <span
-              key={step}
-              className="relative inline-flex h-10 w-10 items-center justify-center"
-            >
-              <ParticipationSparkle
-                reached={reached}
-                current={current}
-                className={cn(
-                  "shrink-0 overflow-visible transition",
-                  reached ? "h-9 w-9" : current ? "h-8 w-8" : "h-7 w-7",
-                  current &&
-                    "drop-shadow-[0_5px_10px_rgba(18,18,18,0.18)]",
-                )}
-              />
-              {step === 5 && <ParticipationGiftButton />}
-            </span>
-          );
-        })}
-      </div>
-    </section>
-  );
 }
 
 function BasicQuestionsSection({
@@ -675,7 +535,6 @@ export function PreferenceProfileTab({
   valueAnsweredCount = 0,
   traitsAnsweredCount = 0,
   selfAnsweredCount = 0,
-  participationCount = 0,
   onProfileUpdated,
   onOpenBasicQuestions = () => undefined,
   onOpenBackgroundQuestions = () => undefined,
@@ -703,7 +562,6 @@ export function PreferenceProfileTab({
   valueAnsweredCount?: number;
   traitsAnsweredCount?: number;
   selfAnsweredCount?: number;
-  participationCount?: number;
   onProfileUpdated: (profile: ProfileRow) => void;
   onOpenBasicQuestions?: () => void;
   onOpenBackgroundQuestions?: () => void;
@@ -1005,12 +863,6 @@ export function PreferenceProfileTab({
             )}
           </div>
         </section>
-
-        <ParticipationRecord
-          precisionCount={
-            participationCount + (profile.matching_precision_bonus ?? 0)
-          }
-        />
 
         <BasicQuestionsSection
           answers={answers}
