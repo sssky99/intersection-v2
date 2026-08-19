@@ -11,10 +11,14 @@ const headlineLead = "아무나 만나지 않도록,\n";
 const contentCueFallbackDelayMs = 600;
 
 type LandingVariantBProps = {
+  instagramAd?: boolean;
   preview?: boolean;
 };
 
-export function LandingVariantB({ preview = false }: LandingVariantBProps) {
+export function LandingVariantB({
+  instagramAd = false,
+  preview = false,
+}: LandingVariantBProps) {
   const [typedHeadline, setTypedHeadline] = useState(headlineLead);
   const [isContentVisible, setIsContentVisible] = useState(false);
   const [hasReachedContentCue, setHasReachedContentCue] = useState(false);
@@ -24,7 +28,13 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
     if (!preview) {
       trackEvent("landing_view", {
         experiment_id: "landing_ab_2026_08",
-        landing_variant: "b",
+        landing_variant: instagramAd ? "instagram_ad" : "b",
+        landing_surface: instagramAd ? "instagram_paid" : "default",
+        viewport_height: window.innerHeight,
+        visual_viewport_height: Math.round(
+          window.visualViewport?.height ?? window.innerHeight,
+        ),
+        screen_height: window.screen.height,
       });
     }
 
@@ -35,7 +45,7 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
 
     setTypedHeadline(headline);
     setIsContentVisible(true);
-  }, [preview]);
+  }, [instagramAd, preview]);
 
   useEffect(() => {
     if (!hasReachedContentCue) return;
@@ -73,6 +83,51 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
     );
   }
 
+  const startOnboarding = () => {
+    trackEvent("landing_cta_click", {
+      experiment_id: "landing_ab_2026_08",
+      landing_variant: instagramAd ? "instagram_ad" : "b",
+      landing_surface: instagramAd ? "instagram_paid" : "default",
+      cta_position: instagramAd ? "upper_fold" : "bottom",
+    });
+    window.location.assign("/onboarding/start");
+  };
+
+  const openMemberLogin = () => {
+    trackEvent("existing_member_login_click", {
+      experiment_id: "landing_ab_2026_08",
+      landing_variant: instagramAd ? "instagram_ad" : "b",
+      landing_surface: instagramAd ? "instagram_paid" : "default",
+      cta_position: instagramAd ? "upper_fold" : "bottom",
+    });
+    setShowMemberLogin(true);
+  };
+
+  const primaryAction = (
+    <>
+      <button
+        type="button"
+        onClick={startOnboarding}
+        className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98]"
+      >
+        교집합 시작하기
+        <ArrowRight
+          size={20}
+          strokeWidth={2}
+          aria-hidden
+          className="absolute right-6"
+        />
+      </button>
+      <button
+        type="button"
+        onClick={openMemberLogin}
+        className="mx-auto mt-4 block text-[12px] font-semibold text-white/70 underline decoration-white/35 underline-offset-4 transition hover:text-white"
+      >
+        이미 교집합 멤버예요
+      </button>
+    </>
+  );
+
   return (
     <main className="flex h-dvh min-h-0 justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4">
       <section
@@ -104,7 +159,9 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
 
         <div className="absolute inset-0">
           <div
-            className={`absolute inset-x-6 top-[56%] -translate-y-1/2 text-center transition-opacity duration-500 ${
+            className={`absolute inset-x-6 text-center transition-opacity duration-500 ${
+              instagramAd ? "top-[17%]" : "top-[56%] -translate-y-1/2"
+            } ${
               isContentVisible ? "opacity-100" : "opacity-0"
             }`}
           >
@@ -117,42 +174,14 @@ export function LandingVariantB({ preview = false }: LandingVariantBProps) {
                 <span className="ml-0.5 inline-block h-[1em] w-px animate-pulse bg-white/70 align-[-0.12em]" />
               )}
             </h1>
+            {instagramAd && <div className="mt-6">{primaryAction}</div>}
           </div>
 
-          <div className="absolute inset-x-6 bottom-[max(64px,calc(8dvh+env(safe-area-inset-bottom)))]">
-            <button
-              type="button"
-              onClick={() => {
-                trackEvent("landing_cta_click", {
-                  experiment_id: "landing_ab_2026_08",
-                  landing_variant: "b",
-                });
-                window.location.assign("/onboarding/start");
-              }}
-              className="relative mx-auto flex h-16 w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98]"
-            >
-              교집합 시작하기
-              <ArrowRight
-                size={20}
-                strokeWidth={2}
-                aria-hidden
-                className="absolute right-6"
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                trackEvent("existing_member_login_click", {
-                  experiment_id: "landing_ab_2026_08",
-                  landing_variant: "b",
-                });
-                setShowMemberLogin(true);
-              }}
-              className="mx-auto mt-4 block text-[12px] font-semibold text-white/70 underline decoration-white/35 underline-offset-4 transition hover:text-white"
-            >
-              이미 교집합 멤버예요
-            </button>
-          </div>
+          {!instagramAd && (
+            <div className="absolute inset-x-6 bottom-[max(64px,calc(8dvh+env(safe-area-inset-bottom)))]">
+              {primaryAction}
+            </div>
+          )}
         </div>
 
         {preview && (

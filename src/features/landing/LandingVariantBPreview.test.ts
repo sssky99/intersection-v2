@@ -10,4 +10,15 @@ describe("landing variant B analytics", () => {
 
     expect(source).toContain("trackLandingView={false}");
   });
+
+  it("keeps the Instagram ad CTA in the upper fold and tracks it separately", () => {
+    const source = fs.readFileSync(
+      new URL("./LandingVariantBPreview.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('instagramAd ? "top-[17%]"');
+    expect(source).toContain('landing_variant: instagramAd ? "instagram_ad" : "b"');
+    expect(source).toContain('cta_position: instagramAd ? "upper_fold" : "bottom"');
+  });
 });
