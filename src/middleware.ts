@@ -10,6 +10,7 @@ import {
   isNativeRestrictedPath,
   isProductionPreviewPath,
 } from '@/lib/nativeAppRequest';
+import { refreshSupabaseSession } from '@/lib/supabase/middleware';
 
 const landingExperimentCookie = 'landing_ab_v1';
 const landingExperimentMaxAge = 60 * 60 * 24 * 30;
@@ -63,7 +64,7 @@ function requestOrigin(request: NextRequest) {
   return `${protocol}://${host}`;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { nextUrl } = request;
   const origin = requestOrigin(request);
   const hasOAuthError =
@@ -123,11 +124,15 @@ export function middleware(request: NextRequest) {
     return redirectToAuthCallback(request);
   }
 
-  if (nextUrl.pathname === '/') {
-    const variant = 'b';
-    request.cookies.set(landingExperimentCookie, variant);
-    const response = NextResponse.next({ request });
-    response.cookies.set(landingExperimentCookie, variant, {
+  const landingVariant = nextUrl.pathname === '/' ? 'b' : null;
+  if (landingVariant) {
+    request.cookies.set(landingExperimentCookie, landingVariant);
+  }
+
+  const response = await refreshSupabaseSession(request);
+
+  if (landingVariant) {
+    response.cookies.set(landingExperimentCookie, landingVariant, {
       path: '/',
       maxAge: landingExperimentMaxAge,
       sameSite: 'lax',
@@ -136,7 +141,7 @@ export function middleware(request: NextRequest) {
     return response;
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

@@ -1437,11 +1437,6 @@ export function QuestionFlow({
         return;
       }
       const nextPhotoUrl = await uploadProfilePhoto(userId!, file);
-      const { error: profileError } = await createClient()
-        .from("profiles")
-        .update({ photo_url: nextPhotoUrl })
-        .eq("user_id", userId);
-      if (profileError) throw new Error(profileError.message);
       setPhotoUrl(nextPhotoUrl);
       onPhotoChanged?.(nextPhotoUrl);
       trackEvent("profile_photo_submitted", {
@@ -1455,7 +1450,11 @@ export function QuestionFlow({
       });
     } catch (photoError) {
       console.error("Failed to upload final profile photo:", photoError);
-      setError("사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.");
+      setError(
+        photoError instanceof Error
+          ? photoError.message
+          : "사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.",
+      );
     } finally {
       setPhotoUploading(false);
     }

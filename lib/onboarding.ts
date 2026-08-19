@@ -48,17 +48,27 @@ export async function getAuthenticatedProfile() {
   const supabase = await createClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
   if (!user) {
+    if (authError && authError.name !== "AuthSessionMissingError") {
+      console.error("Authenticated user lookup failed:", authError.message);
+      throw new Error("Authenticated user lookup failed.");
+    }
     return { supabase, user: null, profile: null };
   }
 
-  const { data: existingProfile } = await supabase
+  const { data: existingProfile, error: profileError } = await supabase
     .from("profiles")
     .select("*")
     .eq("user_id", user.id)
     .maybeSingle<ProfileRow>();
+
+  if (profileError) {
+    console.error("Authenticated profile lookup failed:", profileError.message);
+    throw new Error("Authenticated profile lookup failed.");
+  }
 
   if (existingProfile) {
     if (
