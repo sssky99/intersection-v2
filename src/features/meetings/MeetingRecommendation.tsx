@@ -4767,6 +4767,7 @@ function BlindDateJourneySections({
             steps={journeySteps}
             participantPhotoUrl={profilePhotoUrl}
             participantArrivalStatus={offer.arrivalStatus}
+            counterpartArrivalStatus={offer.counterpartArrivalStatus}
             previewMatchPhotoUrls={[counterpartPhotoUrl]}
             previewOtherMemberPhotoUrls={[]}
             matchMemberCount={1}

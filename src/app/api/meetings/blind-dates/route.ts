@@ -51,6 +51,7 @@ type BlindDateOfferRow = {
 
 type BlindDateParticipationRow = {
   offer_id: string;
+  user_id: string;
   arrival_status: BlindDateArrivalStatus | null;
   feedback_completed_at: string | null;
 };
@@ -164,6 +165,7 @@ function sanitizeOffer(
   userId: string,
   templateMap: Map<string, BlindDateTemplate>,
   participation?: BlindDateParticipationRow,
+  counterpartParticipation?: BlindDateParticipationRow,
 ): BlindDateUserOffer {
   const isParticipantA = row.participant_a_id === userId;
   const ownResponse = isParticipantA ? row.a_response : row.b_response;
@@ -203,6 +205,7 @@ function sanitizeOffer(
       : null,
     reservationName: revealPlace ? row.reservation_name ?? "이소윤" : null,
     arrivalStatus,
+    counterpartArrivalStatus: counterpartParticipation?.arrival_status ?? null,
     arrivalOpensAt: arrivalOpensAt?.toISOString() ?? null,
     feedbackOpensAt: feedbackOpensAt?.toISOString() ?? null,
     feedbackClosesAt: feedbackClosesAt?.toISOString() ?? null,
@@ -268,18 +271,28 @@ async function loadUserOffers(supabase: SupabaseAdminClient, userId: string) {
   const { data: participationData, error: participationError } = offerIds.length
     ? await supabase
         .from("blind_date_participations")
-        .select("offer_id,arrival_status,feedback_completed_at")
-        .eq("user_id", userId)
+        .select("offer_id,user_id,arrival_status,feedback_completed_at")
         .in("offer_id", offerIds)
         .returns<BlindDateParticipationRow[]>()
     : { data: [] as BlindDateParticipationRow[], error: null };
   if (participationError) throw participationError;
-  const participationMap = new Map(
-    (participationData ?? []).map((row) => [row.offer_id, row]),
-  );
-  return offers.map((offer) =>
-    sanitizeOffer(offer, userId, templateMap, participationMap.get(offer.id)),
-  );
+  const participationMap = new Map<string, BlindDateParticipationRow[]>();
+  for (const row of participationData ?? []) {
+    participationMap.set(row.offer_id, [
+      ...(participationMap.get(row.offer_id) ?? []),
+      row,
+    ]);
+  }
+  return offers.map((offer) => {
+    const participations = participationMap.get(offer.id) ?? [];
+    return sanitizeOffer(
+      offer,
+      userId,
+      templateMap,
+      participations.find((row) => row.user_id === userId),
+      participations.find((row) => row.user_id !== userId),
+    );
+  });
 }
 
 async function recommendationProfileReady(
@@ -326,14 +339,19 @@ async function sanitizeSingleOffer(
 
   const templateMap = new Map<string, BlindDateTemplate>();
   if (templateData) templateMap.set(templateData.id, templateData);
-  const { data: participation, error: participationError } = await supabase
+  const { data: participations, error: participationError } = await supabase
     .from("blind_date_participations")
-    .select("offer_id,arrival_status,feedback_completed_at")
+    .select("offer_id,user_id,arrival_status,feedback_completed_at")
     .eq("offer_id", offer.id)
-    .eq("user_id", userId)
-    .maybeSingle<BlindDateParticipationRow>();
+    .returns<BlindDateParticipationRow[]>();
   if (participationError) throw participationError;
-  return sanitizeOffer(offer, userId, templateMap, participation ?? undefined);
+  return sanitizeOffer(
+    offer,
+    userId,
+    templateMap,
+    (participations ?? []).find((row) => row.user_id === userId),
+    (participations ?? []).find((row) => row.user_id !== userId),
+  );
 }
 
 export async function GET() {

@@ -430,6 +430,7 @@ export function TicketCoursePanel({
   steps,
   participantPhotoUrl,
   participantArrivalStatus,
+  counterpartArrivalStatus,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
@@ -441,6 +442,7 @@ export function TicketCoursePanel({
   steps: NonNullable<GatheringTicket["courseSteps"]>;
   participantPhotoUrl?: string | null;
   participantArrivalStatus?: TicketArrivalStatus | null;
+  counterpartArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
@@ -592,6 +594,7 @@ export function TicketCoursePanel({
               stepIndex={index}
               participantPhotoUrl={participantPhotoUrl}
               participantArrivalStatus={participantArrivalStatus}
+              counterpartArrivalStatus={counterpartArrivalStatus}
               previewMatchPhotoUrls={previewMatchPhotoUrls}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
               matchMemberCount={matchMemberCount}
@@ -1134,6 +1137,7 @@ function JourneyPeoplePanel({
   stepIndex,
   participantPhotoUrl,
   participantArrivalStatus,
+  counterpartArrivalStatus,
   previewMatchPhotoUrls,
   previewOtherMemberPhotoUrls,
   matchMemberCount,
@@ -1143,6 +1147,7 @@ function JourneyPeoplePanel({
   stepIndex: number;
   participantPhotoUrl?: string | null;
   participantArrivalStatus?: TicketArrivalStatus | null;
+  counterpartArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
   previewOtherMemberPhotoUrls: string[];
   matchMemberCount?: number;
@@ -1184,16 +1189,18 @@ function JourneyPeoplePanel({
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
-          {variant !== "blind-date" && (
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
-              {participantArrivalStatusLabel(participantArrivalStatus)}
-              <Clock3 size={12} strokeWidth={1.9} aria-hidden />
-            </span>
-          )}
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
+            {participantArrivalStatusLabel(participantArrivalStatus)}
+            <Clock3 size={12} strokeWidth={1.9} aria-hidden />
+          </span>
         </div>
         {variant === "blind-date" ? (
-          <div className="flex min-h-12 w-full items-center gap-2.5 border-t border-black/[0.06] px-3.5 text-left">
-            {matchRowContent}
+          <div className="flex min-h-12 w-full items-center justify-between gap-3 border-t border-black/[0.06] px-3.5 text-left">
+            <div className="flex min-w-0 items-center gap-2.5">{matchRowContent}</div>
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-bold text-black/38">
+              {participantArrivalStatusLabel(counterpartArrivalStatus)}
+              <Clock3 size={12} strokeWidth={1.9} aria-hidden />
+            </span>
           </div>
         ) : (
           <button

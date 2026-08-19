@@ -71,6 +71,7 @@ export type BlindDateUserOffer = {
   actualPlaceAddress: string | null;
   reservationName: string | null;
   arrivalStatus: BlindDateArrivalStatus | null;
+  counterpartArrivalStatus: BlindDateArrivalStatus | null;
   arrivalOpensAt: string | null;
   feedbackOpensAt: string | null;
   feedbackClosesAt: string | null;
