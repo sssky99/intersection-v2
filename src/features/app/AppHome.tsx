@@ -682,6 +682,12 @@ export function AppHome({
     disabled: activeTab === "chat",
   });
 
+  useEffect(() => {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+    scrollArea.scrollLeft = 0;
+  }, [activeTab]);
+
   const applyUserTicketsResponse = useCallback(
     (response: UserTicketsResponse, mode: "replace" | "append") => {
       setWaitlistedTickets((current) =>
@@ -2049,8 +2055,9 @@ function TicketListTab({
   const snapTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const focused = Boolean(
-      selectedApplicationTicket &&
-        (selectedApplicationTicketDeclined || selectedApplicationTicketOpen),
+      selectedTicket ||
+        (selectedApplicationTicket &&
+          (selectedApplicationTicketDeclined || selectedApplicationTicketOpen)),
     );
     onFocusModeChange(focused);
     return () => onFocusModeChange(false);
@@ -2194,13 +2201,17 @@ function TicketListTab({
 
     setActiveIndex(targetIndex);
     window.requestAnimationFrame(() => {
-      const target = carouselRef.current?.querySelector<HTMLElement>(
+      const viewport = carouselRef.current;
+      const target = viewport?.querySelector<HTMLElement>(
         `[data-ticket-slide-index="${targetIndex}"]`,
       );
-      target?.scrollIntoView({
+      if (!viewport || !target) return;
+
+      const targetLeft =
+        target.offsetLeft - (viewport.clientWidth - target.offsetWidth) / 2;
+      viewport.scrollTo({
+        left: Math.max(0, targetLeft),
         behavior: "smooth",
-        block: "nearest",
-        inline: "center",
       });
     });
   }, [focusRequest, ticketItems]);
