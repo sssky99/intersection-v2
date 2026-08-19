@@ -1525,14 +1525,14 @@ function OfferPlaceEditor({
     offer.actual_place_address ?? "",
   );
   const [reservationName, setReservationName] = useState(
-    offer.reservation_name ?? "",
+    "이소윤",
   );
   const [scheduledDate, setScheduledDate] = useState(offer.scheduled_date ?? "");
 
   useEffect(() => {
     setActualPlaceName(offer.actual_place_name ?? "");
     setActualPlaceAddress(offer.actual_place_address ?? "");
-    setReservationName(offer.reservation_name ?? "");
+    setReservationName("이소윤");
     setScheduledDate(offer.scheduled_date ?? "");
   }, [
     offer.id,
@@ -1566,10 +1566,10 @@ function OfferPlaceEditor({
       />
       <input
         value={reservationName}
-        disabled={saving}
+        disabled
         placeholder="예약자명"
-        onChange={(event) => setReservationName(event.target.value)}
-        className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
+        aria-label="블라인드 데이트 예약자명"
+        className="h-8 rounded-lg border border-black/10 bg-black/[0.035] px-2 text-xs font-semibold text-black/55 outline-none"
       />
       <input
         type="date"

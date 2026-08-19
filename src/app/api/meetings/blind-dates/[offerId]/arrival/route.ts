@@ -68,7 +68,7 @@ export async function POST(
 
     return NextResponse.json({
       arrivalStatus,
-      reservationName: offer.reservation_name,
+      reservationName: offer.reservation_name ?? "이소윤",
       arrivalStatusUpdatedAt: updatedAt,
     });
   } catch (error) {

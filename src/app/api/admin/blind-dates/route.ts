@@ -697,7 +697,7 @@ export async function POST(request: NextRequest) {
           text(body?.actualPlaceName) ?? template.actual_place_name,
         actual_place_address:
           text(body?.actualPlaceAddress) ?? template.actual_place_address,
-        reservation_name: text(body?.reservationName),
+        reservation_name: "이소윤",
         candidate_dates: candidateDates,
         expires_at: validExpiresAt(body?.expiresAt),
         created_at: createdAt.toISOString(),
@@ -810,7 +810,7 @@ export async function PATCH(request: NextRequest) {
         updates.actual_place_address = text(body?.actualPlaceAddress);
       }
       if (Object.prototype.hasOwnProperty.call(body ?? {}, "reservationName")) {
-        updates.reservation_name = text(body?.reservationName);
+        updates.reservation_name = "이소윤";
       }
       if (Object.prototype.hasOwnProperty.call(body ?? {}, "scheduledDate")) {
         const scheduledDate = dateList(body?.scheduledDate)[0] ?? null;

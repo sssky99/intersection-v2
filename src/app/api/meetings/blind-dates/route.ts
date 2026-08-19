@@ -201,7 +201,7 @@ function sanitizeOffer(
     actualPlaceAddress: revealPlace
       ? row.actual_place_address ?? template?.actual_place_address ?? null
       : null,
-    reservationName: revealPlace && arrivalStatus ? row.reservation_name : null,
+    reservationName: revealPlace ? row.reservation_name ?? "이소윤" : null,
     arrivalStatus,
     arrivalOpensAt: arrivalOpensAt?.toISOString() ?? null,
     feedbackOpensAt: feedbackOpensAt?.toISOString() ?? null,

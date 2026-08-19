@@ -4180,7 +4180,7 @@ function BlindDateResponseResult({
                 <>
                   <BlindDateArrivalPanel
                     offer={offer}
-                    enabled={offer.canSetArrival}
+                    enabled={progressStage === "arrival"}
                     onOfferChange={onOfferChange}
                   />
                   <BlindDateJourneySections
@@ -4433,6 +4433,10 @@ function BlindDateArrivalPanel({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const reservationName = offer.reservationName || "이소윤";
+  const selectedArrivalLabel = blindDateArrivalOptions.find(
+    (option) => option.value === offer.arrivalStatus,
+  )?.label;
 
   const saveArrival = async (
     arrivalStatus: (typeof blindDateArrivalOptions)[number]["value"],
@@ -4477,39 +4481,52 @@ function BlindDateArrivalPanel({
             <UserRound size={15} className="text-black/38" aria-hidden />
             예약자명
           </span>
-          <strong className="text-[15px] font-black tracking-[-0.02em] text-black">
-            {offer.reservationName || "도착 상태 표시 후 공개"}
+          <strong
+            aria-label={offer.arrivalStatus ? reservationName : "도착 상태 선택 후 공개"}
+            className={cn(
+              "text-[15px] font-black tracking-[-0.02em] text-black transition-[filter,opacity] duration-300",
+              offer.arrivalStatus
+                ? "blur-0 opacity-100"
+                : "select-none blur-[5px] opacity-55",
+            )}
+          >
+            {reservationName}
           </strong>
         </div>
+        <p className="mt-2 text-[11px] font-semibold leading-5 text-black/42">
+          하단 도착상태를 표시하고, 예약자명을 확인하세요.
+        </p>
       </div>
 
-      {!enabled ? (
-        <p className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-          도착 상태와 예약자명은 만남 시작 3시간 전부터 확인할 수 있어요.
+      <div className="mt-3 grid gap-2">
+        {blindDateArrivalOptions.map((option) => {
+          const active = offer.arrivalStatus === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              disabled={saving || !enabled}
+              onClick={() => void saveArrival(option.value)}
+              className={cn(
+                "flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-bold transition disabled:cursor-default",
+                active
+                  ? "border-black bg-black text-white"
+                  : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/58",
+                !enabled && !active && "opacity-55",
+              )}
+            >
+              <span>{option.label}</span>
+              {active && <Check size={16} aria-hidden />}
+            </button>
+          );
+        })}
+      </div>
+      {!enabled && (
+        <p className="mt-3 text-xs font-semibold leading-5 text-black/40">
+          {selectedArrivalLabel
+            ? "선택한 도착 상태예요."
+            : "도착 상태 입력 시간이 종료됐어요."}
         </p>
-      ) : (
-        <div className="mt-3 grid gap-2">
-          {blindDateArrivalOptions.map((option) => {
-            const active = offer.arrivalStatus === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={saving}
-                onClick={() => void saveArrival(option.value)}
-                className={cn(
-                  "flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-bold transition disabled:opacity-45",
-                  active
-                    ? "border-black bg-black text-white"
-                    : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/58",
-                )}
-              >
-                <span>{option.label}</span>
-                {active && <Check size={16} aria-hidden />}
-              </button>
-            );
-          })}
-        </div>
       )}
       {error && (
         <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
