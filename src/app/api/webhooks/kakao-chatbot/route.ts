@@ -198,6 +198,7 @@ export async function POST(request: Request) {
     .eq("name", identity.name)
     .like("phone_normalized", `%${identity.phoneLast4}`)
     .eq("profile_completed", true)
+    .is("archived_at", null)
     .limit(3)
     .returns<ProfileMatch[]>();
 

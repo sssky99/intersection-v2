@@ -31,6 +31,8 @@ export type AdminProfile = {
   birth_year: string | number | null;
   mbti: string | null;
   phone: string | null;
+  archived_at?: string | null;
+  archived_reason?: string | null;
   photo_url: string | null;
   public_intro: string | null;
   public_intro_model?: string | null;

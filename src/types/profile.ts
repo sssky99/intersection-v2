@@ -8,6 +8,8 @@ export type ProfileRow = {
   nickname: string | null;
   phone: string | null;
   phone_normalized: string | null;
+  archived_at?: string | null;
+  archived_reason?: string | null;
   gender: Gender | null;
   birth_year: string | number | null;
   birth_date?: string | null;

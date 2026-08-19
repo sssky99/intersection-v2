@@ -19,6 +19,8 @@ const baseProfileFields = [
   "birth_year",
   "mbti",
   "phone",
+  "archived_at",
+  "archived_reason",
   "photo_url",
   "public_intro",
   "public_intro_model",

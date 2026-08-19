@@ -262,6 +262,7 @@ async function pendingMembershipMatch({
     .from("profiles")
     .select("user_id")
     .eq("phone_normalized", buyerPhone)
+    .is("archived_at", null)
     .limit(2)
     .returns<ProfileRow[]>();
   if (profileError) throw profileError;
@@ -385,6 +386,7 @@ async function pendingApplicationMatch({
     .from("profiles")
     .select("user_id")
     .eq("phone_normalized", buyerPhone)
+    .is("archived_at", null)
     .limit(2)
     .returns<ProfileRow[]>();
   if (profileError) throw profileError;
