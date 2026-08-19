@@ -19,6 +19,7 @@ import {
   formatTicketTimeLabel,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
+import { SafeImage } from "@/components/SafeImage";
 import {
   courseStepOpenOffsetMinutes,
   courseStepPlaceRevealOffsetMinutes,
@@ -753,16 +754,14 @@ function BlindDateFollowupCard({
 
         <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
           <div className="flex min-h-12 items-center gap-2.5 px-3.5">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
-              {participantPhotoUrl ? (
-                <span
-                  className="h-full w-full bg-cover bg-center"
-                  style={{ backgroundImage: `url(${participantPhotoUrl})` }}
-                  aria-hidden
-                />
-              ) : (
-                <UserRound size={13} strokeWidth={2} aria-hidden />
-              )}
+            <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
+              <UserRound size={13} strokeWidth={2} aria-hidden />
+              <SafeImage
+                src={participantPhotoUrl}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
@@ -1176,16 +1175,14 @@ function JourneyPeoplePanel({
       <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
         <div className="flex min-h-12 items-center justify-between gap-3 px-3.5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
-              {participantPhotoUrl ? (
-                <span
-                  className="h-full w-full bg-cover bg-center"
-                  style={{ backgroundImage: `url(${participantPhotoUrl})` }}
-                  aria-hidden
-                />
-              ) : (
-                <UserRound size={13} strokeWidth={2} aria-hidden />
-              )}
+            <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
+              <UserRound size={13} strokeWidth={2} aria-hidden />
+              <SafeImage
+                src={participantPhotoUrl}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
           </div>
@@ -1354,16 +1351,14 @@ function MatchMembersSheet({
 
               <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-6">
                 <div className="flex min-w-0 flex-col items-center">
-                  <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/45 shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
-                    {participantPhotoUrl ? (
-                      <span
-                        className="h-full w-full bg-cover bg-center"
-                        style={{ backgroundImage: `url(${participantPhotoUrl})` }}
-                        aria-hidden
-                      />
-                    ) : (
-                      <UserRound size={20} strokeWidth={1.8} aria-hidden />
-                    )}
+                  <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/45 shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
+                    <UserRound size={20} strokeWidth={1.8} aria-hidden />
+                    <SafeImage
+                      src={participantPhotoUrl}
+                      alt=""
+                      draggable={false}
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
                   </span>
                   <span className="mt-2 text-[12px] font-black text-black/[0.62]">나</span>
                 </div>
@@ -1376,10 +1371,11 @@ function MatchMembersSheet({
                     className="group flex min-w-0 flex-col items-center"
                   >
                     <span className="relative h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-black/[0.04] shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
-                      <span
-                        className="absolute -inset-2 scale-125 bg-cover bg-center blur-[8px]"
-                        style={{ backgroundImage: `url(${photoUrl})` }}
-                        aria-hidden
+                      <SafeImage
+                        src={photoUrl}
+                        alt=""
+                        draggable={false}
+                        className="absolute -inset-2 h-[calc(100%+16px)] w-[calc(100%+16px)] scale-125 object-cover blur-[8px]"
                       />
                       <span className="absolute inset-0 bg-black/[0.12]" />
                     </span>
@@ -1499,14 +1495,16 @@ function JourneyAvatarStack({
         >
           {photoUrls.length > 0 && (
             <>
-              <span
+              <SafeImage
+                src={value}
+                alt=""
+                draggable={false}
                 className={cn(
-                  "absolute bg-cover bg-center",
+                  "absolute object-cover",
                   clearLastPhoto && index === photoUrls.length - 1
-                    ? "inset-0"
-                    : "-inset-1 scale-125 blur-[1px]",
+                    ? "inset-0 h-full w-full"
+                    : "-inset-1 h-[calc(100%+8px)] w-[calc(100%+8px)] scale-125 blur-[1px]",
                 )}
-                style={{ backgroundImage: `url(${value})` }}
               />
               {(!clearLastPhoto || index < photoUrls.length - 1) && (
                 <span className="absolute inset-0 bg-black/[0.12]" />

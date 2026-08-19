@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { SafeImage } from "@/components/SafeImage";
 
 type ParticipationSparkleProps = {
   reached: boolean;
@@ -207,9 +208,11 @@ export function ParticipationProgressOverlay({
             }
             aria-hidden
           >
-            <span
-              className="block h-full w-full rounded-[15px] bg-cover bg-center"
-              style={{ backgroundImage: `url(${photoUrl})` }}
+            <SafeImage
+              src={photoUrl}
+              alt=""
+              draggable={false}
+              className="block h-full w-full rounded-[15px] bg-[#eee9df] object-cover"
             />
           </motion.div>
         ))}

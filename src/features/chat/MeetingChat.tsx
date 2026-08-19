@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { SafeImage } from "@/components/SafeImage";
 import { createClient } from "@/lib/supabase/client";
 import type {
   MeetingChatMember,
@@ -125,16 +126,17 @@ function ChatMemberAvatar({
         dimension,
       )}
     >
-      {member?.photoUrl ? (
-        <span
+      {member?.avatarText ?? "멤버"}
+      {member?.photoUrl && (
+        <SafeImage
+          src={member.photoUrl}
+          alt=""
           className={cn(
-            "absolute inset-0 scale-[1.12] bg-cover bg-center",
+            "absolute inset-0 h-full w-full scale-[1.12] object-cover",
             blurPhoto && "blur-[5px]",
           )}
-          style={{ backgroundImage: `url(${member.photoUrl})` }}
+          draggable={false}
         />
-      ) : (
-        member?.avatarText ?? "멤버"
       )}
     </span>
   );

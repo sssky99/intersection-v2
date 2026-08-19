@@ -33,6 +33,7 @@ import {
   useState,
 } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import { SafeImage } from "@/components/SafeImage";
 import {
   formatTicketDateLabel,
   formatTicketTimeLabel,
@@ -1292,15 +1293,13 @@ export function AppHome({
                 : "border-black/12",
             )}
           >
-            {currentProfile.photo_url ? (
-              <span
-                className="h-full w-full bg-cover bg-center"
-                style={{ backgroundImage: `url(${currentProfile.photo_url})` }}
-                aria-hidden
-              />
-            ) : (
-              <UserRound size={20} strokeWidth={1.8} aria-hidden />
-            )}
+            <UserRound size={20} strokeWidth={1.8} aria-hidden />
+            <SafeImage
+              src={currentProfile.photo_url}
+              alt=""
+              draggable={false}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
           </button>
         )}
 
@@ -4588,14 +4587,13 @@ function MemberArrivalStatusAccordion({
                         aria-hidden
                         className="relative flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/8 bg-[#eee9df] text-[8px] font-black text-black/45"
                       >
-                        {member.photoUrl ? (
-                          <span
-                            className="absolute -inset-1 scale-125 bg-cover bg-center blur-[5px]"
-                            style={{ backgroundImage: `url(${member.photoUrl})` }}
-                          />
-                        ) : (
-                          fallbackNickname(member.nickname || member.name)
-                        )}
+                        {fallbackNickname(member.nickname || member.name)}
+                        <SafeImage
+                          src={member.photoUrl}
+                          alt=""
+                          draggable={false}
+                          className="absolute -inset-1 h-[calc(100%+8px)] w-[calc(100%+8px)] scale-125 object-cover blur-[5px]"
+                        />
                       </span>
                     </span>
                   </span>
@@ -4986,9 +4984,11 @@ function TicketFeedbackForm({
                                   : "border-black/8 bg-[#e2dccf]",
                               )}
                             >
-                              <span
-                                className="absolute inset-0 bg-cover bg-center"
-                                style={{ backgroundImage: `url(${member.photoUrl})` }}
+                              <SafeImage
+                                src={member.photoUrl}
+                                alt=""
+                                draggable={false}
+                                className="absolute inset-0 h-full w-full object-cover"
                               />
                             </button>
                           ) : (
@@ -5152,10 +5152,11 @@ function TicketFeedbackForm({
                   >
                     <X size={17} aria-hidden />
                   </button>
-                  <img
+                  <SafeImage
                     src={feedbackPhotoPreview.url}
                     alt={`${feedbackPhotoPreview.name} 프로필`}
                     className="max-h-[58vh] w-full rounded-[16px] object-contain"
+                    onLoadError={() => setFeedbackPhotoPreview(null)}
                   />
                   <p className="px-1 pb-1 pt-3 text-center text-sm font-black text-[#24211d]">
                     {feedbackPhotoPreview.name}
