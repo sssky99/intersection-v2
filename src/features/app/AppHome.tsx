@@ -1251,7 +1251,7 @@ export function AppHome({
         </button>
       )}
 
-      {(activeTab === "browse" || activeTab === "recommend") &&
+      {activeTab === "recommend" &&
         !chatRoomOpen &&
         !recommendationFocusMode &&
         !recommendationBottomNavHidden &&
