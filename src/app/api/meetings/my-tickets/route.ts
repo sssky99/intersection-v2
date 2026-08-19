@@ -36,6 +36,7 @@ import {
   type UserTicketStatus,
 } from "@/types/ticket";
 import { inferTicketCategory } from "@/types/ticketCategory";
+import { getMeetingTicketsByEventIds } from "@/lib/publicTicketPreview";
 
 export const dynamic = "force-dynamic";
 
@@ -136,6 +137,20 @@ type ProfileIntroRow = {
   gender: string | null;
   birth_year: string | number | null;
   public_intro: string | null;
+};
+
+type DateApplicationTicketRow = {
+  id: number | string;
+  user_id: string;
+  event_id: string | null;
+  meeting_date: string;
+  meeting_time: string | null;
+  region: string | null;
+  status: string;
+  assigned_ticket_instance_id: string | null;
+  ticket_participation_id: number | string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 type ProfileAccessRow = {
@@ -1367,14 +1382,89 @@ export async function GET(request: Request) {
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
     const previewReveal = previewRevealRequested && canSeeTestTickets;
 
-    const { data: waitlistData, error: waitlistError } = await supabase
-      .from("ticket_participations")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    const [waitlistResult, applicationResult] = await Promise.all([
+      supabase
+        .from("ticket_participations")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("meeting_date_applications")
+        .select(
+          "id,user_id,event_id,meeting_date,meeting_time,region,status,assigned_ticket_instance_id,ticket_participation_id,created_at,updated_at",
+        )
+        .eq("user_id", user.id)
+        .in("status", ["waitlisted", "approved", "on_hold"])
+        .order("created_at", { ascending: false }),
+    ]);
+    const { data: waitlistData, error: waitlistError } = waitlistResult;
     if (waitlistError) throw waitlistError;
+    if (applicationResult.error) throw applicationResult.error;
 
-    const waitlistRows = (waitlistData ?? []) as unknown as WaitlistRow[];
+    const persistedWaitlistRows = (waitlistData ?? []) as unknown as WaitlistRow[];
+    const applicationRows = (applicationResult.data ??
+      []) as unknown as DateApplicationTicketRow[];
+    const persistedParticipationIds = new Set(
+      persistedWaitlistRows.map((row) => String(row.id)),
+    );
+    const persistedInstanceIds = new Set(
+      unique(persistedWaitlistRows.map((row) => sourceRowInstanceId(row))),
+    );
+    const pendingApplicationRows = applicationRows.filter((application) => {
+      if (
+        application.ticket_participation_id !== null &&
+        persistedParticipationIds.has(String(application.ticket_participation_id))
+      ) {
+        return false;
+      }
+      if (
+        application.assigned_ticket_instance_id &&
+        persistedInstanceIds.has(application.assigned_ticket_instance_id)
+      ) {
+        return false;
+      }
+      return Boolean(
+        application.event_id || application.assigned_ticket_instance_id,
+      );
+    });
+    const applicationEventTickets = await getMeetingTicketsByEventIds(
+      unique(pendingApplicationRows.map((application) => application.event_id)),
+    );
+    const applicationEventTicketMap = new Map(
+      applicationEventTickets.map((ticket) => [ticket.id, ticket]),
+    );
+    const applicationWaitlistRows: WaitlistRow[] = pendingApplicationRows
+      .map((application): WaitlistRow | null => {
+        const eventTicket = application.event_id
+          ? applicationEventTicketMap.get(application.event_id) ?? null
+          : null;
+        const sourceId =
+          application.assigned_ticket_instance_id ??
+          application.event_id ??
+          eventTicket?.id ??
+          null;
+        if (!sourceId) return null;
+
+        return {
+          id: `application:${application.id}`,
+          user_id: application.user_id,
+          ticket_id: sourceId,
+          ticket_template_id: eventTicket?.templateId ?? null,
+          ticket_instance_id: application.assigned_ticket_instance_id,
+          meeting_date: application.meeting_date,
+          status: application.status,
+          ticket_snapshot: eventTicket,
+          arrival_status: null,
+          arrival_status_updated_at: null,
+          created_at: application.created_at,
+          updated_at: application.updated_at,
+        };
+      })
+      .filter((row): row is WaitlistRow => Boolean(row));
+    const waitlistRows = [
+      ...persistedWaitlistRows,
+      ...applicationWaitlistRows,
+    ];
     const participationCount = waitlistRows.filter((row) =>
       ["completed", "feedback_done"].includes(row.status),
     ).length;

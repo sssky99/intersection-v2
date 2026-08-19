@@ -504,6 +504,27 @@ async function previewTicketsFromInstances(
     .filter((ticket): ticket is GatheringTicket => Boolean(ticket));
 }
 
+export async function getMeetingTicketsByEventIds(
+  eventIds: string[],
+): Promise<GatheringTicket[]> {
+  const uniqueEventIds = Array.from(
+    new Set(eventIds.map((id) => id.trim()).filter(Boolean)),
+  );
+  if (uniqueEventIds.length === 0) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("meeting_events")
+    .select(
+      "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,application_closes_at,detail_snapshot",
+    )
+    .in("id", uniqueEventIds)
+    .returns<PublicMeetingEventRow[]>();
+
+  if (error) throw error;
+  return (data ?? []).map(toPublicEventTicket);
+}
+
 export async function getAvailableMeetingTickets({
   userId,
   includeTestOnly = false,
