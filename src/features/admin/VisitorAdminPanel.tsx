@@ -59,6 +59,10 @@ const rangeOptions: Array<{ value: VisitorRange; label: string }> = [
 const eventLabels: Record<string, string> = {
   landing_view: "랜딩 방문",
   landing_video_complete: "랜딩 영상 완주",
+  landing_page_visible_1s: "랜딩 정상 노출 1초",
+  landing_cta_visible_1s: "CTA 실제 노출 1초",
+  landing_first_interaction: "랜딩 첫 사용자 입력",
+  landing_exit: "랜딩 이탈",
   landing_cta_click: "랜딩 CTA 클릭",
   phone_input_view: "전화번호 입력 화면 도달",
   phone_verification_complete: "전화번호 인증 완료",

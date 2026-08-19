@@ -7,6 +7,9 @@ export const dynamic = "force-dynamic";
 const funnelEvents = [
   "landing_view",
   "landing_video_complete",
+  "landing_page_visible_1s",
+  "landing_cta_visible_1s",
+  "landing_first_interaction",
   "landing_cta_click",
   "existing_member_login_click",
   "phone_input_view",
@@ -56,7 +59,10 @@ const funnelEvents = [
 
 const conversionBaseEvents: Record<string, string> = {
   landing_video_complete: "landing_view",
-  landing_cta_click: "landing_view",
+  landing_page_visible_1s: "landing_view",
+  landing_cta_visible_1s: "landing_page_visible_1s",
+  landing_first_interaction: "landing_page_visible_1s",
+  landing_cta_click: "landing_cta_visible_1s",
   phone_input_view: "landing_video_complete",
   phone_verification_complete: "phone_input_view",
   question_start: "phone_verification_complete",
