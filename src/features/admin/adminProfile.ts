@@ -15,6 +15,14 @@ export type AdminProfileAnswer = {
   updated_at?: string | null;
 };
 
+export type AdminAlgorithmParameter = {
+  user_id: string;
+  question_order: number;
+  mode: "similar" | "different";
+  position: number;
+  updated_at: string | null;
+};
+
 export type AdminProfile = {
   user_id: string;
   name: string | null;
@@ -56,6 +64,7 @@ export type AdminProfile = {
   score_tone?: number | null;
   score_rhythm?: number | null;
   answers?: AdminProfileAnswer[];
+  algorithm_parameters?: AdminAlgorithmParameter[];
   active_membership?: boolean;
   expired_membership?: boolean;
 };
@@ -88,6 +97,7 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     operator_rating: profile.operator_rating ?? null,
     operator_rating_updated_at: profile.operator_rating_updated_at ?? null,
     answers: profile.answers ?? [],
+    algorithm_parameters: profile.algorithm_parameters ?? [],
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
   };

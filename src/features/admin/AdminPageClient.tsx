@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   BookOpen,
   Download,
   Image as ImageIcon,
@@ -1903,6 +1905,8 @@ function ProfileDetailPanel({
           </button>
         </section>
 
+        <ProfileAlgorithmParametersSection profile={profile} />
+
         <ProfileAnswersSection profile={profile} />
 
         {(saveError || saveNotice) && (
@@ -2064,6 +2068,105 @@ function ProfileAnswersSection({ profile }: { profile: AdminProfile }) {
               question={questionForAnswer(answer, questions)}
             />
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProfileAlgorithmParametersSection({
+  profile,
+}: {
+  profile: AdminProfile;
+}) {
+  const parameters = [...(profile.algorithm_parameters ?? [])].sort(
+    (left, right) => left.position - right.position,
+  );
+  const questions = questionsForProfile(profile);
+  const answersByOrder = new Map(
+    (profile.answers ?? []).map((answer) => [answer.question_order, answer]),
+  );
+
+  return (
+    <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold">알고리즘 파라미터</h3>
+          <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+            사용자가 직접 선택해 서버에 저장한 추천 우선순위입니다.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-black/[0.05] px-3 py-1 text-[11px] font-black text-black/45">
+          {parameters.length}/3개
+        </span>
+      </div>
+
+      {parameters.length === 0 ? (
+        <p className="mt-4 rounded-2xl border border-dashed border-black/10 bg-[#fbfbfa] px-4 py-6 text-center text-xs font-semibold leading-5 text-black/40">
+          아직 서버에 저장된 파라미터가 없습니다.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {parameters.map((parameter) => {
+            const answer = answersByOrder.get(parameter.question_order);
+            const question = answer
+              ? questionForAnswer(answer, questions)
+              : questionForOrder(parameter.question_order, questions);
+            const answerDisplay = answer
+              ? answerDisplayForExport(answer, questions)
+              : "저장된 답변 없음";
+            const similar = parameter.mode === "similar";
+
+            return (
+              <article
+                key={parameter.question_order}
+                className="rounded-2xl border border-black/8 bg-[#fbfbfa] px-4 py-4"
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                      similar
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-rose-50 text-rose-700",
+                    )}
+                  >
+                    {similar ? (
+                      <ArrowUp size={17} aria-hidden />
+                    ) : (
+                      <ArrowDown size={17} aria-hidden />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-[0.1em] text-black/35">
+                        우선순위 {parameter.position}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-black",
+                          similar
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-rose-50 text-rose-700",
+                        )}
+                      >
+                        {similar ? "비슷한 답변 우선" : "다른 답변 우선"}
+                      </span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-line text-sm font-bold leading-6 text-black/76">
+                      {question?.question ?? `저장된 문항 ${parameter.question_order}`}
+                    </p>
+                    <p className="mt-2 rounded-xl bg-white px-3 py-2.5 text-xs font-semibold leading-5 text-black/58">
+                      사용자 답변 · {answerDisplay || "-"}
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold text-black/30">
+                      저장 시각 · {formatCreatedAt(parameter.updated_at)}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </section>

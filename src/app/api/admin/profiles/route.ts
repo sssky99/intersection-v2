@@ -3,6 +3,7 @@ import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth"
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeAdminProfile,
+  type AdminAlgorithmParameter,
   type AdminProfile,
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
@@ -143,6 +144,7 @@ const profileSelects = [
 
 const PROFILE_PAGE_SIZE = 1000;
 const USER_ANSWERS_PAGE_SIZE = 1000;
+const ALGORITHM_PARAMETERS_PAGE_SIZE = 1000;
 const USER_ID_BATCH_SIZE = 100;
 
 async function attachProfileAnswers(
@@ -193,6 +195,53 @@ async function attachProfileAnswers(
   return profiles.map((profile) => ({
     ...profile,
     answers: answersByUserId.get(profile.user_id) ?? [],
+  }));
+}
+
+async function attachAlgorithmParameters(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const parameters: AdminAlgorithmParameter[] = [];
+  for (
+    let batchStart = 0;
+    batchStart < userIds.length;
+    batchStart += USER_ID_BATCH_SIZE
+  ) {
+    const userIdBatch = userIds.slice(
+      batchStart,
+      batchStart + USER_ID_BATCH_SIZE,
+    );
+
+    for (let from = 0; ; from += ALGORITHM_PARAMETERS_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("profile_algorithm_parameters")
+        .select("user_id,question_order,mode,position,updated_at")
+        .in("user_id", userIdBatch)
+        .order("user_id", { ascending: true })
+        .order("position", { ascending: true })
+        .range(from, from + ALGORITHM_PARAMETERS_PAGE_SIZE - 1);
+      if (error) throw error;
+
+      const page = (data ?? []) as unknown as AdminAlgorithmParameter[];
+      parameters.push(...page);
+      if (page.length < ALGORITHM_PARAMETERS_PAGE_SIZE) break;
+    }
+  }
+
+  const parametersByUserId = new Map<string, AdminAlgorithmParameter[]>();
+  for (const parameter of parameters) {
+    const current = parametersByUserId.get(parameter.user_id) ?? [];
+    current.push(parameter);
+    parametersByUserId.set(parameter.user_id, current);
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    algorithm_parameters: parametersByUserId.get(profile.user_id) ?? [],
   }));
 }
 
@@ -362,9 +411,13 @@ export async function GET(request: NextRequest) {
       supabase,
       profiles,
     );
-    const profilesWithAnswers = await attachProfileAnswers(
+    const profilesWithParameters = await attachAlgorithmParameters(
       supabase,
       profilesWithRatings,
+    );
+    const profilesWithAnswers = await attachProfileAnswers(
+      supabase,
+      profilesWithParameters,
     );
 
     return NextResponse.json({
@@ -547,9 +600,12 @@ export async function PATCH(request: NextRequest) {
         (
           await attachProfileAnswers(
             supabase,
-            await attachOperatorRatings(supabase, [
-              await fetchProfile(supabase, userId),
-            ]),
+            await attachAlgorithmParameters(
+              supabase,
+              await attachOperatorRatings(supabase, [
+                await fetchProfile(supabase, userId),
+              ]),
+            ),
           )
         )[0],
       ),

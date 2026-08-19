@@ -15,6 +15,12 @@ import type {
   QuestionOption,
   StoredAnswerRow,
 } from "@/types/question";
+import {
+  maximumAlgorithmParameters,
+  parseAlgorithmParameters,
+  type AlgorithmParameter,
+  type AlgorithmParameterMode,
+} from "@/lib/algorithmParameters";
 import { motion } from "framer-motion";
 import {
   ArrowDown,
@@ -29,10 +35,9 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const parameterStorageKey = "intersection-algorithm-parameters-v1";
-const maximumParameters = 3;
 
 const questionSections = [
   { id: "background", label: "배경", questions: profileSectionBackgroundQuestions },
@@ -46,9 +51,8 @@ const questionSections = [
 ] as const;
 
 type SectionId = (typeof questionSections)[number]["id"];
-type ParameterMode = "similar" | "different";
-type SavedParameter = { questionOrder: number; mode: ParameterMode };
 type PickerStep = "main" | "categories" | "questions" | "direction";
+type SaveStatus = "loading" | "saving" | "saved" | "error" | "local";
 
 function questionOrder(question: ProfileQuestion) {
   return question.order ?? question.id;
@@ -116,11 +120,16 @@ export function AlgorithmParametersOverlay({
   onClose: () => void;
   onAnswerMore: () => void;
 }) {
-  const [parameters, setParameters] = useState<SavedParameter[]>([]);
+  const [parameters, setParameters] = useState<AlgorithmParameter[]>([]);
   const [storageReady, setStorageReady] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("loading");
   const [pickerStep, setPickerStep] = useState<PickerStep>("main");
   const [selectedSectionId, setSelectedSectionId] = useState<SectionId | null>(null);
   const [selectedQuestionOrder, setSelectedQuestionOrder] = useState<number | null>(null);
+  const serverSyncEnabledRef = useRef(false);
+  const skipNextServerSaveRef = useRef(false);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveRequestIdRef = useRef(0);
   const answeredSet = useMemo(() => new Set(answeredQuestionOrders), [answeredQuestionOrders]);
   const allQuestions = useMemo(() => questionSections.flatMap((section) => section.questions), []);
   const questionByOrder = useMemo(
@@ -129,26 +138,72 @@ export function AlgorithmParametersOverlay({
   );
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(parameterStorageKey);
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as SavedParameter[];
-      if (!Array.isArray(parsed)) return;
-      setParameters(
-        parsed
-          .filter(
-            (item) =>
-              Number.isFinite(item?.questionOrder) &&
-              (item.mode === "similar" || item.mode === "different") &&
-              questionByOrder.has(item.questionOrder),
-          )
-          .slice(0, maximumParameters),
-      );
-    } catch {
-      // A malformed preview preference should never block the settings screen.
-    } finally {
+    let cancelled = false;
+
+    async function hydrateParameters() {
+      let localParameters: AlgorithmParameter[] = [];
+      try {
+        const stored = window.localStorage.getItem(parameterStorageKey);
+        const parsed = stored ? parseAlgorithmParameters(JSON.parse(stored)) : [];
+        localParameters = (parsed ?? []).filter((parameter) =>
+          questionByOrder.has(parameter.questionOrder),
+        );
+      } catch {
+        // A malformed legacy preference should never block the settings screen.
+      }
+
+      try {
+        const response = await fetch("/api/profile/algorithm-parameters", {
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("server-parameters-unavailable");
+        const body = (await response.json()) as { parameters?: unknown };
+        const parsedServerParameters =
+          parseAlgorithmParameters(body.parameters) ?? [];
+        const serverParameters = parsedServerParameters.filter((parameter) =>
+          questionByOrder.has(parameter.questionOrder),
+        );
+
+        let nextParameters = serverParameters;
+        if (
+          parsedServerParameters.length === 0 &&
+          localParameters.length > 0
+        ) {
+          const migrationResponse = await fetch(
+            "/api/profile/algorithm-parameters",
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ parameters: localParameters }),
+            },
+          );
+          if (!migrationResponse.ok) throw new Error("local-migration-failed");
+          const migrationBody = (await migrationResponse.json()) as {
+            parameters?: unknown;
+          };
+          nextParameters =
+            parseAlgorithmParameters(migrationBody.parameters) ?? localParameters;
+        }
+
+        if (cancelled) return;
+        serverSyncEnabledRef.current = true;
+        skipNextServerSaveRef.current = true;
+        setParameters(nextParameters);
+        setSaveStatus("saved");
+      } catch {
+        if (cancelled) return;
+        setParameters(localParameters);
+        setSaveStatus("local");
+      }
+
+      if (cancelled) return;
       setStorageReady(true);
     }
+
+    void hydrateParameters();
+    return () => {
+      cancelled = true;
+    };
   }, [questionByOrder]);
 
   useEffect(() => {
@@ -156,8 +211,35 @@ export function AlgorithmParametersOverlay({
     try {
       window.localStorage.setItem(parameterStorageKey, JSON.stringify(parameters));
     } catch {
-      // Local preview persistence is optional.
+      // Local fallback persistence is optional.
     }
+
+    if (!serverSyncEnabledRef.current) return;
+    if (skipNextServerSaveRef.current) {
+      skipNextServerSaveRef.current = false;
+      return;
+    }
+
+    const requestId = ++saveRequestIdRef.current;
+    const snapshot = parameters.map(({ questionOrder, mode }) => ({
+      questionOrder,
+      mode,
+    }));
+    setSaveStatus("saving");
+    saveQueueRef.current = saveQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        const response = await fetch("/api/profile/algorithm-parameters", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parameters: snapshot }),
+        });
+        if (!response.ok) throw new Error("parameter-save-failed");
+        if (saveRequestIdRef.current === requestId) setSaveStatus("saved");
+      })
+      .catch(() => {
+        if (saveRequestIdRef.current === requestId) setSaveStatus("error");
+      });
   }, [parameters, storageReady]);
 
   const selectedSection = questionSections.find((section) => section.id === selectedSectionId);
@@ -176,12 +258,12 @@ export function AlgorithmParametersOverlay({
     setSelectedQuestionOrder(null);
   }
 
-  function addParameter(mode: ParameterMode) {
+  function addParameter(mode: AlgorithmParameterMode) {
     if (selectedQuestionOrder === null) return;
     setParameters((current) => [
       ...current.filter((item) => item.questionOrder !== selectedQuestionOrder),
       { questionOrder: selectedQuestionOrder, mode },
-    ].slice(0, maximumParameters));
+    ].slice(0, maximumAlgorithmParameters));
     returnToMain();
   }
 
@@ -238,7 +320,23 @@ export function AlgorithmParametersOverlay({
             <section className="mt-9">
               <div className="flex items-end justify-between">
                 <h2 className="font-ticket-display text-[22px] font-bold tracking-[-0.035em]">나의 파라미터</h2>
-                {unlocked && <span className="font-ticket-latin text-[14px] font-bold text-black/36">{parameters.length}/{maximumParameters}</span>}
+                {unlocked && (
+                  <span
+                    className={`font-ticket-latin text-[12px] font-bold ${
+                      saveStatus === "error" ? "text-red-600" : "text-black/36"
+                    }`}
+                  >
+                    {parameters.length}/{maximumAlgorithmParameters} · {saveStatus === "loading"
+                      ? "불러오는 중"
+                      : saveStatus === "saving"
+                        ? "서버 저장 중"
+                        : saveStatus === "saved"
+                          ? "서버 저장됨"
+                          : saveStatus === "error"
+                            ? "저장 실패"
+                            : "이 기기에 저장됨"}
+                  </span>
+                )}
               </div>
 
               {unlocked ? (
@@ -265,7 +363,7 @@ export function AlgorithmParametersOverlay({
                     );
                   })}
 
-                  {parameters.length < maximumParameters && (
+                  {parameters.length < maximumAlgorithmParameters && (
                     <button type="button" onClick={() => setPickerStep("categories")} className="flex min-h-20 w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-black/[0.13] bg-black/[0.015] text-[13px] font-black text-black/48 transition active:scale-[0.99]">
                       <Plus size={18} strokeWidth={1.8} />새 파라미터 추가
                     </button>
@@ -334,11 +432,11 @@ function ParameterPicker({
   answerRows: StoredAnswerRow[];
   selectableQuestions: ProfileQuestion[];
   answeredSet: Set<number>;
-  parameters: SavedParameter[];
+  parameters: AlgorithmParameter[];
   onStepChange: (step: PickerStep) => void;
   onSectionSelect: (id: SectionId) => void;
   onQuestionSelect: (order: number) => void;
-  onAdd: (mode: ParameterMode) => void;
+  onAdd: (mode: AlgorithmParameterMode) => void;
 }) {
   if (step === "categories") {
     return (
