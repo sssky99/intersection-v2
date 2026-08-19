@@ -34,20 +34,17 @@ export async function POST(
   const body = (await request.json().catch(() => null)) as
     | {
         counterpartRating?: unknown;
-        counterpartComment?: unknown;
         placeRating?: unknown;
-        placeComment?: unknown;
+        comment?: unknown;
       }
     | null;
   const counterpartRating = rating(body?.counterpartRating);
-  const counterpartComment = comment(body?.counterpartComment);
   const placeRating = rating(body?.placeRating);
-  const placeComment = comment(body?.placeComment);
+  const feedbackComment = comment(body?.comment);
   if (
     !counterpartRating ||
     !placeRating ||
-    counterpartComment === undefined ||
-    placeComment === undefined
+    feedbackComment === undefined
   ) {
     return NextResponse.json({ error: "Invalid feedback." }, { status: 400 });
   }
@@ -85,9 +82,9 @@ export async function POST(
         offer_id: offer.id,
         user_id: user.id,
         counterpart_rating: counterpartRating,
-        counterpart_comment: counterpartComment,
+        counterpart_comment: feedbackComment,
         place_rating: placeRating,
-        place_comment: placeComment,
+        place_comment: null,
         feedback_completed_at: completedAt,
         updated_at: completedAt,
       },

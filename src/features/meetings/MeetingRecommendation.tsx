@@ -14,7 +14,6 @@ import {
   Landmark,
   LoaderCircle,
   MapPin,
-  Star,
   UserRound,
   X,
 } from "lucide-react";
@@ -4100,26 +4099,42 @@ function BlindDateResponseResult({
 }) {
   const stage = blindDateDisplayStage(offer);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const startAt = blindDateStartAt(offer);
+  const feedbackAt = offer.feedbackOpensAt
+    ? new Date(offer.feedbackOpensAt)
+    : startAt
+      ? new Date(startAt.getTime() + 3 * 60 * 60 * 1000)
+      : null;
+  const arrivalAt = offer.arrivalOpensAt
+    ? new Date(offer.arrivalOpensAt)
+    : startAt
+      ? new Date(startAt.getTime() - 3 * 60 * 60 * 1000)
+      : null;
+  const progressStage: BlindDateProgressStage = offer.feedbackCompleted
+    ? "done"
+    : offer.canSubmitFeedback ||
+        (feedbackAt && nowMs >= feedbackAt.getTime())
+      ? "feedback"
+      : offer.canSetArrival || (arrivalAt && nowMs >= arrivalAt.getTime())
+        ? "arrival"
+        : "confirmed";
+  const activeProgressStage = progressStage === "done" ? "feedback" : progressStage;
+  const [selectedProgressStage, setSelectedProgressStage] =
+    useState<BlindDateSelectableProgressStage>("confirmed");
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    setSelectedProgressStage(activeProgressStage);
+  }, [activeProgressStage, offer.id]);
+
   if (stage === "scheduled" || stage === "guidance" || stage === "completed") {
     const isCompleted = stage === "completed";
     const placeName = offer.actualPlaceName || "장소 확인 중";
     const address = offer.actualPlaceAddress || "주소 확인 중";
-    const startAt = blindDateStartAt(offer);
-    const feedbackAt = startAt ? new Date(startAt.getTime() + 3 * 60 * 60 * 1000) : null;
-    const arrivalAt = startAt ? new Date(startAt.getTime() - 3 * 60 * 60 * 1000) : null;
-    const progressStage = offer.feedbackCompleted
-      ? "done"
-      : feedbackAt && nowMs >= feedbackAt.getTime()
-        ? "feedback"
-        : arrivalAt && nowMs >= arrivalAt.getTime()
-          ? "arrival"
-          : "confirmed";
 
     return (
       <section>
@@ -4134,35 +4149,54 @@ function BlindDateResponseResult({
           transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
           className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 pt-1 text-[#24211d]"
         >
-          <BlindDateProgressStatus stage={progressStage} />
-
-          <BlindDateJourneySections
+          <BlindDateTicketStatusOverview
             offer={offer}
-            placeName={placeName}
-            address={address}
-            profilePhotoUrl={profilePhotoUrl}
+            progressStage={progressStage}
+            selectedStage={selectedProgressStage}
+            onSelectStage={setSelectedProgressStage}
+            nowMs={nowMs}
+            startAt={startAt}
+            arrivalAt={arrivalAt}
           />
 
-          {startAt && progressStage === "confirmed" && (
-            <RouletteDeadlineCountdown
-              deadlineAt={arrivalAt ?? startAt}
-              activeLabel="도착 안내가 열리기까지"
-              closedLabel="도착 안내가 열렸어요"
-              deadlineSuffix="도착 안내 공개"
-            />
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={selectedProgressStage}
+              initial={{ opacity: 0, x: 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {selectedProgressStage === "confirmed" && (
+                <BlindDateJourneySections
+                  offer={offer}
+                  placeName={placeName}
+                  address={address}
+                  profilePhotoUrl={profilePhotoUrl}
+                />
+              )}
 
-          {(progressStage === "arrival" || progressStage === "confirmed") && (
-            <BlindDateArrivalPanel
-              offer={offer}
-              enabled={progressStage === "arrival"}
-              onOfferChange={onOfferChange}
-            />
-          )}
+              {selectedProgressStage === "arrival" && (
+                <>
+                  <BlindDateArrivalPanel
+                    offer={offer}
+                    enabled={offer.canSetArrival}
+                    onOfferChange={onOfferChange}
+                  />
+                  <BlindDateJourneySections
+                    offer={offer}
+                    placeName={placeName}
+                    address={address}
+                    profilePhotoUrl={profilePhotoUrl}
+                  />
+                </>
+              )}
 
-          {(progressStage === "feedback" || progressStage === "done") && (
-            <BlindDateFeedbackForm offer={offer} onOfferChange={onOfferChange} />
-          )}
+              {selectedProgressStage === "feedback" && (
+                <BlindDateFeedbackForm offer={offer} onOfferChange={onOfferChange} />
+              )}
+            </motion.div>
+          </AnimatePresence>
 
           {isCompleted && progressStage === "confirmed" && (
             <p className="mt-4 text-xs font-semibold text-black/40">
@@ -4233,41 +4267,142 @@ function BlindDateResponseResult({
 }
 
 type BlindDateProgressStage = "confirmed" | "arrival" | "feedback" | "done";
+type BlindDateSelectableProgressStage = Exclude<BlindDateProgressStage, "done">;
 
-function BlindDateProgressStatus({ stage }: { stage: BlindDateProgressStage }) {
-  const steps: Array<{ key: BlindDateProgressStage; label: string }> = [
+const blindDateProgressSteps: Array<{
+  key: BlindDateSelectableProgressStage;
+  label: string;
+}> = [
     { key: "confirmed", label: "참여 확정" },
     { key: "arrival", label: "도착 안내" },
     { key: "feedback", label: "피드백" },
-  ];
-  const activeKey = stage === "done" ? "feedback" : stage;
-  const activeIndex = steps.findIndex((step) => step.key === activeKey);
+];
+
+function blindDateProgressIndex(stage: BlindDateProgressStage) {
+  const key = stage === "done" ? "feedback" : stage;
+  return Math.max(
+    blindDateProgressSteps.findIndex((step) => step.key === key),
+    0,
+  );
+}
+
+function blindDateProgressStatusLabel(stage: BlindDateProgressStage) {
+  if (stage === "done") return "피드백을 완료했어요";
+  if (stage === "feedback") return "피드백을 남겨주세요";
+  if (stage === "arrival") return "도착 예정 시간을 알려주세요";
+  return "참여가 확정됐어요";
+}
+
+function blindDateCountdownLabel({
+  progressStage,
+  nowMs,
+  startAt,
+  arrivalAt,
+}: {
+  progressStage: BlindDateProgressStage;
+  nowMs: number;
+  startAt: Date | null;
+  arrivalAt: Date | null;
+}) {
+  const target = progressStage === "confirmed" ? arrivalAt : startAt;
+  if (!target || target.getTime() <= nowMs) return null;
+  const totalMinutes = Math.ceil((target.getTime() - nowMs) / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const remaining = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+  return progressStage === "confirmed"
+    ? `도착 안내까지 ${remaining}`
+    : `만남 시작까지 ${remaining}`;
+}
+
+function BlindDateTicketStatusOverview({
+  offer,
+  progressStage,
+  selectedStage,
+  onSelectStage,
+  nowMs,
+  startAt,
+  arrivalAt,
+}: {
+  offer: BlindDateUserOffer;
+  progressStage: BlindDateProgressStage;
+  selectedStage: BlindDateSelectableProgressStage;
+  onSelectStage: (stage: BlindDateSelectableProgressStage) => void;
+  nowMs: number;
+  startAt: Date | null;
+  arrivalAt: Date | null;
+}) {
+  const activeIndex = blindDateProgressIndex(progressStage);
+  const countdown = blindDateCountdownLabel({
+    progressStage,
+    nowMs,
+    startAt,
+    arrivalAt,
+  });
 
   return (
-    <section className="py-5">
-      <div className="grid grid-cols-3 gap-2">
-        {steps.map((step, index) => {
+    <section className="border-b border-black/8 py-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-black/42">
+            current status
+          </p>
+          <h2 className="mt-1 text-[17px] font-black text-black">
+            {blindDateProgressStatusLabel(progressStage)}
+          </h2>
+        </div>
+        {countdown && (
+          <p className="mt-1 shrink-0 rounded-full border border-[#d0cbbc] bg-[#f7f4ed] px-3 py-1.5 text-right text-[11px] font-black leading-4 text-black/62 shadow-[0_8px_18px_rgba(66,57,44,0.08)]">
+            {countdown}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-2 rounded-2xl bg-black/[0.03] px-4 py-3">
+        <p className="flex items-center gap-2 text-sm font-black text-black">
+          <CalendarDays size={14} className="text-black/35" aria-hidden />
+          {offer.scheduledDate ? blindDateDateLabel(offer.scheduledDate) : "날짜 확인 중"}{" "}
+          {offer.timeLabel}
+        </p>
+        <p className="flex items-center gap-2 text-sm font-black text-black">
+          <MapPin size={14} className="text-black/35" aria-hidden />
+          {offer.region}
+        </p>
+      </div>
+
+      <div className="mt-5 grid grid-cols-3 gap-2">
+        {blindDateProgressSteps.map((step, index) => {
           const reached = index <= activeIndex;
+          const selected = step.key === selectedStage;
+          const disabled = index > activeIndex;
           return (
             <div key={step.key} className="text-center">
-              <span
+              <div
                 className={cn(
-                  "mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-black",
-                  reached
-                    ? "border-black bg-black text-white"
-                    : "border-black/10 bg-white text-black/28",
+                  "h-1.5 rounded-full transition",
+                  reached ? "bg-[#8f877a]" : "bg-black/8",
+                )}
+              />
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onSelectStage(step.key)}
+                aria-pressed={selected}
+                className={cn(
+                  "mx-auto mt-2 flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-black transition",
+                  selected
+                    ? "bg-[#24211d] text-white ring-2 ring-[#d0cbbc] ring-offset-2 ring-offset-[#f7f4ed]"
+                    : reached
+                      ? "bg-black text-white"
+                      : "bg-black/[0.05] text-black/30",
                 )}
               >
-                {index < activeIndex || stage === "done" ? (
-                  <Check size={14} strokeWidth={2.5} aria-hidden />
-                ) : (
-                  index + 1
-                )}
-              </span>
+                {reached ? <Check size={13} aria-hidden /> : index + 1}
+              </button>
               <span
                 className={cn(
                   "mt-2 block text-[10px] font-black",
-                  reached ? "text-black/65" : "text-black/28",
+                  selected ? "text-black" : reached ? "text-black/52" : "text-black/25",
                 )}
               >
                 {step.label}
@@ -4397,25 +4532,39 @@ function BlindDateRating({
   return (
     <div>
       <h3 className="text-[15px] font-black text-black">{label}</h3>
-      <div className="mt-3 flex gap-2" role="radiogroup" aria-label={label}>
-        {[1, 2, 3, 4, 5].map((rating) => (
-          <button
-            key={rating}
-            type="button"
-            role="radio"
-            aria-checked={value === rating}
-            aria-label={`${rating}점`}
-            onClick={() => onChange(rating)}
-            className={cn(
-              "flex h-11 w-11 items-center justify-center rounded-full border transition",
-              value !== null && rating <= value
-                ? "border-black bg-black text-white"
-                : "border-black/10 bg-white text-black/25",
-            )}
-          >
-            <Star size={17} fill="currentColor" aria-hidden />
-          </button>
-        ))}
+      <div className="mt-3 grid grid-cols-5" role="radiogroup" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((rating) => {
+          const selected = value === rating;
+          return (
+            <motion.button
+              key={rating}
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              role="radio"
+              aria-checked={selected}
+              aria-label={`${label} ${rating}점`}
+              onClick={() => onChange(rating)}
+              className={cn(
+                "relative flex h-12 min-w-0 items-center justify-center bg-transparent text-[22px] font-medium tabular-nums transition",
+                selected
+                  ? "scale-125 font-black text-black"
+                  : "text-black/18 hover:text-black/50",
+              )}
+            >
+              <span>{rating}</span>
+              {selected && (
+                <motion.span
+                  layoutId={`blind-date-rating-${label}`}
+                  className="absolute bottom-0 h-0.5 w-5 rounded-full bg-black"
+                />
+              )}
+            </motion.button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between px-1 text-[10px] font-semibold text-black/35">
+        <span>나쁨</span>
+        <span>좋음</span>
       </div>
     </div>
   );
@@ -4430,8 +4579,7 @@ function BlindDateFeedbackForm({
 }) {
   const [counterpartRating, setCounterpartRating] = useState<number | null>(null);
   const [placeRating, setPlaceRating] = useState<number | null>(null);
-  const [counterpartComment, setCounterpartComment] = useState("");
-  const [placeComment, setPlaceComment] = useState("");
+  const [feedbackComment, setFeedbackComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -4465,9 +4613,8 @@ function BlindDateFeedbackForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             counterpartRating,
-            counterpartComment,
             placeRating,
-            placeComment,
+            comment: feedbackComment,
           }),
         },
       );
@@ -4494,26 +4641,19 @@ function BlindDateFeedbackForm({
           value={counterpartRating}
           onChange={setCounterpartRating}
         />
-        <textarea
-          value={counterpartComment}
-          maxLength={500}
-          rows={3}
-          placeholder="상대방에 대해 더 남기고 싶은 내용이 있다면 적어주세요. (선택)"
-          onChange={(event) => setCounterpartComment(event.target.value)}
-          className="w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold outline-none"
-        />
         <BlindDateRating
           label={`식당 피드백${offer.actualPlaceName ? ` · ${offer.actualPlaceName}` : ""}`}
           value={placeRating}
           onChange={setPlaceRating}
         />
         <textarea
-          value={placeComment}
+          value={feedbackComment}
           maxLength={500}
-          rows={3}
-          placeholder="식당에 대해 더 남기고 싶은 내용이 있다면 적어주세요. (선택)"
-          onChange={(event) => setPlaceComment(event.target.value)}
-          className="w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold outline-none"
+          rows={5}
+          placeholder="교집합에 남기고 싶은 말을 적어주세요."
+          aria-label="교집합에 남기고 싶은 말"
+          onChange={(event) => setFeedbackComment(event.target.value)}
+          className="w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold leading-6 outline-none placeholder:text-black/28"
         />
       </div>
       {error && (
@@ -4609,6 +4749,7 @@ function BlindDateJourneySections({
             ticket={journeyTicket}
             steps={journeySteps}
             participantPhotoUrl={profilePhotoUrl}
+            participantArrivalStatus={offer.arrivalStatus}
             previewMatchPhotoUrls={[counterpartPhotoUrl]}
             previewOtherMemberPhotoUrls={[]}
             matchMemberCount={1}
