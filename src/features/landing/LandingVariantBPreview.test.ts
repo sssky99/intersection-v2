@@ -20,5 +20,9 @@ describe("landing variant B analytics", () => {
     expect(source).toContain('instagramAd ? "top-[17%]"');
     expect(source).toContain('landing_variant: instagramAd ? "instagram_ad" : "b"');
     expect(source).toContain('cta_position: instagramAd ? "upper_fold" : "bottom"');
+    expect(source).toContain("useState(instagramAd)");
+    expect(source).toContain("if (instagramAd) return;");
+    expect(source).toContain("const instagramTypingDurationMs = 360");
+    expect(source).toContain("? instagramTypingDurationMs");
   });
 });

@@ -9,6 +9,8 @@ const headline =
   "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
 const headlineLead = "아무나 만나지 않도록,\n";
 const contentCueFallbackDelayMs = 600;
+const instagramTypingDurationMs = 360;
+const defaultTypingDurationMs = 1300;
 
 type LandingVariantBProps = {
   instagramAd?: boolean;
@@ -20,8 +22,8 @@ export function LandingVariantB({
   preview = false,
 }: LandingVariantBProps) {
   const [typedHeadline, setTypedHeadline] = useState(headlineLead);
-  const [isContentVisible, setIsContentVisible] = useState(false);
-  const [hasReachedContentCue, setHasReachedContentCue] = useState(false);
+  const [isContentVisible, setIsContentVisible] = useState(instagramAd);
+  const [hasReachedContentCue, setHasReachedContentCue] = useState(instagramAd);
   const [showMemberLogin, setShowMemberLogin] = useState(false);
 
   useEffect(() => {
@@ -53,6 +55,9 @@ export function LandingVariantB({
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let length = headlineLead.length;
+    const typingDuration = instagramAd
+      ? instagramTypingDurationMs
+      : defaultTypingDurationMs;
     setIsContentVisible(true);
     const interval = window.setInterval(() => {
       length += 1;
@@ -60,18 +65,20 @@ export function LandingVariantB({
       if (length >= headline.length) {
         window.clearInterval(interval);
       }
-    }, 1300 / (headline.length - headlineLead.length));
+    }, typingDuration / (headline.length - headlineLead.length));
 
     return () => window.clearInterval(interval);
-  }, [hasReachedContentCue]);
+  }, [hasReachedContentCue, instagramAd]);
 
   useEffect(() => {
+    if (instagramAd) return;
+
     const fallbackTimer = window.setTimeout(() => {
       setHasReachedContentCue(true);
     }, contentCueFallbackDelayMs);
 
     return () => window.clearTimeout(fallbackTimer);
-  }, []);
+  }, [instagramAd]);
 
   if (showMemberLogin) {
     return (
