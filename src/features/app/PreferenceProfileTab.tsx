@@ -3,8 +3,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
+  CalendarDays,
   Check,
   ChevronRight,
+  Crown,
   Footprints,
   Gem,
   Heart,
@@ -44,6 +46,11 @@ import {
   activityLabels,
   interestLabels,
 } from "@/data/recommendationAudience";
+import {
+  displayMembershipStatus,
+  isMembershipPlan,
+  membershipPlanLabels,
+} from "@/features/membership/membershipTypes";
 
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
 
@@ -105,6 +112,105 @@ function initialProfileDraft(profile: ProfileRow): ProfileDraft {
     birthYear: profile.birth_year == null ? "" : String(profile.birth_year),
     mbti: profile.mbti ?? "",
   };
+}
+
+function formatMembershipDate(value: string | null) {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return value;
+  return `${match[1]}.${match[2]}.${match[3]}`;
+}
+
+function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
+  const status = displayMembershipStatus({
+    status: profile.membership_status,
+    endDate: profile.membership_end_date,
+  });
+  const hasMembership = status === "active" || status === "pending";
+  const planLabel = isMembershipPlan(profile.membership_plan)
+    ? membershipPlanLabels[profile.membership_plan]
+    : null;
+  const startDate = formatMembershipDate(profile.membership_start_date);
+  const endDate = formatMembershipDate(profile.membership_end_date);
+  const period =
+    startDate && endDate
+      ? `${startDate} - ${endDate}`
+      : startDate
+        ? `${startDate}부터`
+        : endDate
+          ? `${endDate}까지`
+          : null;
+  const statusLabel =
+    status === "active"
+      ? planLabel ?? "멤버십 이용 중"
+      : status === "pending"
+        ? "결제 확인 중"
+        : status === "expired"
+          ? "멤버십 만료"
+          : "멤버십 없음";
+  const periodLabel = period
+    ? `이용 기간 ${period}`
+    : status === "pending"
+      ? "결제 확인 후 이용 기간이 표시돼요."
+      : hasMembership
+        ? "이용 기간을 확인하고 있어요."
+        : "현재 이용 중인 멤버십이 없어요.";
+
+  return (
+    <section className="mt-5">
+      <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/42">
+        내 멤버십
+      </p>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-[24px] border px-5 py-5 shadow-[0_14px_40px_rgba(24,24,20,0.05)]",
+          hasMembership
+            ? "border-[#a79b78]/25 bg-[#f4f0e5]"
+            : "border-black/[0.09] bg-[#faf8f2]",
+        )}
+      >
+        <div className="flex items-center gap-4">
+          <span
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border",
+              hasMembership
+                ? "border-[#a79b78]/25 bg-[#e8dfc8] text-[#766a49]"
+                : "border-black/10 bg-[#f1eee6] text-black/45",
+            )}
+          >
+            <Crown size={18} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-black text-black">
+              {statusLabel}
+            </span>
+            <span className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-black/42">
+              <CalendarDays size={12} aria-hidden className="shrink-0" />
+              {periodLabel}
+            </span>
+          </span>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black",
+              status === "active"
+                ? "bg-[#766a49] text-white"
+                : status === "pending"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-black/[0.055] text-black/38",
+            )}
+          >
+            {status === "active"
+              ? "이용 중"
+              : status === "pending"
+                ? "확인 중"
+                : status === "expired"
+                  ? "만료"
+                  : "없음"}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function BasicQuestionsSection({
@@ -863,6 +969,8 @@ export function PreferenceProfileTab({
             )}
           </div>
         </section>
+
+        <MembershipStatusCard profile={profile} />
 
         <BasicQuestionsSection
           answers={answers}
