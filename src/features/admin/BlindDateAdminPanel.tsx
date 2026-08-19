@@ -489,6 +489,8 @@ export function BlindDateAdminPanel() {
     offer: BlindDateAdminOffer,
     actualPlaceName: string,
     actualPlaceAddress: string,
+    reservationName: string,
+    scheduledDate: string,
   ) => {
     setSaving(true);
     setError(null);
@@ -500,6 +502,8 @@ export function BlindDateAdminPanel() {
           id: offer.id,
           actualPlaceName,
           actualPlaceAddress,
+          reservationName,
+          scheduledDate,
         }),
       );
       setNotice("제안 장소 정보를 저장했습니다.");
@@ -736,8 +740,14 @@ export function BlindDateAdminPanel() {
               offers={data.offers}
               saving={saving}
               onStatusChange={(offer, status) => void updateOfferStatus(offer, status)}
-              onPlaceSave={(offer, actualPlaceName, actualPlaceAddress) =>
-                void updateOfferPlace(offer, actualPlaceName, actualPlaceAddress)
+              onPlaceSave={(offer, actualPlaceName, actualPlaceAddress, reservationName, scheduledDate) =>
+                void updateOfferPlace(
+                  offer,
+                  actualPlaceName,
+                  actualPlaceAddress,
+                  reservationName,
+                  scheduledDate,
+                )
               }
               onResponseReset={(offer, participant) =>
                 setResponseResetTarget({ offer, participant })
@@ -1343,6 +1353,8 @@ function OfferList({
     offer: BlindDateAdminOffer,
     actualPlaceName: string,
     actualPlaceAddress: string,
+    reservationName: string,
+    scheduledDate: string,
   ) => void;
   onResponseReset: (
     offer: BlindDateAdminOffer,
@@ -1502,6 +1514,8 @@ function OfferPlaceEditor({
     offer: BlindDateAdminOffer,
     actualPlaceName: string,
     actualPlaceAddress: string,
+    reservationName: string,
+    scheduledDate: string,
   ) => void;
 }) {
   const [actualPlaceName, setActualPlaceName] = useState(
@@ -1510,15 +1524,29 @@ function OfferPlaceEditor({
   const [actualPlaceAddress, setActualPlaceAddress] = useState(
     offer.actual_place_address ?? "",
   );
+  const [reservationName, setReservationName] = useState(
+    offer.reservation_name ?? "",
+  );
+  const [scheduledDate, setScheduledDate] = useState(offer.scheduled_date ?? "");
 
   useEffect(() => {
     setActualPlaceName(offer.actual_place_name ?? "");
     setActualPlaceAddress(offer.actual_place_address ?? "");
-  }, [offer.id, offer.actual_place_name, offer.actual_place_address]);
+    setReservationName(offer.reservation_name ?? "");
+    setScheduledDate(offer.scheduled_date ?? "");
+  }, [
+    offer.id,
+    offer.actual_place_name,
+    offer.actual_place_address,
+    offer.reservation_name,
+    offer.scheduled_date,
+  ]);
 
   const dirty =
     actualPlaceName !== (offer.actual_place_name ?? "") ||
-    actualPlaceAddress !== (offer.actual_place_address ?? "");
+    actualPlaceAddress !== (offer.actual_place_address ?? "") ||
+    reservationName !== (offer.reservation_name ?? "") ||
+    scheduledDate !== (offer.scheduled_date ?? "");
 
   return (
     <div className="grid min-w-[230px] gap-2">
@@ -1536,10 +1564,33 @@ function OfferPlaceEditor({
         onChange={(event) => setActualPlaceAddress(event.target.value)}
         className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
       />
+      <input
+        value={reservationName}
+        disabled={saving}
+        placeholder="예약자명"
+        onChange={(event) => setReservationName(event.target.value)}
+        className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
+      />
+      <input
+        type="date"
+        value={scheduledDate}
+        disabled={saving}
+        aria-label="확정 날짜"
+        onChange={(event) => setScheduledDate(event.target.value)}
+        className="h-8 rounded-lg border border-black/10 bg-white px-2 text-xs font-semibold outline-none focus:border-accent disabled:opacity-45"
+      />
       <button
         type="button"
         disabled={saving || !dirty}
-        onClick={() => onSave(offer, actualPlaceName, actualPlaceAddress)}
+        onClick={() =>
+          onSave(
+            offer,
+            actualPlaceName,
+            actualPlaceAddress,
+            reservationName,
+            scheduledDate,
+          )
+        }
         className="h-8 rounded-lg bg-black px-3 text-[11px] font-bold text-white disabled:bg-black/20"
       >
         장소 저장

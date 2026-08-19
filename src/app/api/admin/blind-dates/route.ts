@@ -55,6 +55,7 @@ type BlindDateOfferRow = {
   region: string;
   actual_place_name: string | null;
   actual_place_address: string | null;
+  reservation_name: string | null;
   candidate_dates: unknown;
   a_response: BlindDateResponseStatus;
   b_response: BlindDateResponseStatus;
@@ -110,6 +111,7 @@ const offerSelect = [
   "region",
   "actual_place_name",
   "actual_place_address",
+  "reservation_name",
   "candidate_dates",
   "a_response",
   "b_response",
@@ -278,6 +280,7 @@ function normalizeOffer(
     region: row.region,
     actual_place_name: row.actual_place_name,
     actual_place_address: row.actual_place_address,
+    reservation_name: row.reservation_name,
     candidate_dates: datesFromDb(row.candidate_dates).length
       ? datesFromDb(row.candidate_dates)
       : blindDateSelectableDatesFrom(row.created_at),
@@ -694,6 +697,7 @@ export async function POST(request: NextRequest) {
           text(body?.actualPlaceName) ?? template.actual_place_name,
         actual_place_address:
           text(body?.actualPlaceAddress) ?? template.actual_place_address,
+        reservation_name: text(body?.reservationName),
         candidate_dates: candidateDates,
         expires_at: validExpiresAt(body?.expiresAt),
         created_at: createdAt.toISOString(),
@@ -764,7 +768,9 @@ export async function PATCH(request: NextRequest) {
           : null;
       const hasPlaceUpdate =
         Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceName") ||
-        Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress");
+        Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress") ||
+        Object.prototype.hasOwnProperty.call(body ?? {}, "reservationName") ||
+        Object.prototype.hasOwnProperty.call(body ?? {}, "scheduledDate");
       if (
         status &&
         !adminOfferStatuses.includes(status as BlindDateOfferStatus)
@@ -802,6 +808,15 @@ export async function PATCH(request: NextRequest) {
       }
       if (Object.prototype.hasOwnProperty.call(body ?? {}, "actualPlaceAddress")) {
         updates.actual_place_address = text(body?.actualPlaceAddress);
+      }
+      if (Object.prototype.hasOwnProperty.call(body ?? {}, "reservationName")) {
+        updates.reservation_name = text(body?.reservationName);
+      }
+      if (Object.prototype.hasOwnProperty.call(body ?? {}, "scheduledDate")) {
+        const scheduledDate = dateList(body?.scheduledDate)[0] ?? null;
+        updates.scheduled_date = scheduledDate;
+        updates.scheduled_at = scheduledDate ? now : null;
+        if (scheduledDate && !status) updates.status = "scheduled";
       }
 
       const { error } = await supabase

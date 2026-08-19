@@ -11,6 +11,12 @@ export type BlindDateOfferStatus =
 
 export type BlindDateResponseStatus = "pending" | "yes" | "no";
 
+export type BlindDateArrivalStatus =
+  | "on_time"
+  | "late_10"
+  | "late_20"
+  | "late_30_plus";
+
 export type BlindDateSourceType = "mutual_feedback" | "test";
 
 export type BlindDateStageCopy = {
@@ -63,6 +69,14 @@ export type BlindDateUserOffer = {
   scheduledDate: string | null;
   actualPlaceName: string | null;
   actualPlaceAddress: string | null;
+  reservationName: string | null;
+  arrivalStatus: BlindDateArrivalStatus | null;
+  arrivalOpensAt: string | null;
+  feedbackOpensAt: string | null;
+  feedbackClosesAt: string | null;
+  canSetArrival: boolean;
+  canSubmitFeedback: boolean;
+  feedbackCompleted: boolean;
   isExpired: boolean;
 };
 
@@ -85,6 +99,7 @@ export type BlindDateAdminOffer = {
   region: string;
   actual_place_name: string | null;
   actual_place_address: string | null;
+  reservation_name: string | null;
   candidate_dates: string[];
   a_response: BlindDateResponseStatus;
   b_response: BlindDateResponseStatus;

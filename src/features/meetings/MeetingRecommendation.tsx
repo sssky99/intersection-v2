@@ -14,6 +14,8 @@ import {
   Landmark,
   LoaderCircle,
   MapPin,
+  Star,
+  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -32,6 +34,7 @@ import {
 } from "@/features/meetings/TicketDetailContent";
 import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
+import { blindDateStartAtFromParts } from "@/lib/blindDateTiming";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
@@ -3686,33 +3689,7 @@ function shouldPlayBlindDateUnlock(offer: BlindDateUserOffer) {
 }
 
 function blindDateStartAt(offer: BlindDateUserOffer) {
-  if (!offer.scheduledDate) return null;
-
-  const timeLabel = offer.timeLabel.trim();
-  const twentyFourHourMatch = timeLabel.match(/^(\d{1,2}):(\d{2})/);
-  const koreanTimeMatch = timeLabel.match(
-    /^(오전|오후|저녁|밤)\s*(\d{1,2})시(?:\s*(\d{1,2})분)?/,
-  );
-  let hours: number;
-  let minutes: number;
-
-  if (twentyFourHourMatch) {
-    hours = Number(twentyFourHourMatch[1]);
-    minutes = Number(twentyFourHourMatch[2]);
-  } else if (koreanTimeMatch) {
-    const period = koreanTimeMatch[1];
-    const rawHours = Number(koreanTimeMatch[2]) % 12;
-    hours = rawHours + (period === "오전" ? 0 : 12);
-    minutes = Number(koreanTimeMatch[3] ?? 0);
-  } else {
-    return null;
-  }
-
-  if (hours > 23 || minutes > 59) return null;
-  const startAt = new Date(
-    `${offer.scheduledDate}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+09:00`,
-  );
-  return Number.isFinite(startAt.getTime()) ? startAt : null;
+  return blindDateStartAtFromParts(offer.scheduledDate, offer.timeLabel);
 }
 
 const blindDateCalendarWeekdays = ["일", "월", "화", "수", "목", "금", "토"];
@@ -3900,6 +3877,7 @@ function BlindDateInvitationFlow({
           offer={currentOffer}
           remainingText={remainingText}
           profilePhotoUrl={profilePhotoUrl}
+          onOfferChange={setCurrentOffer}
         />
       ) : (
         <section>
@@ -4113,18 +4091,35 @@ function BlindDateResponseResult({
   offer,
   remainingText,
   profilePhotoUrl,
+  onOfferChange,
 }: {
   offer: BlindDateUserOffer;
   remainingText: string | null;
   profilePhotoUrl?: string | null;
+  onOfferChange: (offer: BlindDateUserOffer) => void;
 }) {
   const stage = blindDateDisplayStage(offer);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   if (stage === "scheduled" || stage === "guidance" || stage === "completed") {
     const isCompleted = stage === "completed";
     const placeName = offer.actualPlaceName || "장소 확인 중";
     const address = offer.actualPlaceAddress || "주소 확인 중";
     const startAt = blindDateStartAt(offer);
+    const feedbackAt = startAt ? new Date(startAt.getTime() + 3 * 60 * 60 * 1000) : null;
+    const arrivalAt = startAt ? new Date(startAt.getTime() - 3 * 60 * 60 * 1000) : null;
+    const progressStage = offer.feedbackCompleted
+      ? "done"
+      : feedbackAt && nowMs >= feedbackAt.getTime()
+        ? "feedback"
+        : arrivalAt && nowMs >= arrivalAt.getTime()
+          ? "arrival"
+          : "confirmed";
 
     return (
       <section>
@@ -4139,6 +4134,8 @@ function BlindDateResponseResult({
           transition={{ delay: 0.34, duration: 0.46, ease: [0.22, 1, 0.36, 1] }}
           className="ticket-detail-stone mt-8 border-t border-[#d0cbbc] px-1 pb-5 pt-1 text-[#24211d]"
         >
+          <BlindDateProgressStatus stage={progressStage} />
+
           <BlindDateJourneySections
             offer={offer}
             placeName={placeName}
@@ -4146,18 +4143,30 @@ function BlindDateResponseResult({
             profilePhotoUrl={profilePhotoUrl}
           />
 
-          {startAt && (
+          {startAt && progressStage === "confirmed" && (
             <RouletteDeadlineCountdown
-              deadlineAt={startAt}
-              activeLabel="시작까지 남은 시간"
-              closedLabel="만남이 시작되었어요"
-              deadlineSuffix="시작"
+              deadlineAt={arrivalAt ?? startAt}
+              activeLabel="도착 안내가 열리기까지"
+              closedLabel="도착 안내가 열렸어요"
+              deadlineSuffix="도착 안내 공개"
             />
           )}
 
-          {isCompleted && (
-            <p className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-4 text-xs font-semibold leading-5 text-black/55">
-              피드백 기능은 곧 열릴 예정이에요.
+          {(progressStage === "arrival" || progressStage === "confirmed") && (
+            <BlindDateArrivalPanel
+              offer={offer}
+              enabled={progressStage === "arrival"}
+              onOfferChange={onOfferChange}
+            />
+          )}
+
+          {(progressStage === "feedback" || progressStage === "done") && (
+            <BlindDateFeedbackForm offer={offer} onOfferChange={onOfferChange} />
+          )}
+
+          {isCompleted && progressStage === "confirmed" && (
+            <p className="mt-4 text-xs font-semibold text-black/40">
+              만남 시간이 확인되면 다음 안내가 자동으로 열려요.
             </p>
           )}
         </motion.div>
@@ -4219,6 +4228,307 @@ function BlindDateResponseResult({
           ["상대", "현장에서 공개"],
         ]}
       />
+    </section>
+  );
+}
+
+type BlindDateProgressStage = "confirmed" | "arrival" | "feedback" | "done";
+
+function BlindDateProgressStatus({ stage }: { stage: BlindDateProgressStage }) {
+  const steps: Array<{ key: BlindDateProgressStage; label: string }> = [
+    { key: "confirmed", label: "참여 확정" },
+    { key: "arrival", label: "도착 안내" },
+    { key: "feedback", label: "피드백" },
+  ];
+  const activeKey = stage === "done" ? "feedback" : stage;
+  const activeIndex = steps.findIndex((step) => step.key === activeKey);
+
+  return (
+    <section className="py-5">
+      <div className="grid grid-cols-3 gap-2">
+        {steps.map((step, index) => {
+          const reached = index <= activeIndex;
+          return (
+            <div key={step.key} className="text-center">
+              <span
+                className={cn(
+                  "mx-auto flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-black",
+                  reached
+                    ? "border-black bg-black text-white"
+                    : "border-black/10 bg-white text-black/28",
+                )}
+              >
+                {index < activeIndex || stage === "done" ? (
+                  <Check size={14} strokeWidth={2.5} aria-hidden />
+                ) : (
+                  index + 1
+                )}
+              </span>
+              <span
+                className={cn(
+                  "mt-2 block text-[10px] font-black",
+                  reached ? "text-black/65" : "text-black/28",
+                )}
+              >
+                {step.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const blindDateArrivalOptions = [
+  { value: "on_time", label: "정상 도착 예정이에요" },
+  { value: "late_10", label: "10분 정도 늦어요" },
+  { value: "late_20", label: "20분 정도 늦어요" },
+  { value: "late_30_plus", label: "30분 이상 늦어요" },
+] as const;
+
+function BlindDateArrivalPanel({
+  offer,
+  enabled,
+  onOfferChange,
+}: {
+  offer: BlindDateUserOffer;
+  enabled: boolean;
+  onOfferChange: (offer: BlindDateUserOffer) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveArrival = async (
+    arrivalStatus: (typeof blindDateArrivalOptions)[number]["value"],
+  ) => {
+    if (!enabled || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/meetings/blind-dates/${encodeURIComponent(offer.id)}/arrival`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ arrivalStatus }),
+        },
+      );
+      const result = (await response.json().catch(() => null)) as
+        | { arrivalStatus?: BlindDateUserOffer["arrivalStatus"]; reservationName?: string | null }
+        | null;
+      if (!response.ok || !result?.arrivalStatus) throw new Error("arrival-save-failed");
+      onOfferChange({
+        ...offer,
+        arrivalStatus: result.arrivalStatus,
+        reservationName: result.reservationName ?? null,
+      });
+    } catch {
+      setError("도착 상태를 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-black/8 py-5">
+      <h2 className="font-ticket-display text-[17px] font-bold tracking-[-0.04em] text-black">
+        도착 안내
+      </h2>
+
+      <div className="mt-4 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3.5">
+        <div className="flex min-h-7 items-center justify-between gap-4">
+          <span className="flex items-center gap-2 text-sm font-bold text-black/52">
+            <UserRound size={15} className="text-black/38" aria-hidden />
+            예약자명
+          </span>
+          <strong className="text-[15px] font-black tracking-[-0.02em] text-black">
+            {offer.reservationName || "도착 상태 표시 후 공개"}
+          </strong>
+        </div>
+      </div>
+
+      {!enabled ? (
+        <p className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+          도착 상태와 예약자명은 만남 시작 3시간 전부터 확인할 수 있어요.
+        </p>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {blindDateArrivalOptions.map((option) => {
+            const active = offer.arrivalStatus === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={saving}
+                onClick={() => void saveArrival(option.value)}
+                className={cn(
+                  "flex min-h-11 items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm font-bold transition disabled:opacity-45",
+                  active
+                    ? "border-black bg-black text-white"
+                    : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/58",
+                )}
+              >
+                <span>{option.label}</span>
+                {active && <Check size={16} aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {error && (
+        <p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function BlindDateRating({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (rating: number) => void;
+}) {
+  return (
+    <div>
+      <h3 className="text-[15px] font-black text-black">{label}</h3>
+      <div className="mt-3 flex gap-2" role="radiogroup" aria-label={label}>
+        {[1, 2, 3, 4, 5].map((rating) => (
+          <button
+            key={rating}
+            type="button"
+            role="radio"
+            aria-checked={value === rating}
+            aria-label={`${rating}점`}
+            onClick={() => onChange(rating)}
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-full border transition",
+              value !== null && rating <= value
+                ? "border-black bg-black text-white"
+                : "border-black/10 bg-white text-black/25",
+            )}
+          >
+            <Star size={17} fill="currentColor" aria-hidden />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BlindDateFeedbackForm({
+  offer,
+  onOfferChange,
+}: {
+  offer: BlindDateUserOffer;
+  onOfferChange: (offer: BlindDateUserOffer) => void;
+}) {
+  const [counterpartRating, setCounterpartRating] = useState<number | null>(null);
+  const [placeRating, setPlaceRating] = useState<number | null>(null);
+  const [counterpartComment, setCounterpartComment] = useState("");
+  const [placeComment, setPlaceComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (offer.feedbackCompleted) {
+    return (
+      <section className="border-t border-black/8 py-5">
+        <div className="rounded-3xl border border-emerald-100 bg-emerald-50 px-5 py-6 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-emerald-600">
+            <Check size={20} aria-hidden />
+          </span>
+          <h2 className="mt-4 text-xl font-black text-emerald-950">
+            피드백 작성을 완료했어요.
+          </h2>
+          <p className="mt-2 text-sm font-semibold text-emerald-800/70">
+            다음 블라인드 데이트를 더 잘 준비하는 데 반영할게요.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  const submit = async () => {
+    if (!counterpartRating || !placeRating || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/meetings/blind-dates/${encodeURIComponent(offer.id)}/feedback`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            counterpartRating,
+            counterpartComment,
+            placeRating,
+            placeComment,
+          }),
+        },
+      );
+      if (!response.ok) throw new Error("feedback-save-failed");
+      onOfferChange({ ...offer, feedbackCompleted: true, canSubmitFeedback: false });
+    } catch {
+      setError("피드백을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="border-t border-black/8 py-5">
+      <h2 className="font-ticket-display text-[19px] font-bold tracking-[-0.04em] text-black">
+        블라인드 데이트는 어떠셨나요?
+      </h2>
+      <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
+        상대방과 식당에 대한 피드백만 간단히 남겨주세요.
+      </p>
+      <div className="mt-6 grid gap-7">
+        <BlindDateRating
+          label="상대방과의 만남"
+          value={counterpartRating}
+          onChange={setCounterpartRating}
+        />
+        <textarea
+          value={counterpartComment}
+          maxLength={500}
+          rows={3}
+          placeholder="상대방에 대해 더 남기고 싶은 내용이 있다면 적어주세요. (선택)"
+          onChange={(event) => setCounterpartComment(event.target.value)}
+          className="w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold outline-none"
+        />
+        <BlindDateRating
+          label={`식당 피드백${offer.actualPlaceName ? ` · ${offer.actualPlaceName}` : ""}`}
+          value={placeRating}
+          onChange={setPlaceRating}
+        />
+        <textarea
+          value={placeComment}
+          maxLength={500}
+          rows={3}
+          placeholder="식당에 대해 더 남기고 싶은 내용이 있다면 적어주세요. (선택)"
+          onChange={(event) => setPlaceComment(event.target.value)}
+          className="w-full resize-none rounded-2xl border border-[#d8d1c3]/90 bg-[#eee9df] px-4 py-3 text-sm font-semibold outline-none"
+        />
+      </div>
+      {error && (
+        <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold text-red-600">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={!counterpartRating || !placeRating || saving}
+        onClick={() => void submit()}
+        className="mt-6 h-14 w-full rounded-full bg-black text-sm font-black text-white disabled:bg-black/15 disabled:text-white/40"
+      >
+        {saving ? "저장 중..." : "피드백 제출하기"}
+      </button>
     </section>
   );
 }
