@@ -102,6 +102,7 @@ function acquisitionContext() {
     utm_campaign: url.searchParams.get("utm_campaign") ?? "",
     utm_content: url.searchParams.get("utm_content") ?? "",
     fbclid: url.searchParams.get("fbclid") ?? "",
+    captured_at: String(Date.now()),
     initial_referrer: document.referrer || "",
     landing_path: `${url.pathname}${url.search}`,
   };
@@ -152,6 +153,21 @@ export function checkoutAttributionContext() {
   const utmCampaign = cleanValue(acquisition.utm_campaign);
   const utmContent = cleanValue(acquisition.utm_content);
   const landingPathValue = cleanValue(acquisition.landing_path, 500);
+  const fbclid = cleanValue(acquisition.fbclid, 500);
+  const capturedAt = Number(acquisition.captured_at);
+  const cookieValue = (name: string) =>
+    document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${name}=`))
+      ?.slice(name.length + 1)
+      .trim() ?? "";
+  const metaFbp = cleanValue(cookieValue("_fbp"), 255);
+  const cookieFbc = cleanValue(cookieValue("_fbc"), 500);
+  const derivedFbc =
+    fbclid && Number.isFinite(capturedAt)
+      ? `fb.1.${Math.floor(capturedAt / 1000)}.${fbclid}`
+      : "";
   let landingPath = "";
   try {
     landingPath = new URL(landingPathValue, window.location.origin).pathname.slice(
@@ -170,6 +186,9 @@ export function checkoutAttributionContext() {
     utm_content: utmContent,
     referrer_host: referrerHost,
     landing_path: landingPath,
+    meta_fbp: metaFbp,
+    meta_fbc: cookieFbc || derivedFbc,
+    meta_user_agent: navigator.userAgent.slice(0, 500),
   };
 }
 
@@ -273,12 +292,42 @@ function trackClarityEvent(
 
 const metaStandardEvents: Record<string, string> = {
   landing_cta_click: "ViewContent",
-  phone_verification_complete: "CompleteRegistration",
+  profile_complete: "CompleteRegistration",
   application_created: "Lead",
-  payment_completed: "Purchase",
+  payment_page_open: "InitiateCheckout",
+  membership_purchase_click: "InitiateCheckout",
 };
 
-function trackMetaEvent(eventName: string) {
+function metaStandardParams(
+  eventName: string,
+  payload: Record<string, AnalyticsParamValue>,
+) {
+  const amount =
+    typeof payload.value === "number"
+      ? payload.value
+      : typeof payload.deposit_amount === "number"
+        ? payload.deposit_amount
+        : typeof payload.amount === "number"
+          ? payload.amount
+          : undefined;
+
+  return cleanParams({
+    page_group: pageGroup(window.location.pathname),
+    content_name:
+      eventName === "profile_complete"
+        ? "profile"
+        : typeof payload.payment_option === "string"
+          ? payload.payment_option
+          : undefined,
+    value: amount,
+    currency: amount === undefined ? undefined : "KRW",
+  });
+}
+
+function trackMetaEvent(
+  eventName: string,
+  payload: Record<string, AnalyticsParamValue>,
+) {
   if (
     !META_PIXEL_ID ||
     !shouldTrackBrowserAnalytics() ||
@@ -288,11 +337,16 @@ function trackMetaEvent(eventName: string) {
   }
 
   try {
-    const context = { page_group: pageGroup(window.location.pathname) };
+    const context = {
+      ...payload,
+      page_group: pageGroup(window.location.pathname),
+    };
     window.fbq("trackCustom", eventName, context);
 
     const standardEvent = metaStandardEvents[eventName];
-    if (standardEvent) window.fbq("track", standardEvent);
+    if (standardEvent) {
+      window.fbq("track", standardEvent, metaStandardParams(eventName, payload));
+    }
   } catch {
     // Meta Pixel should never interrupt the user flow.
   }
@@ -348,7 +402,7 @@ export function trackEvent(
   const payload = cleanParams(params);
   window.dataLayer = window.dataLayer ?? [];
   trackClarityEvent(eventName, payload);
-  trackMetaEvent(eventName);
+  trackMetaEvent(eventName, payload);
   trackSupabaseEvent(eventName, payload);
 
   if (typeof window.gtag === "function") {

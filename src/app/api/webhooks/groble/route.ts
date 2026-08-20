@@ -8,6 +8,7 @@ import {
 } from "@/features/membership/membershipTypes";
 import { incrementMembershipApplicationCounter } from "@/lib/membershipApplicationCounter";
 import { grobleCompletedPaymentKind } from "@/lib/groblePaymentEvent";
+import { reportMetaPurchase } from "@/lib/metaConversions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -820,6 +821,7 @@ async function processMembershipPayment({
     payment_amount: details.finalAmount,
     processed_at: new Date().toISOString(),
   });
+  await reportMetaPurchase(admin, envelope.id);
   return "processed";
 }
 
@@ -1066,6 +1068,7 @@ async function processPaymentCompleted(
     payment_amount: details.finalAmount,
     processed_at: new Date().toISOString(),
   });
+  await reportMetaPurchase(admin, envelope.id);
   return "processed";
 }
 

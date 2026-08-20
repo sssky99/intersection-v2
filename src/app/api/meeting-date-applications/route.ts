@@ -45,6 +45,9 @@ const attributionKeys = [
   "utm_content",
   "referrer_host",
   "landing_path",
+  "meta_fbp",
+  "meta_fbc",
+  "meta_user_agent",
 ] as const;
 
 function checkoutAttribution(value: unknown) {
@@ -56,7 +59,9 @@ function checkoutAttribution(value: unknown) {
     if (typeof entry !== "string") continue;
     const trimmed = entry.trim();
     if (!trimmed) continue;
-    result[key] = trimmed.slice(0, key === "landing_path" ? 240 : 160);
+    const maxLength =
+      key === "landing_path" ? 240 : key.startsWith("meta_") ? 500 : 160;
+    result[key] = trimmed.slice(0, maxLength);
   }
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -575,6 +580,20 @@ export async function POST(request: NextRequest) {
       ) {
         throw paymentIntentError ?? new Error("payment-intent-create-failed");
       }
+
+      const intentId = paymentIntent[0]?.intent_id;
+      if (intentId == null) {
+        throw new Error("payment-intent-id-missing");
+      }
+      const { error: attributionError } = await admin
+        .from("meeting_date_payment_intents")
+        .update({
+          acquisition_context: checkoutAttribution(body.attribution),
+          updated_at: now,
+        })
+        .eq("id", intentId)
+        .eq("user_id", user.id);
+      if (attributionError) throw attributionError;
 
       return NextResponse.json({
         applications: rows.map((row) => toApplication(row)),

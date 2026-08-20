@@ -35,6 +35,7 @@ import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
 import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
 import { blindDateStartAtFromParts } from "@/lib/blindDateTiming";
 import { membershipStoreUrls } from "@/lib/membershipStore";
+import { membershipPlanAmounts } from "@/lib/membershipPlans";
 import {
   MEETING_DATE_DEPOSIT_AMOUNT,
   MEETING_DATE_SINGLE_USE_AMOUNT,
@@ -1565,6 +1566,8 @@ function MeetingDateApplicationFlow({
       trackEvent("membership_purchase_click", {
         plan: "one_month",
         months: 1,
+        value: membershipPlanAmounts.one_month,
+        currency: "KRW",
         application_type: "meeting_date",
         meeting_date: targetDates[0],
       });
@@ -1666,6 +1669,8 @@ function MeetingDateApplicationFlow({
         payment_provider: "groble",
         meeting_date: ticket.date,
         payment_option: "one_time",
+        value: MEETING_DATE_SINGLE_USE_AMOUNT,
+        currency: "KRW",
       });
       funnelEntryRef.current = null;
       window.location.assign(checkoutUrl);

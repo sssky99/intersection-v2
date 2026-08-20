@@ -47,6 +47,7 @@ export default function PrivacyPage() {
               <li>이용자 문의, 안전 신고, 노쇼·부정 이용 및 분쟁 대응</li>
               <li>AI를 이용한 공개 프로필 소개 생성</li>
               <li>접속·이용행태 분석, 서비스 품질 개선 및 오류 대응</li>
+              <li>광고 유입·전환 성과 측정 및 광고 최적화</li>
               <li>별도 동의를 받은 경우 신규 모임·멤버십 등 광고성 정보 안내</li>
             </ul>
           </section>
@@ -69,7 +70,7 @@ export default function PrivacyPage() {
                   <PolicyRow label="채팅·피드백" value="메시지 내용과 시각, 열람·삭제 상태, 별점, 추천 대상, 다시 만나고 싶은 사람, 부정 피드백과 사유" />
                   <PolicyRow label="블라인드 데이트" value="제안·응답 상태, 가능한 날짜, 확정 일정" />
                   <PolicyRow label="노쇼 방지비" value="입금·확인·환급 상태, 금액 및 처리 시각" />
-                  <PolicyRow label="자동 수집" value="쿠키, 익명 세션 ID, 접속 경로, 리퍼러, 사용자 에이전트, 이용 이벤트와 접속 시각" />
+                  <PolicyRow label="자동 수집" value="쿠키, 익명 세션 ID, 광고 클릭·브라우저 식별자, 접속 경로, 리퍼러, 사용자 에이전트, 이용 이벤트와 접속 시각" />
                 </tbody>
               </table>
             </div>
@@ -120,6 +121,7 @@ export default function PrivacyPage() {
               <li>Netlify, Inc.: 웹사이트 호스팅 및 서버 기능 제공</li>
               <li>OpenAI, L.L.C.: 이용자가 입력한 답변을 바탕으로 공개 프로필 문구 생성</li>
               <li>Microsoft Corporation: Microsoft Clarity를 통한 이용행태 분석</li>
+              <li>Meta Platforms, Inc.: Meta Pixel 및 Conversions API를 통한 광고 전환 측정·최적화</li>
               <li>Kakao Corp.: 카카오 로그인 및 비즈니스 채널 메시지 제공</li>
               <li>NAVER Cloud Corp.: 장소 검색 및 지도 표시</li>
             </ul>
@@ -140,6 +142,7 @@ export default function PrivacyPage() {
               <li>Netlify: 웹 요청 처리와 호스팅, 미국 등 글로벌 인프라 운영 국가</li>
               <li>OpenAI: AI 공개 프로필 생성, 미국</li>
               <li>Microsoft Clarity: 이용행태 분석, 미국 등 Microsoft가 운영하는 국가</li>
+              <li>Meta Platforms: 광고 전환 측정·최적화, 미국 등 Meta가 운영하는 국가</li>
             </ul>
             <p className={paragraphClass}>
               이전 항목은 계정 식별자, 프로필·설문 입력정보, 접속·이용행태 정보 중 해당
@@ -184,7 +187,10 @@ export default function PrivacyPage() {
             <h2 className={headingClass}>10. 쿠키 및 이용행태 정보</h2>
             <p className={paragraphClass}>
               교집합은 로그인 유지, 서비스 분석 및 화면 개선을 위해 쿠키, 로컬 스토리지,
-              익명 세션 ID와 이용 이벤트를 사용할 수 있으며 Microsoft Clarity를 사용합니다.
+              익명 세션 ID와 이용 이벤트를 사용할 수 있으며 Microsoft Clarity와 Meta
+              Pixel을 사용합니다. 결제가 완료된 경우 Meta Conversions API로 광고
+              식별자, 해시 처리된 계정 식별값과 결제 이벤트를 전송할 수 있습니다. 프로필
+              문답, 데이트 선호나 피드백 내용은 광고 플랫폼으로 전송하지 않습니다.
               브라우저 설정에서 쿠키 저장을 거부하거나 삭제할 수 있으나 로그인 등 일부
               기능 이용이 제한될 수 있습니다.
             </p>
@@ -244,7 +250,7 @@ export default function PrivacyPage() {
           </section>
 
           <p className="text-xs font-bold leading-6 text-black/40">
-            본 개인정보 처리방침은 2026년 7월 12일부터 시행됩니다.
+            본 개인정보 처리방침은 2026년 8월 20일부터 시행됩니다.
           </p>
         </div>
       </article>
