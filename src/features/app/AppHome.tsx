@@ -549,6 +549,9 @@ export function AppHome({
     useState(false);
   const [blindDateOpenRequestOfferId, setBlindDateOpenRequestOfferId] =
     useState<string | null>(null);
+  const [blindDateOpenRequestSkipUnlock, setBlindDateOpenRequestSkipUnlock] =
+    useState(false);
+  const [blindDateReturnSettling, setBlindDateReturnSettling] = useState(false);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>(initialAnswerRows);
   const [algorithmParametersOpen, setAlgorithmParametersOpen] = useState(false);
   const [algorithmQuestionAnswering, setAlgorithmQuestionAnswering] =
@@ -1007,12 +1010,17 @@ export function AppHome({
     setParticipationProgressOpen(true);
   };
 
-  const openBlindDateStatus = (offerId: string | null = null) => {
+  const openBlindDateStatus = (
+    offerId: string | null = null,
+    { skipUnlock = false }: { skipUnlock?: boolean } = {},
+  ) => {
+    setBlindDateReturnSettling(false);
     setActiveTab("recommend");
     setQuestionReviewOpen(false);
     setQuestionReviewStartIndex(null);
     setTabUrl("recommend");
     setBlindDateOpenRequestOfferId(offerId);
+    setBlindDateOpenRequestSkipUnlock(skipUnlock);
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
   };
@@ -1428,10 +1436,17 @@ export function AppHome({
           )}
           style={{
             transform:
+              (blindDateOpenRequestSkipUnlock && !blindDateReturnSettling) ||
               activeTab === "browse"
                 ? "none"
                 : `translate3d(${(appTabPositions.browse - appTabPositions[activeTab]) * 100}%, 0, 0)`,
-            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transition:
+              blindDateOpenRequestSkipUnlock || blindDateReturnSettling
+              ? "none"
+              : "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            opacity:
+              blindDateReturnSettling && activeTab !== "browse" ? 0 : 1,
+            zIndex: activeTab === "browse" ? 1 : 0,
             willChange: "transform",
           }}
         >
@@ -1455,7 +1470,9 @@ export function AppHome({
             onGoRecommend={() => switchTab("recommend")}
             onReapplyTicket={requestDeclinedTicketApplication}
             onDeclineTicket={declineTicketFromInbox}
-            onOpenBlindDate={(offerId) => openBlindDateStatus(offerId)}
+            onOpenBlindDate={(offerId) =>
+              openBlindDateStatus(offerId, { skipUnlock: true })
+            }
             onFocusModeChange={setTicketTabFocusMode}
             focusRequest={ticketTabFocusRequest}
           />
@@ -1471,10 +1488,17 @@ export function AppHome({
           )}
           style={{
             transform:
+              (blindDateOpenRequestSkipUnlock && !blindDateReturnSettling) ||
               activeTab === "recommend"
                 ? "none"
                 : `translate3d(${(appTabPositions.recommend - appTabPositions[activeTab]) * 100}%, 0, 0)`,
-            transition: "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            transition:
+              blindDateOpenRequestSkipUnlock || blindDateReturnSettling
+              ? "none"
+              : "transform 460ms cubic-bezier(0.22, 1, 0.36, 1)",
+            opacity:
+              blindDateReturnSettling && activeTab !== "recommend" ? 0 : 1,
+            zIndex: activeTab === "recommend" ? 1 : 0,
             willChange: "transform",
           }}
         >
@@ -1505,6 +1529,7 @@ export function AppHome({
               blindDateOpenRequestId={blindDateOpenRequestId}
               blindDateOpenRequestPending={blindDateOpenRequestPending}
               blindDateOpenRequestOfferId={blindDateOpenRequestOfferId}
+              blindDateOpenRequestSkipUnlock={blindDateOpenRequestSkipUnlock}
               ticketAcceptRequestId={ticketAcceptRequest?.id ?? 0}
               ticketAcceptRequestTicketId={
                 ticketAcceptRequest?.ticketId ?? null
@@ -1514,6 +1539,15 @@ export function AppHome({
               onOpenTicketTab={(ticketId) => {
                 if (ticketId) {
                   setTicketTabFocusRequest({ id: Date.now(), ticketId });
+                }
+                if (blindDateOpenRequestSkipUnlock) {
+                  setBlindDateReturnSettling(true);
+                  switchTab("browse");
+                  window.requestAnimationFrame(() => {
+                    setBlindDateOpenRequestSkipUnlock(false);
+                    setBlindDateReturnSettling(false);
+                  });
+                  return;
                 }
                 switchTab("browse");
               }}
@@ -3518,14 +3552,6 @@ function InteractionTicketCard({
   );
 }
 
-function blindDateTicketBadge(offer: BlindDateUserOffer) {
-  if (offer.status === "completed") return "완료";
-  if (offer.status === "scheduled") return "일정 확정";
-  if (offer.status === "needs_reschedule") return "일정 조율";
-  if (offer.ownResponse === "pending") return "초대 도착";
-  return "응답 대기";
-}
-
 function BlindDateTicketCard({
   offer,
   onOpen,
@@ -3533,6 +3559,38 @@ function BlindDateTicketCard({
   offer: BlindDateUserOffer;
   onOpen: () => void;
 }) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const feedbackOpensAt = offer.feedbackOpensAt
+    ? new Date(offer.feedbackOpensAt).getTime()
+    : Number.NaN;
+  const feedbackClosesAt = offer.feedbackClosesAt
+    ? new Date(offer.feedbackClosesAt).getTime()
+    : Number.NaN;
+  const feedbackIsOpen =
+    Number.isFinite(feedbackOpensAt) &&
+    Number.isFinite(feedbackClosesAt) &&
+    nowMs >= feedbackOpensAt &&
+    nowMs < feedbackClosesAt;
+  const feedbackRemainingSeconds = feedbackIsOpen
+    ? Math.max(0, Math.ceil((feedbackClosesAt - nowMs) / 1000))
+    : null;
+  const feedbackRemainingTime =
+    feedbackRemainingSeconds === null
+      ? null
+      : [
+          Math.floor(feedbackRemainingSeconds / 3600),
+          Math.floor((feedbackRemainingSeconds % 3600) / 60),
+          feedbackRemainingSeconds % 60,
+        ]
+          .map((value) => String(value).padStart(2, "0"))
+          .join(":");
+
   return (
     <motion.div
       role="button"
@@ -3558,7 +3616,11 @@ function BlindDateTicketCard({
         date={offer.scheduledDate}
         time={offer.timeLabel}
         location={offer.region}
-        badgeLabel={blindDateTicketBadge(offer)}
+        badgeLabel={
+          feedbackRemainingTime
+            ? `마감까지 ${feedbackRemainingTime}`
+            : "초대 도착"
+        }
         badgeClassName="border-[#bda9b4]/70 bg-[#f8f3f5]/70 text-[#765a69] shadow-none"
         className={ticketPaperImageClass}
       />

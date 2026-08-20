@@ -75,11 +75,14 @@ export async function middleware(request: NextRequest) {
   const isApiRequest = nextUrl.pathname.startsWith('/api/');
   const isAdminViewExit =
     nextUrl.pathname === '/api/admin/user-view' && request.method === 'DELETE';
+  const isAdminSessionLogin =
+    nextUrl.pathname === '/api/admin/session' && request.method === 'POST';
   if (
     isApiRequest &&
     request.cookies.has('inter_admin_user_view') &&
     !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-    !isAdminViewExit
+    !isAdminViewExit &&
+    !isAdminSessionLogin
   ) {
     return NextResponse.json(
       { error: '읽기 전용 보기에서는 정보를 변경할 수 없습니다.' },

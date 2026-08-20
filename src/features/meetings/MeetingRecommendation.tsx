@@ -535,6 +535,7 @@ type MeetingRecommendationProps = {
   blindDateOpenRequestId?: number;
   blindDateOpenRequestPending?: boolean;
   blindDateOpenRequestOfferId?: string | null;
+  blindDateOpenRequestSkipUnlock?: boolean;
   onBlindDateOpenRequestHandled?: () => void;
   ticketAcceptRequestId?: number;
   ticketAcceptRequestTicketId?: string | null;
@@ -868,6 +869,7 @@ function MeetingDateApplicationFlow({
   blindDateOpenRequestId = 0,
   blindDateOpenRequestPending = false,
   blindDateOpenRequestOfferId = null,
+  blindDateOpenRequestSkipUnlock = false,
   onBlindDateOpenRequestHandled,
   ticketAcceptRequestId = 0,
   ticketAcceptRequestTicketId = null,
@@ -894,6 +896,8 @@ function MeetingDateApplicationFlow({
   const [error, setError] = useState<string | null>(null);
   const [selectedBlindDateOfferId, setSelectedBlindDateOfferId] =
     useState<string | null>(null);
+  const [blindDateTicketClosing, setBlindDateTicketClosing] = useState(false);
+  const blindDateCloseTimerRef = useRef<number | null>(null);
   const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
   const funnelEntryRef = useRef<{
     step: ApplicationFunnelStep;
@@ -1142,6 +1146,8 @@ function MeetingDateApplicationFlow({
       return;
     }
 
+    setBlindDateTicketClosing(false);
+
     const requestedOffer = blindDateOpenRequestOfferId
       ? activeBlindDateOffers.find(
           (offer) => offer.id === blindDateOpenRequestOfferId,
@@ -1151,7 +1157,7 @@ function MeetingDateApplicationFlow({
     if (requestedOffer) {
       setSelectedBlindDateOfferId(requestedOffer.id);
       setScreen(
-        shouldPlayBlindDateUnlock(requestedOffer)
+        !blindDateOpenRequestSkipUnlock && shouldPlayBlindDateUnlock(requestedOffer)
           ? "blindDateUnlock"
           : "blindDate",
       );
@@ -1163,7 +1169,7 @@ function MeetingDateApplicationFlow({
         answerableBlindDateOffers[0] ?? activeBlindDateOffers[0];
       setSelectedBlindDateOfferId(offerToOpen.id);
       setScreen(
-        shouldPlayBlindDateUnlock(offerToOpen)
+        !blindDateOpenRequestSkipUnlock && shouldPlayBlindDateUnlock(offerToOpen)
           ? "blindDateUnlock"
           : "blindDate",
       );
@@ -1175,8 +1181,18 @@ function MeetingDateApplicationFlow({
     blindDateOpenRequestId,
     blindDateOpenRequestOfferId,
     blindDateOpenRequestPending,
+    blindDateOpenRequestSkipUnlock,
     onBlindDateOpenRequestHandled,
   ]);
+
+  useEffect(
+    () => () => {
+      if (blindDateCloseTimerRef.current !== null) {
+        window.clearTimeout(blindDateCloseTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (guestMode) return;
@@ -1986,9 +2002,12 @@ function MeetingDateApplicationFlow({
 
   if (screen === "blindDate" && selectedBlindDateOffer) {
     return (
-      <section
+      <motion.section
+        initial={{ opacity: blindDateOpenRequestSkipUnlock ? 0 : 1 }}
+        animate={{ opacity: blindDateTicketClosing ? 0 : 1 }}
+        transition={ticketFadeTransition}
         className={cn(
-          "px-5 pb-6 pt-7",
+          "bg-[linear-gradient(180deg,#faf8f3_0%,#f7f4ee_48%,#f2eee6_100%)] px-5 pb-6 pt-7",
           embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
         )}
       >
@@ -1997,15 +2016,26 @@ function MeetingDateApplicationFlow({
           bundledOffers={answerableBlindDateOffers}
           userName={profileName}
           profilePhotoUrl={profilePhotoUrl}
+          ticketDetailMode={blindDateOpenRequestSkipUnlock}
           onClose={() => {
+            if (blindDateOpenRequestSkipUnlock) {
+              if (blindDateTicketClosing) return;
+              setBlindDateTicketClosing(true);
+              blindDateCloseTimerRef.current = window.setTimeout(() => {
+                blindDateCloseTimerRef.current = null;
+                setSelectedBlindDateOfferId(null);
+                setScreen("dates");
+                setBlindDateTicketClosing(false);
+                onOpenTicketTab?.();
+              }, 200);
+              return;
+            }
             setSelectedBlindDateOfferId(null);
-            setScreen(
-              activeBlindDateOffers.length > 1 ? "blindDateList" : "dates",
-            );
+            setScreen(activeBlindDateOffers.length > 1 ? "blindDateList" : "dates");
           }}
           onOffersChange={onBlindDateOffersChange}
         />
-      </section>
+      </motion.section>
     );
   }
 
@@ -3802,6 +3832,7 @@ function BlindDateInvitationFlow({
   bundledOffers,
   userName,
   profilePhotoUrl,
+  ticketDetailMode = false,
   onClose,
   onOffersChange,
 }: {
@@ -3809,6 +3840,7 @@ function BlindDateInvitationFlow({
   bundledOffers: BlindDateUserOffer[];
   userName?: string | null;
   profilePhotoUrl?: string | null;
+  ticketDetailMode?: boolean;
   onClose: () => void;
   onOffersChange?: (offers: BlindDateUserOffer[]) => void;
 }) {
@@ -3916,8 +3948,13 @@ function BlindDateInvitationFlow({
         type="button"
         onClick={onClose}
         disabled={saving}
-        aria-label="블라인드 데이트 초대장 닫기"
-        className="absolute left-0 top-[calc(6px+env(safe-area-inset-top))] z-30 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/55 shadow-sm transition hover:-translate-y-0.5 hover:text-black hover:shadow-md disabled:opacity-40"
+        aria-label={ticketDetailMode ? "티켓 상세 닫기" : "블라인드 데이트 초대장 닫기"}
+        className={cn(
+          "absolute z-30 flex h-10 w-10 shrink-0 items-center justify-center text-black/55 transition hover:text-black disabled:opacity-40",
+          ticketDetailMode
+            ? "-left-1 top-[calc(-14px+env(safe-area-inset-top))]"
+            : "left-0 top-[calc(6px+env(safe-area-inset-top))] rounded-full border border-black/10 bg-white shadow-sm hover:-translate-y-0.5 hover:shadow-md",
+        )}
       >
         <X size={18} aria-hidden />
       </button>

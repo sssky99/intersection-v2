@@ -5,6 +5,10 @@ import {
   isAdminSessionTokenValid,
   verifyAdminAccessKey,
 } from "@/lib/adminAuth";
+import {
+  ADMIN_USER_VIEW_COOKIE,
+  adminUserViewCookieOptions,
+} from "@/lib/adminUserView";
 import { isSameOriginRequest, requestActorKey } from "@/lib/requestGuards";
 
 const cookieOptions = {
@@ -140,6 +144,10 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ authenticated: true });
   response.cookies.set(ADMIN_SESSION_COOKIE, token, cookieOptions);
+  response.cookies.set(ADMIN_USER_VIEW_COOKIE, "", {
+    ...adminUserViewCookieOptions,
+    maxAge: 0,
+  });
   loginAttempts.delete(loginKey);
   return response;
 }
