@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import {
   meetingAtmosphereDefaultsFromProfiles,
   normalizeMeetingAtmosphereAgeBandId,
@@ -1360,14 +1360,11 @@ export async function GET(request: Request) {
   const pagination = userTicketsPagination(request);
   const previewRevealRequested =
     new URL(request.url).searchParams.get("previewReveal") === "1";
-  const userSupabase = await createClient();
-  const {
-    data: { user },
-  } = await userSupabase.auth.getUser();
-
-  if (!user) {
+  const requestUser = await requestUserId({ allowAdminView: true });
+  if (!requestUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userId = requestUser.userId;
 
   try {
     const supabase = createAdminClient();
@@ -1376,7 +1373,7 @@ export async function GET(request: Request) {
       .select(
         "is_test_participant,name,nickname,photo_url,gender,birth_year,public_intro",
       )
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle<ProfileAccessRow>();
     if (profileAccessError) throw profileAccessError;
     const canSeeTestTickets = profileAccess?.is_test_participant === true;
@@ -1386,14 +1383,14 @@ export async function GET(request: Request) {
       supabase
         .from("ticket_participations")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false }),
       supabase
         .from("meeting_date_applications")
         .select(
           "id,user_id,event_id,meeting_date,meeting_time,region,status,assigned_ticket_instance_id,ticket_participation_id,created_at,updated_at",
         )
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .in("status", ["waitlisted", "approved", "on_hold"])
         .order("created_at", { ascending: false }),
     ]);
@@ -1566,7 +1563,7 @@ export async function GET(request: Request) {
               userAssignedInstanceIds,
               now,
               previewReveal,
-              user.id,
+              userId,
             ),
           )
           .filter(
@@ -1677,7 +1674,7 @@ export async function GET(request: Request) {
       pagedInstances,
     );
     const profileIds = unique([
-      user.id,
+      userId,
       ...assignments.map((assignment) => assignment.user_id),
       ...memberArrivalRows.map((arrivalRow) => arrivalRow.user_id),
       ...atmosphereWaitlistRows.map((row) => row.user_id),
@@ -1792,7 +1789,7 @@ export async function GET(request: Request) {
           row,
           instanceId,
           userAssignedInstanceIds,
-          forceFeedbackPreview(user.id, row, instance),
+          forceFeedbackPreview(userId, row, instance),
         );
         const sourceDate =
           instance?.event_date ?? row.meeting_date ?? row.ticket_snapshot?.date;
@@ -1845,7 +1842,7 @@ export async function GET(request: Request) {
           ? assignmentsByInstance.get(memberInstanceId) ?? []
           : [];
         const memberIds = memberInfoVisible
-          ? unique([...assignedIds, user.id])
+          ? unique([...assignedIds, userId])
           : [];
         const members: TicketMemberIntro[] = memberIds.map((id) => {
           const memberProfile = profileMap.get(id);
@@ -1853,11 +1850,11 @@ export async function GET(request: Request) {
             ? arrivalByMember.get(`${memberInstanceId}:${id}`)
             : null;
           const arrivalStatus =
-            id === user.id
+            id === userId
               ? row.arrival_status ?? memberArrival?.arrival_status ?? null
               : memberArrival?.arrival_status ?? null;
           const arrivalStatusUpdatedAt =
-            id === user.id
+            id === userId
               ? row.arrival_status_updated_at ??
                 memberArrival?.arrival_status_updated_at ??
                 null
@@ -1872,7 +1869,7 @@ export async function GET(request: Request) {
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus,
             arrivalStatusUpdatedAt,
-            isSelf: id === user.id,
+            isSelf: id === userId,
           };
         });
         const feedbackPreviewSourceInstanceId =
@@ -1921,7 +1918,7 @@ export async function GET(request: Request) {
             publicIntro: memberProfile?.public_intro ?? null,
             arrivalStatus: null,
             arrivalStatusUpdatedAt: null,
-            isSelf: id === user.id,
+            isSelf: id === userId,
             feedbackGroup: feedbackGroupByMemberId.get(id) ?? null,
           };
         });

@@ -513,6 +513,7 @@ async function fetchDepositMessageRegistrationSummary() {
 
 type MeetingRecommendationProps = {
   userId: string;
+  readOnly?: boolean;
   profileCompleted?: boolean;
   profileName?: string | null;
   profilePhotoUrl?: string | null;
@@ -540,6 +541,66 @@ type MeetingRecommendationProps = {
   onDateApplicationsChange?: (applications: MeetingDateApplication[]) => void;
   onOpenTicketTab?: (ticketId?: string) => void;
 };
+
+export function MatchingLoader({
+  message,
+  dotCount = 0,
+}: {
+  message: string;
+  dotCount?: number;
+}) {
+  return (
+    <div className="flex w-full max-w-[350px] flex-col items-center text-center">
+      <svg
+        data-testid="matching-loader"
+        viewBox="0 0 48 48"
+        className="mb-6 block h-12 w-12 shrink-0"
+        aria-hidden
+      >
+        <g data-testid="matching-loader-rotor">
+          <animateTransform
+            attributeName="transform"
+            type="rotate"
+            from="0 24 24"
+            to="360 24 24"
+            dur="1.05s"
+            repeatCount="indefinite"
+          />
+          {Array.from({ length: 12 }, (_, index) => (
+            <line
+              key={index}
+              x1="24"
+              y1="5"
+              x2="24"
+              y2="14"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              style={{
+                color: "#24211d",
+                transformOrigin: "24px 24px",
+                transform: `rotate(${index * 30}deg)`,
+                opacity: 0.18 + index * 0.065,
+              }}
+            />
+          ))}
+        </g>
+      </svg>
+      <p
+        role="status"
+        aria-live="polite"
+        className="text-[17px] font-black tracking-[-0.045em] text-[#24211d]"
+      >
+        {message}
+        {dotCount > 0 && (
+          <span className="inline-block w-6 text-left" aria-hidden>
+            {".".repeat(dotCount)}
+          </span>
+        )}
+      </p>
+    </div>
+  );
+}
 
 type DateApplicationScreen =
   | "intro"
@@ -784,6 +845,7 @@ export function MeetingRecommendation(props: MeetingRecommendationProps) {
 
 function MeetingDateApplicationFlow({
   userId,
+  readOnly = false,
   profileCompleted = true,
   profileName = null,
   profilePhotoUrl = null,
@@ -981,6 +1043,7 @@ function MeetingDateApplicationFlow({
     status: TicketInteractionStatus,
     options?: { keepalive?: boolean },
   ) => {
+    if (readOnly) return null;
     if (guestMode) {
       const interaction = saveGuestTicketInteraction(ticket, status);
       onTicketInteractionChange?.(interaction);
@@ -1791,6 +1854,7 @@ function MeetingDateApplicationFlow({
         )}
 
         {active &&
+          !readOnly &&
           typeof document !== "undefined" &&
           createPortal(selectedEventClosed ? (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
@@ -1946,53 +2010,10 @@ function MeetingDateApplicationFlow({
             transition={{ duration: shouldReduceMotion ? 0 : 0.38, ease: [0.22, 1, 0.36, 1] }}
             className="flex flex-1 items-center justify-center pb-24"
           >
-            <div className="flex w-full max-w-[350px] flex-col items-center text-center">
-              <svg
-                data-testid="matching-loader"
-                viewBox="0 0 48 48"
-                className="mb-6 block h-12 w-12 shrink-0"
-                aria-hidden
-              >
-                <g data-testid="matching-loader-rotor">
-                  <animateTransform
-                    attributeName="transform"
-                    type="rotate"
-                    from="0 24 24"
-                    to="360 24 24"
-                    dur="1.05s"
-                    repeatCount="indefinite"
-                  />
-                  {Array.from({ length: 12 }, (_, index) => (
-                    <line
-                      key={index}
-                      x1="24"
-                      y1="5"
-                      x2="24"
-                      y2="14"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      style={{
-                        color: "#24211d",
-                        transformOrigin: "24px 24px",
-                        transform: `rotate(${index * 30}deg)`,
-                        opacity: 0.18 + index * 0.065,
-                      }}
-                    />
-                  ))}
-                </g>
-              </svg>
-              <p
-                role="status"
-                aria-live="polite"
-                className="text-[17px] font-black tracking-[-0.045em] text-[#24211d]"
-              >
-                나와 잘 어울리는 사람들을 찾는 중
-                <span className="inline-block w-6 text-left" aria-hidden>
-                  {".".repeat(introDotCount)}
-                </span>
-              </p>
-            </div>
+            <MatchingLoader
+              message="나와 잘 어울리는 사람들을 찾는 중"
+              dotCount={introDotCount}
+            />
           </motion.div>
         ) : screen === "submitted" ? (
           <motion.div

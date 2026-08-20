@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import {
   getAvailableMeetingTickets,
   getRejectedMeetingTickets,
 } from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +12,12 @@ type ProfileAccessRow = {
   is_test_participant: boolean | null;
 };
 
-async function requestContext(allowAnonymous = false) {
-  const userClient = await createClient();
-  const {
-    data: { user },
-  } = await userClient.auth.getUser();
-  if (!user) {
+async function requestContext(
+  allowAnonymous = false,
+  allowAdminView = false,
+) {
+  const requestUser = await requestUserId({ allowAdminView });
+  if (!requestUser) {
     return allowAnonymous
       ? {
           admin: createAdminClient(),
@@ -32,13 +32,13 @@ async function requestContext(allowAnonymous = false) {
   const { data: profile, error } = await admin
     .from("profiles")
     .select("is_test_participant")
-    .eq("user_id", user.id)
+    .eq("user_id", requestUser.userId)
     .maybeSingle<ProfileAccessRow>();
   if (error) throw error;
 
   return {
     admin,
-    userId: user.id,
+    userId: requestUser.userId,
     includeTestOnly: profile?.is_test_participant === true,
     recommendationProfileReady: true,
   };
@@ -46,7 +46,7 @@ async function requestContext(allowAnonymous = false) {
 
 export async function GET(request: Request) {
   try {
-    const context = await requestContext(true);
+    const context = await requestContext(true, true);
     if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

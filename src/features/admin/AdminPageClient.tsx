@@ -5,6 +5,7 @@ import {
   ArrowUp,
   BookOpen,
   Download,
+  Eye,
   Image as ImageIcon,
   LogOut,
   Save,
@@ -1729,6 +1730,8 @@ function ProfileDetailPanel({
   const [precisionBonusDraft, setPrecisionBonusDraft] = useState(
     initialPrecisionBonusDraft,
   );
+  const [openingUserView, setOpeningUserView] = useState(false);
+  const [userViewError, setUserViewError] = useState<string | null>(null);
 
   useEffect(() => {
     setPrecisionBonusDraft(initialPrecisionBonusDraft);
@@ -1753,6 +1756,26 @@ function ProfileDetailPanel({
     void onProfileDetailSave(profile.user_id, {
       isTestParticipant: !isTestParticipant,
     });
+  };
+
+  const openUserView = async () => {
+    if (!profile || openingUserView) return;
+    setOpeningUserView(true);
+    setUserViewError(null);
+    const response = await fetch("/api/admin/user-view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: profile.user_id }),
+    }).catch(() => null);
+    const data = response
+      ? ((await response.json().catch(() => null)) as { error?: string } | null)
+      : null;
+    if (!response?.ok) {
+      setUserViewError(data?.error ?? "사용자 화면을 열지 못했습니다.");
+      setOpeningUserView(false);
+      return;
+    }
+    window.location.assign("/admin/user-view");
   };
 
   if (!profile) {
@@ -1794,17 +1817,33 @@ function ProfileDetailPanel({
             />
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="상세패널 닫기"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/45 transition hover:border-black/20 hover:text-black"
-        >
-          <X size={16} aria-hidden />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void openUserView()}
+            disabled={openingUserView}
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-black px-3 text-xs font-bold text-white transition hover:bg-black/80 disabled:opacity-45"
+          >
+            <Eye size={15} aria-hidden />
+            {openingUserView ? "여는 중" : "사용자 화면"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="상세패널 닫기"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/45 transition hover:border-black/20 hover:text-black"
+          >
+            <X size={16} aria-hidden />
+          </button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        {userViewError && (
+          <p className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-xs font-semibold text-red-600">
+            {userViewError}
+          </p>
+        )}
         <PhotoBox
           src={profile.photo_url}
           alt={`${profile.name ?? "신청자"} 프로필 사진`}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import {
   MEETING_DATE_REGION,
   MEETING_DATE_SINGLE_USE_AMOUNT,
@@ -167,8 +168,8 @@ function isMissingApplicationsTable(error: unknown) {
 }
 
 export async function GET() {
-  const user = await authenticatedUser();
-  if (!user) {
+  const requestUser = await requestUserId({ allowAdminView: true });
+  if (!requestUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -178,7 +179,7 @@ export async function GET() {
       .select(
         "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
-      .eq("user_id", user.id)
+      .eq("user_id", requestUser.userId)
       .gte("meeting_date", todayInKst())
       .in("status", [...activeStatuses])
       .order("meeting_date", { ascending: true })

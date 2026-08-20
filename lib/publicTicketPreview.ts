@@ -300,6 +300,7 @@ function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
     applicationClosed:
       Boolean(event.application_closes_at) &&
       new Date(event.application_closes_at as string).getTime() <= Date.now(),
+    applicationClosesAt: event.application_closes_at,
     reservationName:
       typeof snapshot.reservationName === "string"
         ? snapshot.reservationName.trim() || null

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import { chatOperatorMember } from "@/lib/chatOperator";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import type {
   MeetingChatMember,
   MeetingChatMessage,
@@ -69,14 +69,11 @@ function addHours(date: Date, hours: number) {
 }
 
 export async function GET() {
-  const userSupabase = await createClient();
-  const {
-    data: { user },
-  } = await userSupabase.auth.getUser();
-
-  if (!user) {
+  const requestUser = await requestUserId({ allowAdminView: true });
+  if (!requestUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const userId = requestUser.userId;
 
   try {
     const supabase = createAdminClient();
@@ -84,7 +81,7 @@ export async function GET() {
       await supabase
         .from("ticket_participations")
         .select("ticket_instance_id,user_id,ticket_snapshot")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .in("status", Array.from(CHAT_MEMBER_STATUSES))
         .returns<ParticipationRow[]>();
     if (ownParticipationError) throw ownParticipationError;
@@ -105,9 +102,9 @@ export async function GET() {
       supabase
         .from("profiles")
         .select("is_test_participant")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle<{ is_test_participant: boolean | null }>(),
-      supabase.auth.admin.getUserById(user.id),
+      supabase.auth.admin.getUserById(userId),
     ]);
     if (ownInstancesResult.error) throw ownInstancesResult.error;
     if (profileResult.error) throw profileResult.error;
@@ -212,7 +209,7 @@ export async function GET() {
         if (
           now < opensAt ||
           now >= closesAt ||
-          (!readOnly && !memberIds.includes(user.id))
+          (!readOnly && !memberIds.includes(userId))
         ) {
           return null;
         }
@@ -226,7 +223,7 @@ export async function GET() {
             nickname,
             avatarText: avatarText(profile?.name?.trim() || nickname),
             photoUrl: profile?.photo_url?.trim() || null,
-            isSelf: memberId === user.id,
+            isSelf: memberId === userId,
             role: "member",
           };
         });

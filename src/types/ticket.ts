@@ -54,6 +54,7 @@ export type GatheringTicket = {
   invitationStatus?: "sent" | "viewed" | "accepted" | null;
   rejected?: boolean;
   applicationClosed?: boolean;
+  applicationClosesAt?: string | null;
   reservationName?: string | null;
   reservationNames?: Array<string | null>;
   title: string;

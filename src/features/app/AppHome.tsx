@@ -62,6 +62,7 @@ import {
 } from "@/data/profileDetailQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
+  MatchingLoader,
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
 import { useDragScroll } from "@/features/app/useDragScroll";
@@ -100,6 +101,7 @@ import {
   ticketStageText,
 } from "@/lib/ticketStageCopy";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
+import { ticketStartAtInKst } from "@/lib/ticketDate";
 import {
   clearGuestTicketInteractions,
   loadGuestTicketInteractions,
@@ -416,10 +418,15 @@ type FetchUserTicketsOptions = {
   force?: boolean;
   limit?: number;
   offset?: number;
+  scope?: string;
 };
 
-function userTicketsRequestKey({ limit, offset = 0 }: FetchUserTicketsOptions) {
-  return `live:${offset}:${limit ?? "all"}`;
+function userTicketsRequestKey({
+  limit,
+  offset = 0,
+  scope = "anonymous",
+}: FetchUserTicketsOptions) {
+  return `${scope}:${offset}:${limit ?? "all"}`;
 }
 
 function userTicketsRequestPath({ limit, offset = 0 }: FetchUserTicketsOptions) {
@@ -505,6 +512,7 @@ export function AppHome({
   operatorAccountSwitcher = null,
   guestMode = false,
   initialAnswerRows = [],
+  readOnlyView = null,
   onRequestBasicInfo,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
@@ -516,10 +524,12 @@ export function AppHome({
   operatorAccountSwitcher?: OperatorAccountSwitcher;
   guestMode?: boolean;
   initialAnswerRows?: AnswerRow[];
+  readOnlyView?: { targetName: string } | null;
   onRequestBasicInfo?: (meetingDate?: string) => void;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
 }) {
+  const readOnly = Boolean(readOnlyView);
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [waitlistedTicketCount, setWaitlistedTicketCount] = useState<
@@ -625,6 +635,9 @@ export function AppHome({
   const [ticketInteractions, setTicketInteractions] = useState<
     TicketInteraction[]
   >([]);
+  const [initialTicketsLoaded, setInitialTicketsLoaded] = useState(guestMode);
+  const [ticketInteractionsLoaded, setTicketInteractionsLoaded] =
+    useState(guestMode);
   const [ticketAcceptRequest, setTicketAcceptRequest] = useState<{
     id: number;
     ticketId: string;
@@ -711,7 +724,11 @@ export function AppHome({
       if (!response.hasMore || typeof response.nextOffset !== "number") return;
 
       setLoadingRemainingTickets(true);
-      void fetchUserTickets({ force, offset: response.nextOffset })
+      void fetchUserTickets({
+        force,
+        offset: response.nextOffset,
+        scope: userId,
+      })
         .then((remainingResponse) => {
           if (isCancelled() || !remainingResponse) return;
           applyUserTicketsResponse(remainingResponse, "append");
@@ -720,7 +737,7 @@ export function AppHome({
           if (!isCancelled()) setLoadingRemainingTickets(false);
         });
     },
-    [applyUserTicketsResponse],
+    [applyUserTicketsResponse, userId],
   );
 
   const loadUserTicketsProgressively = useCallback(
@@ -734,18 +751,20 @@ export function AppHome({
       const response = await fetchUserTickets({
         force,
         limit: initialUserTicketsLimit,
+        scope: userId,
       });
+      setInitialTicketsLoaded(true);
       if (isCancelled() || !response) return null;
 
       applyUserTicketsResponse(response, "replace");
       loadRemainingUserTickets(response, force, isCancelled);
       return response;
     },
-    [applyUserTicketsResponse, loadRemainingUserTickets],
+    [applyUserTicketsResponse, loadRemainingUserTickets, userId],
   );
 
   const refreshAnswers = useCallback(async () => {
-    if (guestMode) return;
+    if (guestMode || readOnly) return;
     const answerQuestions = usesPreferenceProfile(currentProfile)
       ? preferenceQuestions
       : profileQuestions;
@@ -795,31 +814,31 @@ export function AppHome({
           }),
       ) as AnswerMap,
     );
-  }, [currentProfile, guestMode, userId]);
+  }, [currentProfile, guestMode, readOnly, userId]);
 
   useEffect(() => {
     setCurrentProfile(profile);
   }, [profile]);
 
   useEffect(() => {
-    if (guestMode) return;
+    if (guestMode || readOnly) return;
     trackLoginSuccessFromUrl("existing");
-  }, [guestMode]);
+  }, [guestMode, readOnly]);
 
   useEffect(() => {
-    if (guestMode) return;
+    if (guestMode || readOnly) return;
     identifyAnalyticsUser(userId);
-  }, [guestMode, userId]);
+  }, [guestMode, readOnly, userId]);
 
   useEffect(() => {
-    if (activeTab !== "recommend" || recommendTabTrackedRef.current) return;
+    if (readOnly || activeTab !== "recommend" || recommendTabTrackedRef.current) return;
 
     recommendTabTrackedRef.current = true;
     trackEvent("recommend_tab_view");
-  }, [activeTab]);
+  }, [activeTab, readOnly]);
 
   useEffect(() => {
-    if (activeTab !== "profile" || profileTabTrackedRef.current) return;
+    if (readOnly || activeTab !== "profile" || profileTabTrackedRef.current) return;
 
     profileTabTrackedRef.current = true;
     if (preferenceProfileEnabled) {
@@ -836,10 +855,11 @@ export function AppHome({
     currentProfile.conversation_result_code,
     currentProfile.conversation_result_source,
     preferenceProfileEnabled,
+    readOnly,
   ]);
 
   useEffect(() => {
-    if (guestMode) return;
+    if (guestMode || readOnly) return;
     let cancelled = false;
 
     void loadUserTicketsProgressively({
@@ -854,37 +874,38 @@ export function AppHome({
     } else {
       setBlindDateOffers([]);
     }
-    const supabase = createClient();
     const answerQuestions = usesPreferenceProfile(profile)
       ? preferenceQuestions
       : profileQuestions;
 
-    supabase
-      .from("user_answers")
-      .select("question_order,answer_value,answer_values,answer_text,other_text")
-      .eq("user_id", userId)
-      .order("question_order")
-      .returns<AnswerRow[]>()
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return;
+    if (!readOnly) {
+      createClient()
+        .from("user_answers")
+        .select("question_order,answer_value,answer_values,answer_text,other_text")
+        .eq("user_id", userId)
+        .order("question_order")
+        .returns<AnswerRow[]>()
+        .then(({ data, error }) => {
+          if (cancelled || error || !data) return;
 
-        setAnswerRows(data);
-        setAnswers(
-          Object.fromEntries(
-            data
-              .filter((row) =>
-                answerQuestions.some(
-                  (question) =>
-                    (question.order ?? question.id) === row.question_order,
-                ),
-              )
-              .map((row) => {
-                const answer = rowToAnswer(row, answerQuestions);
-                return [answer.questionId, answer];
-              }),
-          ) as AnswerMap,
-        );
-      });
+          setAnswerRows(data);
+          setAnswers(
+            Object.fromEntries(
+              data
+                .filter((row) =>
+                  answerQuestions.some(
+                    (question) =>
+                      (question.order ?? question.id) === row.question_order,
+                  ),
+                )
+                .map((row) => {
+                  const answer = rowToAnswer(row, answerQuestions);
+                  return [answer.questionId, answer];
+                }),
+            ) as AnswerMap,
+          );
+        });
+    }
 
     return () => {
       cancelled = true;
@@ -895,6 +916,7 @@ export function AppHome({
     currentProfile.profile_completed,
     profile.profile_experience_version,
     recommendationProfileReady,
+    readOnly,
     userId,
   ]);
 
@@ -904,13 +926,14 @@ export function AppHome({
 
     if (guestMode) {
       setTicketInteractions(guestInteractions);
+      setTicketInteractionsLoaded(true);
       return () => {
         cancelled = true;
       };
     }
 
     const load = async () => {
-      if (guestInteractions.length > 0) {
+      if (!readOnly && guestInteractions.length > 0) {
         const importResponse = await fetch("/api/meetings/ticket-interactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -939,13 +962,14 @@ export function AppHome({
       if (!cancelled && response?.ok && data?.interactions) {
         setTicketInteractions(data.interactions);
       }
+      if (!cancelled) setTicketInteractionsLoaded(true);
     };
 
     void load();
     return () => {
       cancelled = true;
     };
-  }, [guestMode, userId]);
+  }, [guestMode, readOnly, userId]);
 
   useEffect(() => {
     if (guestMode) return;
@@ -957,7 +981,7 @@ export function AppHome({
 
     const intervalId = window.setInterval(refreshTickets, 30_000);
     return () => window.clearInterval(intervalId);
-  }, [guestMode, loadUserTicketsProgressively]);
+  }, [guestMode, loadUserTicketsProgressively, readOnly]);
 
   const switchTab = (tab: AppTab) => {
     if (tab === activeTab) return;
@@ -1212,6 +1236,11 @@ export function AppHome({
     window.location.replace("/");
   };
 
+  const endReadOnlyView = async () => {
+    await fetch("/api/admin/user-view", { method: "DELETE" }).catch(() => null);
+    window.location.assign("/admin");
+  };
+
   return (
     <section
       className={cn(
@@ -1221,6 +1250,25 @@ export function AppHome({
           : "bg-[#f7f4ed]",
       )}
     >
+      {readOnlyView && (
+        <div className="absolute inset-x-3 top-2 z-[100] flex items-center justify-between gap-3 rounded-2xl border border-amber-300/80 bg-amber-50/95 px-4 py-2.5 text-[#3f3215] shadow-lg backdrop-blur">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-black">
+              {readOnlyView.targetName} 화면 · 읽기 전용
+            </p>
+            <p className="mt-0.5 text-[10px] font-semibold text-black/50">
+              이 화면에서는 어떤 정보도 변경되지 않아요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void endReadOnlyView()}
+            className="shrink-0 rounded-full bg-black px-3 py-2 text-[11px] font-black text-white"
+          >
+            보기 종료
+          </button>
+        </div>
+      )}
       {activeTab === "recommend" &&
         !chatRoomOpen &&
         !recommendationFocusMode &&
@@ -1339,6 +1387,8 @@ export function AppHome({
           }}
         >
           <TicketListTab
+            readOnly={readOnly}
+            initialLoading={!initialTicketsLoaded || !ticketInteractionsLoaded}
             tickets={waitlistedTickets}
             interactions={ticketInteractions}
             dateApplications={dateApplications}
@@ -1374,6 +1424,7 @@ export function AppHome({
           }}
         >
           <MeetingRecommendation
+              readOnly={readOnly}
               userId={userId}
               profileCompleted
               profileName={currentProfile.name}
@@ -1445,6 +1496,7 @@ export function AppHome({
             <LazyMeetingChat
               userId={userId}
               active
+              readOnly={readOnly}
               onUnreadCountChange={setChatUnreadCount}
               onRoomOpenChange={setChatRoomOpen}
             />
@@ -1553,7 +1605,7 @@ export function AppHome({
                   operatorAccountSwitcher?.mode === "operator"
                 }
                 onLogout={logout}
-                previewMode={guestMode}
+                previewMode={guestMode || readOnly}
               />
             ) : initialLegacyResultPreview ? (
               <LazyProfileTab
@@ -1565,7 +1617,7 @@ export function AppHome({
                 profileRegenerating={profileRegenerating}
                 profileRegenerationError={profileRegenerationError}
                 onOpenQuestionReview={() => setQuestionReviewOpen(true)}
-                onRequestProfileRegeneration={() =>
+                onRequestProfileRegeneration={readOnly ? () => undefined : () =>
                   void startProfileRegeneration()
                 }
                 legacyResultPreview={initialLegacyResultPreview}
@@ -1582,7 +1634,7 @@ export function AppHome({
                 upgradeError={profileRegenerationError}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
-                onUpgrade={() => void startProfileRegeneration()}
+                onUpgrade={readOnly ? () => undefined : () => void startProfileRegeneration()}
                 onLogout={logout}
               />
             )
@@ -1601,7 +1653,7 @@ export function AppHome({
               setReplayedDeclinedTicket(null);
               switchTab("browse");
             }}
-            onReapply={() => {
+            onReapply={readOnly ? undefined : () => {
               const ticket = replayedDeclinedTicket;
               setReplayedDeclinedTicket(null);
               requestDeclinedTicketApplication(ticket);
@@ -2007,6 +2059,8 @@ function ticketListItemUpdatedAt(item: TicketListItem) {
 }
 
 function TicketListTab({
+  readOnly,
+  initialLoading,
   tickets,
   interactions,
   dateApplications,
@@ -2022,6 +2076,8 @@ function TicketListTab({
   onFocusModeChange,
   focusRequest,
 }: {
+  readOnly: boolean;
+  initialLoading: boolean;
   tickets: UserTicket[];
   interactions: TicketInteraction[];
   dateApplications: MeetingDateApplication[];
@@ -2556,7 +2612,7 @@ function TicketListTab({
               setSelectedApplicationTicketOpen(false);
             }}
             onReapply={
-              selectedApplicationTicketDeclined
+              !readOnly && selectedApplicationTicketDeclined
                 ? () => {
                   const ticket = selectedApplicationTicket;
                   setSelectedApplicationTicket(null);
@@ -2567,7 +2623,7 @@ function TicketListTab({
                 : undefined
             }
             onAccept={
-              selectedApplicationTicketOpen
+              !readOnly && selectedApplicationTicketOpen
                 ? () => {
                     const ticket = selectedApplicationTicket;
                     setSelectedApplicationTicket(null);
@@ -2577,7 +2633,7 @@ function TicketListTab({
                 : undefined
             }
             onDecline={
-              selectedApplicationTicketOpen
+              !readOnly && selectedApplicationTicketOpen
                 ? async () => {
                     const declined = await onDeclineTicket(
                       selectedApplicationTicket,
@@ -2611,7 +2667,11 @@ function TicketListTab({
             transition={ticketFadeTransition}
             className="flex h-full min-h-full flex-col overflow-hidden bg-transparent pb-2 pt-[calc(16px+env(safe-area-inset-top))] text-[#24211d]"
           >
-            {itemCount === 0 ? (
+            {initialLoading ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-24 pt-4">
+                <MatchingLoader message="티켓을 준비중이에요." />
+              </div>
+            ) : itemCount === 0 ? (
               <div className="flex min-h-0 flex-1 items-center justify-center px-5 pb-3 pt-4">
                 <div className="relative flex aspect-[1/1.618] w-full max-w-[340px] flex-col justify-center bg-[#f8f4eb] px-7 py-10 text-center shadow-[0_24px_60px_rgba(39,34,24,0.09)] before:pointer-events-none before:absolute before:inset-0 before:border before:border-black/[0.11] after:pointer-events-none after:absolute after:inset-2 after:border after:border-black/[0.055]">
                   <div className="relative">
@@ -3112,7 +3172,7 @@ function StoredTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={null}
+        badgeLabel="신청 완료"
         badgeClassName={statusBadgeClass(userTicket.status)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3287,7 +3347,7 @@ function AssignedApplicationTicketCard({
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
         tags={ticket.moodTags}
-        badgeLabel={null}
+        badgeLabel="신청 완료"
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
@@ -3329,7 +3389,7 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={null}
+        badgeLabel={status === "open" ? null : "신청 완료"}
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
@@ -3342,7 +3402,64 @@ function InteractionTicketCard({
         remainingSeatCount={ticket.remainingSeatCount}
         className={cn(ticketPaperImageClass, status === "no" && "grayscale")}
       />
+      {status === "open" && <UnansweredTicketCountdown ticket={ticket} />}
     </motion.div>
+  );
+}
+
+function ticketResponseDeadline(ticket: GatheringTicket) {
+  if (ticket.applicationClosesAt) {
+    const configuredDeadline = new Date(ticket.applicationClosesAt);
+    if (Number.isFinite(configuredDeadline.getTime())) return configuredDeadline;
+  }
+
+  const startsAt = ticketStartAtInKst(ticket.date, ticket.time);
+  return startsAt
+    ? new Date(startsAt.getTime() - 24 * 60 * 60 * 1000)
+    : null;
+}
+
+export function ticketResponseRemainingTime(
+  ticket: GatheringTicket,
+  nowMs = Date.now(),
+) {
+  const deadline = ticketResponseDeadline(ticket);
+  if (!deadline) return null;
+
+  const totalSeconds = Math.max(
+    0,
+    Math.ceil((deadline.getTime() - nowMs) / 1000),
+  );
+  const totalHours = Math.floor(totalSeconds / 3600);
+  const days = totalHours >= 72 ? Math.floor(totalHours / 24) : 0;
+  const hours = days > 0 ? totalHours % 24 : totalHours;
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const clock = [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+  return days > 0 ? `${days}d ${clock}` : clock;
+}
+
+function UnansweredTicketCountdown({ ticket }: { ticket: GatheringTicket }) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const remainingTime = ticketResponseRemainingTime(ticket, nowMs);
+  if (!remainingTime) return null;
+
+  return (
+    <time
+      dateTime={ticketResponseDeadline(ticket)?.toISOString()}
+      aria-label={`응답 마감까지 ${remainingTime}`}
+      className="pointer-events-none absolute inset-x-6 bottom-7 z-10 text-center text-[12px] font-semibold tabular-nums text-[#24211d]/75"
+    >
+      마감까지 {remainingTime}
+    </time>
   );
 }
 

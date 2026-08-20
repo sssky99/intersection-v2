@@ -216,11 +216,13 @@ function unreadMemberCount(
 export function MeetingChat({
   userId,
   active,
+  readOnly = false,
   onUnreadCountChange,
   onRoomOpenChange,
 }: {
   userId: string;
   active: boolean;
+  readOnly?: boolean;
   onUnreadCountChange: (count: number) => void;
   onRoomOpenChange: (open: boolean) => void;
 }) {
@@ -376,7 +378,7 @@ export function MeetingChat({
 
   const markRead = useCallback(
     async (roomId: string) => {
-      if (rooms.some((room) => room.id === roomId && room.readOnly)) {
+      if (readOnly || rooms.some((room) => room.id === roomId && room.readOnly)) {
         setActivityByRoom((current) => {
           const next = new Map(current);
           const activity = next.get(roomId);
@@ -416,7 +418,7 @@ export function MeetingChat({
         return next;
       });
     },
-    [loadRooms, rooms, supabase, userId],
+    [loadRooms, readOnly, rooms, supabase, userId],
   );
 
   useEffect(() => {
@@ -699,7 +701,7 @@ export function MeetingChat({
                           </span>
                         )}
                         <time>{formatMessageTime(message.created_at)}</time>
-                        {own && !deleted && !selectedRoom.readOnly && (
+                        {own && !deleted && !readOnly && !selectedRoom.readOnly && (
                           <button
                             type="button"
                             onClick={() => setPendingDeleteMessageId(message.id)}
@@ -726,7 +728,7 @@ export function MeetingChat({
               {error}
             </p>
           )}
-          {selectedRoom.readOnly ? (
+          {readOnly || selectedRoom.readOnly ? (
             <p className="rounded-2xl bg-black/[0.04] px-4 py-3 text-center text-xs font-bold text-black/45">
               실제 채팅을 확인하는 미리보기입니다. 메시지는 전송되지 않습니다.
             </p>

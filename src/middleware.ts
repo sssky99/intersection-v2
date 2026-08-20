@@ -72,6 +72,21 @@ export async function middleware(request: NextRequest) {
     nextUrl.searchParams.has('error_code') ||
     nextUrl.searchParams.has('error_description');
 
+  const isApiRequest = nextUrl.pathname.startsWith('/api/');
+  const isAdminViewExit =
+    nextUrl.pathname === '/api/admin/user-view' && request.method === 'DELETE';
+  if (
+    isApiRequest &&
+    request.cookies.has('inter_admin_user_view') &&
+    !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+    !isAdminViewExit
+  ) {
+    return NextResponse.json(
+      { error: '읽기 전용 보기에서는 정보를 변경할 수 없습니다.' },
+      { status: 403 },
+    );
+  }
+
   if (
     process.env.NODE_ENV === 'production' &&
     isProductionPreviewPath(nextUrl.pathname)
@@ -94,6 +109,10 @@ export async function middleware(request: NextRequest) {
     nextUrl.pathname === '/admin' ||
     nextUrl.pathname.startsWith('/admin/') ||
     nextUrl.pathname.startsWith('/api/admin/');
+
+  if (isApiRequest && !isAdminPreviewPath) {
+    return NextResponse.next();
+  }
 
   if (isNetlifyBranchDeploy(origin) && !isAdminPreviewPath) {
     const productionUrl = new URL(
@@ -149,5 +168,6 @@ export const config = {
     '/((?!api|_next/static|_next/image|favicon.ico|images).*)',
     '/api/admin/:path*',
     '/api/dev/:path*',
+    '/api/:path*',
   ],
 };

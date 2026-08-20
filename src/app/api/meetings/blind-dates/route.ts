@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import { hasCompletedPreferenceProfile } from "@/data/preferenceQuestions";
 import { blindDateSelectableDatesFrom } from "@/lib/blindDateDates";
 import {
@@ -355,24 +356,22 @@ async function sanitizeSingleOffer(
 }
 
 export async function GET() {
-  const userSupabase = await createClient();
-  const {
-    data: { user },
-  } = await userSupabase.auth.getUser();
-
-  if (!user) {
+  const requestUser = await requestUserId({ allowAdminView: true });
+  if (!requestUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const supabase = createAdminClient();
-    if (!(await recommendationProfileReady(supabase, user.id))) {
+    if (!(await recommendationProfileReady(supabase, requestUser.userId))) {
       return NextResponse.json(
         { error: "질문을 완료한 후 추천을 확인할 수 있어요." },
         { status: 403 },
       );
     }
-    return NextResponse.json({ offers: await loadUserOffers(supabase, user.id) });
+    return NextResponse.json({
+      offers: await loadUserOffers(supabase, requestUser.userId),
+    });
   } catch (error) {
     console.error("[meetings blind dates GET]", error);
     return NextResponse.json(

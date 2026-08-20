@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { requestUserId } from "@/lib/adminUserView";
 import {
   getMeetingTicketsByEventIds,
   getMeetingTicketsByInstanceIds,
 } from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { nextTicketInteractionStatus } from "@/lib/ticketInteractions";
 import { hasTicketStarted } from "@/lib/ticketDate";
 import type {
@@ -43,24 +43,21 @@ type InteractionInput = {
   paymentConfirmedAt?: unknown;
 };
 
-async function requestContext() {
-  const client = await createClient();
-  const {
-    data: { user },
-  } = await client.auth.getUser();
-  if (!user) return null;
+async function requestContext(allowAdminView = false) {
+  const requestUser = await requestUserId({ allowAdminView });
+  if (!requestUser) return null;
 
   const admin = createAdminClient();
   const { data: profile, error } = await admin
     .from("profiles")
     .select("is_test_participant")
-    .eq("user_id", user.id)
+    .eq("user_id", requestUser.userId)
     .maybeSingle<{ is_test_participant: boolean | null }>();
   if (error) throw error;
 
   return {
     admin,
-    userId: user.id,
+    userId: requestUser.userId,
     includeTestOnly: profile?.is_test_participant === true,
   };
 }
@@ -302,7 +299,7 @@ async function saveInteraction(
 
 export async function GET() {
   try {
-    const context = await requestContext();
+    const context = await requestContext(true);
     if (!context) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
