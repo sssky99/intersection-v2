@@ -559,6 +559,7 @@ export function AppHome({
     ) as AnswerMap,
   );
   const [currentProfile, setCurrentProfile] = useState(profile);
+  const [readOnlyControlOpen, setReadOnlyControlOpen] = useState(false);
   const preferenceProfileEnabled = usesPreferenceProfile(currentProfile);
   const profileQuestionsReady = currentProfile.questions_completed === true;
   const recommendationProfileReady = true;
@@ -859,7 +860,7 @@ export function AppHome({
   ]);
 
   useEffect(() => {
-    if (guestMode || readOnly) return;
+    if (guestMode) return;
     let cancelled = false;
 
     void loadUserTicketsProgressively({
@@ -1250,25 +1251,67 @@ export function AppHome({
           : "bg-[#f7f4ed]",
       )}
     >
-      {readOnlyView && (
-        <div className="absolute inset-x-3 top-2 z-[100] flex items-center justify-between gap-3 rounded-2xl border border-amber-300/80 bg-amber-50/95 px-4 py-2.5 text-[#3f3215] shadow-lg backdrop-blur">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-black">
-              {readOnlyView.targetName} 화면 · 읽기 전용
-            </p>
-            <p className="mt-0.5 text-[10px] font-semibold text-black/50">
-              이 화면에서는 어떤 정보도 변경되지 않아요.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void endReadOnlyView()}
-            className="shrink-0 rounded-full bg-black px-3 py-2 text-[11px] font-black text-white"
-          >
-            보기 종료
-          </button>
-        </div>
-      )}
+      {readOnlyView &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <aside className="fixed left-[calc(50%+231px)] top-6 z-[100] hidden w-[150px] rounded-2xl border border-amber-300/80 bg-amber-50/95 p-3 text-[#3f3215] shadow-lg backdrop-blur md:block">
+              <p className="truncate text-xs font-black">
+                {readOnlyView.targetName} 화면
+              </p>
+              <p className="mt-1 text-[10px] font-semibold text-black/50">
+                읽기 전용으로 보는 중
+              </p>
+              <button
+                type="button"
+                onClick={() => void endReadOnlyView()}
+                className="mt-3 h-9 w-full rounded-full bg-black text-[11px] font-black text-white"
+              >
+                보기 종료
+              </button>
+            </aside>
+
+            <div className="fixed right-2.5 top-2.5 z-[100] md:hidden">
+              {readOnlyControlOpen ? (
+                <div className="w-[min(330px,calc(100vw-20px))] rounded-2xl border border-amber-300/80 bg-amber-50/95 p-3 text-[#3f3215] shadow-lg backdrop-blur">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-black">
+                        {readOnlyView.targetName} 화면 · 읽기 전용
+                      </p>
+                      <p className="mt-0.5 text-[10px] font-semibold text-black/50">
+                        이 화면에서는 정보가 변경되지 않아요.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReadOnlyControlOpen(false)}
+                      className="shrink-0 rounded-full border border-black/10 px-3 py-2 text-[10px] font-black"
+                    >
+                      접기
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void endReadOnlyView()}
+                    className="mt-2.5 h-9 w-full rounded-full bg-black text-[11px] font-black text-white"
+                  >
+                    보기 종료
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setReadOnlyControlOpen(true)}
+                  className="rounded-full border border-amber-300/80 bg-amber-50/95 px-3 py-2 text-[10px] font-black text-[#3f3215] shadow-lg backdrop-blur"
+                >
+                  읽기 전용
+                </button>
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
       {activeTab === "recommend" &&
         !chatRoomOpen &&
         !recommendationFocusMode &&
