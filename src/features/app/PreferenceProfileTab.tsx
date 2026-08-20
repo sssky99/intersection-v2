@@ -126,7 +126,7 @@ function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
     status: profile.membership_status,
     endDate: profile.membership_end_date,
   });
-  const hasMembership = status === "active" || status === "pending";
+  const hasMembership = status === "active";
   const planLabel = isMembershipPlan(profile.membership_plan)
     ? membershipPlanLabels[profile.membership_plan]
     : null;
@@ -140,21 +140,14 @@ function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
         : endDate
           ? `${endDate}까지`
           : null;
-  const statusLabel =
-    status === "active"
-      ? planLabel ?? "멤버십 이용 중"
-      : status === "pending"
-        ? "결제 확인 중"
-        : status === "expired"
-          ? "멤버십 만료"
-          : "멤버십 없음";
-  const periodLabel = period
-    ? `이용 기간 ${period}`
-    : status === "pending"
-      ? "결제 확인 후 이용 기간이 표시돼요."
-      : hasMembership
-        ? "이용 기간을 확인하고 있어요."
-        : "현재 이용 중인 멤버십이 없어요.";
+  const statusLabel = hasMembership
+    ? planLabel ?? "멤버십 이용 중"
+    : "멤버십 없음";
+  const periodLabel = hasMembership
+    ? period
+      ? `이용 기간 ${period}`
+      : "이용 기간을 확인하고 있어요."
+    : "현재 이용 중인 멤버십이 없어요.";
 
   return (
     <section className="mt-5">
@@ -194,18 +187,12 @@ function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
               "shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black",
               status === "active"
                 ? "bg-[#766a49] text-white"
-                : status === "pending"
-                  ? "bg-amber-100 text-amber-700"
-                  : "bg-black/[0.055] text-black/38",
+                : "bg-black/[0.055] text-black/38",
             )}
           >
             {status === "active"
               ? "이용 중"
-              : status === "pending"
-                ? "확인 중"
-                : status === "expired"
-                  ? "만료"
-                  : "없음"}
+              : "없음"}
           </span>
         </div>
       </div>

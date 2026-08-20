@@ -992,10 +992,17 @@ export function AppHome({
   };
 
   const applyTicketInteraction = useCallback((interaction: TicketInteraction) => {
-    setTicketInteractions((current) => [
-      ...current.filter((row) => row.ticket.id !== interaction.ticket.id),
-      interaction,
-    ]);
+    setTicketInteractions((current) => {
+      const existing = current.find(
+        (row) => row.ticket.id === interaction.ticket.id,
+      );
+      if (interaction.status === "open" && existing) return current;
+
+      return [
+        ...current.filter((row) => row.ticket.id !== interaction.ticket.id),
+        interaction,
+      ];
+    });
   }, []);
 
   const declineTicketFromInbox = useCallback(
@@ -3202,39 +3209,43 @@ function AssignedApplicationTicketDetailView({
           {responseError}
         </p>
       )}
-      {onAccept && onDecline ? (
-        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
-          <motion.button
-            type="button"
-            whileTap={!responding ? { scale: 0.98 } : undefined}
-            disabled={responding}
-            onClick={() => void decline()}
-            className="flex h-[56px] items-center justify-center rounded-full bg-transparent text-[15px] font-black tracking-[0.04em] text-black/42 disabled:opacity-40"
-          >
-            NO
-          </motion.button>
-          <motion.button
-            type="button"
-            whileTap={!responding ? { scale: 0.98 } : undefined}
-            disabled={responding}
-            onClick={onAccept}
-            className="font-ticket-latin flex h-[56px] items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
-          >
-            YES
-          </motion.button>
-        </div>
-      ) : onReapply ? (
-        <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.985 }}
-            onClick={onReapply}
-            className="font-ticket-latin flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
-          >
-            YES
-          </motion.button>
-        </div>
-      ) : null}
+      {typeof document !== "undefined" &&
+        createPortal(
+          onAccept && onDecline ? (
+            <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+              <motion.button
+                type="button"
+                whileTap={!responding ? { scale: 0.98 } : undefined}
+                disabled={responding}
+                onClick={() => void decline()}
+                className="flex h-[56px] items-center justify-center rounded-full bg-transparent text-[15px] font-black tracking-[0.04em] text-black/42 disabled:opacity-40"
+              >
+                NO
+              </motion.button>
+              <motion.button
+                type="button"
+                whileTap={!responding ? { scale: 0.98 } : undefined}
+                disabled={responding}
+                onClick={onAccept}
+                className="font-ticket-latin flex h-[56px] items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
+              >
+                YES
+              </motion.button>
+            </div>
+          ) : onReapply ? (
+            <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.985 }}
+                onClick={onReapply}
+                className="font-ticket-latin flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[18px] font-bold italic tracking-[0.08em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)]"
+              >
+                YES
+              </motion.button>
+            </div>
+          ) : null,
+          document.body,
+        )}
     </motion.section>
   );
 }

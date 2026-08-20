@@ -987,6 +987,19 @@ function MeetingDateApplicationFlow({
       return interaction;
     }
 
+    if (status === "open") {
+      const openedAt = new Date().toISOString();
+      onTicketInteractionChange?.({
+        ticket,
+        status,
+        openedAt,
+        respondedAt: null,
+        paymentStartedAt: null,
+        paymentConfirmedAt: null,
+        updatedAt: openedAt,
+      });
+    }
+
     return fetch("/api/meetings/ticket-interactions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1050,14 +1063,14 @@ function MeetingDateApplicationFlow({
     screen === "blindDateUnlock";
 
   useEffect(() => {
-    onFocusModeChange?.(focusMode);
+    onFocusModeChange?.(active && focusMode);
     return () => onFocusModeChange?.(false);
-  }, [focusMode, onFocusModeChange]);
+  }, [active, focusMode, onFocusModeChange]);
 
   useEffect(() => {
-    onBottomNavHiddenChange?.(bottomNavHidden);
+    onBottomNavHiddenChange?.(active && bottomNavHidden);
     return () => onBottomNavHiddenChange?.(false);
-  }, [bottomNavHidden, onBottomNavHiddenChange]);
+  }, [active, bottomNavHidden, onBottomNavHiddenChange]);
 
   useEffect(() => {
     if (!blindDateOpenRequestPending || activeBlindDateOffers.length === 0) {
@@ -1152,6 +1165,7 @@ function MeetingDateApplicationFlow({
 
   useEffect(() => {
     if (
+      !active ||
       !profileCompleted ||
       !resumeDate ||
       isMeetingDateClosed(resumeDate) ||
@@ -1170,7 +1184,7 @@ function MeetingDateApplicationFlow({
     setError(null);
     setScreen("ticket");
     setMembershipSheetOpen(true);
-  }, [availableTickets, profileCompleted, resumeDate, today]);
+  }, [active, availableTickets, profileCompleted, resumeDate, today]);
 
   useEffect(() => {
     onDateApplicationsChange?.(applications);
@@ -1194,7 +1208,7 @@ function MeetingDateApplicationFlow({
 
   const openTicket = (ticket: GatheringTicket) => {
     if (saving) return;
-    recordTicketInteraction(ticket, "open");
+    void recordTicketInteraction(ticket, "open", { keepalive: true });
     setMembershipSheetOpen(false);
     setSelectedTicket(ticket);
     setError(null);
@@ -1220,7 +1234,9 @@ function MeetingDateApplicationFlow({
   };
 
   useEffect(() => {
-    if (!ticketAcceptRequestId || !ticketAcceptRequestTicketId) return;
+    if (!active || !ticketAcceptRequestId || !ticketAcceptRequestTicketId) {
+      return;
+    }
     const ticket = availableTickets.find(
       (item) => item.id === ticketAcceptRequestTicketId,
     );
@@ -1239,6 +1255,7 @@ function MeetingDateApplicationFlow({
 
     onTicketAcceptRequestHandled?.();
   }, [
+    active,
     availableTickets,
     onTicketAcceptRequestHandled,
     ticketAcceptRequestId,
@@ -1773,7 +1790,9 @@ function MeetingDateApplicationFlow({
           </p>
         )}
 
-        {typeof document !== "undefined" && createPortal(selectedEventClosed ? (
+        {active &&
+          typeof document !== "undefined" &&
+          createPortal(selectedEventClosed ? (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
             <div className="flex h-[56px] w-full items-center justify-center rounded-full bg-black/12 text-[15px] font-black tracking-[-0.02em] text-black/42">
               마감
@@ -1817,7 +1836,7 @@ function MeetingDateApplicationFlow({
               YES
             </motion.button>
           </div>
-        ), document.body)}
+          ), document.body)}
 
         <AnimatePresence>
           {waitlistDialog && (
@@ -1859,7 +1878,7 @@ function MeetingDateApplicationFlow({
           )}
         </AnimatePresence>
 
-        {typeof document !== "undefined" &&
+        {active && typeof document !== "undefined" &&
           createPortal(
             <AnimatePresence>
               {membershipSheetOpen && (
@@ -1981,6 +2000,7 @@ function MeetingDateApplicationFlow({
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
+            className="pt-[calc(48px+env(safe-area-inset-top))]"
           >
             <h1 className="text-[28px] font-bold leading-9 text-black">
               신청이 완료되었습니다.
