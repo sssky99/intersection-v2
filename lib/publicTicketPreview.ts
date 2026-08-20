@@ -11,7 +11,11 @@ import {
   legacyStoredTicketCourseSteps,
   normalizeStoredTicketCourseSteps,
 } from "@/lib/ticketCourse";
-import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
+import {
+  hasTicketStarted,
+  ticketApplicationClosesAt,
+  todayInKst,
+} from "@/lib/ticketDate";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
@@ -241,10 +245,18 @@ function toPublicPreviewTicket(
   const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
     template.atmosphere_gender_mood,
   );
+  const applicationClosesAt = ticketApplicationClosesAt(
+    instance.event_date,
+    time,
+  );
 
   return {
     id: instance.id,
     templateId: instance.template_id,
+    applicationClosed: Boolean(
+      applicationClosesAt && applicationClosesAt.getTime() <= Date.now(),
+    ),
+    applicationClosesAt: applicationClosesAt?.toISOString() ?? null,
     title: instance.title || template.title,
     subtitle,
     date: instance.event_date,
@@ -293,14 +305,19 @@ function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
     Array.isArray(value)
       ? value.filter((item): item is string => typeof item === "string")
       : [];
+  const applicationClosesAt = ticketApplicationClosesAt(
+    event.event_date,
+    event.starts_at,
+    event.application_closes_at,
+  );
 
   return {
     id: event.id,
     templateId: event.program_id,
-    applicationClosed:
-      Boolean(event.application_closes_at) &&
-      new Date(event.application_closes_at as string).getTime() <= Date.now(),
-    applicationClosesAt: event.application_closes_at,
+    applicationClosed: Boolean(
+      applicationClosesAt && applicationClosesAt.getTime() <= Date.now(),
+    ),
+    applicationClosesAt: applicationClosesAt?.toISOString() ?? null,
     reservationName:
       typeof snapshot.reservationName === "string"
         ? snapshot.reservationName.trim() || null

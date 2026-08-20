@@ -11,7 +11,11 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { hasCurrentMembershipAccess } from "@/features/membership/membershipTypes";
-import { hasTicketStarted, todayInKst } from "@/lib/ticketDate";
+import {
+  hasTicketStarted,
+  isTicketApplicationClosed,
+  todayInKst,
+} from "@/lib/ticketDate";
 import {
   membershipPlanAmounts,
   oneTimeMembershipCreditAmount,
@@ -319,15 +323,6 @@ export async function POST(request: NextRequest) {
       { status: 409 },
     );
   }
-  if (
-    selectedEvent?.application_closes_at &&
-    new Date(selectedEvent.application_closes_at).getTime() <= Date.now()
-  ) {
-    return NextResponse.json(
-      { error: "마감된 행사예요." },
-      { status: 409 },
-    );
-  }
   let selectedTicket: SelectedTicketInstance | null = null;
   if (ticketInstanceId) {
     const allowedVisibilities =
@@ -353,6 +348,23 @@ export async function POST(request: NextRequest) {
       );
     }
     selectedTicket = data;
+  }
+
+  const applicationTime =
+    selectedEvent?.starts_at ??
+    selectedTicket?.event_time ??
+    meetingDateSchedule(dates[0])?.time;
+  if (
+    isTicketApplicationClosed(
+      dates[0],
+      applicationTime,
+      selectedEvent?.application_closes_at,
+    )
+  ) {
+    return NextResponse.json(
+      { error: "신청이 마감된 행사예요." },
+      { status: 409 },
+    );
   }
 
   const closed = isMeetingDateClosed(dates[0]);

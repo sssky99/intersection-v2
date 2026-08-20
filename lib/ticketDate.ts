@@ -1,5 +1,6 @@
 const kstOffsetMs = 9 * 60 * 60 * 1000;
 const ticketDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const applicationCloseOffsetMs = 24 * 60 * 60 * 1000;
 
 export function todayInKst(now = new Date()) {
   const kstNow = new Date(now.getTime() + kstOffsetMs);
@@ -35,4 +36,34 @@ export function hasTicketStarted(
 ) {
   const startAt = ticketStartAtInKst(date, time);
   return Boolean(startAt && now >= startAt);
+}
+
+export function ticketApplicationClosesAt(
+  date: string | null | undefined,
+  time: string | null | undefined,
+  configuredClosesAt?: string | null,
+) {
+  if (configuredClosesAt) {
+    const configured = new Date(configuredClosesAt);
+    if (Number.isFinite(configured.getTime())) return configured;
+  }
+
+  const startAt = ticketStartAtInKst(date, time);
+  return startAt
+    ? new Date(startAt.getTime() - applicationCloseOffsetMs)
+    : null;
+}
+
+export function isTicketApplicationClosed(
+  date: string | null | undefined,
+  time: string | null | undefined,
+  configuredClosesAt?: string | null,
+  now = new Date(),
+) {
+  const closesAt = ticketApplicationClosesAt(
+    date,
+    time,
+    configuredClosesAt,
+  );
+  return Boolean(closesAt && now >= closesAt);
 }
