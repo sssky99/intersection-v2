@@ -534,6 +534,7 @@ type MeetingRecommendationProps = {
   onBlindDateOffersChange?: (offers: BlindDateUserOffer[]) => void;
   blindDateOpenRequestId?: number;
   blindDateOpenRequestPending?: boolean;
+  blindDateOpenRequestOfferId?: string | null;
   onBlindDateOpenRequestHandled?: () => void;
   ticketAcceptRequestId?: number;
   ticketAcceptRequestTicketId?: string | null;
@@ -866,6 +867,7 @@ function MeetingDateApplicationFlow({
   onBlindDateOffersChange,
   blindDateOpenRequestId = 0,
   blindDateOpenRequestPending = false,
+  blindDateOpenRequestOfferId = null,
   onBlindDateOpenRequestHandled,
   ticketAcceptRequestId = 0,
   ticketAcceptRequestTicketId = null,
@@ -1140,7 +1142,20 @@ function MeetingDateApplicationFlow({
       return;
     }
 
-    if (activeBlindDateOffers.length > 1) {
+    const requestedOffer = blindDateOpenRequestOfferId
+      ? activeBlindDateOffers.find(
+          (offer) => offer.id === blindDateOpenRequestOfferId,
+        ) ?? null
+      : null;
+
+    if (requestedOffer) {
+      setSelectedBlindDateOfferId(requestedOffer.id);
+      setScreen(
+        shouldPlayBlindDateUnlock(requestedOffer)
+          ? "blindDateUnlock"
+          : "blindDate",
+      );
+    } else if (activeBlindDateOffers.length > 1) {
       setSelectedBlindDateOfferId(null);
       setScreen("blindDateList");
     } else {
@@ -1158,6 +1173,7 @@ function MeetingDateApplicationFlow({
     activeBlindDateOffers,
     answerableBlindDateOffers,
     blindDateOpenRequestId,
+    blindDateOpenRequestOfferId,
     blindDateOpenRequestPending,
     onBlindDateOpenRequestHandled,
   ]);

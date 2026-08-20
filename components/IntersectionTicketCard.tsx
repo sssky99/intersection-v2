@@ -26,6 +26,7 @@ type IntersectionTicketCardProps = {
   overlayVisible?: boolean;
   priority?: boolean;
   appearance?: "photo" | "minimal";
+  minimalTone?: "stone" | "blind-date";
 };
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -233,6 +234,7 @@ export function IntersectionTicketCard({
   overlayVisible = true,
   priority = false,
   appearance = "photo",
+  minimalTone = "stone",
 }: IntersectionTicketCardProps) {
   const dateLabel = formatTicketDateLabel(date);
   const timeLabel = formatTicketTimeLabel(time);
@@ -252,7 +254,10 @@ export function IntersectionTicketCard({
       <article
         data-testid="intersection-ticket-card"
         className={cn(
-          "relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] border border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)] text-[#24211d] shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]",
+          "relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] border text-[#24211d] shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]",
+          minimalTone === "blind-date"
+            ? "border-[#d0cbbc]/75 bg-[radial-gradient(ellipse_at_50%_36%,#fffdf9_0%,#f5f1e9_42%,#ddd8cf_100%)]"
+            : "border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)]",
           className,
         )}
       >

@@ -543,9 +543,12 @@ export function AppHome({
   const [participationProgressOpen, setParticipationProgressOpen] =
     useState(false);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
+  const [blindDateOffersLoaded, setBlindDateOffersLoaded] = useState(guestMode);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
+  const [blindDateOpenRequestOfferId, setBlindDateOpenRequestOfferId] =
+    useState<string | null>(null);
   const [answerRows, setAnswerRows] = useState<AnswerRow[]>(initialAnswerRows);
   const [algorithmParametersOpen, setAlgorithmParametersOpen] = useState(false);
   const [algorithmQuestionAnswering, setAlgorithmQuestionAnswering] =
@@ -868,12 +871,14 @@ export function AppHome({
     });
     if (recommendationProfileReady && currentProfile.profile_completed) {
       void fetchBlindDateOffers().then((offers) => {
-        if (cancelled || !offers) return;
+        if (cancelled) return;
 
-        setBlindDateOffers(offers);
+        if (offers) setBlindDateOffers(offers);
+        setBlindDateOffersLoaded(true);
       });
     } else {
       setBlindDateOffers([]);
+      setBlindDateOffersLoaded(true);
     }
     const answerQuestions = usesPreferenceProfile(profile)
       ? preferenceQuestions
@@ -1002,11 +1007,12 @@ export function AppHome({
     setParticipationProgressOpen(true);
   };
 
-  const openBlindDateStatus = () => {
+  const openBlindDateStatus = (offerId: string | null = null) => {
     setActiveTab("recommend");
     setQuestionReviewOpen(false);
     setQuestionReviewStartIndex(null);
     setTabUrl("recommend");
+    setBlindDateOpenRequestOfferId(offerId);
     setBlindDateOpenRequestId((current) => current + 1);
     setBlindDateOpenRequestPending(true);
   };
@@ -1332,7 +1338,7 @@ export function AppHome({
       {activeTab === "browse" && activeBlindDateOfferCount > 0 && (
         <button
           type="button"
-          onClick={openBlindDateStatus}
+          onClick={() => openBlindDateStatus()}
           title="블라인드 데이트"
           aria-label={
             pendingBlindDateOfferCount > 0
@@ -1431,10 +1437,15 @@ export function AppHome({
         >
           <TicketListTab
             readOnly={readOnly}
-            initialLoading={!initialTicketsLoaded || !ticketInteractionsLoaded}
+            initialLoading={
+              !initialTicketsLoaded ||
+              !ticketInteractionsLoaded ||
+              !blindDateOffersLoaded
+            }
             tickets={waitlistedTickets}
             interactions={ticketInteractions}
             dateApplications={dateApplications}
+            blindDateOffers={blindDateOffers}
             availableTickets={availableMeetingTickets}
             totalTicketCount={waitlistedTicketCount ?? waitlistedTickets.length}
             loadingMore={loadingRemainingTickets}
@@ -1444,6 +1455,7 @@ export function AppHome({
             onGoRecommend={() => switchTab("recommend")}
             onReapplyTicket={requestDeclinedTicketApplication}
             onDeclineTicket={declineTicketFromInbox}
+            onOpenBlindDate={(offerId) => openBlindDateStatus(offerId)}
             onFocusModeChange={setTicketTabFocusMode}
             focusRequest={ticketTabFocusRequest}
           />
@@ -1492,6 +1504,7 @@ export function AppHome({
               onBlindDateOffersChange={setBlindDateOffers}
               blindDateOpenRequestId={blindDateOpenRequestId}
               blindDateOpenRequestPending={blindDateOpenRequestPending}
+              blindDateOpenRequestOfferId={blindDateOpenRequestOfferId}
               ticketAcceptRequestId={ticketAcceptRequest?.id ?? 0}
               ticketAcceptRequestTicketId={
                 ticketAcceptRequest?.ticketId ?? null
@@ -1504,9 +1517,10 @@ export function AppHome({
                 }
                 switchTab("browse");
               }}
-              onBlindDateOpenRequestHandled={() =>
-                setBlindDateOpenRequestPending(false)
-              }
+              onBlindDateOpenRequestHandled={() => {
+                setBlindDateOpenRequestPending(false);
+                setBlindDateOpenRequestOfferId(null);
+              }}
             />
         </div>
         <div
@@ -2087,7 +2101,8 @@ type TicketListItem =
       kind: "interaction-ticket";
       id: string;
       interaction: TicketInteraction;
-    };
+    }
+  | { kind: "blind-date"; id: string; offer: BlindDateUserOffer };
 
 function ticketListItemUpdatedAt(item: TicketListItem) {
   const value =
@@ -2095,10 +2110,27 @@ function ticketListItemUpdatedAt(item: TicketListItem) {
       ? item.userTicket.updatedAt
       : item.kind === "interaction-ticket"
         ? item.interaction.updatedAt
-        : item.application.updatedAt ?? item.application.createdAt;
+        : item.kind === "blind-date"
+          ? item.offer.createdAt
+          : item.application.updatedAt ?? item.application.createdAt;
   if (!value) return 0;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function shouldShowBlindDateTicket(offer: BlindDateUserOffer) {
+  if (
+    offer.isExpired ||
+    ["pending_admin", "declined", "expired", "cancelled", "completed"].includes(
+      offer.status,
+    )
+  ) {
+    return false;
+  }
+
+  if (offer.status !== "scheduled" || !offer.feedbackClosesAt) return true;
+  const feedbackClosesAt = new Date(offer.feedbackClosesAt).getTime();
+  return !Number.isFinite(feedbackClosesAt) || feedbackClosesAt > Date.now();
 }
 
 function TicketListTab({
@@ -2107,6 +2139,7 @@ function TicketListTab({
   tickets,
   interactions,
   dateApplications,
+  blindDateOffers,
   availableTickets,
   totalTicketCount,
   loadingMore,
@@ -2116,6 +2149,7 @@ function TicketListTab({
   onGoRecommend,
   onReapplyTicket,
   onDeclineTicket,
+  onOpenBlindDate,
   onFocusModeChange,
   focusRequest,
 }: {
@@ -2124,6 +2158,7 @@ function TicketListTab({
   tickets: UserTicket[];
   interactions: TicketInteraction[];
   dateApplications: MeetingDateApplication[];
+  blindDateOffers: BlindDateUserOffer[];
   availableTickets: GatheringTicket[];
   totalTicketCount: number;
   loadingMore: boolean;
@@ -2133,6 +2168,7 @@ function TicketListTab({
   onGoRecommend: () => void;
   onReapplyTicket: (ticket: GatheringTicket) => void;
   onDeclineTicket: (ticket: GatheringTicket) => Promise<boolean>;
+  onOpenBlindDate: (offerId: string) => void;
   onFocusModeChange: (focused: boolean) => void;
   focusRequest: { id: number; ticketId: string } | null;
 }) {
@@ -2240,13 +2276,24 @@ function TicketListTab({
         userTicket,
       })),
       ...visibleInteractions.map((interaction): TicketListItem => ({
-          kind: "interaction-ticket",
-          id: `interaction-ticket:${interaction.ticket.id}`,
-          interaction,
+        kind: "interaction-ticket",
+        id: `interaction-ticket:${interaction.ticket.id}`,
+        interaction,
+      })),
+      ...blindDateOffers
+        .filter(shouldShowBlindDateTicket)
+        .map((offer): TicketListItem => ({
+          kind: "blind-date",
+          id: `blind-date:${offer.id}`,
+          offer,
         })),
     ];
     const latestItemByTicket = new Map<string, TicketListItem>();
     for (const item of candidates) {
+      if (item.kind === "blind-date") {
+        latestItemByTicket.set(item.id, item);
+        continue;
+      }
       const ticketId =
         item.kind === "stored-ticket"
           ? item.userTicket.ticket.id
@@ -2273,19 +2320,24 @@ function TicketListTab({
           ? left.userTicket.ticket.date
           : left.kind === "interaction-ticket"
             ? left.interaction.ticket.date
-            : left.application.meetingDate;
+            : left.kind === "blind-date"
+              ? left.offer.scheduledDate ?? left.offer.createdAt.slice(0, 10)
+              : left.application.meetingDate;
       const rightDate =
         right.kind === "stored-ticket"
           ? right.userTicket.ticket.date
           : right.kind === "interaction-ticket"
             ? right.interaction.ticket.date
-            : right.application.meetingDate;
+            : right.kind === "blind-date"
+              ? right.offer.scheduledDate ?? right.offer.createdAt.slice(0, 10)
+              : right.application.meetingDate;
       return leftDate.localeCompare(rightDate);
     });
   }, [
     availableTicketById,
     interactions,
     dateApplications,
+    blindDateOffers,
     tickets,
   ]);
   const itemCount = ticketItems.length;
@@ -2299,7 +2351,9 @@ function TicketListTab({
           ? item.userTicket.ticket.id
           : item.kind === "interaction-ticket"
             ? item.interaction.ticket.id
-            : item.ticket.id;
+            : item.kind === "blind-date"
+              ? null
+              : item.ticket.id;
       return ticketId === focusRequest.ticketId;
     });
     if (targetIndex < 0) return;
@@ -2474,6 +2528,15 @@ function TicketListTab({
     dragState.current.interacting = false;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (
+      !dragState.current.moved &&
+      Math.abs(dragDistance) <= 8 &&
+      tappedItem?.kind === "blind-date"
+    ) {
+      onOpenBlindDate(tappedItem.offer.id);
+      return;
     }
 
     if (
@@ -2783,6 +2846,11 @@ function TicketListTab({
                             );
                             setSelectedApplicationTicket(item.interaction.ticket);
                           }}
+                        />
+                      ) : item.kind === "blind-date" ? (
+                        <BlindDateTicketCard
+                          offer={item.offer}
+                          onOpen={() => onOpenBlindDate(item.offer.id)}
                         />
                       ) : (
                         <AssignedApplicationTicketCard
@@ -3446,6 +3514,54 @@ function InteractionTicketCard({
         className={cn(ticketPaperImageClass, status === "no" && "grayscale")}
       />
       {status === "open" && <UnansweredTicketCountdown ticket={ticket} />}
+    </motion.div>
+  );
+}
+
+function blindDateTicketBadge(offer: BlindDateUserOffer) {
+  if (offer.status === "completed") return "완료";
+  if (offer.status === "scheduled") return "일정 확정";
+  if (offer.status === "needs_reschedule") return "일정 조율";
+  if (offer.ownResponse === "pending") return "초대 도착";
+  return "응답 대기";
+}
+
+function BlindDateTicketCard({
+  offer,
+  onOpen,
+}: {
+  offer: BlindDateUserOffer;
+  onOpen: () => void;
+}) {
+  return (
+    <motion.div
+      role="button"
+      tabIndex={0}
+      aria-label="블라인드 데이트 티켓 자세히 보기"
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      whileTap={{ scale: 0.99 }}
+      className={cn(
+        ticketPaperFrameClass,
+        "outline-none focus-visible:ring-2 focus-visible:ring-[#765a69] focus-visible:ring-offset-4",
+      )}
+    >
+      <IntersectionTicketCard
+        title="BLIND DATE"
+        appearance="minimal"
+        minimalTone="blind-date"
+        date={offer.scheduledDate}
+        time={offer.timeLabel}
+        location={offer.region}
+        badgeLabel={blindDateTicketBadge(offer)}
+        badgeClassName="border-[#bda9b4]/70 bg-[#f8f3f5]/70 text-[#765a69] shadow-none"
+        className={ticketPaperImageClass}
+      />
     </motion.div>
   );
 }
