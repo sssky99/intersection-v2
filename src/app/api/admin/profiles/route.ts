@@ -149,6 +149,43 @@ const USER_ANSWERS_PAGE_SIZE = 1000;
 const ALGORITHM_PARAMETERS_PAGE_SIZE = 1000;
 const USER_ID_BATCH_SIZE = 100;
 
+async function attachOneTimePayments(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const paidUserIds = new Set<string>();
+
+  for (
+    let batchStart = 0;
+    batchStart < userIds.length;
+    batchStart += USER_ID_BATCH_SIZE
+  ) {
+    const userIdBatch = userIds.slice(
+      batchStart,
+      batchStart + USER_ID_BATCH_SIZE,
+    );
+    const { data, error } = await supabase
+      .from("payment_transactions")
+      .select("user_id")
+      .in("user_id", userIdBatch)
+      .eq("payment_kind", "one_time")
+      .eq("status", "completed");
+    if (error) throw error;
+
+    for (const row of data ?? []) {
+      if (row.user_id) paidUserIds.add(row.user_id);
+    }
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    one_time_paid: paidUserIds.has(profile.user_id),
+  }));
+}
+
 async function attachProfileAnswers(
   supabase: ReturnType<typeof createAdminClient>,
   profiles: AdminProfile[],
@@ -421,9 +458,13 @@ export async function GET(request: NextRequest) {
       supabase,
       profilesWithParameters,
     );
+    const profilesWithPayments = await attachOneTimePayments(
+      supabase,
+      profilesWithAnswers,
+    );
 
     return NextResponse.json({
-      profiles: normalizeProfiles(profilesWithAnswers),
+      profiles: normalizeProfiles(profilesWithPayments),
     });
   } catch (error) {
     console.error("Admin profiles load failed:", error);
@@ -600,13 +641,16 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({
       profile: normalizeAdminProfile(
         (
-          await attachProfileAnswers(
+          await attachOneTimePayments(
             supabase,
-            await attachAlgorithmParameters(
+            await attachProfileAnswers(
               supabase,
-              await attachOperatorRatings(supabase, [
-                await fetchProfile(supabase, userId),
-              ]),
+              await attachAlgorithmParameters(
+                supabase,
+                await attachOperatorRatings(supabase, [
+                  await fetchProfile(supabase, userId),
+                ]),
+              ),
             ),
           )
         )[0],

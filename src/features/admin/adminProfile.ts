@@ -69,6 +69,7 @@ export type AdminProfile = {
   algorithm_parameters?: AdminAlgorithmParameter[];
   active_membership?: boolean;
   expired_membership?: boolean;
+  one_time_paid?: boolean;
 };
 
 export function hasActiveMembership(profile: AdminProfile) {
@@ -102,5 +103,6 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     algorithm_parameters: profile.algorithm_parameters ?? [],
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
+    one_time_paid: profile.one_time_paid ?? false,
   };
 }

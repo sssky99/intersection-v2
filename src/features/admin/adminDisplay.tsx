@@ -57,9 +57,11 @@ function hasFallbackPublicIntro(profile: NameLike) {
 export function AdminMemberName({
   profile,
   showOperatorRating = false,
+  oneTimePaid = false,
 }: {
   profile: NameLike;
   showOperatorRating?: boolean;
+  oneTimePaid?: boolean;
 }) {
   const active = hasActiveMembershipForDisplay(profile);
   const expired = hasExpiredMembershipForDisplay(profile);
@@ -70,6 +72,7 @@ export function AdminMemberName({
       <span className="truncate">{profileName(profile)}</span>
       {fallbackIntro && <span aria-label="폴백 자기소개">❌</span>}
       {active && <span aria-label="멤버십 적용중">💎</span>}
+      {oneTimePaid && <span aria-label="1회권 결제 완료">🥇</span>}
       {expired && (
         <span
           className="shrink-0 text-sm font-black leading-none text-red-500"

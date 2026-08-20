@@ -311,6 +311,10 @@ function rowMembershipStatus(row: AdminWaitlistRow): MembershipStatus {
   return row.profile ? membershipStatusForDisplay(row.profile) : "none";
 }
 
+function hasOneTimePayment(row: AdminWaitlistRow) {
+  return row.source === "date_application" && row.deposit_status === "confirmed";
+}
+
 function rowGenderFilter(row: AdminWaitlistRow): GenderFilter {
   const gender = row.profile?.gender;
   if (gender === "남성" || gender === "여성") return gender;
@@ -1389,7 +1393,14 @@ function DistributionApplicantCard({
       </button>
       <button type="button" onClick={onOpen} className="min-w-0 text-left">
         <p className="truncate text-xs font-black">
-          {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
+          {profile ? (
+            <AdminMemberName
+              profile={profile}
+              oneTimePaid={hasOneTimePayment(row)}
+            />
+          ) : (
+            "신청자 미확인"
+          )}
         </p>
         <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
           {[profile?.gender, profile?.birth_year, profile?.mbti]
@@ -1430,7 +1441,14 @@ function ApplicantRow({
     >
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
+          {profile ? (
+            <AdminMemberName
+              profile={profile}
+              oneTimePaid={hasOneTimePayment(row)}
+            />
+          ) : (
+            "신청자 미확인"
+          )}
           {saving && (
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-bold text-black/45">
               저장 중
@@ -1495,7 +1513,14 @@ function WaitlistDetailPanel({
           waitlist detail
         </p>
         <h3 className="mt-1 text-xl font-bold">
-          {profile ? <AdminMemberName profile={profile} /> : "신청자 미확인"}
+          {profile ? (
+            <AdminMemberName
+              profile={profile}
+              oneTimePaid={hasOneTimePayment(row)}
+            />
+          ) : (
+            "신청자 미확인"
+          )}
         </h3>
         <p className="mt-1 text-xs font-semibold text-black/45">
           {[profile?.gender, profile?.birth_year, profile?.mbti]

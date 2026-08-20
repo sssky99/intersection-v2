@@ -1601,7 +1601,11 @@ function ApplicantTable({
               >
                 <TableCell className="w-[170px] px-3">
                   <span className="block min-w-0 font-bold text-black">
-                    <AdminMemberName profile={profile} showOperatorRating />
+                    <AdminMemberName
+                      profile={profile}
+                      showOperatorRating
+                      oneTimePaid={profile.one_time_paid}
+                    />
                   </span>
                 </TableCell>
                 <TableCell className="w-20 px-3">
@@ -1667,7 +1671,11 @@ function ApplicantCards({
               />
               <div className="space-y-2 p-4">
                 <h3 className="truncate text-base font-bold">
-                  <AdminMemberName profile={profile} showOperatorRating />
+                  <AdminMemberName
+                    profile={profile}
+                    showOperatorRating
+                    oneTimePaid={profile.one_time_paid}
+                  />
                 </h3>
                 <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-black/55">
                   <span>{formatAgeAndBirthYear(profile)}</span>
@@ -1765,7 +1773,10 @@ function ProfileDetailPanel({
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             <h2 className="text-xl font-bold">
-              <AdminMemberName profile={profile} />
+              <AdminMemberName
+                profile={profile}
+                oneTimePaid={profile.one_time_paid}
+              />
               {detailNickname && (
                 <span className="ml-1 font-bold text-black/55">
                   ({detailNickname})
