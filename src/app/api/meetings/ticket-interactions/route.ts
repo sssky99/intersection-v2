@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getMeetingTicketsByInstanceIds } from "@/lib/publicTicketPreview";
+import {
+  getMeetingTicketsByEventIds,
+  getMeetingTicketsByInstanceIds,
+} from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { nextTicketInteractionStatus } from "@/lib/ticketInteractions";
@@ -20,7 +23,8 @@ const validStatuses = new Set<TicketInteractionStatus>([
 ]);
 
 type InteractionRow = {
-  ticket_instance_id: string;
+  ticket_instance_id: string | null;
+  event_id: string | null;
   ticket_template_id: string;
   status: TicketInteractionStatus;
   opened_at: string | null;
@@ -73,25 +77,33 @@ async function interactionResponse(
   const { data, error } = await context.admin
     .from("ticket_user_interactions")
     .select(
-      "ticket_instance_id,ticket_template_id,status,opened_at,responded_at,payment_started_at,payment_confirmed_at,updated_at",
+      "ticket_instance_id,event_id,ticket_template_id,status,opened_at,responded_at,payment_started_at,payment_confirmed_at,updated_at",
     )
     .eq("user_id", context.userId)
     .order("updated_at", { ascending: false })
     .returns<InteractionRow[]>();
   if (error) throw error;
 
-  const tickets = await getMeetingTicketsByInstanceIds({
-    instanceIds: (data ?? []).map((row) => row.ticket_instance_id),
-    includeTestOnly: context.includeTestOnly,
-  });
+  const [instanceTickets, eventTickets] = await Promise.all([
+    getMeetingTicketsByInstanceIds({
+      instanceIds: (data ?? []).flatMap((row) =>
+        row.ticket_instance_id ? [row.ticket_instance_id] : [],
+      ),
+      includeTestOnly: context.includeTestOnly,
+    }),
+    getMeetingTicketsByEventIds(
+      (data ?? []).flatMap((row) => (row.event_id ? [row.event_id] : [])),
+    ),
+  ]);
   const ticketMap = new Map(
-    tickets
+    [...instanceTickets, ...eventTickets]
       .filter((ticket) => !hasTicketStarted(ticket.date, ticket.time))
       .map((ticket) => [ticket.id, ticket]),
   );
   const interactions = (data ?? [])
     .map((row): TicketInteraction | null => {
-      const ticket = ticketMap.get(row.ticket_instance_id);
+      const ticketId = row.event_id ?? row.ticket_instance_id;
+      const ticket = ticketId ? ticketMap.get(ticketId) : null;
       if (!ticket) return null;
       return {
         ticket,
@@ -126,31 +138,73 @@ async function saveInteraction(
   const allowedVisibilities = context.includeTestOnly
     ? ["public", "test_only"]
     : ["public"];
-  const { data: instance, error: instanceError } = await context.admin
-    .from("ticket_instances")
-    .select("id,template_id,title,event_date,event_time,region")
+  const { data: event, error: eventError } = await context.admin
+    .from("meeting_events")
+    .select("id,program_id,title,event_date,starts_at,region")
     .eq("id", ticketInstanceId)
     .in("visibility", allowedVisibilities)
     .maybeSingle<{
       id: string;
-      template_id: string;
+      program_id: string;
       title: string;
-      event_date: string | null;
-      event_time: string | null;
-      region: string | null;
+      event_date: string;
+      starts_at: string;
+      region: string;
     }>();
-  if (instanceError) throw instanceError;
-  if (!instance) return false;
-  if (hasTicketStarted(instance.event_date, instance.event_time)) return false;
+  if (eventError && eventError.code !== "PGRST205") throw eventError;
 
-  const { data: existing, error: existingError } = await context.admin
+  const instanceResult = event
+    ? null
+    : await context.admin
+        .from("ticket_instances")
+        .select("id,template_id,title,event_date,event_time,region")
+        .eq("id", ticketInstanceId)
+        .in("visibility", allowedVisibilities)
+        .maybeSingle<{
+          id: string;
+          template_id: string;
+          title: string;
+          event_date: string | null;
+          event_time: string | null;
+          region: string | null;
+        }>();
+  if (instanceResult?.error) throw instanceResult.error;
+  const instance = instanceResult?.data ?? null;
+  if (!event && !instance) return false;
+
+  const target = event
+    ? {
+        kind: "event" as const,
+        id: event.id,
+        templateId: event.program_id,
+        title: event.title,
+        date: event.event_date,
+        time: event.starts_at,
+        region: event.region,
+      }
+    : {
+        kind: "instance" as const,
+        id: instance!.id,
+        templateId: instance!.template_id,
+        title: instance!.title,
+        date: instance!.event_date,
+        time: instance!.event_time,
+        region: instance!.region,
+      };
+  if (hasTicketStarted(target.date, target.time)) return false;
+
+  let existingQuery = context.admin
     .from("ticket_user_interactions")
     .select(
-      "ticket_instance_id,ticket_template_id,status,opened_at,responded_at,payment_started_at,payment_confirmed_at,updated_at",
+      "ticket_instance_id,event_id,ticket_template_id,status,opened_at,responded_at,payment_started_at,payment_confirmed_at,updated_at",
     )
-    .eq("user_id", context.userId)
-    .eq("ticket_instance_id", instance.id)
-    .maybeSingle<InteractionRow>();
+    .eq("user_id", context.userId);
+  existingQuery =
+    target.kind === "event"
+      ? existingQuery.eq("event_id", target.id)
+      : existingQuery.eq("ticket_instance_id", target.id);
+  const { data: existing, error: existingError } =
+    await existingQuery.maybeSingle<InteractionRow>();
   if (existingError) throw existingError;
 
   const status = nextTicketInteractionStatus(existing?.status, requestedStatus);
@@ -171,51 +225,76 @@ async function saveInteraction(
       ? isoOrNull(input.paymentConfirmedAt) ?? now
       : existing?.payment_confirmed_at ?? null;
 
-  const { error } = await context.admin.from("ticket_user_interactions").upsert(
-    {
-      user_id: context.userId,
-      ticket_instance_id: instance.id,
-      ticket_template_id: instance.template_id,
-      status,
-      opened_at: openedAt,
-      responded_at: respondedAt,
-      payment_started_at: paymentStartedAt,
-      payment_confirmed_at: paymentConfirmedAt,
-      updated_at: now,
-    },
-    { onConflict: "user_id,ticket_instance_id" },
-  );
+  const { error } = await context.admin
+    .from("ticket_user_interactions")
+    .upsert(
+      {
+        user_id: context.userId,
+        ticket_instance_id: target.kind === "instance" ? target.id : null,
+        event_id: target.kind === "event" ? target.id : null,
+        ticket_template_id: target.templateId,
+        status,
+        opened_at: openedAt,
+        responded_at: respondedAt,
+        payment_started_at: paymentStartedAt,
+        payment_confirmed_at: paymentConfirmedAt,
+        updated_at: now,
+      },
+      {
+        onConflict:
+          target.kind === "event"
+            ? "user_id,event_id"
+            : "user_id,ticket_instance_id",
+      },
+    );
   if (error) throw error;
 
   if (status === "no") {
+    if (target.kind === "event") {
+      const { error: rejectionError } = await context.admin
+        .from("meeting_event_rejections")
+        .upsert(
+          { user_id: context.userId, event_id: target.id },
+          { onConflict: "event_id,user_id" },
+        );
+      if (rejectionError) throw rejectionError;
+      return true;
+    }
+
     const { error: oldRejectionDeleteError } = await context.admin
       .from("ticket_rejections")
       .delete()
       .eq("user_id", context.userId)
-      .eq("ticket_instance_id", instance.id);
+      .eq("ticket_instance_id", target.id);
     if (oldRejectionDeleteError) throw oldRejectionDeleteError;
 
     const { error: rejectionError } = await context.admin
       .from("ticket_rejections")
       .insert({
         user_id: context.userId,
-        ticket_instance_id: instance.id,
-        ticket_template_id: instance.template_id,
+        ticket_instance_id: target.id,
+        ticket_template_id: target.templateId,
         reason: "not_sure",
         ticket_snapshot: {
-          title: instance.title,
-          date: instance.event_date,
-          time: instance.event_time,
-          region: instance.region,
+          title: target.title,
+          date: target.date,
+          time: target.time,
+          region: target.region,
         },
       });
     if (rejectionError) throw rejectionError;
   } else if (["yes", "payment_pending", "payment_confirmed"].includes(status)) {
-    const { error: rejectionDeleteError } = await context.admin
-      .from("ticket_rejections")
+    const rejectionDeleteQuery = context.admin
+      .from(
+        target.kind === "event"
+          ? "meeting_event_rejections"
+          : "ticket_rejections",
+      )
       .delete()
-      .eq("user_id", context.userId)
-      .eq("ticket_instance_id", instance.id);
+      .eq("user_id", context.userId);
+    const { error: rejectionDeleteError } = await (target.kind === "event"
+      ? rejectionDeleteQuery.eq("event_id", target.id)
+      : rejectionDeleteQuery.eq("ticket_instance_id", target.id));
     if (rejectionDeleteError) throw rejectionDeleteError;
   }
   return true;

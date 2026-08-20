@@ -987,16 +987,16 @@ function MeetingDateApplicationFlow({
       return interaction;
     }
 
-    if (status === "open") {
-      const openedAt = new Date().toISOString();
+    if (status === "open" || status === "no") {
+      const updatedAt = new Date().toISOString();
       onTicketInteractionChange?.({
         ticket,
         status,
-        openedAt,
-        respondedAt: null,
+        openedAt: updatedAt,
+        respondedAt: status === "no" ? updatedAt : null,
         paymentStartedAt: null,
         paymentConfirmedAt: null,
-        updatedAt: openedAt,
+        updatedAt,
       });
     }
 
