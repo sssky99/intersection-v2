@@ -72,8 +72,30 @@ type FeedbackTemplate = {
   title: string;
 };
 
+type BlindDateFeedback = {
+  id: string;
+  offer_id: string;
+  user_id: string;
+  counterpart_rating: number | null;
+  counterpart_comment: string | null;
+  place_rating: number | null;
+  place_comment: string | null;
+  feedback_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BlindDateOffer = {
+  id: string;
+  participant_a_id: string;
+  participant_b_id: string;
+  scheduled_date: string | null;
+};
+
 type FeedbackAdminData = {
   feedbacks: MeetingFeedback[];
+  blindDateFeedbacks: BlindDateFeedback[];
+  blindDateOffers: BlindDateOffer[];
   profiles: FeedbackProfile[];
   instances: FeedbackInstance[];
   templates: FeedbackTemplate[];
@@ -119,6 +141,36 @@ function feedbackDate(row: MeetingFeedback, instance?: FeedbackInstance) {
 
 function ticketKey(row: MeetingFeedback) {
   return row.ticket_instance_id ?? row.ticket_template_id ?? `waitlist:${row.waitlist_id}`;
+}
+
+function blindDateTicketKey(offerId: string) {
+  return `blind-date:${offerId}`;
+}
+
+function blindDateFeedbackDate(
+  feedback: BlindDateFeedback,
+  offer?: BlindDateOffer,
+) {
+  return (
+    offer?.scheduled_date ??
+    feedback.feedback_completed_at?.slice(0, 10) ??
+    feedback.created_at.slice(0, 10)
+  );
+}
+
+function blindDateOfferLabel(
+  offer: BlindDateOffer,
+  profileMap: Map<string, FeedbackProfile>,
+) {
+  const participantA = memberName(
+    profileMap.get(offer.participant_a_id),
+    "이름 미확인",
+  );
+  const participantB = memberName(
+    profileMap.get(offer.participant_b_id),
+    "이름 미확인",
+  );
+  return `${participantA} · ${participantB}`;
 }
 
 function scoreDisplay(value: number | null | undefined) {
@@ -181,13 +233,21 @@ export function FeedbackAdminPanel() {
     () => new Map((data?.templates ?? []).map((template) => [template.id, template])),
     [data?.templates],
   );
+  const blindDateOfferMap = useMemo(
+    () => new Map((data?.blindDateOffers ?? []).map((offer) => [offer.id, offer])),
+    [data?.blindDateOffers],
+  );
   const dateOptions = useMemo(() => {
     const values = new Set<string>();
     for (const feedback of data?.feedbacks ?? []) {
       values.add(feedbackDate(feedback, instanceMap.get(feedback.ticket_instance_id ?? "")));
     }
+    for (const feedback of data?.blindDateFeedbacks ?? []) {
+      const offer = blindDateOfferMap.get(feedback.offer_id);
+      values.add(blindDateFeedbackDate(feedback, offer));
+    }
     return Array.from(values).sort().reverse();
-  }, [data?.feedbacks, instanceMap]);
+  }, [blindDateOfferMap, data?.blindDateFeedbacks, data?.feedbacks, instanceMap]);
 
   useEffect(() => {
     if (!dateOptions.length) {
@@ -233,10 +293,36 @@ export function FeedbackAdminPanel() {
       });
     }
 
+    for (const feedback of data?.blindDateFeedbacks ?? []) {
+      const offer = blindDateOfferMap.get(feedback.offer_id);
+      if (!offer) continue;
+      const date = blindDateFeedbackDate(feedback, offer);
+      if (selectedDate && date !== selectedDate) continue;
+
+      const key = blindDateTicketKey(offer.id);
+      const current = map.get(key);
+      map.set(key, {
+        key,
+        instanceId: null,
+        templateId: null,
+        label: blindDateOfferLabel(offer, profileMap),
+        date,
+        count: (current?.count ?? 0) + 1,
+      });
+    }
+
     return Array.from(map.values()).sort((left, right) =>
       left.label.localeCompare(right.label, "ko"),
     );
-  }, [data?.feedbacks, instanceMap, selectedDate, templateMap]);
+  }, [
+    blindDateOfferMap,
+    data?.blindDateFeedbacks,
+    data?.feedbacks,
+    instanceMap,
+    profileMap,
+    selectedDate,
+    templateMap,
+  ]);
 
   useEffect(() => {
     if (!ticketOptions.length) {
@@ -262,6 +348,22 @@ export function FeedbackAdminPanel() {
       }),
     [data?.feedbacks, instanceMap, selectedDate, selectedTicketKey],
   );
+  const selectedBlindDateFeedbacks = useMemo(
+    () =>
+      (data?.blindDateFeedbacks ?? []).filter((feedback) => {
+        const offer = blindDateOfferMap.get(feedback.offer_id);
+        if (!offer) return false;
+        const date = blindDateFeedbackDate(feedback, offer);
+        return (
+          (!selectedDate || date === selectedDate) &&
+          (!selectedTicketKey || blindDateTicketKey(feedback.offer_id) === selectedTicketKey)
+        );
+      }),
+    [blindDateOfferMap, data?.blindDateFeedbacks, selectedDate, selectedTicketKey],
+  );
+  const selectedFeedbackCount = selectedFeedbacks.length + selectedBlindDateFeedbacks.length;
+  const totalFeedbackCount =
+    (data?.feedbacks.length ?? 0) + (data?.blindDateFeedbacks.length ?? 0);
 
   return (
     <div className="grid h-[calc(100dvh-190px)] min-h-[680px] grid-cols-[320px_minmax(0,1fr)] gap-5">
@@ -317,7 +419,7 @@ export function FeedbackAdminPanel() {
         </div>
 
         <div className="mt-5">
-          <SummaryBox label="원본 피드백" value={String(selectedFeedbacks.length)} />
+          <SummaryBox label="원본 피드백" value={String(selectedFeedbackCount)} />
         </div>
 
         {error && (
@@ -330,7 +432,7 @@ export function FeedbackAdminPanel() {
       <section className="min-h-0 overflow-y-auto rounded-2xl border border-black/10 bg-white shadow-sm">
         {loading ? (
           <StateMessage message="피드백 데이터를 불러오는 중입니다." />
-        ) : !data || data.feedbacks.length === 0 ? (
+        ) : !data || totalFeedbackCount === 0 ? (
           <StateMessage message="아직 제출된 피드백이 없습니다." />
         ) : (
           <div className="space-y-5 p-5">
@@ -342,7 +444,7 @@ export function FeedbackAdminPanel() {
                 {selectedTicket?.label ?? "피드백 모임"}
               </h3>
               <p className="mt-2 text-sm font-semibold text-black/45">
-                {selectedDate || "-"} · 제출 {selectedFeedbacks.length}건
+                {selectedDate || "-"} · 제출 {selectedFeedbackCount}건
               </p>
             </section>
 
@@ -403,6 +505,56 @@ export function FeedbackAdminPanel() {
                           profileMap={profileMap}
                         />
                       </div>
+                    </article>
+                  );
+                })}
+                {selectedBlindDateFeedbacks.map((feedback) => {
+                  const offer = blindDateOfferMap.get(feedback.offer_id);
+                  const writer = profileMap.get(feedback.user_id);
+                  const counterpartId =
+                    offer?.participant_a_id === feedback.user_id
+                      ? offer.participant_b_id
+                      : offer?.participant_a_id;
+                  const counterpart = counterpartId
+                    ? memberName(profileMap.get(counterpartId), "상대방")
+                    : "상대방";
+
+                  return (
+                    <article
+                      key={`blind-date-${feedback.id}`}
+                      className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black">
+                            {memberName(writer, "작성자")}
+                          </h4>
+                          <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-bold text-white">
+                            블라인드 데이트
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs font-semibold text-black/40">
+                          {savedAt(feedback.feedback_completed_at ?? feedback.created_at)}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        <BlindDateRatingSummary
+                          label={`${counterpart}님에 대한 호감도`}
+                          value={feedback.counterpart_rating}
+                        />
+                        <BlindDateRatingSummary
+                          label="장소 만족도"
+                          value={feedback.place_rating}
+                        />
+                      </div>
+                      {(feedback.counterpart_comment || feedback.place_comment) && (
+                        <div className="mt-3 rounded-xl bg-white px-4 py-4">
+                          <p className="text-[11px] font-bold text-black/35">남긴 의견</p>
+                          <p className="mt-2 whitespace-pre-line text-xs font-semibold leading-5 text-black/65">
+                            {feedback.counterpart_comment || feedback.place_comment}
+                          </p>
+                        </div>
+                      )}
                     </article>
                   );
                 })}
@@ -618,6 +770,23 @@ function RatingRow({
           <span className="text-xs font-black text-black">{scoreDisplay(rating)}/5</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function BlindDateRatingSummary({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl bg-white px-4 py-4">
+      <p className="text-[11px] font-bold text-black/35">{label}</p>
+      <div className="mt-3">
+        <RatingRow label="평가" value={value} />
+      </div>
     </div>
   );
 }

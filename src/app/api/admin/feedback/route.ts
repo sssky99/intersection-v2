@@ -34,6 +34,26 @@ type TicketTemplateRow = {
   title: string;
 };
 
+type BlindDateParticipationRow = {
+  id: string;
+  offer_id: string;
+  user_id: string;
+  counterpart_rating: number | null;
+  counterpart_comment: string | null;
+  place_rating: number | null;
+  place_comment: string | null;
+  feedback_completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BlindDateOfferRow = {
+  id: string;
+  participant_a_id: string;
+  participant_b_id: string;
+  scheduled_date: string | null;
+};
+
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
@@ -65,25 +85,57 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
-    const { data: feedbacksData, error: feedbacksError } = await supabase
-      .from("meeting_feedback")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(1000)
-      .returns<MeetingFeedbackRow[]>();
+    const [
+      { data: feedbacksData, error: feedbacksError },
+      { data: blindDateFeedbacksData, error: blindDateFeedbacksError },
+    ] = await Promise.all([
+      supabase
+        .from("meeting_feedback")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1000)
+        .returns<MeetingFeedbackRow[]>(),
+      supabase
+        .from("blind_date_participations")
+        .select(
+          "id,offer_id,user_id,counterpart_rating,counterpart_comment,place_rating,place_comment,feedback_completed_at,created_at,updated_at",
+        )
+        .not("feedback_completed_at", "is", null)
+        .order("feedback_completed_at", { ascending: false })
+        .limit(1000)
+        .returns<BlindDateParticipationRow[]>(),
+    ]);
     if (feedbacksError) throw feedbacksError;
+    if (blindDateFeedbacksError) throw blindDateFeedbacksError;
 
     const feedbacks = feedbacksData ?? [];
+    const blindDateFeedbacks = blindDateFeedbacksData ?? [];
+    const blindDateOfferIds = unique(blindDateFeedbacks.map((row) => row.offer_id));
+    const { data: blindDateOffersData, error: blindDateOffersError } =
+      blindDateOfferIds.length
+        ? await supabase
+            .from("blind_date_offers")
+            .select("id,participant_a_id,participant_b_id,scheduled_date")
+            .in("id", blindDateOfferIds)
+            .returns<BlindDateOfferRow[]>()
+        : { data: [] as BlindDateOfferRow[], error: null };
+    if (blindDateOffersError) throw blindDateOffersError;
+
+    const blindDateOffers = blindDateOffersData ?? [];
     const instanceIds = unique(feedbacks.map((row) => row.ticket_instance_id));
     const initialTemplateIds = unique(feedbacks.map((row) => row.ticket_template_id));
-    const profileIds = unique(
-      feedbacks.flatMap((row) => [
+    const profileIds = unique([
+      ...feedbacks.flatMap((row) => [
         row.user_id,
         ...(Array.isArray(row.selected_member_ids) ? row.selected_member_ids : []),
         ...Object.keys(row.member_feedback ?? {}),
         ...negativeMemberIds(row.place_feedback),
       ]),
-    );
+      ...blindDateOffers.flatMap((offer) => [
+        offer.participant_a_id,
+        offer.participant_b_id,
+      ]),
+    ]);
 
     const [{ data: instancesData, error: instancesError }, { data: profilesData, error: profilesError }] =
       await Promise.all([
@@ -121,6 +173,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       feedbacks,
+      blindDateFeedbacks,
+      blindDateOffers,
       profiles: profilesData ?? [],
       instances,
       templates: templatesData ?? [],
