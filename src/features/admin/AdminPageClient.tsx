@@ -33,6 +33,7 @@ import { BlindDateAdminPanel } from "@/features/admin/BlindDateAdminPanel";
 import { FeedbackAdminPanel } from "@/features/admin/FeedbackAdminPanel";
 import { FunnelAdminPanel } from "@/features/admin/FunnelAdminPanel";
 import { MembershipAdminPanel } from "@/features/admin/MembershipAdminPanel";
+import { LoginBlocklistAdminPanel } from "@/features/admin/LoginBlocklistAdminPanel";
 import { MeetingEventAdminPanel } from "@/features/admin/MeetingEventAdminPanel";
 import { RoomChatAdminPanel } from "@/features/admin/RoomChatAdminPanel";
 import { TicketAdminPanel } from "@/features/admin/TicketAdminPanel";
@@ -66,6 +67,7 @@ type AdminTab =
   | "rooms"
   | "feedback"
   | "blindDates"
+  | "loginBlocklist"
   | "funnel";
 
 type ViewMode = "list" | "cards" | "dropoffs";
@@ -93,6 +95,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
   { id: "blindDates", label: "블라인드 데이트 관리" },
+  { id: "loginBlocklist", label: "로그인 차단" },
   { id: "funnel", label: "퍼널 관리" },
 ];
 
@@ -1228,6 +1231,11 @@ export function AdminPageClient({
           {visitedTabs.blindDates && (
             <div className={cn(activeTab === "blindDates" ? "block" : "hidden")}>
               <BlindDateAdminPanel />
+            </div>
+          )}
+          {visitedTabs.loginBlocklist && (
+            <div className={cn(activeTab === "loginBlocklist" ? "block" : "hidden")}>
+              <LoginBlocklistAdminPanel />
             </div>
           )}
           {visitedTabs.funnel && (

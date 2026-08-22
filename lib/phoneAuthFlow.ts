@@ -1,4 +1,5 @@
 export type PhoneAuthFailureCode =
+  | "ACCOUNT_BLOCKED"
   | "OTP_SEND_FAILED"
   | "OTP_INVALID"
   | "OTP_EXPIRED"
@@ -18,6 +19,9 @@ export class PhoneAuthError extends Error {
 
 export function otpFailureCode(message: string): PhoneAuthFailureCode {
   const normalized = message.toLowerCase();
+  if (normalized.includes("banned") || normalized.includes("blocked")) {
+    return "ACCOUNT_BLOCKED";
+  }
   if (normalized.includes("rate") || normalized.includes("seconds")) return "OTP_RATE_LIMITED";
   if (normalized.includes("expired")) return "OTP_EXPIRED";
   return "OTP_INVALID";
@@ -25,6 +29,7 @@ export function otpFailureCode(message: string): PhoneAuthFailureCode {
 
 export function phoneAuthErrorMessage(code: PhoneAuthFailureCode) {
   switch (code) {
+    case "ACCOUNT_BLOCKED": return "오류가 발생했습니다.\n하단 카카오톡 채널로 문의해주세요.";
     case "OTP_RATE_LIMITED": return "잠시 후 다시 시도해주세요.";
     case "OTP_EXPIRED": return "인증 시간이 지났어요. 인증번호를 다시 요청해주세요.";
     case "OTP_INVALID": return "인증번호가 맞지 않아요. 다시 확인해주세요.";

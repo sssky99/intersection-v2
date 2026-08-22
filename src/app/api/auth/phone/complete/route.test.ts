@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createClientMock = vi.fn();
+const findLoginBlockMock = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: createClientMock,
+}));
+vi.mock("@/lib/loginBlocklist", () => ({
+  findLoginBlock: findLoginBlockMock,
 }));
 vi.mock("@/lib/onboarding", () => ({
   nextOnboardingPath: vi.fn((profile: { profile_completed?: boolean }) =>
@@ -25,7 +29,30 @@ function queryResult(result: unknown): Record<string, ReturnType<typeof vi.fn>> 
 }
 
 describe("POST /api/auth/phone/complete", () => {
-  beforeEach(() => vi.resetModules());
+  beforeEach(() => {
+    vi.resetModules();
+    createClientMock.mockReset();
+    findLoginBlockMock.mockReset();
+    findLoginBlockMock.mockResolvedValue(null);
+  });
+
+  it("ends the session when an existing account is blocked", async () => {
+    const signOut = vi.fn(async () => ({ error: null }));
+    findLoginBlockMock.mockResolvedValue({ phone_normalized: "01012345678" });
+    createClientMock.mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({ data: { user: { id: "user-blocked", phone: "+821012345678" } } })),
+        signOut,
+      },
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST();
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ errorCode: "ACCOUNT_BLOCKED" });
+    expect(signOut).toHaveBeenCalledOnce();
+  });
 
   it("continues an existing account without creating another profile", async () => {
     const existing = { user_id: "user-1", profile_completed: true };

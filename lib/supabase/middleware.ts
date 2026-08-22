@@ -24,7 +24,15 @@ export async function refreshSupabaseSession(request: NextRequest) {
 
   // Validating the claims also refreshes an expired access token when a valid
   // refresh token is present. The updated cookies are forwarded to the page.
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
 
-  return response;
+  return {
+    response,
+    identity: data?.claims
+      ? {
+          userId: typeof data.claims.sub === "string" ? data.claims.sub : null,
+          phone: typeof data.claims.phone === "string" ? data.claims.phone : null,
+        }
+      : null,
+  };
 }

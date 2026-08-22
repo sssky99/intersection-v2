@@ -16,6 +16,13 @@ describe("phone authentication failures", () => {
     expect(isProfileSetupFailure("PROFILE_LOOKUP_FAILED")).toBe(true);
   });
 
+  it("shows a neutral login error for blocked accounts", () => {
+    expect(otpFailureCode("User is banned")).toBe("ACCOUNT_BLOCKED");
+    expect(phoneAuthErrorMessage("ACCOUNT_BLOCKED")).toBe(
+      "오류가 발생했습니다.\n하단 카카오톡 채널로 문의해주세요.",
+    );
+  });
+
   it("does not tell an authenticated user that the OTP was wrong", () => {
     expect(phoneAuthErrorMessage("OTP_INVALID")).toContain("인증번호가 맞지 않아요");
     expect(phoneAuthErrorMessage("PROFILE_CREATE_FAILED")).toContain("인증은 완료됐지만");

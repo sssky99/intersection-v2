@@ -10,6 +10,7 @@ import {
   isNativeRestrictedPath,
   isProductionPreviewPath,
 } from '@/lib/nativeAppRequest';
+import { findLoginBlock } from '@/lib/loginBlocklist';
 import { refreshSupabaseSession } from '@/lib/supabase/middleware';
 
 const landingExperimentCookie = 'landing_ab_v1';
@@ -64,6 +65,32 @@ function requestOrigin(request: NextRequest) {
   return `${protocol}://${host}`;
 }
 
+function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
+  request.cookies.getAll().forEach(({ name }) => {
+    if (!name.startsWith('sb-') || !name.includes('auth-token')) return;
+    response.cookies.set(name, '', {
+      path: '/',
+      expires: new Date(0),
+      maxAge: 0,
+    });
+  });
+}
+
+function blockedAccessResponse(request: NextRequest, isApiRequest: boolean) {
+  if (isApiRequest) {
+    return NextResponse.json(
+      { error: '로그인할 수 없는 계정입니다.', errorCode: 'ACCOUNT_BLOCKED' },
+      { status: 403 },
+    );
+  }
+
+  const url = new URL('/', request.url);
+  url.searchParams.set('authError', 'ACCOUNT_BLOCKED');
+  const response = NextResponse.redirect(url);
+  clearSupabaseAuthCookies(request, response);
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   const { nextUrl } = request;
   const origin = requestOrigin(request);
@@ -113,10 +140,6 @@ export async function middleware(request: NextRequest) {
     nextUrl.pathname.startsWith('/admin/') ||
     nextUrl.pathname.startsWith('/api/admin/');
 
-  if (isApiRequest && !isAdminPreviewPath) {
-    return NextResponse.next();
-  }
-
   if (isNetlifyBranchDeploy(origin) && !isAdminPreviewPath) {
     const productionUrl = new URL(
       `${nextUrl.pathname}${nextUrl.search}`,
@@ -151,7 +174,17 @@ export async function middleware(request: NextRequest) {
     request.cookies.set(landingExperimentCookie, landingVariant);
   }
 
-  const response = await refreshSupabaseSession(request);
+  const { response, identity } = await refreshSupabaseSession(request);
+
+  if (!isAdminPreviewPath && (identity?.userId || identity?.phone)) {
+    const blocked = await findLoginBlock({
+      userId: identity.userId,
+      phone: identity.phone,
+    });
+    if (blocked) return blockedAccessResponse(request, isApiRequest);
+  }
+
+  if (isApiRequest && !isAdminPreviewPath) return response;
 
   if (landingVariant) {
     response.cookies.set(landingExperimentCookie, landingVariant, {

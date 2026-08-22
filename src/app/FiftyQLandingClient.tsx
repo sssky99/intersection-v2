@@ -221,7 +221,12 @@ export function FiftyQLandingClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: localPhone }),
     });
-    if (!prepareResponse.ok) throw new PhoneAuthError("OTP_SEND_FAILED");
+    if (!prepareResponse.ok) {
+      const body = (await prepareResponse.json().catch(() => null)) as
+        | { errorCode?: PhoneAuthFailureCode }
+        | null;
+      throw new PhoneAuthError(body?.errorCode ?? "OTP_SEND_FAILED");
+    }
 
     const { error: sendError } = await createClient().auth.signInWithOtp({
       phone: internationalPhone(localPhone),
@@ -485,12 +490,22 @@ export function FiftyQLandingClient({
               )}
               {error && (
                 <div className="ml-auto flex flex-col items-end gap-2">
-                  <p className={`flex items-center gap-2 text-right text-[13px] font-medium ${
+                  <p className={`flex items-center gap-2 whitespace-pre-line text-right text-[13px] font-medium ${
                     isRecoveringProfile ? "text-black/55" : "text-red-600"
                   }`}>
                     {isRecoveringProfile && <span className="h-2 w-2 animate-pulse rounded-full bg-black/45" />}
                     {error}
                   </p>
+                  {failureCode === "ACCOUNT_BLOCKED" && (
+                    <a
+                      href="http://pf.kakao.com/_xnweQn/chat"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-full bg-[#FEE500] px-4 py-2 text-[12px] font-bold text-[#191919] transition hover:brightness-95"
+                    >
+                      카카오톡 채널 문의하기
+                    </a>
+                  )}
                   {failureCode && isProfileSetupFailure(failureCode) && (
                     <button
                       type="button"

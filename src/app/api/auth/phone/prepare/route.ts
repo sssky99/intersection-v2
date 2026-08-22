@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { findLoginBlock, normalizeLoginPhone } from "@/lib/loginBlocklist";
 import { isSameOriginRequest, requestActorKey } from "@/lib/requestGuards";
 
 export const dynamic = "force-dynamic";
@@ -28,14 +29,6 @@ function isLocalDevelopmentAlias(request: NextRequest) {
   }
 }
 
-function normalizePhone(value: unknown) {
-  if (typeof value !== "string") return null;
-  const digits = value.replace(/\D/g, "");
-  const local = digits.startsWith("8210") ? `0${digits.slice(2)}` : digits;
-  if (!/^010\d{8}$/.test(local)) return null;
-  return local;
-}
-
 function isRateLimited(key: string) {
   const now = Date.now();
   const current = attempts.get(key);
@@ -59,8 +52,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => null)) as { phone?: unknown } | null;
-  if (!normalizePhone(body?.phone)) {
+  const phone = normalizeLoginPhone(body?.phone);
+  if (!phone) {
     return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
+  }
+
+  const blocked = await findLoginBlock({ phone });
+  if (blocked) {
+    return NextResponse.json(
+      { errorCode: "ACCOUNT_BLOCKED" },
+      { status: 403 },
+    );
   }
 
   return NextResponse.json({ ok: true });

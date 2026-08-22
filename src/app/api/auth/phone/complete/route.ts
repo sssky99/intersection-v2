@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { preferenceProfileVersion } from "@/data/preferenceQuestions";
+import { findLoginBlock } from "@/lib/loginBlocklist";
 import { nextOnboardingPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
@@ -7,6 +8,7 @@ import type { ProfileRow } from "@/types/profile";
 export const dynamic = "force-dynamic";
 
 type ProfileErrorCode =
+  | "ACCOUNT_BLOCKED"
   | "PROFILE_UNAUTHORIZED"
   | "PROFILE_INVALID_PHONE"
   | "PROFILE_LOOKUP_FAILED"
@@ -38,6 +40,12 @@ export async function POST() {
   } = await supabase.auth.getUser();
   if (!user || !user.phone) {
     return profileError("PROFILE_UNAUTHORIZED", 401);
+  }
+
+  const blocked = await findLoginBlock({ userId: user.id, phone: user.phone });
+  if (blocked) {
+    await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    return profileError("ACCOUNT_BLOCKED", 403);
   }
 
   const { data: existingProfile, error: lookupError } = await supabase
