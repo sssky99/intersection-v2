@@ -257,7 +257,7 @@ export function IntersectionTicketCard({
           "relative aspect-[1/1.62] w-full overflow-hidden rounded-[28px] border text-[#24211d] shadow-[0_14px_30px_rgba(66,57,44,0.11),0_4px_12px_rgba(66,57,44,0.06),inset_0_1px_0_rgba(255,255,255,0.9)]",
           minimalTone === "blind-date"
             ? "border-[#d0cbbc]/75 bg-[radial-gradient(ellipse_at_50%_36%,#fffdf9_0%,#f5f1e9_42%,#ddd8cf_100%)]"
-            : "border-[#d0cbbc]/65 bg-[radial-gradient(circle_at_50%_38%,#fbf9f4_0%,#f7f4ee_48%,#f1ede5_100%)]",
+            : "border-[#d0cbbc]/65 bg-[radial-gradient(ellipse_at_50%_42%,#fffdf9_0%,rgba(255,253,249,0.48)_35%,rgba(247,244,238,0)_70%),linear-gradient(180deg,#faf8f3_0%,#f7f4ee_52%,#f2eee6_100%)]",
           className,
         )}
       >

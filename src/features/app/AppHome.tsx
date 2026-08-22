@@ -3534,7 +3534,9 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={status === "open" ? null : "신청 완료"}
+        badgeLabel={
+          status === "open" ? null : status === "no" ? "거절" : "신청 완료"
+        }
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
