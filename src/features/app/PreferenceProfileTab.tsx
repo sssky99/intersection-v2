@@ -51,6 +51,7 @@ import {
   isMembershipPlan,
   membershipPlanLabels,
 } from "@/features/membership/membershipTypes";
+import { AccountDeletionButton } from "@/features/app/AccountDeletionButton";
 
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
 
@@ -747,7 +748,7 @@ export function PreferenceProfileTab({
       transition={{ duration: 0.22, ease: "easeOut" }}
       className="font-profile-kmu-serif min-h-full bg-[#f7f4ed]"
     >
-      <section className="px-5 pb-7 pt-7">
+      <section className="px-5 pb-28 pt-7">
         <header className="pr-16">
           <h1 className="font-profile-kmu-serif text-[29px] leading-9 tracking-[-0.035em] text-black">
             profile
@@ -1021,6 +1022,8 @@ export function PreferenceProfileTab({
           <Info size={15} aria-hidden />
           개인정보 처리방침
         </a>
+
+        {!previewMode && <AccountDeletionButton />}
 
         {logoutError && (
           <p className="mt-3 rounded-[16px] bg-red-50 px-4 py-3 text-center text-[11px] font-bold leading-5 text-red-600">
