@@ -5,7 +5,11 @@ import {
   getMeetingTicketsByInstanceIds,
 } from "@/lib/publicTicketPreview";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { nextTicketInteractionStatus } from "@/lib/ticketInteractions";
+import {
+  isDirectClientTicketInteractionStatus,
+  isGuestImportTicketInteractionStatus,
+  nextTicketInteractionStatus,
+} from "@/lib/ticketInteractions";
 import { hasTicketStarted } from "@/lib/ticketDate";
 import type {
   TicketInteraction,
@@ -13,14 +17,6 @@ import type {
 } from "@/types/ticket";
 
 export const dynamic = "force-dynamic";
-
-const validStatuses = new Set<TicketInteractionStatus>([
-  "open",
-  "no",
-  "yes",
-  "payment_pending",
-  "payment_confirmed",
-]);
 
 type InteractionRow = {
   ticket_instance_id: string | null;
@@ -120,15 +116,18 @@ async function interactionResponse(
 async function saveInteraction(
   context: NonNullable<Awaited<ReturnType<typeof requestContext>>>,
   input: InteractionInput,
+  guestImport: boolean,
 ) {
   const ticketInstanceId =
     typeof input.ticketInstanceId === "string"
       ? input.ticketInstanceId.trim()
       : "";
-  const requestedStatus =
-    typeof input.status === "string" &&
-    validStatuses.has(input.status as TicketInteractionStatus)
-      ? (input.status as TicketInteractionStatus)
+  const requestedStatus = guestImport
+    ? isGuestImportTicketInteractionStatus(input.status)
+      ? input.status
+      : null
+    : isDirectClientTicketInteractionStatus(input.status)
+      ? input.status
       : null;
   if (!ticketInstanceId || !requestedStatus) return false;
 
@@ -324,12 +323,13 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       interactions?: unknown;
     } & InteractionInput;
-    const inputs = Array.isArray(body.interactions)
+    const guestImport = Array.isArray(body.interactions);
+    const inputs = guestImport
       ? (body.interactions as InteractionInput[]).slice(0, 50)
       : [body];
     let saved = 0;
     for (const input of inputs) {
-      if (await saveInteraction(context, input)) saved += 1;
+      if (await saveInteraction(context, input, guestImport)) saved += 1;
     }
     if (saved === 0) {
       return NextResponse.json({ error: "잘못된 요청이에요." }, { status: 400 });

@@ -104,8 +104,12 @@ import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import { ticketStartAtInKst } from "@/lib/ticketDate";
 import {
   clearGuestTicketInteractions,
+  isGuestImportTicketInteractionStatus,
   loadGuestTicketInteractions,
   saveGuestTicketInteraction,
+  ticketInteractionBadgeLabel,
+  ticketInteractionCanRespond,
+  ticketInteractionShowsDeadline,
   ticketInteractionStatusLabel,
 } from "@/lib/ticketInteractions";
 import type { ProfileRow } from "@/types/profile";
@@ -942,22 +946,34 @@ export function AppHome({
     }
 
     const load = async () => {
-      if (!readOnly && guestInteractions.length > 0) {
-        const importResponse = await fetch("/api/meetings/ticket-interactions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            interactions: guestInteractions.map((interaction) => ({
-              ticketInstanceId: interaction.ticket.id,
-              status: interaction.status,
-              openedAt: interaction.openedAt,
-              respondedAt: interaction.respondedAt,
-              paymentStartedAt: interaction.paymentStartedAt,
-              paymentConfirmedAt: interaction.paymentConfirmedAt,
-            })),
-          }),
-        }).catch(() => null);
-        if (importResponse?.ok) clearGuestTicketInteractions();
+      if (
+        !readOnly &&
+        operatorAccountSwitcher?.mode !== "test" &&
+        guestInteractions.length > 0
+      ) {
+        const importableInteractions = guestInteractions.filter((interaction) =>
+          isGuestImportTicketInteractionStatus(interaction.status),
+        );
+        if (importableInteractions.length > 0) {
+          const importResponse = await fetch(
+            "/api/meetings/ticket-interactions",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                interactions: importableInteractions.map((interaction) => ({
+                  ticketInstanceId: interaction.ticket.id,
+                  status: interaction.status,
+                  openedAt: interaction.openedAt,
+                  respondedAt: interaction.respondedAt,
+                  paymentStartedAt: interaction.paymentStartedAt,
+                  paymentConfirmedAt: interaction.paymentConfirmedAt,
+                })),
+              }),
+            },
+          ).catch(() => null);
+          if (importResponse?.ok) clearGuestTicketInteractions();
+        }
       }
 
       const response = await fetch("/api/meetings/ticket-interactions", {
@@ -978,7 +994,7 @@ export function AppHome({
     return () => {
       cancelled = true;
     };
-  }, [guestMode, readOnly, userId]);
+  }, [guestMode, operatorAccountSwitcher?.mode, readOnly, userId]);
 
   useEffect(() => {
     if (guestMode) return;
@@ -2603,7 +2619,7 @@ function TicketListTab({
         tappedItem.interaction.status === "no",
       );
       setSelectedApplicationTicketOpen(
-        tappedItem.interaction.status === "open",
+        ticketInteractionCanRespond(tappedItem.interaction),
       );
       setSelectedApplicationTicket(tappedItem.interaction.ticket);
       return;
@@ -2876,7 +2892,7 @@ function TicketListTab({
                               item.interaction.status === "no",
                             );
                             setSelectedApplicationTicketOpen(
-                              item.interaction.status === "open",
+                              ticketInteractionCanRespond(item.interaction),
                             );
                             setSelectedApplicationTicket(item.interaction.ticket);
                           }}
@@ -3534,9 +3550,7 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={
-          status === "open" ? null : status === "no" ? "거절" : "신청 완료"
-        }
+        badgeLabel={ticketInteractionBadgeLabel(status)}
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
@@ -3549,7 +3563,9 @@ function InteractionTicketCard({
         remainingSeatCount={ticket.remainingSeatCount}
         className={cn(ticketPaperImageClass, status === "no" && "grayscale")}
       />
-      {status === "open" && <UnansweredTicketCountdown ticket={ticket} />}
+      {ticketInteractionShowsDeadline(status) && (
+        <UnansweredTicketCountdown ticket={ticket} />
+      )}
     </motion.div>
   );
 }

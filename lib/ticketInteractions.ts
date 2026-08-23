@@ -15,12 +15,71 @@ const interactionStatuses = new Set<TicketInteractionStatus>([
   "payment_confirmed",
 ]);
 
+const directClientInteractionStatuses = new Set<TicketInteractionStatus>([
+  "open",
+  "no",
+  "yes",
+  "payment_pending",
+]);
+
+const guestImportInteractionStatuses = new Set<TicketInteractionStatus>([
+  "open",
+  "no",
+  "yes",
+]);
+
 export function ticketInteractionStatusLabel(status: TicketInteractionStatus) {
   if (status === "open") return "OPEN";
   if (status === "no") return "NO";
   if (status === "yes") return "YES";
   if (status === "payment_pending") return "결제 확인 중";
   return "결제 확인 완료";
+}
+
+export function ticketInteractionBadgeLabel(status: TicketInteractionStatus) {
+  if (status === "open") return null;
+  if (status === "no") return "거절";
+  if (status === "yes") return "결제 필요";
+  if (status === "payment_pending") return "결제 확인 중";
+  return "신청 완료";
+}
+
+export function ticketInteractionCanRespond(
+  interaction: Pick<
+    TicketInteraction,
+    "status" | "paymentStartedAt" | "paymentConfirmedAt"
+  >,
+) {
+  return (
+    interaction.status === "open" ||
+    (interaction.status === "yes" &&
+      !interaction.paymentStartedAt &&
+      !interaction.paymentConfirmedAt)
+  );
+}
+
+export function ticketInteractionShowsDeadline(
+  status: TicketInteractionStatus,
+) {
+  return status !== "no" && status !== "payment_confirmed";
+}
+
+export function isDirectClientTicketInteractionStatus(
+  status: unknown,
+): status is TicketInteractionStatus {
+  return (
+    typeof status === "string" &&
+    directClientInteractionStatuses.has(status as TicketInteractionStatus)
+  );
+}
+
+export function isGuestImportTicketInteractionStatus(
+  status: unknown,
+): status is TicketInteractionStatus {
+  return (
+    typeof status === "string" &&
+    guestImportInteractionStatuses.has(status as TicketInteractionStatus)
+  );
 }
 
 export function nextTicketInteractionStatus(
