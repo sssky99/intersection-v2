@@ -10,7 +10,6 @@ import {
   isNativeRestrictedPath,
   isProductionPreviewPath,
 } from '@/lib/nativeAppRequest';
-import { findLoginBlock } from '@/lib/loginBlocklist';
 import { refreshSupabaseSession } from '@/lib/supabase/middleware';
 
 const landingExperimentCookie = 'landing_ab_v1';
@@ -63,32 +62,6 @@ function requestOrigin(request: NextRequest) {
   const protocol = forwardedProtocol ?? request.nextUrl.protocol.replace(':', '');
 
   return `${protocol}://${host}`;
-}
-
-function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
-  request.cookies.getAll().forEach(({ name }) => {
-    if (!name.startsWith('sb-') || !name.includes('auth-token')) return;
-    response.cookies.set(name, '', {
-      path: '/',
-      expires: new Date(0),
-      maxAge: 0,
-    });
-  });
-}
-
-function blockedAccessResponse(request: NextRequest, isApiRequest: boolean) {
-  if (isApiRequest) {
-    return NextResponse.json(
-      { error: '로그인할 수 없는 계정입니다.', errorCode: 'ACCOUNT_BLOCKED' },
-      { status: 403 },
-    );
-  }
-
-  const url = new URL('/', request.url);
-  url.searchParams.set('authError', 'ACCOUNT_BLOCKED');
-  const response = NextResponse.redirect(url);
-  clearSupabaseAuthCookies(request, response);
-  return response;
 }
 
 export async function middleware(request: NextRequest) {
@@ -174,15 +147,7 @@ export async function middleware(request: NextRequest) {
     request.cookies.set(landingExperimentCookie, landingVariant);
   }
 
-  const { response, identity } = await refreshSupabaseSession(request);
-
-  if (!isAdminPreviewPath && (identity?.userId || identity?.phone)) {
-    const blocked = await findLoginBlock({
-      userId: identity.userId,
-      phone: identity.phone,
-    });
-    if (blocked) return blockedAccessResponse(request, isApiRequest);
-  }
+  const { response } = await refreshSupabaseSession(request);
 
   if (isApiRequest && !isAdminPreviewPath) return response;
 
