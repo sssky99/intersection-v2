@@ -4,18 +4,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Brain,
   CalendarDays,
+  Camera,
   Check,
+  ChevronLeft,
   ChevronRight,
+  CircleHelp,
   Crown,
   Footprints,
   Gem,
   Heart,
   Info,
   Loader2,
-  LogOut,
   MapPin,
+  Menu,
   MessageCircle,
   PenLine,
+  Phone,
   Scale,
   Sparkles,
   UserRound,
@@ -23,6 +27,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
+import { SafeImage } from "@/components/SafeImage";
 import { preferenceQuestions } from "@/data/preferenceQuestions";
 import {
   isProfileArchetypeId,
@@ -52,6 +57,7 @@ import {
   membershipPlanLabels,
 } from "@/features/membership/membershipTypes";
 import { AccountDeletionButton } from "@/features/app/AccountDeletionButton";
+import { uploadProfilePhoto } from "@/lib/profilePhoto";
 
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
 
@@ -122,7 +128,7 @@ function formatMembershipDate(value: string | null) {
   return `${match[1]}.${match[2]}.${match[3]}`;
 }
 
-function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
+function AccountSettingsCard({ profile }: { profile: ProfileRow }) {
   const status = displayMembershipStatus({
     status: profile.membership_status,
     endDate: profile.membership_end_date,
@@ -142,7 +148,7 @@ function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
           ? `${endDate}까지`
           : null;
   const statusLabel = hasMembership
-    ? planLabel ?? "멤버십 이용 중"
+    ? planLabel ?? "이용 중"
     : "멤버십 없음";
   const periodLabel = hasMembership
     ? period
@@ -151,53 +157,183 @@ function MembershipStatusCard({ profile }: { profile: ProfileRow }) {
     : "현재 이용 중인 멤버십이 없어요.";
 
   return (
-    <section className="mt-5">
-      <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/42">
-        내 멤버십
+    <section className="mt-8">
+      <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
+        설정
       </p>
-      <div
-        className={cn(
-          "relative overflow-hidden rounded-[24px] border px-5 py-5 shadow-[0_14px_40px_rgba(24,24,20,0.05)]",
-          hasMembership
-            ? "border-[#a79b78]/25 bg-[#f4f0e5]"
-            : "border-black/[0.09] bg-[#faf8f2]",
-        )}
-      >
-        <div className="flex items-center gap-4">
+      <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+        <div className="flex min-h-20 items-center gap-4 py-4">
           <span
-            className={cn(
-              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border",
-              hasMembership
-                ? "border-[#a79b78]/25 bg-[#e8dfc8] text-[#766a49]"
-                : "border-black/10 bg-[#f1eee6] text-black/45",
-            )}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55"
           >
             <Crown size={18} aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[15px] font-black text-black">
-              {statusLabel}
+            <span className="block text-[14px] font-black text-black">
+              교집합 멤버십
             </span>
-            <span className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold text-black/42">
+            <span className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-black/38">
               <CalendarDays size={12} aria-hidden className="shrink-0" />
               {periodLabel}
             </span>
           </span>
           <span
-            className={cn(
-              "shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black",
-              status === "active"
-                ? "bg-[#766a49] text-white"
-                : "bg-black/[0.055] text-black/38",
-            )}
+            className="shrink-0 rounded-full bg-black/[0.055] px-3 py-1.5 text-[10px] font-black text-black/45"
           >
             {status === "active"
-              ? "이용 중"
-              : "없음"}
+              ? statusLabel
+              : "이용 안 함"}
           </span>
         </div>
       </div>
     </section>
+  );
+}
+
+const howIntersectionWorksSlides = [
+  "모든 교집합 경험은 당신과 가장 잘 어울리는 사람들과 함께하는 따뜻한 식사 자리에서 시작됩니다.\n\n이후 코스에서는 다른 교집합 테이블 사람들도 함께하게 되며, 경험이 계속 이어집니다.",
+  "정확한 장소와 사람은 만남 시작 24시간 전까지 공개되지 않습니다.\n\n이것은 교집합이 중요하게 생각하는 운영 철학의 일부입니다.",
+  "모든 경험은 공개된 장소에서 그룹 형태로 진행됩니다.\n\n모든 참여자는 경험에 초대되기 전에 검토 과정을 거칩니다.",
+  "경험이 진행되는 동안 어디로 이동하고 누구와 만날지 안내받을 수 있습니다.\n\n이는 당신에게 가장 잘 맞는 사람과 장소를 발견하도록 돕기 위한 과정입니다.",
+  "열린 마음으로 참여하고, 선입견은 내려놓은 채, 각 사람과 의미 있는 대화를 나눠주세요.\n\n교집합의 경험은 소중하고 진정성 있는 자리이므로 그에 맞게 서로를 존중해 주세요.",
+] as const;
+
+function IntersectionHowItWorks({ onClose }: { onClose: () => void }) {
+  const [pageIndex, setPageIndex] = useState(0);
+  const [visibleCharacterCount, setVisibleCharacterCount] = useState(0);
+  const characters = useMemo(
+    () => Array.from(howIntersectionWorksSlides[pageIndex]),
+    [pageIndex],
+  );
+  const typing = visibleCharacterCount < characters.length;
+  const completedProgress =
+    (pageIndex + visibleCharacterCount / Math.max(characters.length, 1)) /
+    howIntersectionWorksSlides.length;
+
+  useEffect(() => {
+    setVisibleCharacterCount(0);
+    const timer = window.setInterval(() => {
+      setVisibleCharacterCount((current) => {
+        if (current >= characters.length) {
+          window.clearInterval(timer);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 22);
+
+    return () => window.clearInterval(timer);
+  }, [characters]);
+
+  const continueFlow = () => {
+    if (typing) return;
+    if (pageIndex < howIntersectionWorksSlides.length - 1) {
+      setPageIndex((current) => current + 1);
+      return;
+    }
+    onClose();
+  };
+
+  const goBack = () => {
+    if (pageIndex === 0) {
+      onClose();
+      return;
+    }
+    setPageIndex((current) => current - 1);
+  };
+
+  return (
+    <motion.section
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.22 }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="교집합 진행 안내"
+      tabIndex={0}
+      onClick={continueFlow}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          continueFlow();
+        }
+      }}
+      className={cn(
+        "font-profile-kmu-serif fixed left-1/2 top-0 z-[120] flex h-dvh w-full max-w-[430px] -translate-x-1/2 flex-col overflow-hidden bg-[#f7f4ed] text-[#171714] outline-none",
+        !typing && "cursor-pointer",
+      )}
+    >
+      <header className="relative shrink-0 px-7 pb-5 pt-[calc(28px+env(safe-area-inset-top))] text-center">
+        <span className="text-[15px] italic tracking-[0.08em] text-black/38">
+          intersection
+        </span>
+        <div
+          role="progressbar"
+          aria-label="교집합 진행 안내 완료율"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(completedProgress * 100)}
+          className="absolute inset-x-0 bottom-0 h-[2px] bg-black/[0.08]"
+        >
+          <motion.div
+            initial={false}
+            animate={{
+              width: `${completedProgress * 100}%`,
+            }}
+            transition={{ duration: 0.1, ease: "linear" }}
+            className="h-full bg-[#827656]"
+          />
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 items-start px-8 pb-24 pt-[26vh]">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={pageIndex}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            aria-live="polite"
+            className="whitespace-pre-line break-keep text-[18px] font-medium leading-[1.75] tracking-[-0.03em]"
+          >
+            {characters.slice(0, visibleCharacterCount).join("")}
+            {typing && (
+              <span aria-hidden className="ml-0.5 animate-pulse text-[#827656]/65">
+                |
+              </span>
+            )}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+
+      <footer className="absolute inset-x-0 bottom-0 flex items-center justify-center px-7 pb-[calc(28px+env(safe-area-inset-bottom))] pt-6 text-black/38">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            goBack();
+          }}
+          aria-label={pageIndex === 0 ? "안내 닫기" : "이전 장"}
+          className="absolute left-7 flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-black/[0.05] hover:text-black/65"
+        >
+          <ChevronLeft size={24} aria-hidden />
+        </button>
+        <AnimatePresence>
+          {!typing && (
+            <motion.span
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="text-[15px] tracking-[-0.02em]"
+            >
+              tap to continue
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </footer>
+    </motion.section>
   );
 }
 
@@ -618,6 +754,7 @@ function TextField({
 
 export function PreferenceProfileTab({
   profile,
+  initialAccountOpen = false,
   loggingOut,
   logoutError,
   answers = {},
@@ -645,6 +782,7 @@ export function PreferenceProfileTab({
   previewMode = false,
 }: {
   profile: ProfileRow;
+  initialAccountOpen?: boolean;
   loggingOut: boolean;
   logoutError: string | null;
   answers?: Record<number, QuestionAnswer>;
@@ -673,10 +811,16 @@ export function PreferenceProfileTab({
 }) {
   const initialDraft = useMemo(() => initialProfileDraft(profile), [profile]);
   const [editing, setEditing] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(initialAccountOpen);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const archetypeId = isProfileArchetypeId(profile.profile_archetype_id)
     ? profile.profile_archetype_id
     : null;
@@ -685,6 +829,15 @@ export function PreferenceProfileTab({
   useEffect(() => {
     if (!editing) setDraft(initialDraft);
   }, [editing, initialDraft]);
+
+  useEffect(
+    () => () => {
+      if (previewPhotoUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(previewPhotoUrl);
+      }
+    },
+    [previewPhotoUrl],
+  );
 
   const canSave = useMemo(
     () =>
@@ -741,6 +894,324 @@ export function PreferenceProfileTab({
     window.setTimeout(() => setSaved(false), 1600);
   };
 
+  const changePhoto = async (file: File | null) => {
+    if (!file || photoUploading) return;
+
+    setPhotoUploading(true);
+    setPhotoError(null);
+    try {
+      if (previewMode) {
+        const nextPreviewUrl = URL.createObjectURL(file);
+        setPreviewPhotoUrl(nextPreviewUrl);
+        onProfileUpdated({ ...profile, photo_url: nextPreviewUrl });
+      } else {
+        const photoUrl = await uploadProfilePhoto(profile.user_id, file);
+        setPreviewPhotoUrl(null);
+        onProfileUpdated({ ...profile, photo_url: photoUrl });
+      }
+    } catch (caught) {
+      setPhotoError(
+        caught instanceof Error
+          ? caught.message
+          : "사진을 변경하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setPhotoUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  if (howItWorksOpen) {
+    return <IntersectionHowItWorks onClose={() => setHowItWorksOpen(false)} />;
+  }
+
+  if (accountOpen) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: 28 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+        className="font-profile-kmu-serif min-h-full bg-[#f7f4ed]"
+      >
+        <section className="px-5 pb-28 pt-7">
+          <header className="relative flex h-10 items-center justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setAccountOpen(false);
+                const url = new URL(window.location.href);
+                url.searchParams.delete("account");
+                window.history.replaceState(
+                  null,
+                  "",
+                  `${url.pathname}${url.search}${url.hash}`,
+                );
+              }}
+              aria-label="프로필로 돌아가기"
+              className="absolute left-0 flex h-10 w-10 items-center justify-center rounded-full text-black/55 transition hover:bg-black/[0.05] hover:text-black"
+            >
+              <ChevronLeft size={22} aria-hidden />
+            </button>
+            <h1 className="text-[24px] leading-none tracking-[-0.035em] text-black">
+              account
+            </h1>
+          </header>
+
+          <section className="mt-8">
+            <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
+              내 정보
+            </p>
+            <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+              <div className="flex min-h-16 items-center gap-4 border-b border-black/[0.07] py-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <UserRound size={18} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">이름</span>
+                <span className="ml-auto truncate text-[13px] font-semibold text-black/45">
+                  {profile.name?.trim() || "미입력"}
+                </span>
+              </div>
+              <div className="flex min-h-16 items-center gap-4 border-b border-black/[0.07] py-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <Phone size={18} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">전화번호</span>
+                <span className="ml-auto truncate text-[13px] font-semibold text-black/45">
+                  {profile.phone?.trim() || profile.phone_normalized?.trim() || "미입력"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSaved(false);
+                  setEditing((current) => !current);
+                }}
+                className="flex min-h-16 w-full items-center gap-4 py-4 text-left"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <PenLine size={17} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">프로필 정보 수정</span>
+                <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
+              </button>
+            </div>
+          </section>
+
+          <AnimatePresence initial={false}>
+            {editing && (
+              <motion.section
+                initial={{ opacity: 0, height: 0, y: -8 }}
+                animate={{ opacity: 1, height: "auto", y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -8 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="mt-3 space-y-5 rounded-[26px] border border-black/[0.08] bg-[#faf8f2] p-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+                  <div>
+                    <span className="text-[11px] font-bold text-black/48">
+                      프로필 사진
+                    </span>
+                    <div className="mt-3 flex items-center gap-4 rounded-[18px] border border-black/[0.07] bg-white p-3">
+                      <span className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#f1eee6] text-black/28">
+                        <UserRound size={22} aria-hidden />
+                        <SafeImage
+                          src={previewPhotoUrl ?? profile.photo_url}
+                          alt="현재 프로필 사진"
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-black text-black">
+                          사진 변경
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={photoUploading}
+                        onClick={() => photoInputRef.current?.click()}
+                        className="flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-[#171714] px-4 text-[11px] font-black text-white transition active:scale-[0.98] disabled:cursor-wait disabled:opacity-55"
+                      >
+                        {photoUploading ? (
+                          <Loader2 size={14} className="animate-spin" aria-hidden />
+                        ) : (
+                          <Camera size={14} aria-hidden />
+                        )}
+                        {photoUploading ? "변경 중" : "선택"}
+                      </button>
+                      <input
+                        ref={photoInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                        className="hidden"
+                        aria-label="프로필 사진 선택"
+                        onChange={(event) => void changePhoto(event.target.files?.[0] ?? null)}
+                      />
+                    </div>
+                    {photoError && (
+                      <p className="mt-2 rounded-[14px] bg-red-50 px-3 py-2 text-[10px] font-bold leading-4 text-red-600">
+                        {photoError}
+                      </p>
+                    )}
+                  </div>
+                  <TextField
+                    label="이름"
+                    value={draft.name}
+                    onChange={(name) => setDraft((current) => ({ ...current, name }))}
+                  />
+                  <TextField
+                    label="전화번호"
+                    value={draft.phone}
+                    inputMode="tel"
+                    onChange={(phone) => setDraft((current) => ({ ...current, phone }))}
+                  />
+                  <fieldset>
+                    <legend className="text-[11px] font-bold text-black/48">성별</legend>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {(["여성", "남성"] as Gender[]).map((gender) => (
+                        <button
+                          key={gender}
+                          type="button"
+                          onClick={() => setDraft((current) => ({ ...current, gender }))}
+                          className={cn(
+                            "h-12 rounded-[16px] border text-[12px] font-extrabold transition",
+                            draft.gender === gender
+                              ? "border-[#171714] bg-[#171714] text-white"
+                              : "border-black/10 bg-white text-black/45",
+                          )}
+                        >
+                          {gender}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-[11px] font-bold text-black/48">출생연도</span>
+                      <select
+                        value={draft.birthYear}
+                        onChange={(event) =>
+                          setDraft((current) => ({ ...current, birthYear: event.target.value }))
+                        }
+                        className="mt-2 h-12 w-full appearance-none rounded-[16px] border border-black/10 bg-white px-4 text-[13px] font-bold text-black outline-none"
+                      >
+                        <option value="">선택</option>
+                        {birthYearOptions.map((year) => (
+                          <option key={year} value={year}>{year}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div>
+                      <span className="text-[11px] font-bold text-black/48">MBTI</span>
+                      <MbtiSelect
+                        value={draft.mbti}
+                        onChange={(mbti) => setDraft((current) => ({ ...current, mbti }))}
+                      />
+                    </div>
+                  </div>
+                  {saveError && (
+                    <p className="rounded-[16px] bg-red-50 px-4 py-3 text-[11px] font-bold leading-5 text-red-600">
+                      {saveError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!canSave || saving}
+                    onClick={() => void save()}
+                    className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#171714] text-sm font-semibold text-white transition active:scale-[0.98] disabled:bg-black/[0.07] disabled:text-black/25"
+                  >
+                    {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
+                    {saving ? "저장 중..." : "변경사항 저장"}
+                  </button>
+                </div>
+              </motion.section>
+            )}
+          </AnimatePresence>
+
+          {saved && (
+            <p className="mt-3 rounded-[16px] bg-accent/10 px-4 py-3 text-center text-[11px] font-bold text-accent">
+              정보가 저장됐어요.
+            </p>
+          )}
+
+          <AccountSettingsCard profile={profile} />
+
+          <section className="mt-8">
+            <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
+              지원
+            </p>
+            <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+              <a
+                href="http://pf.kakao.com/_xnweQn/chat"
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-16 items-center gap-4 py-4"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <MessageCircle size={18} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">문의하기</span>
+                <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
+              </a>
+            </div>
+          </section>
+
+          <section className="mt-8">
+            <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
+              안내
+            </p>
+            <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+              <button
+                type="button"
+                onClick={() => setHowItWorksOpen(true)}
+                className="flex min-h-16 w-full items-center gap-4 border-b border-black/[0.07] py-4 text-left"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <CircleHelp size={18} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">
+                  교집합은 어떻게 진행되나요?
+                </span>
+                <ChevronRight size={18} aria-hidden className="ml-auto shrink-0 text-black/32" />
+              </button>
+              <a href="/privacy?from=account" className="flex min-h-16 items-center gap-4 py-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
+                  <Info size={18} aria-hidden />
+                </span>
+                <span className="text-[14px] font-black text-black">개인정보 처리방침</span>
+                <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
+              </a>
+            </div>
+          </section>
+
+          <section className="mt-8">
+            <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
+              계정 관리
+            </p>
+            <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
+              <button
+                type="button"
+                disabled={loggingOut}
+                onClick={() => void onLogout()}
+                className="flex min-h-16 w-full items-center border-b border-black/[0.07] py-4 text-left text-[14px] font-black text-black transition hover:text-black/65 disabled:cursor-wait disabled:opacity-50"
+              >
+                {loggingOut ? "로그아웃 중..." : "로그아웃"}
+                <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
+              </button>
+              <AccountDeletionButton variant="menu-row" />
+            </div>
+          </section>
+
+          {logoutError && (
+            <p className="mt-3 rounded-[16px] bg-red-50 px-4 py-3 text-center text-[11px] font-bold leading-5 text-red-600">
+              {logoutError}
+            </p>
+          )}
+        </section>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       initial={false}
@@ -775,10 +1246,18 @@ export function PreferenceProfileTab({
       </div>
 
       <section className="relative z-10 px-5 pb-28 pt-7">
-        <header className="pr-16">
+        <header className="relative pr-16">
           <h1 className="font-profile-kmu-serif text-[29px] leading-9 tracking-[-0.035em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.45)]">
             profile
           </h1>
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            aria-label="계정 메뉴 열기"
+            className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/15 text-white shadow-[0_8px_24px_rgba(0,0,0,0.16)] backdrop-blur-md transition hover:bg-black/25"
+          >
+            <Menu size={22} aria-hidden />
+          </button>
         </header>
 
         <section className="mt-5">
@@ -846,126 +1325,7 @@ export function PreferenceProfileTab({
             )}
           </div>
 
-          <div
-            className={cn(
-              editing || saved
-                ? "rounded-[28px] border border-black/[0.07] bg-[#faf8f2]/95 p-5 shadow-[0_24px_70px_rgba(24,24,20,0.09)] backdrop-blur-xl"
-                : "hidden",
-            )}
-          >
-            {editing ? (
-              <div className="space-y-5">
-                <div>
-                  <TextField
-                    label="이름"
-                    value={draft.name}
-                    onChange={(name) =>
-                      setDraft((current) => ({ ...current, name }))
-                    }
-                  />
-                </div>
-
-                <TextField
-                  label="전화번호"
-                  value={draft.phone}
-                  inputMode="tel"
-                  onChange={(phone) =>
-                    setDraft((current) => ({ ...current, phone }))
-                  }
-                />
-
-                <fieldset>
-                  <legend className="text-[11px] font-bold text-black/48">
-                    성별
-                  </legend>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {(["여성", "남성"] as Gender[]).map((gender) => (
-                      <button
-                        key={gender}
-                        type="button"
-                        onClick={() =>
-                          setDraft((current) => ({ ...current, gender }))
-                        }
-                        className={cn(
-                          "h-12 rounded-[16px] border text-[12px] font-extrabold transition",
-                          draft.gender === gender
-                            ? "border-[#171714] bg-[#171714] text-white"
-                            : "border-black/10 bg-white text-black/45",
-                        )}
-                      >
-                        {gender}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="text-[11px] font-bold text-black/48">
-                      출생연도
-                    </span>
-                    <select
-                      value={draft.birthYear}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          birthYear: event.target.value,
-                        }))
-                      }
-                      className="mt-2 h-12 w-full appearance-none rounded-[16px] border border-black/10 bg-white px-4 text-[13px] font-bold text-black outline-none"
-                    >
-                      <option value="">선택</option>
-                      {birthYearOptions.map((year) => (
-                        <option key={year} value={year}>
-                          {year}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div>
-                    <span className="text-[11px] font-bold text-black/48">
-                      MBTI
-                    </span>
-                    <MbtiSelect
-                      value={draft.mbti}
-                      onChange={(mbti) =>
-                        setDraft((current) => ({ ...current, mbti }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                {saveError && (
-                  <p className="rounded-[16px] bg-red-50 px-4 py-3 text-[11px] font-bold leading-5 text-red-600">
-                    {saveError}
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  disabled={!canSave || saving}
-                  onClick={() => void save()}
-                  className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#171714] text-sm font-semibold text-white shadow-[0_12px_28px_rgba(23,23,20,0.14)] transition active:scale-[0.98] disabled:bg-black/[0.07] disabled:text-black/25 disabled:shadow-none"
-                >
-                  {saving ? (
-                    <Loader2 size={16} className="animate-spin" aria-hidden />
-                  ) : (
-                    <Check size={16} aria-hidden />
-                  )}
-                  {saving ? "저장 중..." : "변경사항 저장"}
-                </button>
-              </div>
-            ) : null}
-
-            {saved && (
-              <p className="mt-4 rounded-[16px] bg-accent/10 px-4 py-3 text-center text-[11px] font-bold text-accent">
-                정보가 저장됐어요.
-              </p>
-            )}
-          </div>
         </section>
-
-        <MembershipStatusCard profile={profile} />
 
         <BasicQuestionsSection
           answers={answers}
@@ -1000,43 +1360,6 @@ export function PreferenceProfileTab({
           </button>
         )}
 
-        {!previewMode && (
-          <button
-            type="button"
-            disabled={loggingOut}
-            onClick={() => void onLogout()}
-            className="mt-8 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-red-200/80 bg-[#faf8f2] text-xs font-semibold text-red-500 transition hover:bg-[#f1eee6] disabled:cursor-wait disabled:opacity-50"
-          >
-            <LogOut size={15} aria-hidden />
-            {loggingOut ? "로그아웃 중..." : "로그아웃"}
-          </button>
-        )}
-
-        <a
-          href="http://pf.kakao.com/_xnweQn/chat"
-          target="_blank"
-          rel="noreferrer"
-          className={`${previewMode ? "mt-8" : "mt-3"} flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70`}
-        >
-          <MessageCircle size={15} aria-hidden />
-          문의하기
-        </a>
-
-        <a
-          href="/privacy"
-          className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/55 transition hover:border-black/18 hover:bg-[#f1eee6] hover:text-black/70"
-        >
-          <Info size={15} aria-hidden />
-          개인정보 처리방침
-        </a>
-
-        {!previewMode && <AccountDeletionButton />}
-
-        {logoutError && (
-          <p className="mt-3 rounded-[16px] bg-red-50 px-4 py-3 text-center text-[11px] font-bold leading-5 text-red-600">
-            {logoutError}
-          </p>
-        )}
       </section>
     </motion.div>
   );

@@ -21,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 type MeetingsPageProps = {
   searchParams?: Promise<{
     tab?: string | string[];
+    account?: string | string[];
     legacyPreview?: string | string[];
   }>;
 };
@@ -175,6 +176,9 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
         userId={user.id}
         profile={profile}
         initialTab={initialTabFromSearchParam(params?.tab)}
+        initialProfileAccountOpen={
+          (Array.isArray(params?.account) ? params.account[0] : params?.account) === "1"
+        }
         initialLegacyResultPreview={legacyResultPreview}
         operatorAccountSwitcher={operatorAccountSwitcher}
         previewMatchPhotoUrls={previewMatchPhotoUrls}

@@ -1,12 +1,16 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
-export function AccountDeletionButton() {
+export function AccountDeletionButton({
+  variant = "default",
+}: {
+  variant?: "default" | "menu-row";
+}) {
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +67,23 @@ export function AccountDeletionButton() {
           setError(null);
           setOpen(true);
         }}
-        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/38 transition hover:border-red-200 hover:bg-red-50/40 hover:text-red-500"
+        className={
+          variant === "menu-row"
+            ? "flex min-h-16 w-full items-center py-4 text-left text-[14px] font-black text-red-500 transition hover:text-red-600"
+            : "mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-[#faf8f2] text-xs font-semibold text-black/38 transition hover:border-red-200 hover:bg-red-50/40 hover:text-red-500"
+        }
       >
-        <Trash2 size={14} aria-hidden />
-        회원 탈퇴
+        {variant === "menu-row" ? (
+          <>
+            <span>회원 탈퇴</span>
+            <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
+          </>
+        ) : (
+          <>
+            <Trash2 size={14} aria-hidden />
+            회원 탈퇴
+          </>
+        )}
       </button>
 
       {typeof document !== "undefined" &&

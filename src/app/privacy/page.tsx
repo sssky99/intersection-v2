@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { PrivacyBackButton } from "./PrivacyBackButton";
 
 export const metadata = {
   title: "개인정보 처리방침 | 교집합",
@@ -14,12 +14,7 @@ export default function PrivacyPage() {
   return (
     <main className="min-h-dvh bg-[#f6f6f3] px-4 py-6 text-black sm:px-6 sm:py-10">
       <article className="mx-auto w-full max-w-3xl rounded-[28px] bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10">
-        <Link
-          href="/"
-          className="inline-flex h-10 items-center rounded-full border border-black/10 px-4 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
-        >
-          ← 교집합으로 돌아가기
-        </Link>
+        <PrivacyBackButton />
 
         <header className="mt-8">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-black/35">
@@ -40,12 +35,11 @@ export default function PrivacyPage() {
             <h2 className={headingClass}>1. 개인정보의 처리 목적</h2>
             <p className={paragraphClass}>교집합은 다음 목적을 위해 개인정보를 처리합니다.</p>
             <ul className={listClass}>
-              <li>카카오 로그인, 회원 식별 및 계정 관리</li>
+              <li>회원 식별 및 계정 관리</li>
               <li>프로필 생성, 성향 분석 및 모임 추천</li>
               <li>모임 신청, 참가자 배정, 티켓·멤버십·노쇼 방지비 관리</li>
               <li>채팅, 도착 확인, 피드백 및 블라인드 데이트 일정 조율</li>
               <li>이용자 문의, 안전 신고, 노쇼·부정 이용 및 분쟁 대응</li>
-              <li>AI를 이용한 공개 프로필 소개 생성</li>
               <li>접속·이용행태 분석, 서비스 품질 개선 및 오류 대응</li>
               <li>광고 유입·전환 성과 측정 및 광고 최적화</li>
               <li>별도 동의를 받은 경우 신규 모임·멤버십 등 광고성 정보 안내</li>
@@ -63,7 +57,7 @@ export default function PrivacyPage() {
                   </tr>
                 </thead>
                 <tbody className="font-medium leading-6 text-black/65">
-                  <PolicyRow label="계정" value="Supabase 사용자 ID, 로그인 제공자, 카카오 식별자" />
+                  <PolicyRow label="계정" value="Supabase 사용자 ID" />
                   <PolicyRow label="프로필" value="이름, 닉네임, 전화번호, 성별, 출생연도, MBTI, 프로필 사진, 자기소개" />
                   <PolicyRow label="설문·추천" value="객관식·주관식 답변, 관심사, 직업·대화 성향, 추천 관련 점수" />
                   <PolicyRow label="모임 이용" value="신청 날짜, 티켓, 대기·배정·참가·도착 상태, 운영 메모, 멤버십 상태" />
@@ -119,10 +113,9 @@ export default function PrivacyPage() {
             <ul className={listClass}>
               <li>Supabase, Inc.: 로그인 인증, 데이터베이스 및 파일 저장</li>
               <li>Netlify, Inc.: 웹사이트 호스팅 및 서버 기능 제공</li>
-              <li>OpenAI, L.L.C.: 이용자가 입력한 답변을 바탕으로 공개 프로필 문구 생성</li>
               <li>Microsoft Corporation: Microsoft Clarity를 통한 이용행태 분석</li>
               <li>Meta Platforms, Inc.: Meta Pixel 및 Conversions API를 통한 광고 전환 측정·최적화</li>
-              <li>Kakao Corp.: 카카오 로그인 및 비즈니스 채널 메시지 제공</li>
+              <li>Kakao Corp.: 카카오톡 비즈니스 채널 메시지 제공</li>
               <li>NAVER Cloud Corp.: 장소 검색 및 지도 표시</li>
             </ul>
             <p className={paragraphClass}>
@@ -140,7 +133,6 @@ export default function PrivacyPage() {
             <ul className={listClass}>
               <li>Supabase: 데이터베이스·인증·저장, 대한민국 서울 리전 및 서비스 운영 국가</li>
               <li>Netlify: 웹 요청 처리와 호스팅, 미국 등 글로벌 인프라 운영 국가</li>
-              <li>OpenAI: AI 공개 프로필 생성, 미국</li>
               <li>Microsoft Clarity: 이용행태 분석, 미국 등 Microsoft가 운영하는 국가</li>
               <li>Meta Platforms: 광고 전환 측정·최적화, 미국 등 Meta가 운영하는 국가</li>
             </ul>

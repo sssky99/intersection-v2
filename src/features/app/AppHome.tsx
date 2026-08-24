@@ -512,6 +512,7 @@ export function AppHome({
   userId,
   profile,
   initialTab = "recommend",
+  initialProfileAccountOpen = false,
   initialLegacyResultPreview = false,
   operatorAccountSwitcher = null,
   guestMode = false,
@@ -524,6 +525,7 @@ export function AppHome({
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
+  initialProfileAccountOpen?: boolean;
   initialLegacyResultPreview?: boolean;
   operatorAccountSwitcher?: OperatorAccountSwitcher;
   guestMode?: boolean;
@@ -1407,19 +1409,14 @@ export function AppHome({
       {!chatRoomOpen &&
         !recommendationFocusMode &&
         !ticketTabFocusMode &&
+        activeTab !== "profile" &&
         !replayedDeclinedTicket && (
           <button
             type="button"
             onClick={() => switchTab("profile")}
             title="프로필"
             aria-label="프로필 열기"
-            aria-current={activeTab === "profile" ? "page" : undefined}
-            className={cn(
-              "absolute right-5 top-[calc(14px+env(safe-area-inset-top))] z-40 flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border bg-white shadow-[0_6px_18px_rgba(0,0,0,0.14)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,0,0,0.18)]",
-              activeTab === "profile"
-                ? "border-black ring-2 ring-black/15"
-                : "border-black/12",
-            )}
+            className="absolute right-5 top-[calc(14px+env(safe-area-inset-top))] z-40 flex h-11 w-11 items-center justify-center overflow-hidden rounded-full border border-black/12 bg-white shadow-[0_6px_18px_rgba(0,0,0,0.14)] transition hover:-translate-y-0.5 hover:shadow-[0_9px_24px_rgba(0,0,0,0.18)]"
           >
             <UserRound size={20} strokeWidth={1.8} aria-hidden />
             <SafeImage
@@ -1629,6 +1626,7 @@ export function AppHome({
             profileQuestionsReady ? (
               <PreferenceProfileTab
                 profile={currentProfile}
+                initialAccountOpen={initialProfileAccountOpen}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
                 answers={preferenceProfileEnabled ? answers : {}}
@@ -3561,7 +3559,7 @@ function InteractionTicketCard({
                 : "border-white/25 bg-white/[0.18] text-white"
         }
         remainingSeatCount={ticket.remainingSeatCount}
-        className={cn(ticketPaperImageClass, status === "no" && "grayscale")}
+        className={ticketPaperImageClass}
       />
       {ticketInteractionShowsDeadline(status) && (
         <UnansweredTicketCountdown ticket={ticket} />
