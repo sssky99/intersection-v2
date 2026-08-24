@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { PrivacyBackButton } from "./PrivacyBackButton";
 
 export const metadata = {
@@ -14,7 +15,15 @@ export default function PrivacyPage() {
   return (
     <main className="min-h-dvh bg-[#f6f6f3] px-4 py-6 text-black sm:px-6 sm:py-10">
       <article className="mx-auto w-full max-w-3xl rounded-[28px] bg-white px-5 py-7 shadow-sm sm:px-10 sm:py-10">
-        <PrivacyBackButton />
+        <Suspense
+          fallback={(
+            <span className="inline-flex h-10 items-center rounded-full border border-black/10 px-4 text-xs font-bold text-black/55">
+              ← 이전으로
+            </span>
+          )}
+        >
+          <PrivacyBackButton />
+        </Suspense>
 
         <header className="mt-8">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-black/35">
