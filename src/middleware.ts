@@ -142,17 +142,18 @@ export async function middleware(request: NextRequest) {
     return redirectToAuthCallback(request);
   }
 
-  const landingVariant = nextUrl.pathname === '/' ? 'b' : null;
-  if (landingVariant) {
-    request.cookies.set(landingExperimentCookie, landingVariant);
-  }
+  // API routes perform their own authentication. Middleware only stays in
+  // front of selected API paths for preview/read-only safeguards above.
+  if (isApiRequest) return NextResponse.next();
 
-  const { response } = await refreshSupabaseSession(request);
+  // Static landing pages must not trigger an auth refresh (and therefore a
+  // Supabase network call) on every anonymous visit.
+  if (nextUrl.pathname === '/' || nextUrl.pathname === '/instagram') {
+    const response = NextResponse.next();
 
-  if (isApiRequest && !isAdminPreviewPath) return response;
+    if (nextUrl.pathname !== '/') return response;
 
-  if (landingVariant) {
-    response.cookies.set(landingExperimentCookie, landingVariant, {
+    response.cookies.set(landingExperimentCookie, 'b', {
       path: '/',
       maxAge: landingExperimentMaxAge,
       sameSite: 'lax',
@@ -161,14 +162,19 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  const { response } = await refreshSupabaseSession(request);
+
   return response;
 }
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|images).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|images|videos|fonts|.*\\.(?:svg|png|jpg|jpeg|gif|webp|avif|css|js|map|woff|woff2|ttf|otf|mp4|webm|mov)$).*)',
     '/api/admin/:path*',
     '/api/dev/:path*',
-    '/api/:path*',
+    {
+      source: '/api/:path*',
+      has: [{ type: 'cookie', key: 'inter_admin_user_view' }],
+    },
   ],
 };

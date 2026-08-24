@@ -353,44 +353,11 @@ function trackMetaEvent(
 }
 
 function trackSupabaseEvent(
-  eventName: string,
-  payload: Record<string, AnalyticsParamValue>,
+  _eventName: string,
+  _payload: Record<string, AnalyticsParamValue>,
 ) {
-  if (!shouldTrackSupabaseEvent()) return;
-
-  const normalizedEventName = supabaseEventName(eventName);
-  const body = JSON.stringify({
-    anonymousSessionId: anonymousSessionId(),
-    applicationId: applicationIdFromPayload(payload),
-    eventName: normalizedEventName,
-    path: window.location.pathname,
-    referrer: document.referrer || null,
-    metadata: {
-      ...payload,
-      ...acquisitionContext(),
-      ...landingExperimentContext(),
-      ...(normalizedEventName === eventName
-        ? {}
-        : { original_event_name: eventName }),
-    },
-  });
-
-  if (navigator.sendBeacon) {
-    const sent = navigator.sendBeacon(
-      "/api/user-events",
-      new Blob([body], { type: "application/json" }),
-    );
-    if (sent) return;
-  }
-
-  void fetch("/api/user-events", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-    keepalive: true,
-  }).catch(() => {
-    // Analytics should never interrupt the user flow.
-  });
+  // Temporarily disabled while the event pipeline is redesigned around
+  // batching. GA, Clarity, and Meta tracking continue in trackEvent().
 }
 
 export function trackEvent(

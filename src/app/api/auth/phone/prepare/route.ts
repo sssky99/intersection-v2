@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { normalizeLoginPhone } from "@/lib/loginBlocklist";
+import { findLoginBlock, normalizeLoginPhone } from "@/lib/loginBlocklist";
 import { isSameOriginRequest, requestActorKey } from "@/lib/requestGuards";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +55,17 @@ export async function POST(request: NextRequest) {
   const phone = normalizeLoginPhone(body?.phone);
   if (!phone) {
     return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
+  }
+
+  const blocked = await findLoginBlock({ phone }).catch((error: unknown) => {
+    console.error("[phone-auth] blocklist lookup failed before OTP", error);
+    return null;
+  });
+  if (blocked) {
+    return NextResponse.json(
+      { errorCode: "ACCOUNT_BLOCKED" },
+      { status: 403 },
+    );
   }
 
   return NextResponse.json({ ok: true });

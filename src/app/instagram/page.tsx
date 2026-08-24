@@ -1,18 +1,7 @@
-import { redirect } from "next/navigation";
 import { LandingVariantB } from "@/features/landing/LandingVariantBPreview";
-import {
-  getAuthenticatedProfile,
-  nextOnboardingPath,
-} from "@/lib/onboarding";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
 
-export default async function InstagramLandingPage() {
-  const { user, profile } = await getAuthenticatedProfile();
-
-  if (user && profile) {
-    redirect(nextOnboardingPath(profile));
-  }
-
+export default function InstagramLandingPage() {
   return <LandingVariantB instagramAd />;
 }

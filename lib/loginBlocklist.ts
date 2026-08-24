@@ -21,9 +21,11 @@ export function normalizeLoginPhone(value: unknown) {
 export async function findLoginBlock({
   userId,
   phone,
+  timeoutMs = 2500,
 }: {
   userId?: string | null;
   phone?: string | null;
+  timeoutMs?: number;
 }) {
   const normalizedPhone = normalizeLoginPhone(phone);
   const filters = [
@@ -40,6 +42,7 @@ export async function findLoginBlock({
     )
     .or(filters.join(","))
     .limit(1)
+    .abortSignal(AbortSignal.timeout(timeoutMs))
     .maybeSingle<LoginBlockRow>();
 
   if (error) throw error;
