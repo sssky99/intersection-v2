@@ -2827,20 +2827,23 @@ function TicketUnlockSequence({
 
 export function MembershipPurchaseBottomSheet({
   ticket,
+  standalone = false,
   saving,
   error,
   onSubmit,
   onSingleUseSubmit,
   onClose,
 }: {
-  ticket: GatheringTicket;
+  ticket: GatheringTicket | null;
+  standalone?: boolean;
   saving: boolean;
   error: string | null;
   onSubmit: () => void;
   onSingleUseSubmit?: () => void;
   onClose: () => void;
 }) {
-  const period = oneMonthMembershipPeriod(ticket.date);
+  const membershipReferenceDate = ticket?.date ?? todayInKst();
+  const period = oneMonthMembershipPeriod(membershipReferenceDate);
   const [purchaseType, setPurchaseType] = useState<"membership" | "single">(
     "membership",
   );
@@ -2852,10 +2855,9 @@ export function MembershipPurchaseBottomSheet({
     ? 20_000
     : MEETING_DATE_SINGLE_USE_AMOUNT;
   const singleUseUnavailable = !membershipSelected && !onSingleUseSubmit;
-  const selectionDeadline = paymentSelectionDeadlineLabel(
-    ticket.date,
-    ticket.time,
-  );
+  const selectionDeadline = ticket
+    ? paymentSelectionDeadlineLabel(ticket.date, ticket.time)
+    : "";
   const finalSubmit = membershipSelected ? onSubmit : onSingleUseSubmit;
 
   useEffect(() => {
@@ -2882,7 +2884,7 @@ export function MembershipPurchaseBottomSheet({
 
   return (
     <motion.div
-      key={`membership-purchase-sheet-${ticket.id}`}
+      key={`membership-purchase-sheet-${ticket?.id ?? "account"}`}
       className="fixed inset-0 z-[120] isolate flex items-end justify-center bg-black/[0.3] backdrop-blur-[5px]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -2916,7 +2918,9 @@ export function MembershipPurchaseBottomSheet({
               className="font-ticket-display mt-2 text-[27px] font-bold leading-[1.25] tracking-[-0.045em] text-black"
             >
               {sheetStep === "purchase"
-                ? "참여 방식을 선택해주세요."
+                ? standalone
+                  ? "멤버십을 시작해주세요."
+                  : "참여 방식을 선택해주세요."
                 : sheetStep === "payment_terms"
                   ? "결제 조건"
                   : "취소 정책"}
@@ -2954,6 +2958,7 @@ export function MembershipPurchaseBottomSheet({
 
         {sheetStep === "purchase" ? (
           <>
+        {!standalone && (
         <div className="mt-6 grid grid-cols-2 rounded-full border border-black/10 bg-black/[0.035] p-1.5">
           <button
             type="button"
@@ -2982,6 +2987,7 @@ export function MembershipPurchaseBottomSheet({
             <span className="block text-center text-[13px] font-black">1회 이용권</span>
           </button>
         </div>
+        )}
 
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -2999,9 +3005,9 @@ export function MembershipPurchaseBottomSheet({
                     {membershipSelected ? "1개월 멤버십" : "1회 이용권"}
                   </p>
                   <p className="mt-2 break-keep text-[15px] font-black leading-6 text-black">
-                    {membershipSelected
-                      ? "한 달 동안 횟수 제한 없이 참여해요."
-                      : "선택한 이번 모임에 한 번 참여해요."}
+                  {membershipSelected
+                    ? "한 달 동안 횟수 제한 없이 참여해요."
+                    : "선택한 이번 모임에 한 번 참여해요."}
                   </p>
                   {membershipSelected && (
                     <p className="mt-1.5 break-keep text-[12px] font-semibold leading-5 text-black/48">
@@ -3020,13 +3026,19 @@ export function MembershipPurchaseBottomSheet({
                 </p>
                 <p className="mt-1.5 tabular-nums text-[15px] font-bold tracking-[-0.015em] text-black">
                   {membershipSelected
-                    ? `${period.start} – ${period.end}`
-                    : `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`}
+                    ? standalone
+                      ? "첫 모임 시작일부터 1개월"
+                      : `${period.start} – ${period.end}`
+                    : ticket
+                      ? `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`
+                      : ""}
                 </p>
                 <p className="mt-1.5 text-[11px] font-semibold text-black/38">
                   {membershipSelected
-                    ? `${meetingDateLabel(ticket.date)} 모임 시작 기준`
-                    : ticket.title}
+                    ? standalone
+                      ? "자동 결제 없이 한 번만 결제돼요."
+                      : `${meetingDateLabel(ticket!.date)} 모임 시작 기준`
+                    : ticket?.title}
                 </p>
               </div>
             </div>
@@ -3050,7 +3062,13 @@ export function MembershipPurchaseBottomSheet({
           type="button"
           whileTap={!saving && !singleUseUnavailable ? { scale: 0.985 } : undefined}
           disabled={saving || singleUseUnavailable}
-          onClick={() => setSheetStep("payment_terms")}
+          onClick={() => {
+            if (standalone) {
+              onSubmit();
+              return;
+            }
+            setSheetStep("payment_terms");
+          }}
           className="font-ticket-display mt-6 flex h-[58px] w-full items-center justify-center rounded-full bg-black px-5 text-[16px] font-bold text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] disabled:bg-black/20"
         >
           {saving ? (

@@ -25,6 +25,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { SafeImage } from "@/components/SafeImage";
@@ -57,6 +58,9 @@ import {
   membershipPlanLabels,
 } from "@/features/membership/membershipTypes";
 import { AccountDeletionButton } from "@/features/app/AccountDeletionButton";
+import { MembershipPurchaseBottomSheet } from "@/features/meetings/MeetingRecommendation";
+import { checkoutAttributionContext, trackEvent } from "@/lib/analytics";
+import { membershipStoreUrls } from "@/lib/membershipStore";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
@@ -128,7 +132,13 @@ function formatMembershipDate(value: string | null) {
   return `${match[1]}.${match[2]}.${match[3]}`;
 }
 
-function AccountSettingsCard({ profile }: { profile: ProfileRow }) {
+function AccountSettingsCard({
+  profile,
+  onMembershipClick,
+}: {
+  profile: ProfileRow;
+  onMembershipClick: () => void;
+}) {
   const status = displayMembershipStatus({
     status: profile.membership_status,
     endDate: profile.membership_end_date,
@@ -161,8 +171,12 @@ function AccountSettingsCard({ profile }: { profile: ProfileRow }) {
       <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
         설정
       </p>
-      <div className="overflow-hidden rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 shadow-[0_16px_44px_rgba(24,24,20,0.06)]">
-        <div className="flex min-h-20 items-center gap-4 py-4">
+      <button
+        type="button"
+        onClick={onMembershipClick}
+        aria-label="교집합 멤버십 결제 열기"
+        className="flex min-h-20 w-full items-center gap-4 rounded-[26px] border border-black/[0.08] bg-[#faf8f2] px-5 py-4 text-left shadow-[0_16px_44px_rgba(24,24,20,0.06)] transition hover:border-black/[0.14] active:scale-[0.99]"
+      >
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55"
           >
@@ -184,8 +198,8 @@ function AccountSettingsCard({ profile }: { profile: ProfileRow }) {
               ? statusLabel
               : "이용 안 함"}
           </span>
-        </div>
-      </div>
+          <ChevronRight size={17} aria-hidden className="shrink-0 text-black/25" />
+      </button>
     </section>
   );
 }
@@ -813,6 +827,9 @@ export function PreferenceProfileTab({
   const [editing, setEditing] = useState(false);
   const [accountOpen, setAccountOpen] = useState(initialAccountOpen);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [membershipPurchaseOpen, setMembershipPurchaseOpen] = useState(false);
+  const [membershipPurchaseSaving, setMembershipPurchaseSaving] = useState(false);
+  const [membershipPurchaseError, setMembershipPurchaseError] = useState<string | null>(null);
   const [draft, setDraft] = useState(initialDraft);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -918,6 +935,69 @@ export function PreferenceProfileTab({
     } finally {
       setPhotoUploading(false);
       if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
+
+  const openMembershipPurchase = () => {
+    setMembershipPurchaseError(null);
+    setMembershipPurchaseOpen(true);
+    trackEvent("membership_purchase_notice_open", {
+      source: "profile_account",
+      plan: "one_month",
+    });
+  };
+
+  const closeMembershipPurchase = () => {
+    if (membershipPurchaseSaving) return;
+    setMembershipPurchaseOpen(false);
+    setMembershipPurchaseError(null);
+    trackEvent("membership_purchase_notice_close", {
+      source: "profile_account",
+      plan: "one_month",
+    });
+  };
+
+  const startMembershipPurchase = async () => {
+    if (membershipPurchaseSaving) return;
+
+    setMembershipPurchaseSaving(true);
+    setMembershipPurchaseError(null);
+    try {
+      let checkoutUrl = membershipStoreUrls.one_month;
+
+      if (!previewMode) {
+        const response = await fetch("/api/membership/purchase-click", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            plan: "one_month",
+            attribution: checkoutAttributionContext(),
+          }),
+        });
+        const data = (await response.json().catch(() => null)) as
+          | { checkoutUrl?: string; error?: string }
+          | null;
+        if (!response.ok || !data?.checkoutUrl) {
+          throw new Error(data?.error ?? "membership-purchase-save-failed");
+        }
+        checkoutUrl = data.checkoutUrl;
+      }
+
+      trackEvent("membership_purchase_click", {
+        source: "profile_account",
+        plan: "one_month",
+        months: 1,
+        value: 20_000,
+        currency: "KRW",
+      });
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      setMembershipPurchaseError(
+        error instanceof Error && error.message !== "membership-purchase-save-failed"
+          ? error.message
+          : "멤버십 결제를 준비하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+      setMembershipPurchaseSaving(false);
     }
   };
 
@@ -1134,7 +1214,10 @@ export function PreferenceProfileTab({
             </p>
           )}
 
-          <AccountSettingsCard profile={profile} />
+          <AccountSettingsCard
+            profile={profile}
+            onMembershipClick={openMembershipPurchase}
+          />
 
           <section className="mt-8">
             <p className="mb-3 px-1 text-[12px] font-black uppercase tracking-[0.12em] text-black/38">
@@ -1208,6 +1291,20 @@ export function PreferenceProfileTab({
             </p>
           )}
         </section>
+
+        {membershipPurchaseOpen &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <MembershipPurchaseBottomSheet
+              ticket={null}
+              standalone
+              saving={membershipPurchaseSaving}
+              error={membershipPurchaseError}
+              onSubmit={() => void startMembershipPurchase()}
+              onClose={closeMembershipPurchase}
+            />,
+            document.body,
+          )}
       </motion.div>
     );
   }
