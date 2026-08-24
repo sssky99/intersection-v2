@@ -746,45 +746,46 @@ export function PreferenceProfileTab({
       initial={false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
-      className="font-profile-kmu-serif min-h-full bg-[#f7f4ed]"
+      className="font-profile-kmu-serif relative min-h-full overflow-hidden bg-[#f7f4ed]"
     >
-      <section className="px-5 pb-28 pt-7">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[560px] overflow-hidden bg-[#292c24]">
+        {archetypeId && archetype ? (
+          <Image
+            src={profileArchetypeBackgrounds[archetypeId]}
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 430px) 100vw, 430px"
+            className={cn(
+              "scale-[1.03] object-cover",
+              archetypeId === "visionary"
+                ? "object-[center_72%]"
+                : "object-center",
+            )}
+          />
+        ) : (
+          <>
+            <div className="absolute -right-12 -top-20 h-64 w-64 rounded-full bg-[#d8caa8]/30 blur-3xl" />
+            <div className="absolute left-0 top-40 h-64 w-64 rounded-full bg-[#506052]/40 blur-3xl" />
+          </>
+        )}
+        <div className="absolute inset-0 bg-black/30" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/15 to-[#f7f4ed]" />
+        <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-b from-transparent via-[#f7f4ed]/80 to-[#f7f4ed]" />
+      </div>
+
+      <section className="relative z-10 px-5 pb-28 pt-7">
         <header className="pr-16">
-          <h1 className="font-profile-kmu-serif text-[29px] leading-9 tracking-[-0.035em] text-black">
+          <h1 className="font-profile-kmu-serif text-[29px] leading-9 tracking-[-0.035em] text-white drop-shadow-[0_3px_16px_rgba(0,0,0,0.45)]">
             profile
           </h1>
         </header>
 
-        <section className="mt-7 overflow-hidden rounded-[30px] border border-black/[0.07] bg-[#faf8f2] shadow-[0_24px_70px_rgba(24,24,20,0.09)]">
-          <div className="relative overflow-hidden bg-[#171714] px-5 pb-6 pt-5 text-white">
-            {archetypeId && archetype ? (
-              <>
-                <Image
-                  src={profileArchetypeBackgrounds[archetypeId]}
-                  alt=""
-                  fill
-                  priority
-                  sizes="(max-width: 430px) calc(100vw - 40px), 390px"
-                  className={cn(
-                    "object-cover",
-                    archetypeId === "visionary"
-                      ? "object-[center_74%]"
-                      : "object-center",
-                  )}
-                />
-                <div className="absolute inset-0 bg-black/28" />
-                <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/15 to-black/80" />
-              </>
-            ) : (
-              <>
-                <div className="absolute -right-12 -top-20 h-48 w-48 rounded-full bg-[#e8dfcf]/20 blur-3xl" />
-                <div className="absolute -bottom-24 -left-10 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
-              </>
-            )}
-
+        <section className="mt-5">
+          <div className="relative px-5 pb-8 pt-5 text-white">
             {!profile.profile_completed ? (
               <>
-              <div className="relative flex min-h-[280px] flex-col items-center justify-center px-4 py-7 text-center">
+              <div className="relative flex min-h-[300px] flex-col items-center justify-center px-4 py-7 text-center">
                 <p className="text-[17px] font-black tracking-[-0.04em] text-white drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
                   질문을 이어서 답해주세요
                 </p>
@@ -811,7 +812,7 @@ export function PreferenceProfileTab({
               </>
             ) : (
               <>
-            <div className="relative flex min-h-[210px] flex-col items-center justify-center gap-3 text-center">
+            <div className="relative flex min-h-[260px] flex-col items-center justify-center gap-3 text-center">
               <div className="min-w-0 max-w-full">
                 <p className="truncate text-[17px] font-black tracking-[-0.04em] drop-shadow-[0_3px_14px_rgba(0,0,0,0.5)]">
                   {profile.name?.trim() || "이름 미입력"}
@@ -834,7 +835,7 @@ export function PreferenceProfileTab({
                 (value) => (
                   <span
                     key={value}
-                    className="rounded-full bg-white/[0.08] px-3 py-1.5 text-[10px] font-bold text-white/62"
+                    className="rounded-full border border-white/15 bg-black/20 px-3 py-1.5 text-[10px] font-bold text-white/75 backdrop-blur-md"
                   >
                     {value}
                   </span>
@@ -845,7 +846,13 @@ export function PreferenceProfileTab({
             )}
           </div>
 
-          <div className={cn(editing || saved ? "p-5" : "hidden")}>
+          <div
+            className={cn(
+              editing || saved
+                ? "rounded-[28px] border border-black/[0.07] bg-[#faf8f2]/95 p-5 shadow-[0_24px_70px_rgba(24,24,20,0.09)] backdrop-blur-xl"
+                : "hidden",
+            )}
+          >
             {editing ? (
               <div className="space-y-5">
                 <div>
