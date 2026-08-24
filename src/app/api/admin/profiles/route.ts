@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeAdminProfile,
   type AdminAlgorithmParameter,
+  type AdminPaymentTransaction,
   type AdminProfile,
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
@@ -144,10 +145,138 @@ const profileSelects = [
   baseProfileSelectWithoutTest,
 ];
 
-const PROFILE_PAGE_SIZE = 1000;
 const USER_ANSWERS_PAGE_SIZE = 1000;
 const ALGORITHM_PARAMETERS_PAGE_SIZE = 1000;
 const USER_ID_BATCH_SIZE = 100;
+const ADMIN_PROFILE_LIMIT = 50;
+
+type AdminProfileListRow = Pick<
+  AdminProfile,
+  | "user_id"
+  | "name"
+  | "phone"
+  | "gender"
+  | "birth_year"
+  | "profile_completed"
+  | "questions_completed"
+  | "membership_status"
+  | "membership_plan"
+  | "membership_start_date"
+  | "membership_end_date"
+  | "created_at"
+  | "has_payment"
+  | "one_time_paid"
+> & { total_count: number };
+
+function positiveInteger(value: string | null, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function allowedParam<T extends string>(
+  value: string | null,
+  allowed: readonly T[],
+) {
+  return value && allowed.includes(value as T) ? (value as T) : null;
+}
+
+function listProfile(row: AdminProfileListRow): AdminProfile {
+  return normalizeAdminProfile({
+    user_id: row.user_id,
+    name: row.name,
+    phone: row.phone,
+    gender: row.gender,
+    birth_year: row.birth_year,
+    profile_completed: row.profile_completed,
+    questions_completed: row.questions_completed,
+    membership_status: row.membership_status,
+    membership_plan: row.membership_plan,
+    membership_start_date: row.membership_start_date,
+    membership_end_date: row.membership_end_date,
+    created_at: row.created_at,
+    has_payment: row.has_payment,
+    one_time_paid: row.one_time_paid,
+    nickname: null,
+    mbti: null,
+    photo_url: null,
+    public_intro: null,
+    details_loaded: false,
+  });
+}
+
+async function fetchProfilePage(
+  supabase: ReturnType<typeof createAdminClient>,
+  request: NextRequest,
+) {
+  const params = request.nextUrl.searchParams;
+  const page = positiveInteger(params.get("page"), 1);
+  const limit = Math.min(
+    positiveInteger(params.get("limit"), ADMIN_PROFILE_LIMIT),
+    ADMIN_PROFILE_LIMIT,
+  );
+  const search = params.get("search")?.trim().slice(0, 80) || null;
+  const gender = params.get("gender")?.trim().slice(0, 20) || null;
+  const membership = allowedParam(params.get("membership"), [
+    "active",
+    "inactive",
+  ] as const);
+  const payment = allowedParam(params.get("payment"), [
+    "paid",
+    "unpaid",
+  ] as const);
+  const completion = allowedParam(params.get("completion"), [
+    "complete",
+    "incomplete",
+  ] as const);
+  const birthSort = allowedParam(params.get("birthSort"), [
+    "birth-asc",
+    "birth-desc",
+  ] as const);
+
+  const { data, error } = await supabase.rpc("admin_list_profiles", {
+    p_page: page,
+    p_limit: limit,
+    p_search: search,
+    p_gender: gender,
+    p_membership: membership,
+    p_payment: payment,
+    p_completion: completion,
+    p_birth_sort: birthSort,
+  });
+  if (error) throw error;
+
+  const rows = (data ?? []) as AdminProfileListRow[];
+  const totalCount = Number(rows[0]?.total_count ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit));
+
+  return {
+    profiles: rows.map(listProfile),
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages,
+      hasPrevious: page > 1,
+      hasNext: page < totalPages,
+    },
+  };
+}
+
+async function fetchPaymentHistory(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from("payment_transactions")
+    .select(
+      "id,payment_kind,product_code,amount,currency,status,occurred_at,created_at",
+    )
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  return (data ?? []) as AdminPaymentTransaction[];
+}
 
 async function attachOneTimePayments(
   supabase: ReturnType<typeof createAdminClient>,
@@ -157,27 +286,6 @@ async function attachOneTimePayments(
   if (userIds.length === 0) return profiles;
 
   const paidUserIds = new Set<string>();
-
-  if (userIds.length > USER_ID_BATCH_SIZE) {
-    const { data, error } = await supabase
-      .from("payment_transactions")
-      .select("user_id")
-      .eq("payment_kind", "one_time")
-      .eq("status", "completed");
-    if (error) throw error;
-
-    const requestedUserIds = new Set(userIds);
-    for (const row of data ?? []) {
-      if (row.user_id && requestedUserIds.has(row.user_id)) {
-        paidUserIds.add(row.user_id);
-      }
-    }
-
-    return profiles.map((profile) => ({
-      ...profile,
-      one_time_paid: paidUserIds.has(profile.user_id),
-    }));
-  }
 
   for (
     let batchStart = 0;
@@ -328,25 +436,12 @@ async function attachOperatorRatings(
     }
   };
 
-  if (userIds.length <= USER_ID_BATCH_SIZE) {
-    const { data, error } = await supabase
-      .from("profile_operator_ratings")
-      .select("user_id,rating,updated_at")
-      .in("user_id", userIds);
-    if (error) throw error;
-    rememberRatings(data ?? []);
-  } else {
-    for (let from = 0; ; from += PROFILE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("profile_operator_ratings")
-        .select("user_id,rating,updated_at")
-        .range(from, from + PROFILE_PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data ?? [];
-      rememberRatings(page);
-      if (page.length < PROFILE_PAGE_SIZE) break;
-    }
-  }
+  const { data, error } = await supabase
+    .from("profile_operator_ratings")
+    .select("user_id,rating,updated_at")
+    .in("user_id", userIds);
+  if (error) throw error;
+  rememberRatings(data ?? []);
 
   return profiles.map((profile) => {
     const rating = ratings.get(profile.user_id);
@@ -356,10 +451,6 @@ async function attachOperatorRatings(
       operator_rating_updated_at: rating?.updated_at ?? null,
     };
   });
-}
-
-function normalizeProfiles(profiles: AdminProfile[]) {
-  return profiles.map(normalizeAdminProfile);
 }
 
 function mergeProfileAttachments(
@@ -414,41 +505,6 @@ function trimmedText(value: unknown) {
   return typeof value === "string" ? value.trim() : undefined;
 }
 
-async function fetchProfiles(supabase: ReturnType<typeof createAdminClient>) {
-  const errors: string[] = [];
-
-  for (const [index, select] of profileSelects.entries()) {
-    const profiles: AdminProfile[] = [];
-    let selectError: { message: string; hint?: string | null } | null = null;
-
-    for (let from = 0; ; from += PROFILE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(select)
-        .order("created_at", { ascending: false })
-        .order("user_id", { ascending: true })
-        .range(from, from + PROFILE_PAGE_SIZE - 1);
-
-      if (error) {
-        selectError = error;
-        break;
-      }
-
-      const page = (data ?? []) as unknown as AdminProfile[];
-      profiles.push(...page);
-      if (page.length < PROFILE_PAGE_SIZE) return profiles;
-    }
-
-    if (selectError) {
-      errors.push(
-        queryErrorMessage(`profile query ${index + 1}`, selectError),
-      );
-    }
-  }
-
-  throw new Error(errors.join(" | "));
-}
-
 async function fetchProfile(
   supabase: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -481,61 +537,35 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = createAdminClient({ timeoutMs: 5000 });
+    const supabase = createAdminClient({ timeoutMs: 10000 });
     const requestedUserId = request.nextUrl.searchParams.get("userId")?.trim();
-    const includeAllDetails =
-      request.nextUrl.searchParams.get("includeDetails") === "1";
 
     if (requestedUserId) {
       const profile = await fetchProfile(supabase, requestedUserId);
-      const attachments = await Promise.all([
-        attachOperatorRatings(supabase, [profile]),
-        attachAlgorithmParameters(supabase, [profile]),
-        attachProfileAnswers(supabase, [profile]),
-        attachOneTimePayments(supabase, [profile]),
-      ]);
+      const [ratings, parameters, answers, oneTimePayments, paymentHistory] =
+        await Promise.all([
+          attachOperatorRatings(supabase, [profile]),
+          attachAlgorithmParameters(supabase, [profile]),
+          attachProfileAnswers(supabase, [profile]),
+          attachOneTimePayments(supabase, [profile]),
+          fetchPaymentHistory(supabase, requestedUserId),
+        ]);
       const [profileWithDetails] = mergeProfileAttachments(
         [profile],
-        attachments,
+        [ratings, parameters, answers, oneTimePayments],
       );
 
       return NextResponse.json({
         profile: normalizeAdminProfile({
           ...profileWithDetails,
+          has_payment: paymentHistory.some((item) => item.status === "completed"),
+          payment_history: paymentHistory,
           details_loaded: true,
         }),
       });
     }
 
-    const profiles = await fetchProfiles(supabase);
-    const baseAttachments = await Promise.all([
-      attachOperatorRatings(supabase, profiles),
-      attachOneTimePayments(supabase, profiles),
-    ]);
-    let profilesWithDetails = mergeProfileAttachments(
-      profiles,
-      baseAttachments,
-    );
-
-    if (includeAllDetails) {
-      const detailAttachments = await Promise.all([
-        attachAlgorithmParameters(supabase, profiles),
-        attachProfileAnswers(supabase, profiles),
-      ]);
-      profilesWithDetails = mergeProfileAttachments(
-        profilesWithDetails,
-        detailAttachments,
-      );
-    }
-
-    return NextResponse.json({
-      profiles: normalizeProfiles(
-        profilesWithDetails.map((profile) => ({
-          ...profile,
-          details_loaded: includeAllDetails,
-        })),
-      ),
-    });
+    return NextResponse.json(await fetchProfilePage(supabase, request));
   } catch (error) {
     console.error("Admin profiles load failed:", error);
     return NextResponse.json(

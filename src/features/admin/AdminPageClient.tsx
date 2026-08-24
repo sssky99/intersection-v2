@@ -4,7 +4,6 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
-  Download,
   Eye,
   Image as ImageIcon,
   LogOut,
@@ -14,7 +13,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CalendarAdminPanel } from "@/features/admin/CalendarAdminPanel";
 import {
   preferenceQuestionCatalog,
@@ -72,9 +71,20 @@ type AdminTab =
 
 type ViewMode = "list" | "cards" | "dropoffs";
 type MembershipFilter = "all" | "active" | "inactive";
+type PaymentFilter = "all" | "paid" | "unpaid";
 type CompletionFilter = "all" | "complete" | "incomplete";
 type OperatorRatingFilter = "all" | "rated" | "unrated";
 type BirthYearSort = "default" | "birth-asc" | "birth-desc";
+type ProfilesState = "idle" | "loading" | "success" | "empty" | "timeout" | "error";
+
+type ProfilesPagination = {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
 
 const applicantMembershipStatuses: MembershipStatus[] = [
   "none",
@@ -691,8 +701,22 @@ export function AdminPageClient({
   );
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [profilesState, setProfilesState] = useState<ProfilesState>("idle");
   const [profilesError, setProfilesError] = useState<string | null>(null);
-  const [answersDownloadLoading, setAnswersDownloadLoading] = useState(false);
+  const [profilePage, setProfilePage] = useState(1);
+  const [profilePagination, setProfilePagination] =
+    useState<ProfilesPagination>({
+      page: 1,
+      limit: 50,
+      totalCount: 0,
+      totalPages: 1,
+      hasPrevious: false,
+      hasNext: false,
+    });
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  const profileRequestIdRef = useRef(0);
+  const loadedProfileQueryRef = useRef("");
+  const lastProfileRefreshRef = useRef(0);
   const [membershipSaveError, setMembershipSaveError] = useState<string | null>(
     null,
   );
@@ -705,13 +729,13 @@ export function AdminPageClient({
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
   const [profileSaveNotice, setProfileSaveNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [genderFilter, setGenderFilter] = useState("all");
   const [membershipFilter, setMembershipFilter] =
     useState<MembershipFilter>("all");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
-  const [operatorRatingFilter, setOperatorRatingFilter] =
-    useState<OperatorRatingFilter>("all");
   const [birthYearSort, setBirthYearSort] =
     useState<BirthYearSort>("default");
   const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
@@ -730,69 +754,115 @@ export function AdminPageClient({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [assignmentCriteriaOpen]);
 
-  const loadProfiles = useCallback(async (force = false) => {
-    if (!authenticated) return;
-    if (profilesLoading) return;
-    if (!force && profilesLoaded) return;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setProfilePage(1);
+      setDebouncedSearch(search.trim());
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  const loadProfiles = useCallback(async () => {
+    if (!authenticated || activeTab !== "applicants") return;
+
+    const querySignature = JSON.stringify({
+      profilePage,
+      debouncedSearch,
+      genderFilter,
+      membershipFilter,
+      paymentFilter,
+      completionFilter,
+      birthYearSort,
+      profileRefreshKey,
+    });
+    if (loadedProfileQueryRef.current === querySignature) return;
+
+    const requestId = ++profileRequestIdRef.current;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 10000);
+    const params = new URLSearchParams({
+      page: String(profilePage),
+      limit: "50",
+    });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (genderFilter !== "all") params.set("gender", genderFilter);
+    if (membershipFilter !== "all") params.set("membership", membershipFilter);
+    if (paymentFilter !== "all") params.set("payment", paymentFilter);
+    if (completionFilter !== "all") params.set("completion", completionFilter);
+    if (birthYearSort !== "default") params.set("birthSort", birthYearSort);
 
     setProfilesLoading(true);
+    setProfilesState("loading");
     setProfilesError(null);
+    setSelectedProfileId(null);
 
     try {
-      const response = await fetch("/api/admin/profiles", {
+      const response = await fetch(`/api/admin/profiles?${params}`, {
         cache: "no-store",
+        signal: controller.signal,
       });
-
+      if (requestId !== profileRequestIdRef.current) return;
       if (response.status === 401) {
         setAuthenticated(false);
         setProfiles([]);
         setProfilesLoaded(false);
-        setSelectedProfileId(null);
+        setProfilesState("idle");
         return;
       }
+      if (!response.ok) throw new Error("profiles-load-failed");
 
-      if (!response.ok) {
-        throw new Error("profiles-load-failed");
-      }
-
-      const data = (await response.json()) as { profiles?: AdminProfile[] };
+      const data = (await response.json()) as {
+        profiles?: AdminProfile[];
+        pagination?: ProfilesPagination;
+      };
       const nextProfiles = data.profiles ?? [];
       setProfiles(nextProfiles);
+      if (data.pagination) setProfilePagination(data.pagination);
       setProfilesLoaded(true);
-      setSelectedProfileId((current) => current ?? nextProfiles[0]?.user_id ?? null);
-    } catch {
-      setProfilesError("신청자 목록을 불러오지 못했습니다.");
+      setProfilesState(nextProfiles.length === 0 ? "empty" : "success");
+      loadedProfileQueryRef.current = querySignature;
+    } catch (error) {
+      if (requestId !== profileRequestIdRef.current) return;
+      if (timedOut || (error instanceof DOMException && error.name === "AbortError")) {
+        setProfiles([]);
+        setProfilesState("timeout");
+        setProfilesError("조회 시간이 10초를 초과했습니다.");
+      } else {
+        setProfiles([]);
+        setProfilesState("error");
+        setProfilesError("신청자 목록을 불러오지 못했습니다.");
+      }
     } finally {
-      setProfilesLoading(false);
+      window.clearTimeout(timeout);
+      if (requestId === profileRequestIdRef.current) setProfilesLoading(false);
     }
-  }, [authenticated, profilesLoaded, profilesLoading]);
-
-  const downloadAllApplicantAnswers = useCallback(async () => {
-    if (!authenticated || answersDownloadLoading) return;
-
-    setAnswersDownloadLoading(true);
-    setProfilesError(null);
-    try {
-      const response = await fetch("/api/admin/profiles?includeDetails=1", {
-        cache: "no-store",
-      });
-      if (!response.ok) throw new Error("answers-download-load-failed");
-
-      const data = (await response.json()) as { profiles?: AdminProfile[] };
-      downloadApplicantAnswersTsv(data.profiles ?? []);
-    } catch {
-      setProfilesError(
-        "답변 다운로드 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
-      );
-    } finally {
-      setAnswersDownloadLoading(false);
-    }
-  }, [answersDownloadLoading, authenticated]);
+  }, [
+    activeTab,
+    authenticated,
+    birthYearSort,
+    completionFilter,
+    debouncedSearch,
+    genderFilter,
+    membershipFilter,
+    paymentFilter,
+    profilePage,
+    profileRefreshKey,
+  ]);
 
   useEffect(() => {
-    if (activeTab !== "applicants" || profilesLoaded || profilesLoading) return;
     void loadProfiles();
-  }, [activeTab, loadProfiles, profilesLoaded, profilesLoading]);
+  }, [loadProfiles]);
+
+  const refreshProfiles = useCallback(() => {
+    const now = Date.now();
+    if (profilesLoading || now - lastProfileRefreshRef.current < 1000) return;
+    lastProfileRefreshRef.current = now;
+    setProfileRefreshKey((current) => current + 1);
+  }, [profilesLoading]);
 
   useEffect(() => {
     if (!selectedProfileId) return;
@@ -959,105 +1029,6 @@ export function AdminPageClient({
     }
   };
 
-  const filteredProfiles = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const baseProfiles = profiles.filter((profile) => {
-      return viewMode === "dropoffs"
-        ? isDropoffProfile(profile)
-        : !isDropoffProfile(profile);
-    });
-
-    if (viewMode === "dropoffs") {
-      return baseProfiles;
-    }
-
-    const matchingProfiles = baseProfiles.filter((profile) => {
-      const matchesSearch =
-        query.length === 0 ||
-        `${profile.name ?? ""} ${profile.phone ?? ""} ${adminProfileArchetypeLabel(profile)}`
-          .toLowerCase()
-          .includes(query);
-      const matchesGender =
-        genderFilter === "all" || profile.gender === genderFilter;
-      const matchesMembership =
-        membershipFilter === "all" ||
-        (membershipFilter === "active"
-          ? Boolean(profile.active_membership)
-          : !profile.active_membership);
-      const completed =
-        Boolean(profile.profile_completed) && Boolean(profile.questions_completed);
-      const matchesCompletion =
-        completionFilter === "all" ||
-        (completionFilter === "complete" ? completed : !completed);
-      const hasOperatorRating =
-        typeof profile.operator_rating === "number" &&
-        Number.isFinite(profile.operator_rating);
-      const matchesOperatorRating =
-        operatorRatingFilter === "all" ||
-        (operatorRatingFilter === "rated"
-          ? hasOperatorRating
-          : !hasOperatorRating);
-
-      return (
-        matchesSearch &&
-        matchesGender &&
-        matchesMembership &&
-        matchesCompletion &&
-        matchesOperatorRating
-      );
-    });
-
-    if (birthYearSort === "default") {
-      return matchingProfiles;
-    }
-
-    return matchingProfiles.toSorted((left, right) => {
-      const leftYear = Number(left.birth_year);
-      const rightYear = Number(right.birth_year);
-      const leftHasYear = Number.isFinite(leftYear) && leftYear > 0;
-      const rightHasYear = Number.isFinite(rightYear) && rightYear > 0;
-
-      if (!leftHasYear && !rightHasYear) return 0;
-      if (!leftHasYear) return 1;
-      if (!rightHasYear) return -1;
-
-      return birthYearSort === "birth-asc"
-        ? leftYear - rightYear
-        : rightYear - leftYear;
-    });
-  }, [
-    birthYearSort,
-    completionFilter,
-    genderFilter,
-    membershipFilter,
-    operatorRatingFilter,
-    profiles,
-    search,
-    viewMode,
-  ]);
-
-  const rosterProfileCount = useMemo(
-    () => profiles.filter((profile) => !isDropoffProfile(profile)).length,
-    [profiles],
-  );
-  const dropoffProfileCount = profiles.length - rosterProfileCount;
-
-  useEffect(() => {
-    if (filteredProfiles.length === 0) {
-      setSelectedProfileId(null);
-      return;
-    }
-
-    if (
-      selectedProfileId &&
-      filteredProfiles.some((profile) => profile.user_id === selectedProfileId)
-    ) {
-      return;
-    }
-
-    setSelectedProfileId(filteredProfiles[0].user_id);
-  }, [filteredProfiles, selectedProfileId]);
-
   const selectedProfile =
     profiles.find((profile) => profile.user_id === selectedProfileId) ?? null;
 
@@ -1209,10 +1180,8 @@ export function AdminPageClient({
           {visitedTabs.applicants && (
             <div className={cn(activeTab === "applicants" ? "block" : "hidden")}>
               <ApplicantsPanel
-                profiles={filteredProfiles}
-                totalCount={profiles.length}
-                namedCount={rosterProfileCount}
-                dropoffCount={dropoffProfileCount}
+                profiles={profiles}
+                pagination={profilePagination}
                 selectedProfile={selectedProfile}
                 selectedProfileId={selectedProfileId}
                 viewMode={viewMode}
@@ -1221,9 +1190,10 @@ export function AdminPageClient({
                 search={search}
                 genderFilter={genderFilter}
                 membershipFilter={membershipFilter}
+                paymentFilter={paymentFilter}
                 completionFilter={completionFilter}
-                operatorRatingFilter={operatorRatingFilter}
                 birthYearSort={birthYearSort}
+                profilesState={profilesState}
                 membershipSaveError={membershipSaveError}
                 savingMembershipUserId={savingMembershipUserId}
                 savingProfileUserId={savingProfileUserId}
@@ -1231,16 +1201,15 @@ export function AdminPageClient({
                 profileSaveNotice={profileSaveNotice}
                 onViewModeChange={setViewMode}
                 onSearchChange={setSearch}
-                onGenderFilterChange={setGenderFilter}
-                onMembershipFilterChange={setMembershipFilter}
-                onCompletionFilterChange={setCompletionFilter}
-                onOperatorRatingFilterChange={setOperatorRatingFilter}
-                onBirthYearSortChange={setBirthYearSort}
+                onGenderFilterChange={(value) => { setProfilePage(1); setGenderFilter(value); }}
+                onMembershipFilterChange={(value) => { setProfilePage(1); setMembershipFilter(value); }}
+                onPaymentFilterChange={(value) => { setProfilePage(1); setPaymentFilter(value); }}
+                onCompletionFilterChange={(value) => { setProfilePage(1); setCompletionFilter(value); }}
+                onBirthYearSortChange={(value) => { setProfilePage(1); setBirthYearSort(value); }}
                 onSelectProfile={setSelectedProfileId}
                 onCloseDetail={() => setSelectedProfileId(null)}
-                onReload={() => void loadProfiles(true)}
-                onAnswersDownload={() => void downloadAllApplicantAnswers()}
-                answersDownloadLoading={answersDownloadLoading}
+                onReload={refreshProfiles}
+                onPageChange={setProfilePage}
                 onMembershipStatusChange={changeMembershipStatus}
                 onProfileDetailSave={saveProfileDetails}
               />
@@ -1315,9 +1284,7 @@ export function AdminPageClient({
 
 function ApplicantsPanel({
   profiles,
-  totalCount,
-  namedCount,
-  dropoffCount,
+  pagination,
   selectedProfile,
   selectedProfileId,
   viewMode,
@@ -1326,9 +1293,10 @@ function ApplicantsPanel({
   search,
   genderFilter,
   membershipFilter,
+  paymentFilter,
   completionFilter,
-  operatorRatingFilter,
   birthYearSort,
+  profilesState,
   membershipSaveError,
   savingMembershipUserId,
   savingProfileUserId,
@@ -1338,21 +1306,18 @@ function ApplicantsPanel({
   onSearchChange,
   onGenderFilterChange,
   onMembershipFilterChange,
+  onPaymentFilterChange,
   onCompletionFilterChange,
-  onOperatorRatingFilterChange,
   onBirthYearSortChange,
   onSelectProfile,
   onCloseDetail,
   onReload,
-  onAnswersDownload,
-  answersDownloadLoading,
+  onPageChange,
   onMembershipStatusChange,
   onProfileDetailSave,
 }: {
   profiles: AdminProfile[];
-  totalCount: number;
-  namedCount: number;
-  dropoffCount: number;
+  pagination: ProfilesPagination;
   selectedProfile: AdminProfile | null;
   selectedProfileId: string | null;
   viewMode: ViewMode;
@@ -1361,9 +1326,10 @@ function ApplicantsPanel({
   search: string;
   genderFilter: string;
   membershipFilter: MembershipFilter;
+  paymentFilter: PaymentFilter;
   completionFilter: CompletionFilter;
-  operatorRatingFilter: OperatorRatingFilter;
   birthYearSort: BirthYearSort;
+  profilesState: ProfilesState;
   membershipSaveError: string | null;
   savingMembershipUserId: string | null;
   savingProfileUserId: string | null;
@@ -1373,14 +1339,13 @@ function ApplicantsPanel({
   onSearchChange: (value: string) => void;
   onGenderFilterChange: (value: string) => void;
   onMembershipFilterChange: (value: MembershipFilter) => void;
+  onPaymentFilterChange: (value: PaymentFilter) => void;
   onCompletionFilterChange: (value: CompletionFilter) => void;
-  onOperatorRatingFilterChange: (value: OperatorRatingFilter) => void;
   onBirthYearSortChange: (value: BirthYearSort) => void;
   onSelectProfile: (profileId: string) => void;
   onCloseDetail: () => void;
   onReload: () => void;
-  onAnswersDownload: () => void;
-  answersDownloadLoading: boolean;
+  onPageChange: (page: number) => void;
   onMembershipStatusChange: (
     userId: string,
     status: MembershipStatus,
@@ -1398,85 +1363,28 @@ function ApplicantsPanel({
             <div>
               <h2 className="text-lg font-bold">신청자 관리</h2>
               <p className="mt-1 text-xs text-black/45">
-                전체 {totalCount.toLocaleString()}명 · 명단{" "}
-                {namedCount.toLocaleString()}명 · 이탈자{" "}
-                {dropoffCount.toLocaleString()}명 · 표시{" "}
-                {profiles.length.toLocaleString()}명
+                검색 결과 {pagination.totalCount.toLocaleString()}명 · 현재{" "}
+                {profiles.length.toLocaleString()}명 · {pagination.page}/
+                {pagination.totalPages} 페이지
               </p>
-              {loading && totalCount > 0 && (
+              {loading && profiles.length > 0 && (
                 <p className="mt-1 text-[11px] font-semibold text-accent">
                   새로고침 중입니다.
                 </p>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={onAnswersDownload}
-                disabled={totalCount === 0 || answersDownloadLoading}
-                className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3.5 text-sm font-semibold text-black/60 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
-              >
-                <Download size={15} aria-hidden />
-                {answersDownloadLoading ? "답변 준비 중" : "답변 다운로드"}
-              </button>
-
-              <div className="flex rounded-xl bg-[#f2f3f1] p-1">
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("dropoffs")}
-                  className={cn(
-                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                    viewMode === "dropoffs"
-                      ? "bg-white text-black shadow-sm"
-                      : "text-black/45 hover:text-black",
-                  )}
-                >
-                  이탈자 보기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("list")}
-                  className={cn(
-                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                    viewMode === "list"
-                      ? "bg-white text-black shadow-sm"
-                      : "text-black/45 hover:text-black",
-                  )}
-                >
-                  리스트 보기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("cards")}
-                  className={cn(
-                    "h-9 rounded-lg px-4 text-sm font-semibold transition",
-                    viewMode === "cards"
-                      ? "bg-white text-black shadow-sm"
-                      : "text-black/45 hover:text-black",
-                  )}
-                >
-                  카드 보기
-                </button>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={onReload}
+              disabled={loading}
+              className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
+            >
+              {loading ? "조회 중" : "새로고침"}
+            </button>
           </div>
 
-          {viewMode === "dropoffs" ? (
-            <div className="mt-4 grid grid-cols-[minmax(260px,1fr)_auto] gap-2">
-              <p className="flex h-10 items-center rounded-xl border border-black/10 bg-[#fbfbfa] px-4 text-sm font-semibold text-black/50">
-                사진 제출 또는 유형 타입 배정을 완료하지 않은 사용자를 표시합니다.
-              </p>
-              <button
-                type="button"
-                onClick={onReload}
-                className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
-              >
-                새로고침
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
               <label className="relative block min-w-[220px] flex-1">
                 <Search
                   size={16}
@@ -1527,17 +1435,15 @@ function ApplicantsPanel({
               </select>
 
               <select
-                value={operatorRatingFilter}
+                value={paymentFilter}
                 onChange={(event) =>
-                  onOperatorRatingFilterChange(
-                    event.target.value as OperatorRatingFilter,
-                  )
+                  onPaymentFilterChange(event.target.value as PaymentFilter)
                 }
                 className="h-10 w-[145px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
               >
-                <option value="all">별점 전체</option>
-                <option value="rated">별점 있음</option>
-                <option value="unrated">별점 없음</option>
+                <option value="all">결제 전체</option>
+                <option value="paid">결제 완료</option>
+                <option value="unpaid">결제 없음</option>
               </select>
 
               <select
@@ -1552,22 +1458,14 @@ function ApplicantsPanel({
                 <option value="birth-desc">출생연도 늦은 순</option>
               </select>
 
-              <button
-                type="button"
-                onClick={onReload}
-                className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black"
-              >
-                새로고침
-              </button>
-            </div>
-          )}
+          </div>
 
           {membershipSaveError && (
             <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
               {membershipSaveError}
             </p>
           )}
-          {error && totalCount > 0 && (
+          {error && profiles.length > 0 && (
             <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
               {error}
             </p>
@@ -1575,23 +1473,25 @@ function ApplicantsPanel({
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden">
-          {loading && profiles.length === 0 ? (
+          {profilesState === "loading" && profiles.length === 0 ? (
             <StateMessage message="신청자 목록을 불러오는 중입니다." />
-          ) : error && profiles.length === 0 ? (
-            <StateMessage tone="error" message={error} />
-          ) : profiles.length === 0 ? (
+          ) : profilesState === "timeout" ? (
             <StateMessage
-              message={
-                viewMode === "dropoffs"
-                  ? "이탈자가 없습니다."
-                  : "아직 신청자가 없습니다."
-              }
+              tone="error"
+              message="조회 시간이 10초를 초과했습니다."
+              actionLabel="다시 시도"
+              onAction={onReload}
             />
-          ) : viewMode === "cards" ? (
-            <ApplicantCards
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onSelectProfile={onSelectProfile}
+          ) : profilesState === "error" ? (
+            <StateMessage
+              tone="error"
+              message={error ?? "신청자 목록을 불러오지 못했습니다."}
+              actionLabel="다시 시도"
+              onAction={onReload}
+            />
+          ) : profilesState === "empty" ? (
+            <StateMessage
+              message="조건에 맞는 신청자가 없습니다."
             />
           ) : (
             <ApplicantTable
@@ -1602,6 +1502,30 @@ function ApplicantsPanel({
               onMembershipStatusChange={onMembershipStatusChange}
             />
           )}
+        </div>
+        <div className="flex h-14 shrink-0 items-center justify-between border-t border-black/10 px-5 text-sm font-semibold text-black/55">
+          <span>페이지당 최대 50명</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevious || loading}
+              onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
+              className="h-9 rounded-lg border border-black/10 px-3 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              이전
+            </button>
+            <span className="min-w-20 text-center tabular-nums">
+              {pagination.page} / {pagination.totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNext || loading}
+              onClick={() => onPageChange(pagination.page + 1)}
+              className="h-9 rounded-lg border border-black/10 px-3 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              다음
+            </button>
+          </div>
         </div>
       </section>
 
@@ -1649,9 +1573,9 @@ function ApplicantTable({
             <TableHead className="w-[170px] px-3">이름</TableHead>
             <TableHead className="w-20 px-3">성별</TableHead>
             <TableHead className="w-24">출생연도</TableHead>
-            <TableHead className="w-20">MBTI</TableHead>
-            <TableHead className="w-36">성향 유형</TableHead>
             <TableHead className="w-32">전화번호</TableHead>
+            <TableHead className="w-28">프로필</TableHead>
+            <TableHead className="w-24">결제</TableHead>
             <TableHead className="w-28">가입일</TableHead>
             <TableHead className="w-44">멤버십 상태</TableHead>
           </tr>
@@ -1673,7 +1597,6 @@ function ApplicantTable({
                   <span className="block min-w-0 font-bold text-black">
                     <AdminMemberName
                       profile={profile}
-                      showOperatorRating
                       oneTimePaid={profile.one_time_paid}
                     />
                   </span>
@@ -1682,13 +1605,13 @@ function ApplicantTable({
                   {display(profile.gender)}
                 </TableCell>
                 <TableCell>{display(profile.birth_year)}</TableCell>
-                <TableCell>{display(profile.mbti)}</TableCell>
-                <TableCell className="w-36">
-                  <span className="block truncate font-bold text-black/70">
-                    {adminProfileArchetypeLabel(profile)}
-                  </span>
-                </TableCell>
                 <TableCell>{formatPhoneCompact(profile.phone)}</TableCell>
+                <TableCell>
+                  {profile.profile_completed && profile.questions_completed
+                    ? "완성"
+                    : "미완성"}
+                </TableCell>
+                <TableCell>{profile.has_payment ? "완료" : "없음"}</TableCell>
                 <TableCell>{formatCreatedAtCompact(profile.created_at)}</TableCell>
                 <TableCell className="w-44">
                   <MembershipStatusSelect
@@ -1856,6 +1779,15 @@ function ProfileDetailPanel({
     );
   }
 
+  if (!profile.details_loaded) {
+    return (
+      <aside className="flex min-h-0 flex-col items-center justify-center rounded-2xl border border-black/10 bg-white px-6 text-center text-sm font-semibold text-black/45 shadow-sm">
+        <UserRound size={32} aria-hidden className="mb-3 animate-pulse text-black/25" />
+        신청자 상세 정보를 불러오는 중입니다.
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
       <header className="flex shrink-0 items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
@@ -1951,6 +1883,43 @@ function ProfileDetailPanel({
             value={completionText(profile.questions_completed)}
           />
         </div>
+
+        <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+          <h3 className="text-sm font-bold">결제 내역</h3>
+          {(profile.payment_history ?? []).length === 0 ? (
+            <p className="mt-3 text-xs font-semibold text-black/40">
+              결제 내역이 없습니다.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {(profile.payment_history ?? []).map((payment) => (
+                <div
+                  key={payment.id}
+                  className="flex items-center justify-between gap-3 rounded-xl bg-black/[0.035] px-3 py-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-bold">
+                      {display(payment.product_code ?? payment.payment_kind)}
+                    </p>
+                    <p className="mt-0.5 text-black/40">
+                      {formatCreatedAt(payment.occurred_at ?? payment.created_at)}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-black tabular-nums">
+                      {typeof payment.amount === "number"
+                        ? `${payment.amount.toLocaleString()}원`
+                        : "-"}
+                    </p>
+                    <p className="mt-0.5 font-semibold text-black/40">
+                      {display(payment.status)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
           <div className="flex items-center justify-between gap-4">
@@ -2446,18 +2415,31 @@ function DetailItem({
 function StateMessage({
   message,
   tone = "default",
+  actionLabel,
+  onAction,
 }: {
   message: string;
   tone?: "default" | "error";
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div
       className={cn(
-        "flex h-full items-center justify-center text-sm font-semibold",
+        "flex h-full flex-col items-center justify-center gap-3 text-sm font-semibold",
         tone === "error" ? "text-red-600" : "text-black/45",
       )}
     >
-      {message}
+      <span>{message}</span>
+      {actionLabel && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="h-9 rounded-lg border border-current/20 bg-white px-4 text-xs font-bold"
+        >
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }

@@ -23,6 +23,17 @@ export type AdminAlgorithmParameter = {
   updated_at: string | null;
 };
 
+export type AdminPaymentTransaction = {
+  id: number;
+  payment_kind: string | null;
+  product_code: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+  occurred_at: string | null;
+  created_at: string | null;
+};
+
 export type AdminProfile = {
   user_id: string;
   name: string | null;
@@ -70,6 +81,8 @@ export type AdminProfile = {
   active_membership?: boolean;
   expired_membership?: boolean;
   one_time_paid?: boolean;
+  has_payment?: boolean;
+  payment_history?: AdminPaymentTransaction[];
   details_loaded?: boolean;
 };
 
@@ -105,6 +118,8 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
     one_time_paid: profile.one_time_paid ?? false,
+    has_payment: profile.has_payment ?? false,
+    payment_history: profile.payment_history ?? [],
     details_loaded: profile.details_loaded ?? false,
   };
 }
