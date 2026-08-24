@@ -45,7 +45,7 @@ export function nextOnboardingPathAfterDetails(
 }
 
 export async function getAuthenticatedProfile() {
-  const supabase = await createClient();
+  const supabase = await createClient({ timeoutMs: 3000 });
   const {
     data: { user },
     error: authError,

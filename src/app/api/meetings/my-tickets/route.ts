@@ -502,13 +502,6 @@ const confirmedStatuses = new Set([
   "feedback_done",
 ]);
 
-const autoCancellationStatuses = [
-  "waitlisted",
-  "approved",
-  "on_hold",
-  "payment_pending",
-];
-
 const atmosphereWaitlistStatuses = [
   "payment_pending",
   "waitlisted",
@@ -1360,14 +1353,26 @@ export async function GET(request: Request) {
   const pagination = userTicketsPagination(request);
   const previewRevealRequested =
     new URL(request.url).searchParams.get("previewReveal") === "1";
-  const requestUser = await requestUserId({ allowAdminView: true });
+  const requestUser = await requestUserId({
+    allowAdminView: true,
+    timeoutMs: 3000,
+  }).catch((error: unknown) => {
+    console.error("[meetings my-tickets] user lookup timed out", error);
+    return undefined;
+  });
+  if (requestUser === undefined) {
+    return NextResponse.json(
+      { error: "내 티켓 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요." },
+      { status: 503, headers: { "Retry-After": "3" } },
+    );
+  }
   if (!requestUser) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const userId = requestUser.userId;
 
   try {
-    const supabase = createAdminClient();
+    const supabase = createAdminClient({ timeoutMs: 5000 });
     const { data: profileAccess, error: profileAccessError } = await supabase
       .from("profiles")
       .select(
@@ -1503,14 +1508,17 @@ export async function GET(request: Request) {
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
-    const groupStageLocationsByInstance =
-      await fetchGroupStageLocationsByInstance(supabase, instanceIds);
-    const participationStartStageByInstance =
-      await fetchParticipationStartStageByInstance(supabase, instanceIds);
-    const eventInstanceIdsByInstance =
-      await fetchEventInstanceIdsByInstance(supabase, relationshipLookupInstanceIds);
-    const feedbackGroupByInstance =
-      await fetchFeedbackGroupByInstance(supabase, relationshipLookupInstanceIds);
+    const [
+      groupStageLocationsByInstance,
+      participationStartStageByInstance,
+      eventInstanceIdsByInstance,
+      feedbackGroupByInstance,
+    ] = await Promise.all([
+      fetchGroupStageLocationsByInstance(supabase, instanceIds),
+      fetchParticipationStartStageByInstance(supabase, instanceIds),
+      fetchEventInstanceIdsByInstance(supabase, relationshipLookupInstanceIds),
+      fetchFeedbackGroupByInstance(supabase, relationshipLookupInstanceIds),
+    ]);
     const userAssignedTemplateIds = new Set(
       waitlistRows
         .filter(
@@ -1749,30 +1757,6 @@ export async function GET(request: Request) {
         .map((instance) => instance.id),
     );
 
-    if (autoCancelledInstanceIds.size > 0) {
-      const cancelledAt = now.toISOString();
-      const autoCancelledIds = Array.from(autoCancelledInstanceIds);
-      const cancelPayload = {
-        status: "cancelled",
-        admin_note: "최소 인원 미달로 자동 취소됨",
-        updated_at: cancelledAt,
-      };
-
-      const { error: cancelByInstanceError } = await supabase
-        .from("ticket_participations")
-        .update(cancelPayload)
-        .in("ticket_instance_id", autoCancelledIds)
-        .in("status", autoCancellationStatuses);
-      if (cancelByInstanceError) throw cancelByInstanceError;
-
-      const { error: cancelByTicketError } = await supabase
-        .from("ticket_participations")
-        .update(cancelPayload)
-        .in("ticket_id", autoCancelledIds)
-        .in("status", autoCancellationStatuses);
-      if (cancelByTicketError) throw cancelByTicketError;
-    }
-
     const tickets = pagedTicketSourceRows
       .map((row): UserTicket | null => {
         const instanceId =
@@ -1975,8 +1959,8 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("[meetings my-tickets]", error);
     return NextResponse.json(
-      { error: "내 티켓 정보를 불러오지 못했어요." },
-      { status: 500 },
+      { error: "내 티켓 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요." },
+      { status: 503, headers: { "Retry-After": "3" } },
     );
   }
 }

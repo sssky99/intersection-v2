@@ -148,7 +148,12 @@ export async function middleware(request: NextRequest) {
 
   // Static landing pages must not trigger an auth refresh (and therefore a
   // Supabase network call) on every anonymous visit.
-  if (nextUrl.pathname === '/' || nextUrl.pathname === '/instagram') {
+  if (
+    nextUrl.pathname === '/' ||
+    nextUrl.pathname === '/instagram' ||
+    nextUrl.pathname === '/onboarding/start' ||
+    nextUrl.pathname === '/onboarding/import'
+  ) {
     const response = NextResponse.next();
 
     if (nextUrl.pathname !== '/') return response;

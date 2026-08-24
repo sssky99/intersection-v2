@@ -97,6 +97,22 @@ describe("middleware matcher", () => {
     expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
   });
 
+  it("serves guest onboarding without refreshing a Supabase session", async () => {
+    await middleware(
+      new NextRequest("https://interv2.netlify.app/onboarding/start"),
+    );
+
+    expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("serves guest onboarding import without refreshing a Supabase session", async () => {
+    await middleware(
+      new NextRequest("https://interv2.netlify.app/onboarding/import"),
+    );
+
+    expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
+  });
+
   it("blocks writes while an admin user-view session is active", async () => {
     const response = await middleware(
       new NextRequest("https://interv2.netlify.app/api/profile/name", {

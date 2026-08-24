@@ -51,6 +51,11 @@ describe("POST /api/auth/phone/complete", () => {
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ errorCode: "ACCOUNT_BLOCKED" });
+    expect(findLoginBlockMock).toHaveBeenCalledWith({
+      userId: "user-blocked",
+      phone: "+821012345678",
+      timeoutMs: 500,
+    });
     expect(signOut).toHaveBeenCalledOnce();
   });
 

@@ -34,10 +34,15 @@ function existingUserNextPath(profile: ProfileRow) {
 }
 
 export async function POST() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const supabase = await createClient({ timeoutMs: 3000 });
+  const authResult = await supabase.auth.getUser().catch((error: unknown) => {
+    console.error("[phone-auth] user lookup timed out", error);
+    return null;
+  });
+  if (!authResult) {
+    return profileError("PROFILE_LOOKUP_FAILED", 503);
+  }
+  const user = authResult.data.user;
   if (!user || !user.phone) {
     return profileError("PROFILE_UNAUTHORIZED", 401);
   }
@@ -45,6 +50,7 @@ export async function POST() {
   const blocked = await findLoginBlock({
     userId: user.id,
     phone: user.phone,
+    timeoutMs: 500,
   }).catch((error: unknown) => {
     console.error("[phone-auth] blocklist lookup failed after OTP", error);
     return null;

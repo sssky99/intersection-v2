@@ -15,11 +15,13 @@ import {
   type PhoneAuthFailureCode,
 } from "@/lib/phoneAuthFlow";
 import { createClient } from "@/lib/supabase/client";
+import { createTimedFetch } from "@/lib/timedFetch";
 
 const introVideoCookie = "intro_video_seen_v1";
 const introVideoCookieMaxAge = 60 * 60 * 24 * 365;
 const phonePrompt = "전화번호를 입력해주세요.";
 const otpPrompt = "6자리 인증 번호를 입력해주세요.";
+const phoneAuthFetch = createTimedFetch(8000);
 type AuthStep = "phone" | "otp";
 
 type FiftyQLandingClientProps = {
@@ -126,7 +128,7 @@ export function FiftyQLandingClient({
     let mounted = true;
     if (trackLandingView) trackEvent("landing_view");
     const timer = window.setTimeout(() => {
-      void createClient().auth.getUser().then(async ({ data }) => {
+      void createClient({ timeoutMs: 3000 }).auth.getUser().then(async ({ data }) => {
         if (!mounted) return;
         if (data.user) {
           setIsAuthenticated(true);
@@ -134,7 +136,7 @@ export function FiftyQLandingClient({
             window.location.replace("/meetings?tab=browse");
             return;
           }
-          const response = await fetch("/api/auth/phone/complete", { method: "POST" });
+          const response = await phoneAuthFetch("/api/auth/phone/complete", { method: "POST" });
           const body = (await response.json().catch(() => null)) as
             | { nextPath?: string; errorCode?: PhoneAuthFailureCode }
             | null;
@@ -156,6 +158,8 @@ export function FiftyQLandingClient({
           return;
         }
         setAuthChecked(true);
+      }).catch(() => {
+        if (mounted) setAuthChecked(true);
       });
     }, 500);
 
@@ -216,7 +220,7 @@ export function FiftyQLandingClient({
   const requestOtp = async () => {
     const localPhone = phoneDigits(phone);
     trackEvent("phone_submit", { source: authSource });
-    const prepareResponse = await fetch("/api/auth/phone/prepare", {
+    const prepareResponse = await phoneAuthFetch("/api/auth/phone/prepare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone: localPhone }),
@@ -228,7 +232,7 @@ export function FiftyQLandingClient({
       throw new PhoneAuthError(body?.errorCode ?? "OTP_SEND_FAILED");
     }
 
-    const { error: sendError } = await createClient().auth.signInWithOtp({
+    const { error: sendError } = await createClient({ timeoutMs: 8000 }).auth.signInWithOtp({
       phone: internationalPhone(localPhone),
       options: { shouldCreateUser: true },
     });
@@ -244,7 +248,7 @@ export function FiftyQLandingClient({
   };
 
   const completePhoneAuth = async (trackOtpSuccess = false) => {
-    const response = await fetch("/api/auth/phone/complete", { method: "POST" });
+    const response = await phoneAuthFetch("/api/auth/phone/complete", { method: "POST" });
     const body = (await response.json().catch(() => null)) as
       | {
           nextPath?: string;
@@ -282,7 +286,7 @@ export function FiftyQLandingClient({
   };
 
   const verifyOtp = async () => {
-    const supabase = createClient();
+    const supabase = createClient({ timeoutMs: 8000 });
     const { error: verifyError } = await supabase.auth.verifyOtp({
       phone: internationalPhone(phone),
       token: otp,

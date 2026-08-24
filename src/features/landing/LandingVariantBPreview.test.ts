@@ -11,6 +11,16 @@ describe("landing variant B analytics", () => {
     expect(source).toContain("trackLandingView={false}");
   });
 
+  it("keeps the onboarding CTA usable before client hydration", () => {
+    const source = fs.readFileSync(
+      new URL("./LandingVariantBPreview.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('href="/onboarding/start"');
+    expect(source).not.toContain('window.location.assign("/onboarding/start")');
+  });
+
   it("keeps the Instagram ad CTA visible in compact visual viewports", () => {
     const source = fs.readFileSync(
       new URL("./LandingVariantBPreview.tsx", import.meta.url),

@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { FiftyQLandingClient } from "@/app/FiftyQLandingClient";
 import { trackEvent } from "@/lib/analytics";
@@ -34,7 +35,7 @@ export function LandingVariantB({
   const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(
     null,
   );
-  const ctaButtonRef = useRef<HTMLButtonElement>(null);
+  const ctaButtonRef = useRef<HTMLAnchorElement>(null);
   const ctaClickedRef = useRef(false);
 
   const compactInstagramViewport =
@@ -347,7 +348,7 @@ export function LandingVariantB({
     );
   }
 
-  const startOnboarding = () => {
+  const trackOnboardingStart = () => {
     ctaClickedRef.current = true;
     trackEvent("landing_cta_click", {
       experiment_id: "landing_ab_2026_08",
@@ -355,7 +356,6 @@ export function LandingVariantB({
       landing_surface: instagramAd ? "instagram_paid" : "default",
       cta_position: instagramAd ? "upper_fold" : "bottom",
     });
-    window.location.assign("/onboarding/start");
   };
 
   const openMemberLogin = () => {
@@ -370,10 +370,10 @@ export function LandingVariantB({
 
   const primaryAction = (compact = false) => (
     <>
-      <button
+      <Link
         ref={ctaButtonRef}
-        type="button"
-        onClick={startOnboarding}
+        href="/onboarding/start"
+        onClick={trackOnboardingStart}
         className={`relative mx-auto flex w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98] ${
           compact ? "h-14" : "h-16"
         }`}
@@ -385,7 +385,7 @@ export function LandingVariantB({
           aria-hidden
           className="absolute right-6"
         />
-      </button>
+      </Link>
       {!compact && (
         <button
           type="button"

@@ -111,13 +111,16 @@ export async function currentAdminUserView() {
   );
 }
 
-export async function requestUserId(options?: { allowAdminView?: boolean }) {
+export async function requestUserId(options?: {
+  allowAdminView?: boolean;
+  timeoutMs?: number;
+}) {
   if (options?.allowAdminView) {
     const view = await currentAdminUserView();
     if (view) return { userId: view.targetUserId, readOnly: true as const };
   }
 
-  const supabase = await createClient();
+  const supabase = await createClient({ timeoutMs: options?.timeoutMs });
   const {
     data: { user },
   } = await supabase.auth.getUser();
