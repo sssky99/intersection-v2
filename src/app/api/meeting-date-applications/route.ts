@@ -22,6 +22,7 @@ import {
 } from "@/lib/membershipPlans";
 import { membershipStoreUrls } from "@/lib/membershipStore";
 import { oneTimeTicketStoreUrl } from "@/lib/paymentStore";
+import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,8 @@ const attributionKeys = [
   "meta_fbp",
   "meta_fbc",
   "meta_user_agent",
+  "analytics_session_id",
+  "landing_variant",
 ] as const;
 
 function checkoutAttribution(value: unknown) {
@@ -503,6 +506,24 @@ export async function POST(request: NextRequest) {
         .returns<DateApplicationRow[]>();
       if (error) throw error;
       savedRows = data ?? [];
+    }
+
+    if (savedRows[0]) {
+      const attribution = checkoutAttribution(body.attribution);
+      await safelyRecordServerFunnelEvent({
+        sessionId: attribution?.analytics_session_id,
+        profileId: user.id,
+        eventName: "application_created",
+        eventKey: savedRows[0].id,
+        path: "/api/meeting-date-applications",
+        metadata: {
+          meeting_date: savedRows[0].meeting_date,
+          payment_option: membershipCovered ? "membership" : openPayment ? "one_time" : "membership_checkout",
+          event_id: selectedEvent?.id ?? null,
+          ticket_instance_id: selectedTicket?.id ?? null,
+        },
+        createdAt: savedRows[0].created_at ?? now,
+      });
     }
 
     if (membershipCovered && selectedTicket) {

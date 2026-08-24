@@ -51,19 +51,19 @@ type FunnelResponse = FunnelAggregate & {
 };
 
 const summaryStageKeys = [
-  "landing_video_complete",
-  "phone_verification_complete",
-  "profile_complete",
-  "invitation_yes",
+  "onboarding_start",
+  "questions_complete",
+  "otp_verified",
+  "application_created",
   "payment_completed",
 ] as const;
 
 const trendSeries = [
-  { key: "landing", label: "랜딩", color: "#111111" },
-  { key: "landing_video_complete", label: "영상 완주", color: "#9b8f80" },
-  { key: "phone_verification_complete", label: "전화 인증", color: "#7eb3c7" },
-  { key: "profile_complete", label: "명단 등록", color: "#5b7f65" },
-  { key: "invitation_yes", label: "YES", color: "#d88a5b" },
+  { key: "landing_view", label: "랜딩", color: "#111111" },
+  { key: "onboarding_start", label: "시작", color: "#9b8f80" },
+  { key: "questions_complete", label: "질문 완료", color: "#7eb3c7" },
+  { key: "otp_verified", label: "전화 인증", color: "#5b7f65" },
+  { key: "application_created", label: "신청", color: "#d88a5b" },
   { key: "payment_completed", label: "결제", color: "#76558f" },
 ] as const;
 
@@ -225,7 +225,7 @@ export function FunnelAdminPanel() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold">퍼널 관리</h2>
-            <p className="mt-1 text-xs text-black/45">사용자 단위 중복 제거 · 분석 이벤트 {(data?.rowsScanned ?? 0).toLocaleString()}건</p>
+            <p className="mt-1 text-xs text-black/45">세션 단위 중복 제거 · 집계 세션 {(data?.rowsScanned ?? 0).toLocaleString()}건</p>
           </div>
           <button type="button" onClick={() => void loadFunnel()} disabled={loading} className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 disabled:opacity-45">
             <RefreshCw size={15} aria-hidden className={loading ? "animate-spin" : ""} />

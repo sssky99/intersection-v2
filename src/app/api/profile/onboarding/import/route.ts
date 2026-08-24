@@ -9,6 +9,7 @@ import {
   classifyProfileArchetype,
   profileArchetypeVersion,
 } from "@/data/profileArchetypes";
+import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
         answers?: unknown;
         profile?: Record<string, unknown>;
         photoUrl?: unknown;
+        analyticsSessionId?: unknown;
       }
     | null;
   const admin = createAdminClient();
@@ -176,6 +178,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Answers could not be saved." }, { status: 500 });
   }
 
+  const completionAt = new Date().toISOString();
   const { error: profileError } = await admin
     .from("profiles")
     .update({
@@ -189,9 +192,9 @@ export async function POST(request: Request) {
       photo_url: photoUrl,
       questions_completed: true,
       profile_completed: true,
-      questions_completed_at: new Date().toISOString(),
-      basic_info_completed_at: new Date().toISOString(),
-      profile_completed_at: new Date().toISOString(),
+      questions_completed_at: completionAt,
+      basic_info_completed_at: completionAt,
+      profile_completed_at: completionAt,
       ...(isPreferenceOnboarding
         ? {
             profile_archetype_id: profileArchetypeId,
@@ -215,6 +218,15 @@ export async function POST(request: Request) {
     console.error("Guest onboarding profile import failed:", profileError.message);
     return NextResponse.json({ error: "Profile could not be saved." }, { status: 500 });
   }
+
+  await safelyRecordServerFunnelEvent({
+    sessionId: body?.analyticsSessionId,
+    profileId: user.id,
+    eventName: "questions_complete",
+    path: "/api/profile/onboarding/import",
+    metadata: { mode: "guest_import" },
+    createdAt: completionAt,
+  });
 
   return NextResponse.json({ ok: true, profileArchetypeId });
 }

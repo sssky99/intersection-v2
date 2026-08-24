@@ -13,6 +13,7 @@ import {
   calculateConversationResultCode,
   conversationResultVersion,
 } from "@/lib/conversationResult";
+import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
@@ -73,7 +74,9 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await request.json().catch(() => null)) as { mode?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as
+    | { mode?: unknown; analyticsSessionId?: unknown }
+    | null;
   const isPreferenceRegeneration =
     body?.mode === "preferences-v2-regeneration";
   const isPreferenceUpgrade = body?.mode === "preferences-v2-upgrade";
@@ -236,12 +239,13 @@ export async function POST(request: Request) {
     );
   }
 
+  const completionAt = new Date().toISOString();
   const update = isRegeneration
     ? { profile_regeneration_questions_completed_at: new Date().toISOString() }
     : isPreferenceOnboarding
       ? {
           questions_completed: true,
-          questions_completed_at: new Date().toISOString(),
+          questions_completed_at: completionAt,
           profile_completed: true,
           basic_info_completed_at: new Date().toISOString(),
           profile_completed_at: new Date().toISOString(),
@@ -251,7 +255,7 @@ export async function POST(request: Request) {
         }
     : {
         questions_completed: true,
-        questions_completed_at: new Date().toISOString(),
+        questions_completed_at: completionAt,
         conversation_result_code: resultCode,
         conversation_result_version: conversationResultVersion,
         conversation_result_calculated_at: new Date().toISOString(),
@@ -263,6 +267,17 @@ export async function POST(request: Request) {
   if (updateError) {
     console.error("Profile answer completion save failed:", updateError.message);
     return NextResponse.json({ error: "Completion could not be saved." }, { status: 500 });
+  }
+
+  if (!isRegeneration) {
+    await safelyRecordServerFunnelEvent({
+      sessionId: body?.analyticsSessionId,
+      profileId: user.id,
+      eventName: "questions_complete",
+      path: "/api/profile/questions/complete",
+      metadata: { mode: typeof body?.mode === "string" ? body.mode : "onboarding" },
+      createdAt: completionAt,
+    });
   }
 
   return NextResponse.json({ ok: true, profileArchetypeId });

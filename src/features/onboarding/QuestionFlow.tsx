@@ -27,6 +27,7 @@ import {
 import { profileQuestions } from "@/data/profileQuestions";
 import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
 import {
+  analyticsSessionId,
   identifyAnalyticsUser,
   trackEvent,
   trackLoginSuccessFromUrl,
@@ -1063,6 +1064,7 @@ export function QuestionFlow({
         mode:
           completionRequestMode ??
           (isRegeneration ? "regeneration" : "onboarding"),
+        analyticsSessionId: analyticsSessionId(),
       }),
     }).catch(() => null);
 

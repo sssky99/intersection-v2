@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { preferenceProfileVersion } from "@/data/preferenceQuestions";
+import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 import { findLoginBlock } from "@/lib/loginBlocklist";
 import { nextOnboardingPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +34,10 @@ function existingUserNextPath(profile: ProfileRow) {
   return nextPath.startsWith("/meetings") ? "/meetings?tab=browse" : nextPath;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const body = (await request.json().catch(() => null)) as
+    | { analyticsSessionId?: unknown }
+    | null;
   const supabase = await createClient({ timeoutMs: 3000 });
   const authResult = await supabase.auth.getUser().catch((error: unknown) => {
     console.error("[phone-auth] user lookup timed out", error);
@@ -71,6 +75,13 @@ export async function POST() {
   }
 
   if (existingProfile) {
+    await safelyRecordServerFunnelEvent({
+      sessionId: body?.analyticsSessionId,
+      profileId: user.id,
+      eventName: "otp_verified",
+      path: "/api/auth/phone/complete",
+      metadata: { login_type: existingProfile.profile_completed ? "existing" : "new" },
+    });
     return NextResponse.json({
       loginType: existingProfile.profile_completed ? "existing" : "new",
       nextPath: existingUserNextPath(existingProfile),
@@ -106,6 +117,13 @@ export async function POST() {
         .eq("user_id", user.id)
         .maybeSingle<ProfileRow>();
       if (!concurrentLookupError && concurrentProfile) {
+        await safelyRecordServerFunnelEvent({
+          sessionId: body?.analyticsSessionId,
+          profileId: user.id,
+          eventName: "otp_verified",
+          path: "/api/auth/phone/complete",
+          metadata: { login_type: "existing" },
+        });
         return NextResponse.json({
           loginType: "existing",
           nextPath: existingUserNextPath(concurrentProfile),
@@ -115,6 +133,14 @@ export async function POST() {
     console.error("[phone-auth] profile bootstrap failed", createError?.code);
     return profileError("PROFILE_CREATE_FAILED", 503);
   }
+
+  await safelyRecordServerFunnelEvent({
+    sessionId: body?.analyticsSessionId,
+    profileId: user.id,
+    eventName: "otp_verified",
+    path: "/api/auth/phone/complete",
+    metadata: { login_type: "new" },
+  });
 
   return NextResponse.json({
     loginType: "new",

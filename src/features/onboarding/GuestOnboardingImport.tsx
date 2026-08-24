@@ -11,7 +11,11 @@ import {
   saveGuestProfilePhoto,
   type GuestOnboardingDraft,
 } from "@/lib/guestOnboarding";
-import { trackEvent, trackLoginSuccessFromUrl } from "@/lib/analytics";
+import {
+  analyticsSessionId,
+  trackEvent,
+  trackLoginSuccessFromUrl,
+} from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 import {
   isProfileArchetypeId,
@@ -57,6 +61,8 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
       try {
         const identityResponse = await fetch("/api/auth/phone/complete", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ analyticsSessionId: analyticsSessionId() }),
         });
         const identity = (await identityResponse.json().catch(() => null)) as
           | { loginType?: "new" | "existing"; nextPath?: string }
@@ -107,6 +113,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
           answers: draft.answers,
           profile: draft.profile,
           photoUrl: uploadedPhotoUrl,
+          analyticsSessionId: analyticsSessionId(),
         }),
       });
       const body = (await response.json().catch(() => null)) as

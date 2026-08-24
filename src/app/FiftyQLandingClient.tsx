@@ -3,7 +3,7 @@
 import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { onboardingGuides } from "@/data/onboardingGuides";
-import { trackEvent } from "@/lib/analytics";
+import { analyticsSessionId, trackEvent } from "@/lib/analytics";
 import {
   isProfileSetupFailure,
   otpFailureCode,
@@ -147,7 +147,11 @@ export function FiftyQLandingClient({
             window.location.replace("/meetings?tab=browse");
             return;
           }
-          const response = await phoneAuthFetch("/api/auth/phone/complete", { method: "POST" });
+          const response = await phoneAuthFetch("/api/auth/phone/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ analyticsSessionId: analyticsSessionId() }),
+          });
           const body = (await response.json().catch(() => null)) as
             | { nextPath?: string; errorCode?: PhoneAuthFailureCode }
             | null;
@@ -261,7 +265,11 @@ export function FiftyQLandingClient({
   };
 
   const completePhoneAuth = async (trackOtpSuccess = false) => {
-    const response = await phoneAuthFetch("/api/auth/phone/complete", { method: "POST" });
+    const response = await phoneAuthFetch("/api/auth/phone/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analyticsSessionId: analyticsSessionId() }),
+    });
     const body = (await response.json().catch(() => null)) as
       | {
           nextPath?: string;

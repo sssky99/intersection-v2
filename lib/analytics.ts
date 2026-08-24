@@ -1,3 +1,5 @@
+import { createClient } from "@/lib/supabase/client";
+
 export const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 export const CLARITY_PROJECT_ID = process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID;
 export const META_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID;
@@ -9,7 +11,10 @@ type AnalyticsParams = Record<
 >;
 type ClarityFn = ((...args: unknown[]) => void) & { q?: unknown[][] };
 
-const anonymousSessionStorageKey = "intersection_anonymous_session_id";
+const anonymousSessionStorageKey = "intersection_funnel_session";
+const funnelSessionIdleMs = 30 * 60 * 1000;
+const funnelFlushDelayMs = 3000;
+const funnelBatchSize = 5;
 const acquisitionStorageKey = "intersection_acquisition_context";
 const landingExperimentCookie = "landing_ab_v1";
 const landingExperimentId = "landing_ab_2026_08";
@@ -68,21 +73,54 @@ function randomId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-
-  return `anon_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (token) => {
+    const random = Math.floor(Math.random() * 16);
+    return (token === "x" ? random : (random & 0x3) | 0x8).toString(16);
+  });
 }
 
-function anonymousSessionId() {
+type FunnelQueueItem = {
+  eventName: "landing_view" | "onboarding_start" | "ticket_detail_view";
+  eventKey: string;
+  path: string;
+  metadata: Record<string, AnalyticsParamValue>;
+};
+
+let funnelQueue: FunnelQueueItem[] = [];
+let funnelFlushTimer: number | null = null;
+let funnelLifecycleBound = false;
+
+export function analyticsSessionId() {
   try {
-    const existing = window.localStorage.getItem(anonymousSessionStorageKey);
-    if (existing) return existing;
+    const raw = window.sessionStorage.getItem(anonymousSessionStorageKey);
+    if (raw) {
+      const existing = JSON.parse(raw) as { id?: unknown; touchedAt?: unknown };
+      if (
+        typeof existing.id === "string" &&
+        typeof existing.touchedAt === "number" &&
+        Date.now() - existing.touchedAt < funnelSessionIdleMs
+      ) {
+        window.sessionStorage.setItem(
+          anonymousSessionStorageKey,
+          JSON.stringify({ id: existing.id, touchedAt: Date.now() }),
+        );
+        return existing.id;
+      }
+    }
 
     const nextId = randomId();
-    window.localStorage.setItem(anonymousSessionStorageKey, nextId);
+    window.sessionStorage.setItem(
+      anonymousSessionStorageKey,
+      JSON.stringify({ id: nextId, touchedAt: Date.now() }),
+    );
     return nextId;
   } catch {
     return randomId();
   }
+}
+
+function anonymousSessionId() {
+  return analyticsSessionId();
 }
 
 function supabaseEventName(eventName: string) {
@@ -179,6 +217,7 @@ export function checkoutAttributionContext() {
   }
 
   return {
+    analytics_session_id: analyticsSessionId(),
     source_type: utmSource || utmMedium ? "utm" : referrerHost ? "referral" : "direct",
     utm_source: utmSource,
     utm_medium: utmMedium,
@@ -189,6 +228,7 @@ export function checkoutAttributionContext() {
     meta_fbp: metaFbp,
     meta_fbc: cookieFbc || derivedFbc,
     meta_user_agent: navigator.userAgent.slice(0, 500),
+    ...landingExperimentContext(),
   };
 }
 
@@ -352,12 +392,107 @@ function trackMetaEvent(
   }
 }
 
+function compactMetadata(payload: Record<string, AnalyticsParamValue>) {
+  const result: Record<string, AnalyticsParamValue> = {};
+  for (const [key, value] of Object.entries(payload).slice(0, 20)) {
+    result[key.slice(0, 80)] =
+      typeof value === "string" ? value.slice(0, 240) : value;
+  }
+  while (JSON.stringify(result).length > 1800) {
+    const lastKey = Object.keys(result).at(-1);
+    if (!lastKey) break;
+    delete result[lastKey];
+  }
+  return result;
+}
+
+function funnelEvent(eventName: string, payload: Record<string, AnalyticsParamValue>) {
+  const mapped =
+    eventName === "landing_view"
+      ? "landing_view"
+      : eventName === "landing_cta_click" || eventName === "question_start" || eventName === "onboarding_start"
+        ? "onboarding_start"
+        : eventName === "meeting_ticket_detail_open" || eventName === "ticket_detail_view"
+          ? "ticket_detail_view"
+          : null;
+  if (!mapped) return null;
+  const keyValue =
+    mapped === "ticket_detail_view"
+      ? payload.ticket_instance_id ?? payload.ticket_id ?? payload.event_id ?? ""
+      : "";
+  return {
+    eventName: mapped,
+    eventKey: typeof keyValue === "string" ? keyValue.slice(0, 160) : "",
+    path: currentPageId().slice(0, 240),
+    metadata: compactMetadata(payload),
+  } satisfies FunnelQueueItem;
+}
+
+async function flushFunnelEvents(retryCount = 0) {
+  if (funnelFlushTimer) window.clearTimeout(funnelFlushTimer);
+  funnelFlushTimer = null;
+  const events = funnelQueue.splice(0, funnelBatchSize);
+  if (events.length === 0) return;
+
+  const context = checkoutAttributionContext();
+  try {
+    const { error } = await createClient({ timeoutMs: 2000 }).rpc(
+      "ingest_funnel_events",
+      {
+        p_session_id: analyticsSessionId(),
+        p_events: events,
+        p_context: context,
+      },
+    );
+    if (error) throw error;
+  } catch {
+    if (retryCount < 1) {
+      funnelQueue = [...events, ...funnelQueue].slice(0, 20);
+      funnelFlushTimer = window.setTimeout(
+        () => void flushFunnelEvents(retryCount + 1),
+        800,
+      );
+      return;
+    }
+  }
+
+  if (funnelQueue.length > 0 && !funnelFlushTimer) {
+    funnelFlushTimer = window.setTimeout(
+      () => void flushFunnelEvents(),
+      funnelFlushDelayMs,
+    );
+  }
+}
+
+function bindFunnelLifecycle() {
+  if (funnelLifecycleBound) return;
+  funnelLifecycleBound = true;
+  const flush = () => {
+    if (funnelQueue.length > 0) void flushFunnelEvents();
+  };
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flush();
+  });
+}
+
 function trackSupabaseEvent(
-  _eventName: string,
-  _payload: Record<string, AnalyticsParamValue>,
+  eventName: string,
+  payload: Record<string, AnalyticsParamValue>,
 ) {
-  // Temporarily disabled while the event pipeline is redesigned around
-  // batching. GA, Clarity, and Meta tracking continue in trackEvent().
+  if (!shouldTrackSupabaseEvent()) return;
+  const event = funnelEvent(eventName, payload);
+  if (!event) return;
+  bindFunnelLifecycle();
+  funnelQueue.push(event);
+  if (funnelQueue.length >= funnelBatchSize) {
+    void flushFunnelEvents();
+  } else if (!funnelFlushTimer) {
+    funnelFlushTimer = window.setTimeout(
+      () => void flushFunnelEvents(),
+      funnelFlushDelayMs,
+    );
+  }
 }
 
 export function trackEvent(
@@ -384,6 +519,17 @@ export function identifyAnalyticsUser(userId: string) {
   if (typeof window === "undefined" || !userId) return;
 
   callClarity("identify", userId, anonymousSessionId(), currentPageId());
+  if (shouldTrackSupabaseEvent()) {
+    void (async () => {
+      try {
+        await createClient({ timeoutMs: 2000 }).rpc("link_funnel_session", {
+          p_session_id: analyticsSessionId(),
+        });
+      } catch {
+        // Identity linkage must never interrupt the user flow.
+      }
+    })();
+  }
 }
 
 export function trackAnalyticsPageView() {

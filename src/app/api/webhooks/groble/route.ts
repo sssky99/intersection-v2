@@ -788,30 +788,6 @@ async function processMembershipPayment({
     buyerName: details.buyerName,
   });
 
-  const eventName =
-    resolvedPaymentKind === "membership_upgrade"
-      ? "subscription_upgraded"
-      : resolvedPaymentKind === "membership_renewal"
-        ? "subscription_renewed"
-        : "subscription_started";
-  const { error: analyticsError } = await admin.from("user_events").insert({
-    profile_id: match.userId,
-    event_name: eventName,
-    path: "/api/webhooks/groble",
-    metadata: {
-      provider: "groble",
-      merchant_uid: details.merchantUid,
-      membership_payment_intent_id: match.intentId,
-      plan: match.plan,
-      payment_kind: resolvedPaymentKind,
-      amount: details.finalAmount,
-      credit_amount: match.creditAmount,
-      event_id: envelope.id,
-    },
-    created_at: paidAt,
-  });
-  if (analyticsError) throw analyticsError;
-
   await eventStatus(idempotencyKey, {
     processing_status: "processed",
     merchant_uid: details.merchantUid,
@@ -1025,23 +1001,6 @@ async function processPaymentCompleted(
     userId: match.userId,
     buyerName: details.buyerName,
   });
-
-  const { error: analyticsError } = await admin.from("user_events").insert({
-    profile_id: match.userId,
-    event_name: "payment_completed",
-    path: "/api/webhooks/groble",
-    metadata: {
-      provider: "groble",
-      merchant_uid: details.merchantUid,
-      application_group_id: match.groupId,
-      payment_intent_id: match.intentId,
-      payment_kind: "one_time",
-      amount: details.finalAmount,
-      event_id: envelope.id,
-    },
-    created_at: paidAt,
-  });
-  if (analyticsError) throw analyticsError;
 
   if (match.intentId !== null) {
     const { error: intentUpdateError } = await admin

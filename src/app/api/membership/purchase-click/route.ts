@@ -28,6 +28,8 @@ const attributionKeys = [
   "meta_fbp",
   "meta_fbc",
   "meta_user_agent",
+  "analytics_session_id",
+  "landing_variant",
 ] as const;
 
 function checkoutAttribution(value: unknown) {

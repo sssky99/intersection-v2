@@ -14,6 +14,9 @@ vi.mock("@/lib/onboarding", () => ({
     profile.profile_completed ? "/meetings?tab=recommend" : "/onboarding/questions",
   ),
 }));
+vi.mock("@/lib/funnelAnalytics", () => ({
+  safelyRecordServerFunnelEvent: vi.fn(async () => undefined),
+}));
 vi.mock("@/data/preferenceQuestions", () => ({
   preferenceProfileVersion: "preferences-v14",
 }));
@@ -26,6 +29,14 @@ function queryResult(result: unknown): Record<string, ReturnType<typeof vi.fn>> 
     single: vi.fn(async () => result),
   };
   return query;
+}
+
+function phoneCompleteRequest() {
+  return new Request("http://localhost/api/auth/phone/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
 }
 
 describe("POST /api/auth/phone/complete", () => {
@@ -47,7 +58,7 @@ describe("POST /api/auth/phone/complete", () => {
     });
 
     const { POST } = await import("./route");
-    const response = await POST();
+    const response = await POST(phoneCompleteRequest());
 
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ errorCode: "ACCOUNT_BLOCKED" });
@@ -67,7 +78,7 @@ describe("POST /api/auth/phone/complete", () => {
       from: vi.fn(() => profiles),
     });
     const { POST } = await import("./route");
-    const response = await POST();
+    const response = await POST(phoneCompleteRequest());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ loginType: "existing", nextPath: "/meetings?tab=browse" });
   });
@@ -80,7 +91,7 @@ describe("POST /api/auth/phone/complete", () => {
       from: vi.fn(() => profiles),
     });
     const { POST } = await import("./route");
-    const response = await POST();
+    const response = await POST(phoneCompleteRequest());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ loginType: "new", nextPath: "/onboarding/questions" });
   });
@@ -96,7 +107,7 @@ describe("POST /api/auth/phone/complete", () => {
       from: vi.fn(() => (++call === 1 ? lookup : insert)),
     });
     const { POST } = await import("./route");
-    const response = await POST();
+    const response = await POST(phoneCompleteRequest());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ loginType: "new", nextPath: "/onboarding/questions" });
   });
@@ -108,7 +119,7 @@ describe("POST /api/auth/phone/complete", () => {
       from: vi.fn(() => lookup),
     });
     const { POST } = await import("./route");
-    const response = await POST();
+    const response = await POST(phoneCompleteRequest());
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ errorCode: "PROFILE_LOOKUP_FAILED" });
   });
