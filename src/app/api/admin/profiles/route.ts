@@ -158,6 +158,27 @@ async function attachOneTimePayments(
 
   const paidUserIds = new Set<string>();
 
+  if (userIds.length > USER_ID_BATCH_SIZE) {
+    const { data, error } = await supabase
+      .from("payment_transactions")
+      .select("user_id")
+      .eq("payment_kind", "one_time")
+      .eq("status", "completed");
+    if (error) throw error;
+
+    const requestedUserIds = new Set(userIds);
+    for (const row of data ?? []) {
+      if (row.user_id && requestedUserIds.has(row.user_id)) {
+        paidUserIds.add(row.user_id);
+      }
+    }
+
+    return profiles.map((profile) => ({
+      ...profile,
+      one_time_paid: paidUserIds.has(profile.user_id),
+    }));
+  }
+
   for (
     let batchStart = 0;
     batchStart < userIds.length;
@@ -341,6 +362,22 @@ function normalizeProfiles(profiles: AdminProfile[]) {
   return profiles.map(normalizeAdminProfile);
 }
 
+function mergeProfileAttachments(
+  profiles: AdminProfile[],
+  attachments: AdminProfile[][],
+) {
+  const byUserId = attachments.map(
+    (rows) => new Map(rows.map((row) => [row.user_id, row])),
+  );
+
+  return profiles.map((profile) =>
+    byUserId.reduce(
+      (merged, lookup) => ({ ...merged, ...(lookup.get(profile.user_id) ?? {}) }),
+      profile,
+    ),
+  );
+}
+
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
@@ -444,33 +481,66 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = createAdminClient();
+    const supabase = createAdminClient({ timeoutMs: 5000 });
+    const requestedUserId = request.nextUrl.searchParams.get("userId")?.trim();
+    const includeAllDetails =
+      request.nextUrl.searchParams.get("includeDetails") === "1";
+
+    if (requestedUserId) {
+      const profile = await fetchProfile(supabase, requestedUserId);
+      const attachments = await Promise.all([
+        attachOperatorRatings(supabase, [profile]),
+        attachAlgorithmParameters(supabase, [profile]),
+        attachProfileAnswers(supabase, [profile]),
+        attachOneTimePayments(supabase, [profile]),
+      ]);
+      const [profileWithDetails] = mergeProfileAttachments(
+        [profile],
+        attachments,
+      );
+
+      return NextResponse.json({
+        profile: normalizeAdminProfile({
+          ...profileWithDetails,
+          details_loaded: true,
+        }),
+      });
+    }
+
     const profiles = await fetchProfiles(supabase);
-    const profilesWithRatings = await attachOperatorRatings(
-      supabase,
+    const baseAttachments = await Promise.all([
+      attachOperatorRatings(supabase, profiles),
+      attachOneTimePayments(supabase, profiles),
+    ]);
+    let profilesWithDetails = mergeProfileAttachments(
       profiles,
-    );
-    const profilesWithParameters = await attachAlgorithmParameters(
-      supabase,
-      profilesWithRatings,
-    );
-    const profilesWithAnswers = await attachProfileAnswers(
-      supabase,
-      profilesWithParameters,
-    );
-    const profilesWithPayments = await attachOneTimePayments(
-      supabase,
-      profilesWithAnswers,
+      baseAttachments,
     );
 
+    if (includeAllDetails) {
+      const detailAttachments = await Promise.all([
+        attachAlgorithmParameters(supabase, profiles),
+        attachProfileAnswers(supabase, profiles),
+      ]);
+      profilesWithDetails = mergeProfileAttachments(
+        profilesWithDetails,
+        detailAttachments,
+      );
+    }
+
     return NextResponse.json({
-      profiles: normalizeProfiles(profilesWithPayments),
+      profiles: normalizeProfiles(
+        profilesWithDetails.map((profile) => ({
+          ...profile,
+          details_loaded: includeAllDetails,
+        })),
+      ),
     });
   } catch (error) {
     console.error("Admin profiles load failed:", error);
     return NextResponse.json(
       { error: "신청자 목록을 불러오지 못했습니다." },
-      { status: 500 },
+      { status: 503, headers: { "Retry-After": "5" } },
     );
   }
 }
@@ -561,7 +631,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const supabase = createAdminClient();
+    const supabase = createAdminClient({ timeoutMs: 5000 });
     const operatorUpdate =
       typeof body?.isTestParticipant === "boolean"
         ? await supabase
@@ -638,29 +708,29 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    const profile = await fetchProfile(supabase, userId);
+    const attachments = await Promise.all([
+      attachOperatorRatings(supabase, [profile]),
+      attachAlgorithmParameters(supabase, [profile]),
+      attachProfileAnswers(supabase, [profile]),
+      attachOneTimePayments(supabase, [profile]),
+    ]);
+    const [profileWithDetails] = mergeProfileAttachments(
+      [profile],
+      attachments,
+    );
+
     return NextResponse.json({
-      profile: normalizeAdminProfile(
-        (
-          await attachOneTimePayments(
-            supabase,
-            await attachProfileAnswers(
-              supabase,
-              await attachAlgorithmParameters(
-                supabase,
-                await attachOperatorRatings(supabase, [
-                  await fetchProfile(supabase, userId),
-                ]),
-              ),
-            ),
-          )
-        )[0],
-      ),
+      profile: normalizeAdminProfile({
+        ...profileWithDetails,
+        details_loaded: true,
+      }),
     });
   } catch (error) {
     console.error("Admin profile membership save failed:", error);
     return NextResponse.json(
       { error: "멤버십 상태를 저장하지 못했습니다." },
-      { status: 500 },
+      { status: 503, headers: { "Retry-After": "5" } },
     );
   }
 }

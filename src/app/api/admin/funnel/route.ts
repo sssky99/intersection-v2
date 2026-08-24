@@ -93,7 +93,9 @@ const funnelStages: FunnelStage[] = [
 const eventSelect =
   "id,anonymous_session_id,profile_id,event_name,path,referrer,metadata,created_at";
 const pageSize = 1000;
-const maxFunnelRows = 100000;
+const maxFunnelRows = 20000;
+const maxFunnelRangeDays = 31;
+const funnelRequestTimeoutMs = 5000;
 const dayMs = 24 * 60 * 60 * 1000;
 
 function isAdminRequest(request: NextRequest) {
@@ -123,7 +125,7 @@ function selectedWindow(request: NextRequest): WindowRange {
   const to = dateParam(request.nextUrl.searchParams.get("to"));
   if (from && to && from.getTime() <= to.getTime()) {
     const end = new Date(to.getTime() + dayMs);
-    const maxStart = new Date(end.getTime() - 366 * dayMs);
+    const maxStart = new Date(end.getTime() - maxFunnelRangeDays * dayMs);
     return { start: from < maxStart ? maxStart : from, end };
   }
 
@@ -238,14 +240,10 @@ function kstDate(value: string | Date) {
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 
-async function fetchFunnelRows(start: string, end: string) {
-  const supabase = createAdminClient();
+async function fetchFunnelRows(start: string, end: string, signal: AbortSignal) {
+  const supabase = createAdminClient({ timeoutMs: funnelRequestTimeoutMs });
   const eventNames = Array.from(
-    new Set([
-      ...funnelStages.flatMap((stage) => stage.eventNames),
-      "question_view",
-      "question_answered",
-    ]),
+    new Set(funnelStages.flatMap((stage) => stage.eventNames)),
   );
   const rows: UserEventRow[] = [];
 
@@ -258,6 +256,7 @@ async function fetchFunnelRows(start: string, end: string) {
       .lt("created_at", end)
       .order("created_at", { ascending: true })
       .range(from, from + pageSize - 1)
+      .abortSignal(signal)
       .returns<UserEventRow[]>();
 
     if (error) throw error;
@@ -267,8 +266,12 @@ async function fetchFunnelRows(start: string, end: string) {
   return rows;
 }
 
-async function fetchCompletedProfiles(start: string, end: string) {
-  const supabase = createAdminClient();
+async function fetchCompletedProfiles(
+  start: string,
+  end: string,
+  signal: AbortSignal,
+) {
+  const supabase = createAdminClient({ timeoutMs: funnelRequestTimeoutMs });
   const rows: ProfileFunnelRow[] = [];
 
   for (let from = 0; from < maxFunnelRows; from += pageSize) {
@@ -280,6 +283,7 @@ async function fetchCompletedProfiles(start: string, end: string) {
       .or(`basic_info_completed_at.gte.${start},profile_completed_at.gte.${start}`)
       .order("user_id", { ascending: true })
       .range(from, from + pageSize - 1)
+      .abortSignal(signal)
       .returns<ProfileFunnelRow[]>();
 
     if (error) throw error;
@@ -520,11 +524,21 @@ export async function GET(request: NextRequest) {
   const basis = basisParam(request.nextUrl.searchParams.get("basis"));
   const source = sourceParam(request.nextUrl.searchParams.get("source"));
   const fetchStart = compare ? comparisonRange.start : range.start;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), funnelRequestTimeoutMs);
 
   try {
     const [eventRows, completedProfiles] = await Promise.all([
-      fetchFunnelRows(fetchStart.toISOString(), range.end.toISOString()),
-      fetchCompletedProfiles(fetchStart.toISOString(), range.end.toISOString()),
+      fetchFunnelRows(
+        fetchStart.toISOString(),
+        range.end.toISOString(),
+        controller.signal,
+      ),
+      fetchCompletedProfiles(
+        fetchStart.toISOString(),
+        range.end.toISOString(),
+        controller.signal,
+      ),
     ]);
     const rows = [...eventRows, ...profileStageRows(completedProfiles)];
     const current = aggregateFunnel(rows, range, basis, source);
@@ -536,22 +550,30 @@ export async function GET(request: NextRequest) {
         }
       : null;
 
-    return NextResponse.json({
-      basis,
-      source,
-      startedAt: range.start.toISOString(),
-      endedAt: range.end.toISOString(),
-      rowsScanned: eventRows.length,
-      registeredProfilesScanned: completedProfiles.length,
-      ...current,
-      comparison,
-      tableMissing: false,
-    });
+    return NextResponse.json(
+      {
+        basis,
+        source,
+        startedAt: range.start.toISOString(),
+        endedAt: range.end.toISOString(),
+        rowsScanned: eventRows.length,
+        registeredProfilesScanned: completedProfiles.length,
+        ...current,
+        comparison,
+        tableMissing: false,
+      },
+      { headers: { "Cache-Control": "private, max-age=60" } },
+    );
   } catch (error) {
     if (error && typeof error === "object" && isMissingTableError(error as { code?: string; message?: string })) {
       return NextResponse.json(emptyResponse(range, basis, source, true));
     }
     console.error("[admin funnel]", error);
-    return NextResponse.json({ error: "Funnel events could not be loaded." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Funnel events could not be loaded." },
+      { status: 503, headers: { "Retry-After": "5" } },
+    );
+  } finally {
+    clearTimeout(timer);
   }
 }

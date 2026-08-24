@@ -27,6 +27,17 @@ export function otpFailureCode(message: string): PhoneAuthFailureCode {
   return "OTP_INVALID";
 }
 
+export function otpSendFailureCode(message: string): PhoneAuthFailureCode {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("banned") || normalized.includes("blocked")) {
+    return "ACCOUNT_BLOCKED";
+  }
+  if (normalized.includes("rate") || normalized.includes("seconds")) {
+    return "OTP_RATE_LIMITED";
+  }
+  return "OTP_SEND_FAILED";
+}
+
 export function phoneAuthErrorMessage(code: PhoneAuthFailureCode) {
   switch (code) {
     case "ACCOUNT_BLOCKED": return "오류가 발생했습니다.\n하단 카카오톡 채널로 문의해주세요.";

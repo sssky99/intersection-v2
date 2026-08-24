@@ -10,6 +10,11 @@ export function createAdminClient(options?: { timeoutMs?: number }) {
   }
 
   return createClient(supabaseUrl, serviceRoleKey, {
+    db: {
+      // A degraded database must fail fast instead of multiplying load with
+      // PostgREST's built-in retries.
+      retry: false,
+    },
     ...(options?.timeoutMs
       ? { global: { fetch: createTimedFetch(options.timeoutMs) } }
       : {}),

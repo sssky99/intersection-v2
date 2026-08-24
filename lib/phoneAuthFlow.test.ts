@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isProfileSetupFailure,
   otpFailureCode,
+  otpSendFailureCode,
   phoneAuthDestination,
   phoneAuthErrorMessage,
   profileRecoveryMessage,
@@ -21,6 +22,13 @@ describe("phone authentication failures", () => {
     expect(phoneAuthErrorMessage("ACCOUNT_BLOCKED")).toBe(
       "오류가 발생했습니다.\n하단 카카오톡 채널로 문의해주세요.",
     );
+  });
+
+  it("does not present OTP delivery failures as an invalid verification code", () => {
+    expect(otpSendFailureCode("context deadline exceeded")).toBe("OTP_SEND_FAILED");
+    expect(otpSendFailureCode("AuthRetryableFetchError: 504")).toBe("OTP_SEND_FAILED");
+    expect(otpSendFailureCode("SMS rate limit exceeded")).toBe("OTP_RATE_LIMITED");
+    expect(otpSendFailureCode("User is banned")).toBe("ACCOUNT_BLOCKED");
   });
 
   it("does not tell an authenticated user that the OTP was wrong", () => {

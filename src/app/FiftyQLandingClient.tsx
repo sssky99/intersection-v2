@@ -7,6 +7,7 @@ import { trackEvent } from "@/lib/analytics";
 import {
   isProfileSetupFailure,
   otpFailureCode,
+  otpSendFailureCode,
   PhoneAuthError,
   phoneAuthDestination,
   phoneAuthErrorMessage,
@@ -71,6 +72,12 @@ function internationalPhone(value: string) {
   return digits.startsWith("0") ? `+82${digits.slice(1)}` : `+82${digits}`;
 }
 
+function hasSupabaseAuthCookie() {
+  return document.cookie
+    .split(";")
+    .some((cookie) => /^sb-[a-z0-9]+-auth-token(?:\.\d+)?=/.test(cookie.trim()));
+}
+
 function authErrorMessage(message: string, step: AuthStep) {
   const normalized = message.toLowerCase();
   if (normalized.includes("rate") || normalized.includes("seconds")) {
@@ -127,6 +134,10 @@ export function FiftyQLandingClient({
 
     let mounted = true;
     if (trackLandingView) trackEvent("landing_view");
+    if (!hasSupabaseAuthCookie()) {
+      setAuthChecked(true);
+      return;
+    }
     const timer = window.setTimeout(() => {
       void createClient({ timeoutMs: 3000 }).auth.getUser().then(async ({ data }) => {
         if (!mounted) return;
@@ -236,7 +247,9 @@ export function FiftyQLandingClient({
       phone: internationalPhone(localPhone),
       options: { shouldCreateUser: true },
     });
-    if (sendError) throw new PhoneAuthError(otpFailureCode(sendError.message));
+    if (sendError) {
+      throw new PhoneAuthError(otpSendFailureCode(sendError.message));
+    }
 
     trackEvent("otp_send_success", { source: authSource });
 

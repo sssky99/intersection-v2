@@ -5,11 +5,13 @@ import { createTimedFetch } from '@/lib/timedFetch';
 
 export async function createClient(options?: { timeoutMs?: number }) {
   const cookieStore = await cookies();
+  const timeoutMs = options?.timeoutMs ?? 5000;
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
-    ...(options?.timeoutMs
-      ? { global: { fetch: createTimedFetch(options.timeoutMs) } }
-      : {}),
+    db: {
+      retry: false,
+    },
+    global: { fetch: createTimedFetch(timeoutMs) },
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -692,6 +692,7 @@ export function AdminPageClient({
   const [profilesLoading, setProfilesLoading] = useState(false);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [answersDownloadLoading, setAnswersDownloadLoading] = useState(false);
   const [membershipSaveError, setMembershipSaveError] = useState<string | null>(
     null,
   );
@@ -766,10 +767,67 @@ export function AdminPageClient({
     }
   }, [authenticated, profilesLoaded, profilesLoading]);
 
+  const downloadAllApplicantAnswers = useCallback(async () => {
+    if (!authenticated || answersDownloadLoading) return;
+
+    setAnswersDownloadLoading(true);
+    setProfilesError(null);
+    try {
+      const response = await fetch("/api/admin/profiles?includeDetails=1", {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("answers-download-load-failed");
+
+      const data = (await response.json()) as { profiles?: AdminProfile[] };
+      downloadApplicantAnswersTsv(data.profiles ?? []);
+    } catch {
+      setProfilesError(
+        "답변 다운로드 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.",
+      );
+    } finally {
+      setAnswersDownloadLoading(false);
+    }
+  }, [answersDownloadLoading, authenticated]);
+
   useEffect(() => {
     if (activeTab !== "applicants" || profilesLoaded || profilesLoading) return;
     void loadProfiles();
   }, [activeTab, loadProfiles, profilesLoaded, profilesLoading]);
+
+  useEffect(() => {
+    if (!selectedProfileId) return;
+    const selected = profiles.find(
+      (profile) => profile.user_id === selectedProfileId,
+    );
+    if (!selected || selected.details_loaded) return;
+
+    const controller = new AbortController();
+    const loadProfileDetails = async () => {
+      try {
+        const response = await fetch(
+          `/api/admin/profiles?userId=${encodeURIComponent(selectedProfileId)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!response.ok) throw new Error("profile-detail-load-failed");
+
+        const data = (await response.json()) as { profile?: AdminProfile };
+        if (!data.profile) throw new Error("profile-detail-missing");
+        setProfiles((current) =>
+          current.map((profile) =>
+            profile.user_id === data.profile?.user_id ? data.profile : profile,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setProfileSaveError(
+          "신청자 상세 정보를 불러오지 못했습니다. 잠시 후 다시 선택해주세요.",
+        );
+      }
+    };
+
+    void loadProfileDetails();
+    return () => controller.abort();
+  }, [profiles, selectedProfileId]);
 
   const selectTab = (tabId: AdminTab) => {
     setActiveTab(tabId);
@@ -1181,7 +1239,8 @@ export function AdminPageClient({
                 onSelectProfile={setSelectedProfileId}
                 onCloseDetail={() => setSelectedProfileId(null)}
                 onReload={() => void loadProfiles(true)}
-                onAnswersDownload={() => downloadApplicantAnswersTsv(profiles)}
+                onAnswersDownload={() => void downloadAllApplicantAnswers()}
+                answersDownloadLoading={answersDownloadLoading}
                 onMembershipStatusChange={changeMembershipStatus}
                 onProfileDetailSave={saveProfileDetails}
               />
@@ -1286,6 +1345,7 @@ function ApplicantsPanel({
   onCloseDetail,
   onReload,
   onAnswersDownload,
+  answersDownloadLoading,
   onMembershipStatusChange,
   onProfileDetailSave,
 }: {
@@ -1320,6 +1380,7 @@ function ApplicantsPanel({
   onCloseDetail: () => void;
   onReload: () => void;
   onAnswersDownload: () => void;
+  answersDownloadLoading: boolean;
   onMembershipStatusChange: (
     userId: string,
     status: MembershipStatus,
@@ -1353,11 +1414,11 @@ function ApplicantsPanel({
               <button
                 type="button"
                 onClick={onAnswersDownload}
-                disabled={totalCount === 0}
+                disabled={totalCount === 0 || answersDownloadLoading}
                 className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-white px-3.5 text-sm font-semibold text-black/60 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
               >
                 <Download size={15} aria-hidden />
-                답변 다운로드
+                {answersDownloadLoading ? "답변 준비 중" : "답변 다운로드"}
               </button>
 
               <div className="flex rounded-xl bg-[#f2f3f1] p-1">

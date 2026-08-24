@@ -707,38 +707,48 @@ async function fetchAtmosphereWaitlistRows(
   const templateIds = unique(instances.map((instance) => instance.template_id));
   const waitlistSelect =
     "user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status";
-  const rows: AtmosphereWaitlistRow[] = [];
-
-  const { data: byInstanceId, error: byInstanceIdError } = await supabase
-    .from("ticket_participations")
-    .select(waitlistSelect)
-    .in("ticket_instance_id", instanceIds)
-    .in("status", atmosphereWaitlistStatuses)
-    .returns<AtmosphereWaitlistRow[]>();
-  if (byInstanceIdError) throw byInstanceIdError;
-  rows.push(...(byInstanceId ?? []));
-
-  const { data: byTicketId, error: byTicketIdError } = await supabase
-    .from("ticket_participations")
-    .select(waitlistSelect)
-    .in("ticket_id", instanceIds)
-    .in("status", atmosphereWaitlistStatuses)
-    .returns<AtmosphereWaitlistRow[]>();
-  if (byTicketIdError) throw byTicketIdError;
-  rows.push(...(byTicketId ?? []));
-
-  if (templateIds.length > 0) {
-    const { data: byTemplateId, error: byTemplateIdError } = await supabase
+  const queries = [
+    supabase
       .from("ticket_participations")
       .select(waitlistSelect)
-      .in("ticket_template_id", templateIds)
+      .in("ticket_instance_id", instanceIds)
       .in("status", atmosphereWaitlistStatuses)
-      .returns<AtmosphereWaitlistRow[]>();
-    if (byTemplateIdError) throw byTemplateIdError;
-    rows.push(...(byTemplateId ?? []));
+      .returns<AtmosphereWaitlistRow[]>(),
+    supabase
+      .from("ticket_participations")
+      .select(waitlistSelect)
+      .in("ticket_id", instanceIds)
+      .in("status", atmosphereWaitlistStatuses)
+      .returns<AtmosphereWaitlistRow[]>(),
+  ];
+
+  if (templateIds.length > 0) {
+    queries.push(
+      supabase
+        .from("ticket_participations")
+        .select(waitlistSelect)
+        .in("ticket_template_id", templateIds)
+        .in("status", atmosphereWaitlistStatuses)
+        .returns<AtmosphereWaitlistRow[]>(),
+    );
   }
 
-  return rows;
+  const [byInstanceResult, byTicketResult, byTemplateResult] =
+    await Promise.all(queries);
+  const { data: byInstanceId, error: byInstanceIdError } = byInstanceResult;
+  if (byInstanceIdError) throw byInstanceIdError;
+  const { data: byTicketId, error: byTicketIdError } = byTicketResult;
+  if (byTicketIdError) throw byTicketIdError;
+  if (byTemplateResult?.error) {
+    const byTemplateIdError = byTemplateResult.error;
+    if (byTemplateIdError) throw byTemplateIdError;
+  }
+
+  return [
+    ...(byInstanceId ?? []),
+    ...(byTicketId ?? []),
+    ...(byTemplateResult?.data ?? []),
+  ];
 }
 
 function atmosphereDefaultsByInstance(
@@ -1387,7 +1397,9 @@ export async function GET(request: Request) {
     const [waitlistResult, applicationResult] = await Promise.all([
       supabase
         .from("ticket_participations")
-        .select("*")
+        .select(
+          "id,user_id,ticket_id,ticket_template_id,ticket_instance_id,meeting_date,status,ticket_snapshot,arrival_status,arrival_status_updated_at,created_at,updated_at",
+        )
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
       supabase
@@ -1654,24 +1666,27 @@ export async function GET(request: Request) {
 
     let memberArrivalRows: MemberArrivalRow[] = [];
     if (memberInstanceIds.length > 0) {
-      const { data: byInstanceId, error: byInstanceIdError } = await supabase
-        .from("ticket_participations")
-        .select(
-          "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
-        )
-        .in("ticket_instance_id", memberInstanceIds)
-        .in("status", Array.from(confirmedStatuses))
-        .returns<MemberArrivalRow[]>();
+      const [byInstanceResult, byTicketResult] = await Promise.all([
+        supabase
+          .from("ticket_participations")
+          .select(
+            "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
+          )
+          .in("ticket_instance_id", memberInstanceIds)
+          .in("status", Array.from(confirmedStatuses))
+          .returns<MemberArrivalRow[]>(),
+        supabase
+          .from("ticket_participations")
+          .select(
+            "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
+          )
+          .in("ticket_id", memberInstanceIds)
+          .in("status", Array.from(confirmedStatuses))
+          .returns<MemberArrivalRow[]>(),
+      ]);
+      const { data: byInstanceId, error: byInstanceIdError } = byInstanceResult;
       if (byInstanceIdError) throw byInstanceIdError;
-
-      const { data: byTicketId, error: byTicketIdError } = await supabase
-        .from("ticket_participations")
-        .select(
-          "user_id,ticket_instance_id,ticket_id,status,arrival_status,arrival_status_updated_at",
-        )
-        .in("ticket_id", memberInstanceIds)
-        .in("status", Array.from(confirmedStatuses))
-        .returns<MemberArrivalRow[]>();
+      const { data: byTicketId, error: byTicketIdError } = byTicketResult;
       if (byTicketIdError) throw byTicketIdError;
 
       memberArrivalRows = [...(byInstanceId ?? []), ...(byTicketId ?? [])];

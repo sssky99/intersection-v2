@@ -118,7 +118,9 @@ const eventSelect =
 const detailRowsLimit = 2000;
 const maxDetailAnonymousIds = 50;
 const summaryPageSize = 1000;
-const maxSummaryRows = 100000;
+// Keep the operational dashboard bounded. Historical ad-hoc analysis belongs
+// in a pre-aggregated report, not a request that expands the full event table.
+const maxSummaryRows = 10000;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -243,7 +245,7 @@ function addTimelineRows(
 }
 
 async function fetchSummaryRows(start: string) {
-  const supabase = createAdminClient();
+  const supabase = createAdminClient({ timeoutMs: 5000 });
   const rows: UserEventRow[] = [];
 
   for (let from = 0; from < maxSummaryRows; from += summaryPageSize) {
@@ -272,7 +274,7 @@ async function fetchUserTimeline({
   profileId: string | null;
   start: string;
 }) {
-  const supabase = createAdminClient();
+  const supabase = createAdminClient({ timeoutMs: 5000 });
   const rowMap = new Map<string, UserEventRow>();
   const anonymousSessionIds = new Set<string>();
 
@@ -317,7 +319,7 @@ async function fetchUserTimeline({
 }
 
 async function identityLookup(rows: UserEventRow[]): Promise<IdentityLookup> {
-  const supabase = createAdminClient();
+  const supabase = createAdminClient({ timeoutMs: 5000 });
   const profileIds = new Set<string>();
   const anonymousProfileIds = new Map<string, string>();
 
@@ -425,7 +427,7 @@ export async function GET(request: NextRequest) {
   );
 
   try {
-    const supabase = createAdminClient();
+    const supabase = createAdminClient({ timeoutMs: 5000 });
 
     if (detailProfileId || detailAnonymousSessionId) {
       const timelineRows = await fetchUserTimeline({
@@ -551,7 +553,7 @@ export async function GET(request: NextRequest) {
     console.error("[admin user events]", error);
     return NextResponse.json(
       { error: "Visitor events could not be loaded." },
-      { status: 500 },
+      { status: 503, headers: { "Retry-After": "5" } },
     );
   }
 }

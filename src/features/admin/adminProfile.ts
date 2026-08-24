@@ -70,6 +70,7 @@ export type AdminProfile = {
   active_membership?: boolean;
   expired_membership?: boolean;
   one_time_paid?: boolean;
+  details_loaded?: boolean;
 };
 
 export function hasActiveMembership(profile: AdminProfile) {
@@ -104,5 +105,6 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     active_membership: hasActiveMembership(profile),
     expired_membership: hasExpiredMembership(profile),
     one_time_paid: profile.one_time_paid ?? false,
+    details_loaded: profile.details_loaded ?? false,
   };
 }
