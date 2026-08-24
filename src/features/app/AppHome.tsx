@@ -641,6 +641,7 @@ export function AppHome({
   const [recommendationFocusMode, setRecommendationFocusMode] = useState(false);
   const [recommendationBottomNavHidden, setRecommendationBottomNavHidden] =
     useState(false);
+  const [profileBottomNavHidden, setProfileBottomNavHidden] = useState(false);
   const [ticketTabFocusMode, setTicketTabFocusMode] = useState(false);
   const [availableMeetingTickets, setAvailableMeetingTickets] = useState<
     GatheringTicket[]
@@ -1627,6 +1628,7 @@ export function AppHome({
               <PreferenceProfileTab
                 profile={currentProfile}
                 initialAccountOpen={initialProfileAccountOpen}
+                onBottomNavHiddenChange={setProfileBottomNavHidden}
                 loggingOut={loggingOut}
                 logoutError={logoutError}
                 answers={preferenceProfileEnabled ? answers : {}}
@@ -1770,6 +1772,7 @@ export function AppHome({
       {!chatRoomOpen &&
         !recommendationFocusMode &&
         !recommendationBottomNavHidden &&
+        !profileBottomNavHidden &&
         !ticketTabFocusMode &&
         !replayedDeclinedTicket && (
         <nav

@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Brain,
   CalendarDays,
   Camera,
   Check,
@@ -10,18 +9,12 @@ import {
   ChevronRight,
   CircleHelp,
   Crown,
-  Footprints,
-  Gem,
-  Heart,
   Info,
   Loader2,
-  MapPin,
   Menu,
   MessageCircle,
   PenLine,
   Phone,
-  Scale,
-  Sparkles,
   UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -351,6 +344,52 @@ function IntersectionHowItWorks({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ProfileQuestionCard({
+  title,
+  countLabel,
+  percent,
+  imageSrc,
+  onClick,
+}: {
+  title: string;
+  countLabel: string;
+  percent: number;
+  imageSrc: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-4 text-center shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
+    >
+      <span className="absolute right-4 top-4 z-10 text-[11px] font-black text-black/36">
+        {percent}%
+      </span>
+      <span className="flex h-full flex-col items-center">
+        <span className="relative mt-1 block min-h-0 w-full flex-1">
+          <Image
+            src={imageSrc}
+            alt={`${title} 질문 일러스트`}
+            fill
+            unoptimized
+            sizes="(max-width: 430px) 42vw, 170px"
+            className="object-contain transition duration-300 group-hover:scale-[1.02]"
+          />
+        </span>
+        <span className="mt-auto block w-full pb-1 text-center">
+          <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
+            {title}
+          </span>
+          <span className="mt-1 block text-[11px] font-semibold text-black/38">
+            {countLabel}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function BasicQuestionsSection({
   answers,
   backgroundAnsweredCount,
@@ -487,190 +526,62 @@ function BasicQuestionsSection({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
+          <ProfileQuestionCard
+            title="배경"
+            countLabel={`${profileSectionBackgroundQuestions.length}개 질문`}
+            percent={backgroundPercent}
+            imageSrc="/images/profile-questions/background-card.png"
             onClick={onOpenBackground}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {backgroundPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <MapPin size={19} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  배경
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionBackgroundQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="활동성"
+            countLabel={`${profileSectionActivityQuestions.length}개 질문`}
+            percent={activityPercent}
+            imageSrc="/images/profile-questions/activity-card.png"
             onClick={onOpenActivity}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {activityPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Footprints size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  활동성
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionActivityQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="흥미"
+            countLabel={`${profileSectionInterestQuestions.length}개 질문`}
+            percent={interestPercent}
+            imageSrc="/images/profile-questions/interest-card.png"
             onClick={onOpenInterest}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {interestPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Sparkles size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  흥미
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionInterestQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="관점"
+            countLabel={`${profileSectionValuesQuestions.length}개 질문`}
+            percent={valuesPercent}
+            imageSrc="/images/profile-questions/perspective-card.png"
             onClick={onOpenValues}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {valuesPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Scale size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  관점
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionValuesQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="선호"
+            countLabel={`${profileSectionPreferenceQuestions.length}개 질문`}
+            percent={preferencePercent}
+            imageSrc="/images/profile-questions/preference-card.png"
             onClick={onOpenPreference}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {preferencePercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Heart size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  선호
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionPreferenceQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="성향"
+            countLabel={`${profileSectionTraitsQuestions.length}개 질문`}
+            percent={traitsPercent}
+            imageSrc="/images/profile-questions/traits-card.png"
             onClick={onOpenTraits}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {traitsPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Brain size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  성향
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionTraitsQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="가치"
+            countLabel={`${profileSectionValueQuestions.length}개 질문`}
+            percent={valuePercent}
+            imageSrc="/images/profile-questions/values-card.png"
             onClick={onOpenValue}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {valuePercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <Gem size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  가치
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {profileSectionValueQuestions.length}개 질문
-                </span>
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
+          />
+          <ProfileQuestionCard
+            title="자기정보"
+            countLabel={`${selfQuestionCount}개 항목`}
+            percent={selfPercent}
+            imageSrc="/images/profile-questions/self-card.png"
             onClick={onOpenSelf}
-            className="group relative aspect-square overflow-hidden rounded-[24px] border border-black/[0.08] bg-[#faf8f2] p-5 text-left shadow-[0_14px_40px_rgba(24,24,20,0.05)] transition hover:-translate-y-0.5 hover:bg-[#f1eee6]"
-          >
-            <span className="absolute right-4 top-4 text-[11px] font-black text-black/36">
-              {selfPercent}%
-            </span>
-            <span className="flex h-full flex-col justify-between">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-black/10 bg-[#f1eee6] text-black/60">
-                <UserRound size={20} aria-hidden />
-              </span>
-              <span>
-                <span className="block text-[16px] font-black tracking-[-0.03em] text-black">
-                  자기정보
-                </span>
-                <span className="mt-1 block text-[11px] font-semibold text-black/38">
-                  {selfQuestionCount}개 항목
-                </span>
-              </span>
-            </span>
-          </button>
-
+          />
         </div>
       </div>
     </section>
@@ -792,6 +703,7 @@ export function PreferenceProfileTab({
   onOpenSelfQuestions = () => undefined,
   onOpenQuestionReview = () => undefined,
   showOperatorQuestionReview = false,
+  onBottomNavHiddenChange = () => undefined,
   onLogout,
   previewMode = false,
 }: {
@@ -820,6 +732,7 @@ export function PreferenceProfileTab({
   onOpenSelfQuestions?: () => void;
   onOpenQuestionReview?: () => void;
   showOperatorQuestionReview?: boolean;
+  onBottomNavHiddenChange?: (hidden: boolean) => void;
   onLogout: () => Promise<void>;
   previewMode?: boolean;
 }) {
@@ -846,6 +759,11 @@ export function PreferenceProfileTab({
   useEffect(() => {
     if (!editing) setDraft(initialDraft);
   }, [editing, initialDraft]);
+
+  useEffect(() => {
+    onBottomNavHiddenChange(howItWorksOpen);
+    return () => onBottomNavHiddenChange(false);
+  }, [howItWorksOpen, onBottomNavHiddenChange]);
 
   useEffect(
     () => () => {
