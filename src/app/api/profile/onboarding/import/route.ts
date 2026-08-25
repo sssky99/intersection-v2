@@ -74,6 +74,7 @@ export async function POST(request: Request) {
         answers?: unknown;
         profile?: Record<string, unknown>;
         photoUrl?: unknown;
+        allowMissingPhotoDueToUploadFailure?: unknown;
         analyticsSessionId?: unknown;
       }
     | null;
@@ -114,6 +115,8 @@ export async function POST(request: Request) {
   const birthYear = birthDate.slice(0, 4);
   const mbti = rowsByOrder.get(31)?.answer_value?.trim().toUpperCase() ?? text(body?.profile?.mbti).toUpperCase();
   const photoUrl = text(body?.photoUrl);
+  const allowMissingPhotoDueToUploadFailure =
+    body?.allowMissingPhotoDueToUploadFailure === true;
   const year = Number(birthYear);
 
   if (
@@ -126,7 +129,7 @@ export async function POST(request: Request) {
     year > 2007 ||
     !mbti ||
     mbti.length > 20 ||
-    !photoUrl
+    (!photoUrl && !allowMissingPhotoDueToUploadFailure)
   ) {
     return NextResponse.json(
       { error: "Profile information is incomplete." },
@@ -189,7 +192,7 @@ export async function POST(request: Request) {
       birth_year: birthYear,
       birth_date: birthDate,
       mbti,
-      photo_url: photoUrl,
+      photo_url: photoUrl || null,
       questions_completed: true,
       profile_completed: true,
       questions_completed_at: completionAt,

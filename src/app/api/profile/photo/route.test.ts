@@ -16,18 +16,28 @@ function request(storagePath: string) {
   });
 }
 
-function adminClient(options?: { updateFails?: boolean }) {
+function adminClient(options?: {
+  updateFails?: boolean;
+  verificationMisses?: number;
+}) {
   const remove = vi.fn(async () => ({ error: null }));
+  let verificationAttempts = 0;
   const storageBucket = {
-    list: vi.fn(async () => ({
-      data: [
-        {
-          name: "123-photo.jpg",
-          metadata: { mimetype: "image/jpeg", size: 1024 },
-        },
-      ],
-      error: null,
-    })),
+    list: vi.fn(async () => {
+      verificationAttempts += 1;
+      return {
+        data:
+          verificationAttempts <= (options?.verificationMisses ?? 0)
+            ? []
+            : [
+                {
+                  name: "123-photo.jpg",
+                  metadata: { mimetype: "image/jpeg", size: 1024 },
+                },
+              ],
+        error: null,
+      };
+    }),
     getPublicUrl: vi.fn(() => ({
       data: { publicUrl: "https://example.test/123-photo.jpg" },
     })),
@@ -52,6 +62,7 @@ function adminClient(options?: { updateFails?: boolean }) {
       from: vi.fn(() => profileQuery),
     },
     remove,
+    list: storageBucket.list,
   };
 }
 
@@ -93,6 +104,20 @@ describe("/api/profile/photo", () => {
       photoUrl: "https://example.test/123-photo.jpg",
     });
     expect(admin.remove).not.toHaveBeenCalled();
+  });
+
+  it("retries when a new storage object is not immediately visible", async () => {
+    createClientMock.mockResolvedValue({
+      auth: {
+        getUser: vi.fn(async () => ({ data: { user: { id: "user-1" } } })),
+      },
+    });
+    const admin = adminClient({ verificationMisses: 1 });
+    createAdminClientMock.mockReturnValue(admin.client);
+    const { POST } = await import("./route");
+    const response = await POST(request("user-1/123-photo.jpg"));
+    expect(response.status).toBe(200);
+    expect(admin.list).toHaveBeenCalledTimes(2);
   });
 
   it("removes the uploaded file when the profile update fails", async () => {

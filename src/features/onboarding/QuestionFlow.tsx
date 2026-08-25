@@ -730,6 +730,7 @@ export function QuestionFlow({
   const [collectingPhoto, setCollectingPhoto] = useState(resumeAtPhotoStep);
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
   const [pendingFinalAnswers, setPendingFinalAnswers] =
     useState<AnswerMap | null>(resumeAtPhotoStep ? initialAnswers : null);
   const [saving, setSaving] = useState(false);
@@ -1027,7 +1028,10 @@ export function QuestionFlow({
     setSaving(false);
   };
 
-  const completeOrMoveNext = async (nextAnswers: AnswerMap) => {
+  const completeOrMoveNext = async (
+    nextAnswers: AnswerMap,
+    allowMissingPhotoDueToUploadFailure = false,
+  ) => {
     const missingIndex = questions.findIndex(
       (item) => !isComplete(item, nextAnswers[item.id]),
     );
@@ -1065,6 +1069,7 @@ export function QuestionFlow({
           completionRequestMode ??
           (isRegeneration ? "regeneration" : "onboarding"),
         analyticsSessionId: analyticsSessionId(),
+        allowMissingPhotoDueToUploadFailure,
       }),
     }).catch(() => null);
 
@@ -1421,6 +1426,7 @@ export function QuestionFlow({
     if (!file || photoUploading || (!isGuest && !userId)) return;
 
     setPhotoUploading(true);
+    setPhotoUploadFailed(false);
     setError(null);
     try {
       if (isGuest) {
@@ -1440,6 +1446,7 @@ export function QuestionFlow({
       }
       const nextPhotoUrl = await uploadProfilePhoto(userId!, file);
       setPhotoUrl(nextPhotoUrl);
+      setPhotoUploadFailed(false);
       onPhotoChanged?.(nextPhotoUrl);
       trackEvent("profile_photo_submitted", {
         flow_order: totalFlowSteps,
@@ -1452,6 +1459,7 @@ export function QuestionFlow({
       });
     } catch (photoError) {
       console.error("Failed to upload final profile photo:", photoError);
+      setPhotoUploadFailed(true);
       setError(
         photoError instanceof Error
           ? photoError.message
@@ -1462,9 +1470,9 @@ export function QuestionFlow({
     }
   };
 
-  const continueFromPhoto = async () => {
+  const continueFromPhoto = async (allowMissingPhoto = false) => {
     if (
-      !photoUrl ||
+      (!photoUrl && !(allowMissingPhoto && photoUploadFailed)) ||
       (!isPreview && !pendingFinalAnswers) ||
       !beginSaving()
     ) return;
@@ -1474,7 +1482,7 @@ export function QuestionFlow({
       if (isPreview) {
         await onPreviewComplete?.();
       } else if (pendingFinalAnswers) {
-        await completeOrMoveNext(pendingFinalAnswers);
+        await completeOrMoveNext(pendingFinalAnswers, allowMissingPhoto);
       }
       setCollectingPhoto(false);
     } catch (completionError) {
@@ -1729,6 +1737,24 @@ export function QuestionFlow({
                 )}
               </AnimatePresence>
             </div>
+            {photoUploadFailed &&
+              !isRegeneration &&
+              !photoUrl &&
+              !photoUploading && (
+              <div className="mt-2 text-center">
+                <p className="text-xs font-semibold leading-5 text-black/45">
+                  사진은 프로필에서 나중에 등록할 수 있어요.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void continueFromPhoto(true)}
+                  disabled={saving}
+                  className="mt-2 rounded-full border border-black/15 px-5 py-2.5 text-xs font-bold text-black/65 transition active:scale-[0.98] disabled:opacity-40"
+                >
+                  사진 없이 계속하기
+                </button>
+              </div>
+            )}
           </div>
         </motion.div>
 

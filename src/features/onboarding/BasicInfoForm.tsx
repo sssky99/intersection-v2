@@ -113,12 +113,19 @@ export function BasicInfoForm({
   const [visibleStepCount, setVisibleStepCount] = useState(1);
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const startTrackedRef = useRef(false);
   const viewedStepsRef = useRef(new Set<BasicInfoStepKey>());
   const canSave = useMemo(
-    () => basicInfoSteps.every((step) => isStepComplete(step.key, draft)),
-    [draft],
+    () =>
+      basicInfoSteps.every((step) =>
+        step.key === "photo"
+          ? isStepComplete(step.key, draft) ||
+            (!isGuest && !isRegeneration && photoUploadFailed)
+          : isStepComplete(step.key, draft),
+      ),
+    [draft, isGuest, isRegeneration, photoUploadFailed],
   );
   const visibleSteps = basicInfoSteps.slice(0, visibleStepCount);
   const allStepsVisible = visibleStepCount >= basicInfoSteps.length;
@@ -131,7 +138,7 @@ export function BasicInfoForm({
     birthYearHasFourDigits && !isStepComplete("birthYear", draft);
   const finalIncompleteLabel = birthYearOutOfRange
     ? "1980~2007년생만 가능해요"
-    : !isStepComplete("photo", draft)
+    : !isStepComplete("photo", draft) && !photoUploadFailed
       ? "사진을 선택해주세요"
       : "입력 정보를 확인해주세요";
   const finalButtonVisible = allStepsVisible;
@@ -213,6 +220,7 @@ export function BasicInfoForm({
     if (!file || photoUploading) return;
 
     setPhotoUploading(true);
+    setPhotoUploadFailed(false);
     setError(null);
     try {
       if (isGuest) {
@@ -239,11 +247,15 @@ export function BasicInfoForm({
       }
 
       setDraft((current) => ({ ...current, photoUrl }));
-    } catch {
+      setPhotoUploadFailed(false);
+    } catch (photoError) {
+      setPhotoUploadFailed(!isGuest && !isRegeneration);
       setError(
         isGuest
           ? "사진을 임시 저장하지 못했어요. 잠시 후 다시 선택해주세요."
-          : "사진 업로드에 실패했어요. 파일과 profile-photos 버킷 설정을 확인해주세요.",
+          : photoError instanceof Error
+            ? photoError.message
+            : "사진 업로드에 실패했어요. 잠시 후 다시 시도해주세요.",
       );
     } finally {
       setPhotoUploading(false);
@@ -313,6 +325,8 @@ export function BasicInfoForm({
         birthYear: draft.birthYear,
         mbti: draft.mbti.toUpperCase(),
         photoUrl: draft.photoUrl,
+        allowMissingPhotoDueToUploadFailure:
+          photoUploadFailed && !draft.photoUrl,
       }),
     }).catch(() => null);
 
@@ -485,6 +499,12 @@ export function BasicInfoForm({
             )}
           </span>
         </label>
+        {photoUploadFailed && !draft.photoUrl && !photoUploading && (
+          <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
+            업로드가 계속 실패하면 아래 완료 버튼으로 넘어갈 수 있어요. 사진은
+            프로필에서 나중에 등록해주세요.
+          </p>
+        )}
       </div>
     );
   };

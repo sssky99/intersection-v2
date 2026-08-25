@@ -75,8 +75,14 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json().catch(() => null)) as
-    | { mode?: unknown; analyticsSessionId?: unknown }
+    | {
+        mode?: unknown;
+        analyticsSessionId?: unknown;
+        allowMissingPhotoDueToUploadFailure?: unknown;
+      }
     | null;
+  const allowMissingPhotoDueToUploadFailure =
+    body?.allowMissingPhotoDueToUploadFailure === true;
   const isPreferenceRegeneration =
     body?.mode === "preferences-v2-regeneration";
   const isPreferenceUpgrade = body?.mode === "preferences-v2-upgrade";
@@ -84,6 +90,8 @@ export async function POST(request: Request) {
     body?.mode === "regeneration" ||
     isPreferenceRegeneration ||
     isPreferenceUpgrade;
+  const canSkipPhotoAfterUploadFailure =
+    allowMissingPhotoDueToUploadFailure && !isRegeneration;
   const answerTable = isRegeneration ? "profile_regeneration_answers" : "user_answers";
   const admin = createAdminClient();
   const { data: profile } = await admin
@@ -106,7 +114,7 @@ export async function POST(request: Request) {
       (profile.gender !== "여성" && profile.gender !== "남성") ||
       !profile.birth_date ||
       !profile.mbti?.trim() ||
-      !profile.photo_url)
+      (!profile.photo_url && !canSkipPhotoAfterUploadFailure))
   ) {
     return NextResponse.json(
       { error: "Required profile details are incomplete." },

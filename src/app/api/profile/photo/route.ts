@@ -11,6 +11,12 @@ const allowedStoredPhotoTypes = new Set([
   "image/heic",
   "image/heif",
 ]);
+const verificationRetryDelaysMs = [0, 120, 300, 600];
+
+async function wait(ms: number) {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function ownedPhotoPath(userId: string, value: unknown) {
   if (typeof value !== "string" || value.length > 500) return null;
@@ -41,13 +47,26 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
   const filename = storagePath.slice(user.id.length + 1);
-  const { data: files, error: listError } = await admin.storage
-    .from(bucket)
-    .list(user.id, { limit: 10, search: filename });
+  let storedFile:
+    | { name: string; metadata?: Record<string, unknown> | null }
+    | undefined;
+  let lastListError: { message?: string } | null = null;
 
-  const storedFile = files?.find((file) => file.name === filename);
-  if (listError || !storedFile) {
-    console.error("Uploaded profile photo verification failed:", listError?.message);
+  for (const delayMs of verificationRetryDelaysMs) {
+    await wait(delayMs);
+    const { data: files, error: listError } = await admin.storage
+      .from(bucket)
+      .list(user.id, { limit: 10, search: filename });
+    lastListError = listError;
+    storedFile = files?.find((file) => file.name === filename);
+    if (storedFile) break;
+  }
+
+  if (!storedFile) {
+    console.error(
+      "Uploaded profile photo verification failed:",
+      lastListError?.message ?? "uploaded object was not visible after retries",
+    );
     return NextResponse.json({ error: "Uploaded photo was not found." }, { status: 409 });
   }
 

@@ -31,6 +31,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
   const [photoUrl, setPhotoUrl] = useState("");
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profileArchetypeId, setProfileArchetypeId] =
     useState<ProfileArchetypeId | null>(null);
@@ -87,6 +88,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
   const choosePhoto = async (file: File | null) => {
     if (!file || !draft || savingPhoto || importing) return;
     setSavingPhoto(true);
+    setPhotoUploadFailed(false);
     setError(null);
     try {
       await saveGuestProfilePhoto(file, draft.id);
@@ -99,13 +101,28 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
     }
   };
 
-  const completeProfile = async () => {
+  const completeProfile = async (allowMissingPhoto = false) => {
     if (!draft || !photo || importing || savingPhoto) return;
     setImporting(true);
     setError(null);
 
     try {
-      const uploadedPhotoUrl = await uploadProfilePhoto(userId, photo);
+      let uploadedPhotoUrl = "";
+      if (!allowMissingPhoto) {
+        try {
+          uploadedPhotoUrl = await uploadProfilePhoto(userId, photo);
+          setPhotoUploadFailed(false);
+        } catch (photoError) {
+          console.error("Guest profile photo upload failed:", photoError);
+          setPhotoUploadFailed(true);
+          setError(
+            photoError instanceof Error
+              ? photoError.message
+              : "사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.",
+          );
+          return;
+        }
+      }
       const response = await fetch("/api/profile/onboarding/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,6 +130,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
           answers: draft.answers,
           profile: draft.profile,
           photoUrl: uploadedPhotoUrl,
+          allowMissingPhotoDueToUploadFailure: allowMissingPhoto,
           analyticsSessionId: analyticsSessionId(),
         }),
       });
@@ -281,6 +299,21 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
               )}
             </AnimatePresence>
           </div>
+          {photoUploadFailed && !savingPhoto && (
+            <div className="mt-2 text-center">
+              <p className="text-xs font-semibold leading-5 text-black/45">
+                사진은 프로필에서 나중에 등록할 수 있어요.
+              </p>
+              <button
+                type="button"
+                onClick={() => void completeProfile(true)}
+                disabled={importing}
+                className="mt-2 rounded-full border border-black/15 px-5 py-2.5 text-xs font-bold text-black/65 transition active:scale-[0.98] disabled:opacity-40"
+              >
+                사진 없이 계속하기
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
 

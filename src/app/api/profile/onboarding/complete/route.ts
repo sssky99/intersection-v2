@@ -26,11 +26,14 @@ export async function POST(request: Request) {
   const birthYear = text(body?.birthYear);
   const mbti = text(body?.mbti).toUpperCase();
   const photoUrl = text(body?.photoUrl);
+  const allowMissingPhotoDueToUploadFailure =
+    body?.allowMissingPhotoDueToUploadFailure === true;
   const year = Number(birthYear);
 
   if (name.length <= 1 || phoneNormalized.length !== 11 || !gender ||
       !/^\d{4}$/.test(birthYear) || year < 1980 || year > 2007 ||
-      !mbti || mbti.length > 20 || !photoUrl) {
+      !mbti || mbti.length > 20 ||
+      (!photoUrl && !allowMissingPhotoDueToUploadFailure)) {
     return NextResponse.json({ error: "Profile information is incomplete." }, { status: 400 });
   }
 
@@ -42,7 +45,7 @@ export async function POST(request: Request) {
     gender,
     birth_year: birthYear,
     mbti,
-    photo_url: photoUrl,
+    photo_url: photoUrl || null,
     profile_completed: true,
     basic_info_completed_at: new Date().toISOString(),
     profile_completed_at: new Date().toISOString(),

@@ -50,17 +50,30 @@ async function compressProfilePhoto(file: File) {
 }
 
 async function finalizeProfilePhoto(storagePath: string) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const retryDelays = [0, 250, 700];
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (retryDelays[attempt] > 0) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
+    }
     try {
-      return await fetch("/api/profile/photo", {
+      const response = await fetch("/api/profile/photo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storagePath }),
       });
+
+      lastResponse = response;
+      if (response.ok || (response.status !== 409 && response.status < 502)) {
+        return response;
+      }
     } catch (error) {
-      if (attempt === 1) throw error;
+      if (attempt === retryDelays.length - 1) throw error;
     }
   }
+
+  if (lastResponse) return lastResponse;
   throw new Error("Profile photo finalization failed.");
 }
 
