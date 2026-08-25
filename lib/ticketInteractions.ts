@@ -61,7 +61,7 @@ export function ticketInteractionCanRespond(
 export function ticketInteractionShowsDeadline(
   status: TicketInteractionStatus,
 ) {
-  return status !== "no" && status !== "payment_confirmed";
+  return status === "open" || status === "yes";
 }
 
 export function isDirectClientTicketInteractionStatus(

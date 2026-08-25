@@ -40,10 +40,10 @@ describe("ticket interaction presentation", () => {
     ).toBe(false);
   });
 
-  it("shows the deadline until a webhook confirms payment", () => {
+  it("shows the deadline only until payment starts", () => {
     expect(ticketInteractionShowsDeadline("open")).toBe(true);
     expect(ticketInteractionShowsDeadline("yes")).toBe(true);
-    expect(ticketInteractionShowsDeadline("payment_pending")).toBe(true);
+    expect(ticketInteractionShowsDeadline("payment_pending")).toBe(false);
     expect(ticketInteractionShowsDeadline("payment_confirmed")).toBe(false);
     expect(ticketInteractionShowsDeadline("no")).toBe(false);
   });
