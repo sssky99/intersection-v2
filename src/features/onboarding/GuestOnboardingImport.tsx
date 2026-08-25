@@ -95,6 +95,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
       setPhoto(file);
     } catch (photoError) {
       console.error("Guest profile photo save failed:", photoError);
+      setPhotoUploadFailed(true);
       setError("사진을 올리지 못했어요. 다른 사진으로 다시 시도해주세요.");
     } finally {
       setSavingPhoto(false);
@@ -102,13 +103,19 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
   };
 
   const completeProfile = async (allowMissingPhoto = false) => {
-    if (!draft || !photo || importing || savingPhoto) return;
+    if (
+      !draft ||
+      (!photo && !allowMissingPhoto) ||
+      importing ||
+      savingPhoto
+    ) return;
     setImporting(true);
     setError(null);
 
     try {
       let uploadedPhotoUrl = "";
       if (!allowMissingPhoto) {
+        if (!photo) return;
         try {
           uploadedPhotoUrl = await uploadProfilePhoto(userId, photo);
           setPhotoUploadFailed(false);
