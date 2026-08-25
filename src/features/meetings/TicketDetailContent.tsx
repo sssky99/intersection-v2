@@ -514,9 +514,7 @@ export function TicketCoursePanel({
       ? blindDateMapPlace
       : null;
   const selectedAddressMapPlace =
-    variant === "blind-date" &&
-    selectedStep?.place?.name &&
-    selectedStepAddress
+    selectedStep?.place?.name && selectedStepAddress
       ? {
           name: selectedStep.place.name,
           address: selectedStepAddress,

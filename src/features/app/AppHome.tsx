@@ -3746,6 +3746,18 @@ export function StoredTicketDetailView({
   const displayedMatchMemberCount = hasAuthoritativeMembers
     ? matchedMembers.length
     : undefined;
+  const currentGroupMemberIds = new Set(
+    userTicket.members.map((member) => member.id),
+  );
+  const otherGroupMembers = (userTicket.feedbackMembers ?? []).filter(
+    (member) => !member.isSelf && !currentGroupMemberIds.has(member.id),
+  );
+  const otherGroupPhotoUrls = otherGroupMembers
+    .map((member) => member.photoUrl?.trim())
+    .filter((photoUrl): photoUrl is string => Boolean(photoUrl));
+  const displayedOtherMemberPhotoUrls = otherGroupMembers.length > 0
+    ? otherGroupPhotoUrls.slice(0, 6)
+    : previewOtherMemberPhotoUrls;
   const [progressNow, setProgressNow] = useState(() => new Date());
   const [statusOpen, setStatusOpen] = useState(true);
   const [internalProgressStep, setInternalProgressStep] =
@@ -3859,7 +3871,7 @@ export function StoredTicketDetailView({
             previewMode={previewMode}
             participantPhotoUrl={participantPhotoUrl}
             previewMatchPhotoUrls={displayedMatchPhotoUrls}
-            previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
+            previewOtherMemberPhotoUrls={displayedOtherMemberPhotoUrls}
             matchMemberCount={displayedMatchMemberCount}
           />
       </motion.article>
