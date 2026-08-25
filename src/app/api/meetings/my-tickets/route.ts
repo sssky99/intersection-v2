@@ -81,6 +81,7 @@ type InstanceRow = {
 
 type GroupStageLocationOverride = {
   sequence: number;
+  title: string | null;
   placeName: string | null;
   address: string | null;
   place: GatheringTicket["place"];
@@ -298,60 +299,83 @@ async function fetchGroupStageLocationsByInstance(
 
   const { data: stageData, error: stageError } = await supabase
     .from("meeting_event_stages")
-    .select("id,event_id,sequence")
+    .select("id,event_id,sequence,title,location_mode,place_name,address,place_payload")
     .in("event_id", eventIds)
-    .eq("location_mode", "group_specific")
-    .returns<Array<{ id: string; event_id: string; sequence: number }>>();
-  if (stageError) throw stageError;
-
-  const stages = stageData ?? [];
-  const stageIds = unique(stages.map((stage) => stage.id));
-  if (stageIds.length === 0) return result;
-
-  const { data: locationData, error: locationError } = await supabase
-    .from("meeting_group_stage_locations")
-    .select("group_id,stage_id,place_name,address,place_payload")
-    .in("group_id", groupIds)
-    .in("stage_id", stageIds)
+    .neq("location_mode", "hidden")
     .returns<
       Array<{
-        group_id: string;
-        stage_id: string;
+        id: string;
+        event_id: string;
+        sequence: number;
+        title: string | null;
+        location_mode: "shared" | "group_specific";
         place_name: string | null;
         address: string | null;
         place_payload: unknown;
       }>
     >();
-  if (locationError) throw locationError;
+  if (stageError) throw stageError;
 
-  const stageById = new Map(stages.map((stage) => [stage.id, stage]));
-  const locationsByGroup = new Map<
-    string,
-    GroupStageLocationOverride[]
-  >();
+  const stages = stageData ?? [];
+  const groupSpecificStageIds = unique(
+    stages
+      .filter((stage) => stage.location_mode === "group_specific")
+      .map((stage) => stage.id),
+  );
 
-  for (const location of locationData ?? []) {
-    const stage = stageById.get(location.stage_id);
-    if (!stage) continue;
-    const place = ticketPlaceFromLegacyFields({
-      placeName: location.place_name,
-      address: location.address,
-      place: normalizeMeetingPlace(location.place_payload),
-    });
-    const current = locationsByGroup.get(location.group_id) ?? [];
-    current.push({
-      sequence: stage.sequence,
-      placeName: location.place_name,
-      address: location.address,
-      place,
-    });
-    locationsByGroup.set(location.group_id, current);
-  }
+  const locationData = groupSpecificStageIds.length
+    ? await supabase
+        .from("meeting_group_stage_locations")
+        .select("group_id,stage_id,place_name,address,place_payload")
+        .in("group_id", groupIds)
+        .in("stage_id", groupSpecificStageIds)
+        .returns<
+          Array<{
+            group_id: string;
+            stage_id: string;
+            place_name: string | null;
+            address: string | null;
+            place_payload: unknown;
+          }>
+        >()
+    : { data: [], error: null };
+  if (locationData.error) throw locationData.error;
+
+  const groupLocationByKey = new Map(
+    (locationData.data ?? []).map((location) => [
+      `${location.group_id}:${location.stage_id}`,
+      location,
+    ]),
+  );
 
   for (const group of groups) {
     if (!group.legacy_ticket_instance_id) continue;
-    const locations = locationsByGroup.get(group.id);
-    if (locations?.length) {
+    const locations = stages
+      .filter((stage) => stage.event_id === group.event_id)
+      .map((stage) => {
+        const groupLocation =
+          stage.location_mode === "group_specific"
+            ? groupLocationByKey.get(`${group.id}:${stage.id}`)
+            : null;
+        const placeName = groupLocation?.place_name ?? stage.place_name;
+        const address = groupLocation?.address ?? stage.address;
+        const placePayload =
+          groupLocation?.place_payload ?? stage.place_payload;
+        return {
+          sequence: stage.sequence,
+          title: stage.title,
+          placeName,
+          address,
+          place: ticketPlaceFromLegacyFields({
+            placeName,
+            address,
+            place: normalizeMeetingPlace(placePayload),
+          }),
+        };
+      })
+      .sort((left, right) => left.sequence - right.sequence);
+
+    if (locations.length) {
       result.set(group.legacy_ticket_instance_id, locations);
     }
   }
@@ -565,17 +589,26 @@ function courseStepsForTicket(
   groupStageLocations?: GroupStageLocationOverride[],
   startsFromStageSequence = 1,
 ) {
-  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const normalizedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
+  const storedSteps = ensureMinimumStoredTicketCourseSteps(
+    normalizedSteps.length
+      ? normalizedSteps
+      : legacyStoredTicketCourseSteps({
+          title: template.title,
+          activityType: template.activity_type ?? snapshot?.activityType,
+          imageUrl: template.image_url ?? snapshot?.imageUrl,
+        }),
+  ).map((step, index) => {
+    const stage = groupStageLocations?.find(
+      (location) => location.sequence === index + 1,
+    );
+    return {
+      ...step,
+      title: step.title ?? stage?.title ?? null,
+    };
+  });
   const courseSteps = displayTicketCourseSteps(
-    ensureMinimumStoredTicketCourseSteps(
-      storedSteps.length
-        ? storedSteps
-        : legacyStoredTicketCourseSteps({
-            title: template.title,
-            activityType: template.activity_type ?? snapshot?.activityType,
-            imageUrl: template.image_url ?? snapshot?.imageUrl,
-          }),
-    ),
+    storedSteps,
     { includePlaceDetails: true },
   );
 
@@ -924,11 +957,14 @@ function toTicket(
   const area =
     instance.region ?? template.default_region ?? snapshot?.area ?? "지역 미정";
   const place = normalizeMeetingPlace(instance.place_payload);
+  const firstStageLocation = groupStageLocations?.find(
+    (location) => location.sequence === startsFromStageSequence,
+  );
   const detailTicketPlace = placeVisible
     ? ticketPlaceFromLegacyFields({
-        placeName: instance.place_name,
-        address: instance.address,
-        place,
+        placeName: instance.place_name ?? firstStageLocation?.placeName,
+        address: instance.address ?? firstStageLocation?.address,
+        place: place ?? normalizeMeetingPlace(firstStageLocation?.place),
       })
     : null;
   const courseSteps = courseStepsForTicket(
