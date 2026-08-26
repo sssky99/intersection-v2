@@ -17,7 +17,7 @@ export const TICKET_FEEDBACK_OPEN_OFFSET_MINUTES = 180;
 export const TICKET_COURSE_DEFAULT_OPEN_OFFSETS_MINUTES = [0, 90, 150] as const;
 export const TICKET_COURSE_MAX_OPEN_OFFSET_MINUTES =
   TICKET_FEEDBACK_OPEN_OFFSET_MINUTES - 1;
-export const TICKET_COURSE_PLACE_REVEAL_LEAD_MINUTES = 30;
+export const TICKET_COURSE_PLACE_REVEAL_LEAD_MINUTES = 0;
 
 export type StoredTicketCourseStep = {
   id: string;
@@ -98,16 +98,10 @@ function withSingleMainActivity(steps: StoredTicketCourseStep[]) {
 
   let previousOpenOffset = 0;
   return steps.map((step, index) => {
-    const openOffsetMinutes =
-      index === 1
-        ? Math.min(
-            TICKET_COURSE_MAX_OPEN_OFFSET_MINUTES,
-            previousOpenOffset + 90,
-          )
-        : Math.max(
-            previousOpenOffset,
-            courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
-          );
+    const openOffsetMinutes = Math.max(
+      previousOpenOffset,
+      courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
+    );
     previousOpenOffset = openOffsetMinutes;
 
     return {
