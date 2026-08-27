@@ -16,12 +16,14 @@ import {
   loadOperatorTestAccountByUserId,
   loadOperatorTestAccounts,
 } from "@/lib/operatorTestAccounts";
+import { normalizeFeedbackParticipationId } from "@/lib/feedbackDeepLink";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type MeetingsPageProps = {
   searchParams?: Promise<{
     tab?: string | string[];
     account?: string | string[];
+    feedback?: string | string[];
     legacyPreview?: string | string[];
   }>;
 };
@@ -131,10 +133,33 @@ async function loadPreviewSelfReplacementPhotoUrl() {
 
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps) {
   const params = await searchParams;
-  const { user, profile } = await getAuthenticatedProfile();
+  const { supabase, user, profile } = await getAuthenticatedProfile();
 
   if (!user || !profile) redirect("/");
   if (!profile.questions_completed) redirect("/onboarding/questions");
+  const requestedFeedbackParticipationId = normalizeFeedbackParticipationId(
+    params?.feedback,
+  );
+  let initialFeedbackParticipationId: string | null = null;
+  if (requestedFeedbackParticipationId) {
+    const { data: feedbackParticipation, error: feedbackParticipationError } =
+      await supabase
+        .from("ticket_participations")
+        .select("id,user_id,status")
+        .eq("id", requestedFeedbackParticipationId)
+        .eq("user_id", user.id)
+        .eq("status", "approved")
+        .maybeSingle<{ id: number | string; user_id: string; status: string }>();
+
+    if (feedbackParticipationError) {
+      console.error(
+        "Feedback deep link ownership recheck failed:",
+        feedbackParticipationError.message,
+      );
+    } else if (feedbackParticipation?.user_id === user.id) {
+      initialFeedbackParticipationId = String(feedbackParticipation.id);
+    }
+  }
   const legacyPreviewParam = Array.isArray(params?.legacyPreview)
     ? params?.legacyPreview[0]
     : params?.legacyPreview;
@@ -175,7 +200,12 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
       <AppHome
         userId={user.id}
         profile={profile}
-        initialTab={initialTabFromSearchParam(params?.tab)}
+        initialTab={
+          initialFeedbackParticipationId
+            ? "browse"
+            : initialTabFromSearchParam(params?.tab)
+        }
+        initialFeedbackParticipationId={initialFeedbackParticipationId}
         initialProfileAccountOpen={
           (Array.isArray(params?.account) ? params.account[0] : params?.account) === "1"
         }
