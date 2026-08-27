@@ -5,6 +5,7 @@ import {
   MEETING_DATE_SINGLE_USE_AMOUNT,
   canCancelMeetingDateApplication,
   canResubmitMeetingDateApplication,
+  isMeetingDateApplicationCancellationConfirmed,
   isMeetingDateClosed,
   meetingDateSchedule,
   requestedMeetingApplicationDates,
@@ -263,7 +264,14 @@ export async function DELETE(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as {
     applicationId?: unknown;
+    confirmed?: unknown;
   };
+  if (!isMeetingDateApplicationCancellationConfirmed(body.confirmed)) {
+    return NextResponse.json(
+      { error: "신청 취소 안내를 확인해주세요." },
+      { status: 400 },
+    );
+  }
   const applicationId =
     typeof body.applicationId === "number" &&
     Number.isSafeInteger(body.applicationId)

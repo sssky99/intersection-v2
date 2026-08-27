@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canCancelMeetingDateApplication,
   canResubmitMeetingDateApplication,
+  isMeetingDateApplicationCancellationConfirmed,
   meetingDateApplicationMatchesTicket,
   requestedMeetingApplicationDates,
 } from "./meetingDateApplications";
@@ -16,6 +17,15 @@ describe("canCancelMeetingDateApplication", () => {
     expect(canCancelMeetingDateApplication("payment_pending")).toBe(false);
     expect(canCancelMeetingDateApplication("approved")).toBe(false);
     expect(canCancelMeetingDateApplication("cancelled")).toBe(false);
+  });
+});
+
+describe("isMeetingDateApplicationCancellationConfirmed", () => {
+  it("accepts only an explicit confirmation", () => {
+    expect(isMeetingDateApplicationCancellationConfirmed(true)).toBe(true);
+    expect(isMeetingDateApplicationCancellationConfirmed(false)).toBe(false);
+    expect(isMeetingDateApplicationCancellationConfirmed("true")).toBe(false);
+    expect(isMeetingDateApplicationCancellationConfirmed(undefined)).toBe(false);
   });
 });
 

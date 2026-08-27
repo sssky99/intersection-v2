@@ -1108,7 +1108,10 @@ export function AppHome({
       const response = await fetch("/api/meeting-date-applications", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applicationId: application.id }),
+        body: JSON.stringify({
+          applicationId: application.id,
+          confirmed: true,
+        }),
       }).catch(() => null);
       const data = response
         ? ((await response.json().catch(() => null)) as {

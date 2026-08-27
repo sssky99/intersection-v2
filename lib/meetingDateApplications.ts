@@ -50,6 +50,10 @@ export function canCancelMeetingDateApplication(
   return status === "waitlisted" || status === "on_hold";
 }
 
+export function isMeetingDateApplicationCancellationConfirmed(value: unknown) {
+  return value === true;
+}
+
 export function meetingDateApplicationMatchesTicket(
   application: MeetingDateApplication,
   ticketId: string,
