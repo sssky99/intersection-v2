@@ -3,6 +3,8 @@ import { requestUserId } from "@/lib/adminUserView";
 import {
   MEETING_DATE_REGION,
   MEETING_DATE_SINGLE_USE_AMOUNT,
+  canCancelMeetingDateApplication,
+  canResubmitMeetingDateApplication,
   isMeetingDateClosed,
   meetingDateSchedule,
   requestedMeetingApplicationDates,
@@ -98,6 +100,7 @@ type SelectedTicketInvitation = {
 
 type DateApplicationRow = {
   id: number | string;
+  event_id: string | null;
   application_group_id: string;
   meeting_date: string;
   meeting_time: string;
@@ -115,6 +118,11 @@ type AssignedTicketSchedule = {
   event_date: string | null;
   event_time: string | null;
   ticket_reveal_override_at: string | null;
+};
+
+type CancellableDateApplicationRow = DateApplicationRow & {
+  user_id: string;
+  ticket_participation_id: number | string | null;
 };
 
 const activeStatuses = [
@@ -149,6 +157,7 @@ function toApplication(
 ): MeetingDateApplication {
   return {
     id: row.id,
+    eventId: row.event_id,
     meetingDate: row.meeting_date,
     meetingTime: row.meeting_time.slice(0, 5),
     region: row.region,
@@ -189,7 +198,7 @@ export async function GET() {
     const { data, error } = await createAdminClient()
       .from("meeting_date_applications")
       .select(
-        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
       .eq("user_id", requestUser.userId)
       .gte("meeting_date", todayInKst())
@@ -241,6 +250,109 @@ export async function GET() {
     console.error("Meeting date applications load failed:", error);
     return NextResponse.json(
       { error: "날짜 신청 정보를 불러오지 못했습니다." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const user = await authenticatedUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as {
+    applicationId?: unknown;
+  };
+  const applicationId =
+    typeof body.applicationId === "number" &&
+    Number.isSafeInteger(body.applicationId)
+      ? body.applicationId
+      : typeof body.applicationId === "string" &&
+          /^\d+$/.test(body.applicationId)
+        ? body.applicationId
+        : null;
+  if (applicationId === null) {
+    return NextResponse.json(
+      { error: "취소할 신청을 확인하지 못했어요." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data: current, error: currentError } = await admin
+      .from("meeting_date_applications")
+      .select(
+        "id,event_id,user_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,ticket_participation_id,created_at,updated_at",
+      )
+      .eq("id", applicationId)
+      .eq("user_id", user.id)
+      .maybeSingle<CancellableDateApplicationRow>();
+    if (currentError) throw currentError;
+    if (!current) {
+      return NextResponse.json({ error: "취소할 신청을 찾지 못했어요." }, { status: 404 });
+    }
+    if (!canCancelMeetingDateApplication(current.status)) {
+      return NextResponse.json(
+        { error: "현재 상태에서는 신청을 취소할 수 없어요." },
+        { status: 409 },
+      );
+    }
+
+    const now = new Date().toISOString();
+    if (
+      current.assigned_ticket_instance_id &&
+      current.ticket_participation_id !== null
+    ) {
+      const { error: participationError } = await admin.rpc(
+        "set_ticket_participation_status",
+        {
+          p_ticket_instance_id: current.assigned_ticket_instance_id,
+          p_user_id: user.id,
+          p_status: "cancelled",
+        },
+      );
+      if (participationError) throw participationError;
+    }
+
+    const { data: cancelledApplication, error: cancelError } = await admin
+      .from("meeting_date_applications")
+      .update({ status: "cancelled", cancelled_at: now, updated_at: now })
+      .eq("id", current.id)
+      .eq("user_id", user.id)
+      .in("status", ["waitlisted", "on_hold"])
+      .select(
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+      )
+      .single<DateApplicationRow>();
+    if (cancelError) throw cancelError;
+
+    const interactionTarget = current.event_id
+      ? { column: "event_id", id: current.event_id }
+      : current.assigned_ticket_instance_id
+        ? {
+            column: "ticket_instance_id",
+            id: current.assigned_ticket_instance_id,
+          }
+        : null;
+    if (interactionTarget) {
+      const { error: interactionError } = await admin
+        .from("ticket_user_interactions")
+        .update({ status: "open", updated_at: now })
+        .eq("user_id", user.id)
+        .eq(interactionTarget.column, interactionTarget.id);
+      if (interactionError) throw interactionError;
+    }
+
+    return NextResponse.json({
+      application: toApplication(cancelledApplication),
+      cancelledAt: now,
+    });
+  } catch (error) {
+    console.error("Meeting date application cancellation failed:", error);
+    return NextResponse.json(
+      { error: "신청을 취소하지 못했어요. 잠시 후 다시 시도해주세요." },
       { status: 500 },
     );
   }
@@ -393,7 +505,7 @@ export async function POST(request: NextRequest) {
     const existingRowsLookup = admin
       .from("meeting_date_applications")
       .select(
-        "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
       )
       .eq("user_id", user.id)
       .eq(selectedEvent ? "event_id" : "meeting_date", selectedEvent?.id ?? dates[0])
@@ -449,7 +561,7 @@ export async function POST(request: NextRequest) {
       .filter((date) => {
         const existing = existingByDate.get(date);
         if (!existing) return true;
-        return existing.status === "payment_pending";
+        return canResubmitMeetingDateApplication(existing.status);
       })
       .map((date) => {
         const schedule = meetingDateSchedule(date)!;
@@ -486,7 +598,9 @@ export async function POST(request: NextRequest) {
     let savedRows: DateApplicationRow[] = [];
     if (rowsToSave.length > 0) {
       const existingEventApplication = selectedEvent
-        ? (existingRows ?? []).find((row) => row.status === "payment_pending")
+        ? (existingRows ?? []).find((row) =>
+            canResubmitMeetingDateApplication(row.status),
+          )
         : null;
       const saveQuery =
         selectedEvent && existingEventApplication
@@ -501,7 +615,7 @@ export async function POST(request: NextRequest) {
                 .upsert(rowsToSave, { onConflict: "user_id,meeting_date" });
       const { data, error } = await saveQuery
         .select(
-          "id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+          "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
         )
         .returns<DateApplicationRow[]>();
       if (error) throw error;

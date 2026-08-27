@@ -25,6 +25,7 @@ export type MeetingDateDepositStatus =
 
 export type MeetingDateApplication = {
   id: number | string;
+  eventId?: string | null;
   meetingDate: string;
   meetingTime: string;
   region: string;
@@ -36,6 +37,18 @@ export type MeetingDateApplication = {
   createdAt: string | null;
   updatedAt?: string | null;
 };
+
+export function canResubmitMeetingDateApplication(
+  status: MeetingDateApplicationStatus,
+) {
+  return status === "payment_pending" || status === "cancelled";
+}
+
+export function canCancelMeetingDateApplication(
+  status: MeetingDateApplicationStatus,
+) {
+  return status === "waitlisted" || status === "on_hold";
+}
 
 function dateParts(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);

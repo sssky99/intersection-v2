@@ -91,6 +91,7 @@ import {
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
 import {
+  canCancelMeetingDateApplication,
   meetingDateApplicationStatusLabels,
   meetingDateSchedule,
   type MeetingDateApplication,
@@ -1094,6 +1095,47 @@ export function AppHome({
     [applyTicketInteraction, guestMode],
   );
 
+  const cancelMeetingApplication = useCallback(
+    async (
+      application: MeetingDateApplication,
+      ticket: GatheringTicket,
+    ) => {
+      if (guestMode || readOnly) return false;
+
+      const response = await fetch("/api/meeting-date-applications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: application.id }),
+      }).catch(() => null);
+      const data = response
+        ? ((await response.json().catch(() => null)) as {
+            application?: MeetingDateApplication;
+            cancelledAt?: string;
+          } | null)
+        : null;
+      if (!response?.ok || data?.application?.status !== "cancelled") {
+        return false;
+      }
+
+      setDateApplications((current) =>
+        current.filter((row) => String(row.id) !== String(application.id)),
+      );
+      setTicketInteractions((current) =>
+        current.map((row) =>
+          row.ticket.id === ticket.id
+            ? {
+                ...row,
+                status: "open",
+                updatedAt: data.cancelledAt ?? new Date().toISOString(),
+              }
+            : row,
+        ),
+      );
+      return true;
+    },
+    [guestMode, readOnly],
+  );
+
   const startProfileRegeneration = async () => {
     if (profileRegenerating) return;
 
@@ -1484,6 +1526,7 @@ export function AppHome({
             onGoRecommend={() => switchTab("recommend")}
             onReapplyTicket={requestDeclinedTicketApplication}
             onDeclineTicket={declineTicketFromInbox}
+            onCancelApplication={cancelMeetingApplication}
             onOpenBlindDate={(offerId) =>
               openBlindDateStatus(offerId, { skipUnlock: true })
             }
@@ -2152,6 +2195,7 @@ type TicketListItem =
       kind: "interaction-ticket";
       id: string;
       interaction: TicketInteraction;
+      application: MeetingDateApplication | null;
     }
   | { kind: "blind-date"; id: string; offer: BlindDateUserOffer };
 
@@ -2200,6 +2244,7 @@ function TicketListTab({
   onGoRecommend,
   onReapplyTicket,
   onDeclineTicket,
+  onCancelApplication,
   onOpenBlindDate,
   onFocusModeChange,
   focusRequest,
@@ -2219,6 +2264,10 @@ function TicketListTab({
   onGoRecommend: () => void;
   onReapplyTicket: (ticket: GatheringTicket) => void;
   onDeclineTicket: (ticket: GatheringTicket) => Promise<boolean>;
+  onCancelApplication: (
+    application: MeetingDateApplication,
+    ticket: GatheringTicket,
+  ) => Promise<boolean>;
   onOpenBlindDate: (offerId: string) => void;
   onFocusModeChange: (focused: boolean) => void;
   focusRequest: { id: number; ticketId: string } | null;
@@ -2263,6 +2312,17 @@ function TicketListTab({
   const availableTicketById = useMemo(
     () => new Map(availableTickets.map((ticket) => [ticket.id, ticket])),
     [availableTickets],
+  );
+  const applicationByEventId = useMemo(
+    () =>
+      new Map<string, MeetingDateApplication>(
+        dateApplications.flatMap((application) =>
+          application.eventId
+            ? [[application.eventId, application] as const]
+            : [],
+        ),
+      ),
+    [dateApplications],
   );
   const ticketItems = useMemo<TicketListItem[]>(() => {
     const applicationItems = dateApplications.flatMap(
@@ -2330,6 +2390,7 @@ function TicketListTab({
         kind: "interaction-ticket",
         id: `interaction-ticket:${interaction.ticket.id}`,
         interaction,
+        application: applicationByEventId.get(interaction.ticket.id) ?? null,
       })),
       ...blindDateOffers
         .filter(shouldShowBlindDateTicket)
@@ -2386,6 +2447,7 @@ function TicketListTab({
     });
   }, [
     availableTicketById,
+    applicationByEventId,
     interactions,
     dateApplications,
     blindDateOffers,
@@ -2888,6 +2950,20 @@ function TicketListTab({
                       ) : item.kind === "interaction-ticket" ? (
                         <InteractionTicketCard
                           interaction={item.interaction}
+                          application={item.application}
+                          onCancel={
+                            !readOnly &&
+                            item.application &&
+                            canCancelMeetingDateApplication(
+                              item.application.status,
+                            )
+                              ? () =>
+                                  onCancelApplication(
+                                    item.application!,
+                                    item.interaction.ticket,
+                                  )
+                              : undefined
+                          }
                           onOpen={() => {
                             setSelectedApplicationTicketDeclined(
                               item.interaction.status === "no",
@@ -2907,6 +2983,18 @@ function TicketListTab({
                         <AssignedApplicationTicketCard
                           application={item.application}
                           ticket={item.ticket}
+                          onCancel={
+                            !readOnly &&
+                            canCancelMeetingDateApplication(
+                              item.application.status,
+                            )
+                              ? () =>
+                                  onCancelApplication(
+                                    item.application,
+                                    item.ticket,
+                                  )
+                              : undefined
+                          }
                           onOpen={() => {
                             setSelectedApplicationTicketDeclined(false);
                             setSelectedApplicationTicketOpen(false);
@@ -3476,10 +3564,12 @@ function AssignedApplicationTicketCard({
   application,
   ticket,
   onOpen,
+  onCancel,
 }: {
   application: MeetingDateApplication;
   ticket: GatheringTicket;
   onOpen: () => void;
+  onCancel?: () => Promise<boolean>;
 }) {
   return (
     <motion.div
@@ -3509,24 +3599,33 @@ function AssignedApplicationTicketCard({
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
         tags={ticket.moodTags}
-        badgeLabel="신청 완료"
+        badgeLabel={onCancel ? null : "신청 완료"}
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
+      {onCancel && <ApplicationCancellationControl onCancel={onCancel} />}
     </motion.div>
   );
 }
 
 function InteractionTicketCard({
   interaction,
+  application,
   onOpen,
+  onCancel,
 }: {
   interaction: TicketInteraction;
+  application: MeetingDateApplication | null;
   onOpen: () => void;
+  onCancel?: () => Promise<boolean>;
 }) {
   const { ticket, status } = interaction;
-  const showsDeadline = ticketInteractionShowsDeadline(status);
+  const applicationComplete = Boolean(
+    application && canCancelMeetingDateApplication(application.status),
+  );
+  const showsDeadline =
+    !applicationComplete && ticketInteractionShowsDeadline(status);
   return (
     <motion.div
       role="button"
@@ -3552,7 +3651,13 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={showsDeadline ? null : ticketInteractionBadgeLabel(status)}
+        badgeLabel={
+          showsDeadline || (applicationComplete && onCancel)
+            ? null
+            : applicationComplete
+              ? "신청 완료"
+              : ticketInteractionBadgeLabel(status)
+        }
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
@@ -3568,7 +3673,48 @@ function InteractionTicketCard({
       {showsDeadline && (
         <UnansweredTicketCountdown ticket={ticket} />
       )}
+      {applicationComplete && onCancel && (
+        <ApplicationCancellationControl onCancel={onCancel} />
+      )}
     </motion.div>
+  );
+}
+
+function ApplicationCancellationControl({
+  onCancel,
+}: {
+  onCancel: () => Promise<boolean>;
+}) {
+  const [cancelling, setCancelling] = useState(false);
+
+  const cancel = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (cancelling) return;
+    setCancelling(true);
+    const cancelled = await onCancel().catch(() => false);
+    if (!cancelled) setCancelling(false);
+  };
+
+  return (
+    <div className="pointer-events-none absolute inset-x-6 bottom-5 z-20 flex flex-col items-center text-center">
+      <p className="text-[12px] font-semibold text-[#24211d]/75">신청 완료</p>
+      <button
+        type="button"
+        data-drag-scroll-ignore
+        disabled={cancelling}
+        aria-label="신청 취소"
+        onClick={(event) => void cancel(event)}
+        onKeyDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onTouchEnd={(event) => event.stopPropagation()}
+        className="pointer-events-auto mt-1.5 rounded-full border border-[#24211d]/18 bg-[#faf8f2]/85 px-3 py-1 text-[10px] font-bold text-[#24211d]/58 shadow-sm backdrop-blur transition hover:border-[#24211d]/30 hover:text-[#24211d]/78 disabled:opacity-40"
+      >
+        신청 취소
+      </button>
+    </div>
   );
 }
 

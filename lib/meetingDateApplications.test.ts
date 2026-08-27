@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { requestedMeetingApplicationDates } from "./meetingDateApplications";
+import {
+  canCancelMeetingDateApplication,
+  canResubmitMeetingDateApplication,
+  requestedMeetingApplicationDates,
+} from "./meetingDateApplications";
+
+describe("canCancelMeetingDateApplication", () => {
+  it("allows only completed applications that are still awaiting assignment", () => {
+    expect(canCancelMeetingDateApplication("waitlisted")).toBe(true);
+    expect(canCancelMeetingDateApplication("on_hold")).toBe(true);
+  });
+
+  it("does not treat payment or confirmed participation as cancellable applications", () => {
+    expect(canCancelMeetingDateApplication("payment_pending")).toBe(false);
+    expect(canCancelMeetingDateApplication("approved")).toBe(false);
+    expect(canCancelMeetingDateApplication("cancelled")).toBe(false);
+  });
+});
+
+describe("canResubmitMeetingDateApplication", () => {
+  it("allows an admin-cancelled application to be submitted again", () => {
+    expect(canResubmitMeetingDateApplication("cancelled")).toBe(true);
+  });
+
+  it("keeps active and completed applications protected", () => {
+    expect(canResubmitMeetingDateApplication("waitlisted")).toBe(false);
+    expect(canResubmitMeetingDateApplication("approved")).toBe(false);
+    expect(canResubmitMeetingDateApplication("completed")).toBe(false);
+  });
+});
 
 describe("requestedMeetingApplicationDates", () => {
   it("accepts an upcoming issued-ticket date after the generic week rolls over", () => {
