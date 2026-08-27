@@ -11,8 +11,8 @@ describe("ticket interaction presentation", () => {
   it("only labels a confirmed payment as a completed application", () => {
     expect(ticketInteractionBadgeLabel("open")).toBeNull();
     expect(ticketInteractionBadgeLabel("no")).toBe("거절");
-    expect(ticketInteractionBadgeLabel("yes")).toBe("결제 필요");
-    expect(ticketInteractionBadgeLabel("payment_pending")).toBe("결제 확인 중");
+    expect(ticketInteractionBadgeLabel("yes")).toBeNull();
+    expect(ticketInteractionBadgeLabel("payment_pending")).toBeNull();
     expect(ticketInteractionBadgeLabel("payment_confirmed")).toBe("신청 완료");
   });
 
@@ -40,10 +40,10 @@ describe("ticket interaction presentation", () => {
     ).toBe(false);
   });
 
-  it("shows the deadline only until payment starts", () => {
+  it("shows the deadline until payment is confirmed", () => {
     expect(ticketInteractionShowsDeadline("open")).toBe(true);
     expect(ticketInteractionShowsDeadline("yes")).toBe(true);
-    expect(ticketInteractionShowsDeadline("payment_pending")).toBe(false);
+    expect(ticketInteractionShowsDeadline("payment_pending")).toBe(true);
     expect(ticketInteractionShowsDeadline("payment_confirmed")).toBe(false);
     expect(ticketInteractionShowsDeadline("no")).toBe(false);
   });

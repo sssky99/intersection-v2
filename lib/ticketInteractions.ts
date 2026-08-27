@@ -39,8 +39,7 @@ export function ticketInteractionStatusLabel(status: TicketInteractionStatus) {
 export function ticketInteractionBadgeLabel(status: TicketInteractionStatus) {
   if (status === "open") return null;
   if (status === "no") return "거절";
-  if (status === "yes") return "결제 필요";
-  if (status === "payment_pending") return "결제 확인 중";
+  if (status === "yes" || status === "payment_pending") return null;
   return "신청 완료";
 }
 
@@ -61,7 +60,7 @@ export function ticketInteractionCanRespond(
 export function ticketInteractionShowsDeadline(
   status: TicketInteractionStatus,
 ) {
-  return status === "open" || status === "yes";
+  return status === "open" || status === "yes" || status === "payment_pending";
 }
 
 export function isDirectClientTicketInteractionStatus(

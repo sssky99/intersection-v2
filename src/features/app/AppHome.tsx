@@ -3526,6 +3526,7 @@ function InteractionTicketCard({
   onOpen: () => void;
 }) {
   const { ticket, status } = interaction;
+  const showsDeadline = ticketInteractionShowsDeadline(status);
   return (
     <motion.div
       role="button"
@@ -3551,7 +3552,7 @@ function InteractionTicketCard({
         time={ticket.time}
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
-        badgeLabel={ticketInteractionBadgeLabel(status)}
+        badgeLabel={showsDeadline ? null : ticketInteractionBadgeLabel(status)}
         badgeClassName={
           status === "payment_confirmed"
             ? "border-emerald-200 bg-emerald-50 text-emerald-700 shadow-none"
@@ -3564,7 +3565,7 @@ function InteractionTicketCard({
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
-      {ticketInteractionShowsDeadline(status) && (
+      {showsDeadline && (
         <UnansweredTicketCountdown ticket={ticket} />
       )}
     </motion.div>
@@ -3677,8 +3678,8 @@ export function ticketResponseRemainingTime(
   const seconds = totalSeconds % 60;
   const clock = [hours, minutes, seconds]
     .map((value) => String(value).padStart(2, "0"))
-    .join(":");
-  return days > 0 ? `${days}d ${clock}` : clock;
+    .join(" : ");
+  return days > 0 ? `${days}d : ${clock}` : clock;
 }
 
 function UnansweredTicketCountdown({ ticket }: { ticket: GatheringTicket }) {
@@ -3695,7 +3696,7 @@ function UnansweredTicketCountdown({ ticket }: { ticket: GatheringTicket }) {
   return (
     <time
       dateTime={ticketResponseDeadline(ticket)?.toISOString()}
-      aria-label={`응답 마감까지 ${remainingTime}`}
+      aria-label={`마감까지 ${remainingTime}`}
       className="pointer-events-none absolute inset-x-6 bottom-7 z-10 text-center text-[12px] font-semibold tabular-nums text-[#24211d]/75"
     >
       마감까지 {remainingTime}
