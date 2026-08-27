@@ -92,6 +92,7 @@ import {
 } from "@/lib/analytics";
 import {
   canCancelMeetingDateApplication,
+  meetingDateApplicationMatchesTicket,
   meetingDateApplicationStatusLabels,
   meetingDateSchedule,
   type MeetingDateApplication,
@@ -2360,7 +2361,11 @@ function TicketListTab({
     return (
       dateApplications.find(
         (application) =>
-          application.assignedTicketInstanceId === selectedTicket.ticket.id &&
+          meetingDateApplicationMatchesTicket(
+            application,
+            selectedTicket.ticket.id,
+            selectedTicket.waitlistId,
+          ) &&
           canCancelMeetingDateApplication(application.status),
       ) ?? null
     );

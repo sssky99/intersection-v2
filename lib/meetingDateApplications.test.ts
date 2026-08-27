@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canCancelMeetingDateApplication,
   canResubmitMeetingDateApplication,
+  meetingDateApplicationMatchesTicket,
   requestedMeetingApplicationDates,
 } from "./meetingDateApplications";
 
@@ -15,6 +16,46 @@ describe("canCancelMeetingDateApplication", () => {
     expect(canCancelMeetingDateApplication("payment_pending")).toBe(false);
     expect(canCancelMeetingDateApplication("approved")).toBe(false);
     expect(canCancelMeetingDateApplication("cancelled")).toBe(false);
+  });
+});
+
+describe("meetingDateApplicationMatchesTicket", () => {
+  const application = {
+    id: 1,
+    eventId: "event-id",
+    meetingDate: "2026-08-28",
+    meetingTime: "19:00",
+    region: "서울",
+    status: "waitlisted" as const,
+    depositAmount: null,
+    depositStatus: null,
+    assignedTicketInstanceId: null,
+    createdAt: null,
+  };
+
+  it("matches an unassigned application by event id", () => {
+    expect(meetingDateApplicationMatchesTicket(application, "event-id")).toBe(
+      true,
+    );
+  });
+
+  it("matches a synthetic ticket by its application source id", () => {
+    expect(
+      meetingDateApplicationMatchesTicket(
+        application,
+        "snapshot-id",
+        "application:1",
+      ),
+    ).toBe(true);
+  });
+
+  it("matches an assigned application by ticket instance id", () => {
+    expect(
+      meetingDateApplicationMatchesTicket(
+        { ...application, assignedTicketInstanceId: "instance-id" },
+        "instance-id",
+      ),
+    ).toBe(true);
   });
 });
 

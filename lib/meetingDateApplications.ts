@@ -50,6 +50,18 @@ export function canCancelMeetingDateApplication(
   return status === "waitlisted" || status === "on_hold";
 }
 
+export function meetingDateApplicationMatchesTicket(
+  application: MeetingDateApplication,
+  ticketId: string,
+  ticketSourceId?: string | null,
+) {
+  return (
+    ticketSourceId === `application:${application.id}` ||
+    application.assignedTicketInstanceId === ticketId ||
+    application.eventId === ticketId
+  );
+}
+
 function dateParts(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return null;
