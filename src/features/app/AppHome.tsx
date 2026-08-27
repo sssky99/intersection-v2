@@ -512,6 +512,7 @@ export function AppHome({
   userId,
   profile,
   initialTab = "recommend",
+  initialFeedbackParticipationId = null,
   initialProfileAccountOpen = false,
   initialLegacyResultPreview = false,
   operatorAccountSwitcher = null,
@@ -525,6 +526,7 @@ export function AppHome({
   userId: string;
   profile: ProfileRow;
   initialTab?: AppTab;
+  initialFeedbackParticipationId?: string | null;
   initialProfileAccountOpen?: boolean;
   initialLegacyResultPreview?: boolean;
   operatorAccountSwitcher?: OperatorAccountSwitcher;
@@ -1489,6 +1491,7 @@ export function AppHome({
             }
             onFocusModeChange={setTicketTabFocusMode}
             focusRequest={ticketTabFocusRequest}
+            initialFeedbackParticipationId={initialFeedbackParticipationId}
           />
         </div>
         <div
@@ -2203,6 +2206,7 @@ function TicketListTab({
   onOpenBlindDate,
   onFocusModeChange,
   focusRequest,
+  initialFeedbackParticipationId,
 }: {
   readOnly: boolean;
   initialLoading: boolean;
@@ -2222,6 +2226,7 @@ function TicketListTab({
   onOpenBlindDate: (offerId: string) => void;
   onFocusModeChange: (focused: boolean) => void;
   focusRequest: { id: number; ticketId: string } | null;
+  initialFeedbackParticipationId: string | null;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [selectedTicket, setSelectedTicket] = useState<UserTicket | null>(null);
@@ -2245,6 +2250,25 @@ function TicketListTab({
   });
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const snapTimerRef = useRef<number | null>(null);
+  const feedbackDeepLinkOpenedRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      !initialFeedbackParticipationId ||
+      feedbackDeepLinkOpenedRef.current
+    ) {
+      return;
+    }
+
+    const feedbackTicket = tickets.find(
+      (ticket) => ticket.waitlistId === initialFeedbackParticipationId,
+    );
+    if (!feedbackTicket) return;
+
+    feedbackDeepLinkOpenedRef.current = true;
+    setSelectedTicket(feedbackTicket);
+  }, [initialFeedbackParticipationId, tickets]);
+
   useEffect(() => {
     const focused = Boolean(
       selectedTicket ||
