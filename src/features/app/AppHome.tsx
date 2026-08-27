@@ -1120,6 +1120,12 @@ export function AppHome({
       setDateApplications((current) =>
         current.filter((row) => String(row.id) !== String(application.id)),
       );
+      setWaitlistedTickets((current) =>
+        current.filter((row) => row.ticket.id !== ticket.id),
+      );
+      setWaitlistedTicketCount((current) =>
+        current === null ? null : Math.max(0, current - 1),
+      );
       setTicketInteractions((current) =>
         current.map((row) =>
           row.ticket.id === ticket.id
@@ -2324,6 +2330,17 @@ function TicketListTab({
       ),
     [dateApplications],
   );
+  const selectedTicketApplication = useMemo(() => {
+    if (!selectedTicket) return null;
+
+    return (
+      dateApplications.find(
+        (application) =>
+          application.assignedTicketInstanceId === selectedTicket.ticket.id &&
+          canCancelMeetingDateApplication(application.status),
+      ) ?? null
+    );
+  }, [dateApplications, selectedTicket]);
   const ticketItems = useMemo<TicketListItem[]>(() => {
     const applicationItems = dateApplications.flatMap(
       (application): TicketListItem[] => {
@@ -2817,6 +2834,18 @@ function TicketListTab({
             previewMatchPhotoUrls={previewMatchPhotoUrls}
             previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             onClose={() => setSelectedTicket(null)}
+            onCancelApplication={
+              !readOnly && selectedTicketApplication
+                ? async () => {
+                    const cancelled = await onCancelApplication(
+                      selectedTicketApplication,
+                      selectedTicket.ticket,
+                    );
+                    if (cancelled) setSelectedTicket(null);
+                    return cancelled;
+                  }
+                : undefined
+            }
           />
         ) : selectedApplicationTicket ? (
           <AssignedApplicationTicketDetailView
@@ -2951,19 +2980,6 @@ function TicketListTab({
                         <InteractionTicketCard
                           interaction={item.interaction}
                           application={item.application}
-                          onCancel={
-                            !readOnly &&
-                            item.application &&
-                            canCancelMeetingDateApplication(
-                              item.application.status,
-                            )
-                              ? () =>
-                                  onCancelApplication(
-                                    item.application!,
-                                    item.interaction.ticket,
-                                  )
-                              : undefined
-                          }
                           onOpen={() => {
                             setSelectedApplicationTicketDeclined(
                               item.interaction.status === "no",
@@ -2983,18 +2999,6 @@ function TicketListTab({
                         <AssignedApplicationTicketCard
                           application={item.application}
                           ticket={item.ticket}
-                          onCancel={
-                            !readOnly &&
-                            canCancelMeetingDateApplication(
-                              item.application.status,
-                            )
-                              ? () =>
-                                  onCancelApplication(
-                                    item.application,
-                                    item.ticket,
-                                  )
-                              : undefined
-                          }
                           onOpen={() => {
                             setSelectedApplicationTicketDeclined(false);
                             setSelectedApplicationTicketOpen(false);
@@ -3564,12 +3568,10 @@ function AssignedApplicationTicketCard({
   application,
   ticket,
   onOpen,
-  onCancel,
 }: {
   application: MeetingDateApplication;
   ticket: GatheringTicket;
   onOpen: () => void;
-  onCancel?: () => Promise<boolean>;
 }) {
   return (
     <motion.div
@@ -3599,12 +3601,11 @@ function AssignedApplicationTicketCard({
         time={application.meetingTime || ticket.time}
         location={`서울\n${ticket.area || application.region}`}
         tags={ticket.moodTags}
-        badgeLabel={onCancel ? null : "신청 완료"}
+        badgeLabel="신청 완료"
         badgeClassName={dateApplicationBadgeClass(application)}
         remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
-      {onCancel && <ApplicationCancellationControl onCancel={onCancel} />}
     </motion.div>
   );
 }
@@ -3613,16 +3614,14 @@ function InteractionTicketCard({
   interaction,
   application,
   onOpen,
-  onCancel,
 }: {
   interaction: TicketInteraction;
   application: MeetingDateApplication | null;
   onOpen: () => void;
-  onCancel?: () => Promise<boolean>;
 }) {
   const { ticket, status } = interaction;
   const applicationComplete = Boolean(
-    application && canCancelMeetingDateApplication(application.status),
+    application && ["waitlisted", "on_hold"].includes(application.status),
   );
   const showsDeadline =
     !applicationComplete && ticketInteractionShowsDeadline(status);
@@ -3652,7 +3651,7 @@ function InteractionTicketCard({
         location={`서울\n${ticket.area}`}
         tags={ticket.moodTags}
         badgeLabel={
-          showsDeadline || (applicationComplete && onCancel)
+          showsDeadline
             ? null
             : applicationComplete
               ? "신청 완료"
@@ -3673,48 +3672,7 @@ function InteractionTicketCard({
       {showsDeadline && (
         <UnansweredTicketCountdown ticket={ticket} />
       )}
-      {applicationComplete && onCancel && (
-        <ApplicationCancellationControl onCancel={onCancel} />
-      )}
     </motion.div>
-  );
-}
-
-function ApplicationCancellationControl({
-  onCancel,
-}: {
-  onCancel: () => Promise<boolean>;
-}) {
-  const [cancelling, setCancelling] = useState(false);
-
-  const cancel = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (cancelling) return;
-    setCancelling(true);
-    const cancelled = await onCancel().catch(() => false);
-    if (!cancelled) setCancelling(false);
-  };
-
-  return (
-    <div className="pointer-events-none absolute inset-x-6 bottom-5 z-20 flex flex-col items-center text-center">
-      <p className="text-[12px] font-semibold text-[#24211d]/75">신청 완료</p>
-      <button
-        type="button"
-        data-drag-scroll-ignore
-        disabled={cancelling}
-        aria-label="신청 취소"
-        onClick={(event) => void cancel(event)}
-        onKeyDown={(event) => event.stopPropagation()}
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerUp={(event) => event.stopPropagation()}
-        onTouchStart={(event) => event.stopPropagation()}
-        onTouchEnd={(event) => event.stopPropagation()}
-        className="pointer-events-auto mt-1.5 rounded-full border border-[#24211d]/18 bg-[#faf8f2]/85 px-3 py-1 text-[10px] font-bold text-[#24211d]/58 shadow-sm backdrop-blur transition hover:border-[#24211d]/30 hover:text-[#24211d]/78 disabled:opacity-40"
-      >
-        신청 취소
-      </button>
-    </div>
   );
 }
 
@@ -3865,6 +3823,7 @@ function dateApplicationBadgeClass(application: MeetingDateApplication) {
 export function StoredTicketDetailView({
   userTicket,
   onClose,
+  onCancelApplication,
   previewMode = false,
   participantPhotoUrl = null,
   previewMatchPhotoUrls = [],
@@ -3874,6 +3833,7 @@ export function StoredTicketDetailView({
 }: {
   userTicket: UserTicket;
   onClose: () => void;
+  onCancelApplication?: () => Promise<boolean>;
   previewMode?: boolean;
   participantPhotoUrl?: string | null;
   previewMatchPhotoUrls?: string[];
@@ -4020,6 +3980,7 @@ export function StoredTicketDetailView({
             previewMatchPhotoUrls={displayedMatchPhotoUrls}
             previewOtherMemberPhotoUrls={displayedOtherMemberPhotoUrls}
             matchMemberCount={displayedMatchMemberCount}
+            onCancelApplication={onCancelApplication}
           />
       </motion.article>
 
@@ -4710,6 +4671,7 @@ function TicketStageContent({
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
   matchMemberCount,
+  onCancelApplication,
 }: {
   userTicket: UserTicket;
   progressStep: TicketProgressViewStepKey;
@@ -4718,6 +4680,7 @@ function TicketStageContent({
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
   matchMemberCount?: number;
+  onCancelApplication?: () => Promise<boolean>;
 }) {
   const ticket = userTicket.ticket;
   const baseProgressStep = progressViewBaseStep(progressStep);
@@ -4764,6 +4727,7 @@ function TicketStageContent({
               userTicket={userTicket}
               place={selectedPlace}
               revealDetails
+              onCancelApplication={onCancelApplication}
             />
           }
         />
@@ -4792,7 +4756,11 @@ function TicketStageContent({
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
-            <PlaceSection userTicket={userTicket} revealDetails />
+            <PlaceSection
+              userTicket={userTicket}
+              revealDetails
+              onCancelApplication={onCancelApplication}
+            />
           }
         />
       </>
@@ -4810,7 +4778,11 @@ function TicketStageContent({
           matchMemberCount={matchMemberCount}
           sections={introDetailSections}
           afterActivities={
-            <PlaceSection userTicket={userTicket} revealDetails />
+            <PlaceSection
+              userTicket={userTicket}
+              revealDetails
+              onCancelApplication={onCancelApplication}
+            />
           }
         />
       </>
@@ -4826,7 +4798,12 @@ function TicketStageContent({
       matchMemberCount={matchMemberCount}
       sections={appliedDetailSections}
       className="mt-0"
-      afterActivities={<PlaceSection userTicket={userTicket} />}
+      afterActivities={
+        <PlaceSection
+          userTicket={userTicket}
+          onCancelApplication={onCancelApplication}
+        />
+      }
     />
   );
 }
@@ -4835,10 +4812,12 @@ function PlaceSection({
   userTicket,
   place = userTicket.place,
   revealDetails = false,
+  onCancelApplication,
 }: {
   userTicket: UserTicket;
   place?: TicketPlace | null;
   revealDetails?: boolean;
+  onCancelApplication?: () => Promise<boolean>;
 }) {
   const hasPlace = Boolean(
     place?.name?.trim() || place?.address?.trim(),
@@ -4889,7 +4868,36 @@ function PlaceSection({
           </div>
         )}
       </div>
+      {onCancelApplication && (
+        <DetailApplicationCancellationControl onCancel={onCancelApplication} />
+      )}
     </section>
+  );
+}
+
+function DetailApplicationCancellationControl({
+  onCancel,
+}: {
+  onCancel: () => Promise<boolean>;
+}) {
+  const [cancelling, setCancelling] = useState(false);
+
+  const cancel = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    const cancelled = await onCancel().catch(() => false);
+    if (!cancelled) setCancelling(false);
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={cancelling}
+      onClick={() => void cancel()}
+      className="mt-3 flex h-11 w-full items-center justify-center rounded-2xl border border-[#d8d0c3] bg-[#faf8f3] text-[12px] font-bold text-[#24211d]/58 transition hover:border-[#bdb5a7] hover:text-[#24211d]/78 disabled:opacity-40"
+    >
+      신청 취소
+    </button>
   );
 }
 
