@@ -4910,6 +4910,7 @@ function DetailApplicationCancellationControl({
   onCancel: () => Promise<boolean>;
 }) {
   const [cancelling, setCancelling] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const cancel = async () => {
     if (cancelling) return;
@@ -4919,14 +4920,85 @@ function DetailApplicationCancellationControl({
   };
 
   return (
-    <button
-      type="button"
-      disabled={cancelling}
-      onClick={() => void cancel()}
-      className="mt-3 flex h-11 w-full items-center justify-center rounded-2xl border border-[#d8d0c3] bg-[#faf8f3] text-[12px] font-bold text-[#24211d]/58 transition hover:border-[#bdb5a7] hover:text-[#24211d]/78 disabled:opacity-40"
-    >
-      신청 취소
-    </button>
+    <>
+      <button
+        type="button"
+        disabled={cancelling}
+        onClick={() => setConfirmOpen(true)}
+        className="mt-3 flex h-11 w-full items-center justify-center rounded-2xl border border-[#d8d0c3] bg-[#faf8f3] text-[12px] font-bold text-[#24211d]/58 transition hover:border-[#bdb5a7] hover:text-[#24211d]/78 disabled:opacity-40"
+      >
+        신청 취소
+      </button>
+
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {confirmOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[120] flex items-center justify-center bg-black/30 px-5 backdrop-blur-[3px]"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget && !cancelling) {
+                    setConfirmOpen(false);
+                  }
+                }}
+                role="presentation"
+              >
+                <motion.section
+                  initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="application-cancellation-title"
+                  aria-describedby="application-cancellation-description"
+                  className="w-full max-w-[350px] rounded-[28px] border border-black/10 bg-[#f7f4ed] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.2)]"
+                >
+                  <h2
+                    id="application-cancellation-title"
+                    className="break-keep text-[20px] font-black tracking-[-0.04em] text-black"
+                  >
+                    정말 신청을 취소하시겠어요?
+                  </h2>
+                  <div
+                    id="application-cancellation-description"
+                    className="mt-4 space-y-2 break-keep text-[13px] font-semibold leading-6 text-black/52"
+                  >
+                    <p>이번 신청한 만남만 취소되고, 결제가 취소되진 않아요.</p>
+                    <p>
+                      결제 취소를 원하시면, 카카오톡 그로블을 통해서 직접
+                      해주시거나 카카오톡 채널로 문의주세요!
+                    </p>
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={cancelling}
+                      onClick={() => setConfirmOpen(false)}
+                      className="h-12 rounded-full border border-black/10 bg-white/55 text-[13px] font-black text-black/55 transition hover:border-black/20 hover:text-black/75 disabled:opacity-40"
+                    >
+                      돌아가기
+                    </button>
+                    <button
+                      type="button"
+                      disabled={cancelling}
+                      onClick={() => void cancel()}
+                      className="h-12 rounded-full bg-black text-[13px] font-black text-white transition hover:bg-black/85 disabled:bg-black/25"
+                    >
+                      신청 취소
+                    </button>
+                  </div>
+                </motion.section>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
+    </>
   );
 }
 
