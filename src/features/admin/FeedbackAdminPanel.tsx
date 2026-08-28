@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { GenderBadge } from "./adminDisplay";
 
 type PersonAxis = "temperature" | "texture" | "tone" | "rhythm";
 type PlaceAxis = PersonAxis | "alcohol" | "romance";
@@ -57,6 +58,7 @@ type FeedbackProfile = {
   name: string | null;
   nickname?: string | null;
   phone?: string | null;
+  gender?: string | null;
 };
 
 type FeedbackInstance = {
@@ -471,9 +473,12 @@ export function FeedbackAdminPanel() {
                       className="rounded-2xl border border-black/10 bg-[#fbfbfa] p-4"
                     >
                       <div>
-                        <h4 className="text-sm font-black">
-                          {memberName(writer, "작성자")}
-                        </h4>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black">
+                            {memberName(writer, "작성자")}
+                          </h4>
+                          <GenderBadge gender={writer?.gender} />
+                        </div>
                         <p className="mt-1 text-xs font-semibold text-black/40">
                           {savedAt(feedback.created_at)}
                         </p>
@@ -537,6 +542,7 @@ export function FeedbackAdminPanel() {
                           <h4 className="text-sm font-black">
                             {memberName(writer, "작성자")}
                           </h4>
+                          <GenderBadge gender={writer?.gender} />
                           <span className="rounded-full bg-black px-2.5 py-1 text-[10px] font-bold text-white">
                             블라인드 데이트
                           </span>

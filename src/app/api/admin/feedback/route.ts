@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
         profileIds.length
           ? supabase
               .from("profiles")
-              .select("user_id,name,nickname,phone")
+              .select("user_id,name,nickname,phone,gender")
               .in("user_id", profileIds)
           : Promise.resolve({ data: [], error: null }),
       ]);
