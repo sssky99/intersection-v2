@@ -483,18 +483,13 @@ export function FeedbackAdminPanel() {
                           {savedAt(feedback.created_at)}
                         </p>
                       </div>
-                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-4">
+                      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
                         {hasCurrentQuestionnaire ? (
                           <>
                             <PersonFeedbackSummary
                               label="첫 테이블 멤버 평가"
                               memberFeedback={feedback.member_feedback}
-                              profileMap={profileMap}
-                            />
-                            <MemberSelectionSummary
-                              label="저녁 멤버 중 단둘이 만나고 싶은 사람"
-                              memberIds={feedback.place_feedback?.dinner_member_ids ?? []}
-                              unsure={feedback.place_feedback?.dinner_member_unsure}
+                              ratedMembersOnly
                               profileMap={profileMap}
                             />
                             <MemberSelectionSummary
@@ -693,13 +688,20 @@ function SelectedMembersSummary({ selectedNames }: { selectedNames: string[] }) 
 function PersonFeedbackSummary({
   label = "사람별 인연 응답",
   memberFeedback,
+  ratedMembersOnly = false,
   profileMap,
 }: {
   label?: string;
   memberFeedback: Record<string, MemberFeedbackEntry> | null;
+  ratedMembersOnly?: boolean;
   profileMap: Map<string, FeedbackProfile>;
 }) {
-  const entries = Object.entries(memberFeedback ?? {});
+  const entries = Object.entries(memberFeedback ?? {}).filter(
+    ([, entry]) =>
+      !ratedMembersOnly ||
+      typeof entry.connection_strength === "number" ||
+      entry.connection_intent === "no_show",
+  );
 
   return (
     <div className="min-w-0 rounded-xl bg-white px-4 py-4">
