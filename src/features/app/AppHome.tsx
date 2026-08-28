@@ -189,8 +189,10 @@ const profileVibeAxes = [
   "rhythm",
 ] as const satisfies readonly VibeAxis[];
 type ProfileVibeAxis = (typeof profileVibeAxes)[number];
-type MeetingRatingKey = "firstPlace" | "secondPlace";
+type MeetingRatingKey = "firstPlace" | "secondPlace" | "recommendation";
 type MeetingRatings = Record<MeetingRatingKey, number | null>;
+type MemberReflectionChoice = "interested" | "enough" | "no_show";
+type ConnectionStrength = 1 | 2 | 3 | 4;
 
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
   { id: "recommend", label: "신청", Icon: Sparkles },
@@ -5296,21 +5298,31 @@ function TicketFeedbackForm({
     () => userTicket.members.filter((member) => !member.isSelf),
     [userTicket.members],
   );
+  const selfGender = selfMember?.gender ?? null;
   const overallMembers = useMemo(
     () =>
       (userTicket.feedbackMembers ?? userTicket.members).filter(
-        (member) => !member.isSelf,
+        (member) =>
+          !member.isSelf &&
+          (!selfGender || !member.gender || member.gender !== selfGender),
       ),
-    [userTicket.feedbackMembers, userTicket.members],
+    [selfGender, userTicket.feedbackMembers, userTicket.members],
   );
-  const dateCandidateMembers = useMemo(() => {
-    return otherMembers;
-  }, [otherMembers]);
+  const dateCandidateMembers = useMemo(
+    () =>
+      otherMembers
+        .filter(
+          (member) =>
+            !selfGender || !member.gender || member.gender !== selfGender,
+        )
+        .slice(0, 3),
+    [otherMembers, selfGender],
+  );
   const joinsAtSecondActivity =
     (userTicket.ticket.startsFromStageSequence ?? 1) > 1;
   const feedbackStepOrder = joinsAtSecondActivity
-    ? ([1, 3, 4] as const)
-    : ([0, 1, 2, 3, 4] as const);
+    ? ([1, 3, 4, 5] as const)
+    : ([0, 1, 2, 3, 4, 5] as const);
   const firstPlaceName =
     joinsAtSecondActivity
       ? null
@@ -5322,10 +5334,16 @@ function TicketFeedbackForm({
   const [meetingRatings, setMeetingRatings] = useState<MeetingRatings>({
     firstPlace: null,
     secondPlace: null,
+    recommendation: null,
   });
-  const [dateMemberIds, setDateMemberIds] = useState<string[]>([]);
+  const [memberReflections, setMemberReflections] = useState<
+    Record<string, MemberReflectionChoice>
+  >({});
+  const [connectionStrengths, setConnectionStrengths] = useState<
+    Record<string, ConnectionStrength>
+  >({});
+  const [reflectionMemberIndex, setReflectionMemberIndex] = useState(0);
   const [vibeMemberIds, setVibeMemberIds] = useState<string[]>([]);
-  const [dateMembersUnsure, setDateMembersUnsure] = useState(false);
   const [vibeMembersUnsure, setVibeMembersUnsure] = useState(false);
   const [disruptiveMemberNote, setDisruptiveMemberNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -5339,10 +5357,11 @@ function TicketFeedbackForm({
   } | null>(null);
 
   useEffect(() => {
-    setMeetingRatings({ firstPlace: null, secondPlace: null });
-    setDateMemberIds([]);
+    setMeetingRatings({ firstPlace: null, secondPlace: null, recommendation: null });
+    setMemberReflections({});
+    setConnectionStrengths({});
+    setReflectionMemberIndex(0);
     setVibeMemberIds([]);
-    setDateMembersUnsure(false);
     setVibeMembersUnsure(false);
     setDisruptiveMemberNote("");
     setSubmitting(false);
@@ -5368,29 +5387,78 @@ function TicketFeedbackForm({
   }, [feedbackPhotoPreview]);
 
   const meetingRatingsComplete = joinsAtSecondActivity
-    ? typeof meetingRatings.secondPlace === "number"
+    ? typeof meetingRatings.secondPlace === "number" &&
+      typeof meetingRatings.recommendation === "number"
     : Object.values(meetingRatings).every(
         (value) => typeof value === "number",
       );
   const canSubmit = meetingRatingsComplete;
   const feedbackStepCount = feedbackStepOrder.length;
   const feedbackStep = feedbackStepOrder[feedbackStepIndex] ?? feedbackStepOrder[0];
+  const dateMemberIds = dateCandidateMembers
+    .filter((member) => memberReflections[member.id] === "interested")
+    .map((member) => member.id);
+  const noShowMemberIds = dateCandidateMembers
+    .filter((member) => memberReflections[member.id] === "no_show")
+    .map((member) => member.id);
+  const dateMemberReflectionsComplete = dateCandidateMembers.every(
+    (member) => memberReflections[member.id],
+  );
+  const activeReflectionMember =
+    dateCandidateMembers[reflectionMemberIndex] ?? dateCandidateMembers[0];
+  const overallCandidateMembers = overallMembers.filter(
+    (member) =>
+      !dateMemberIds.includes(member.id) && !noShowMemberIds.includes(member.id),
+  );
   const canAdvanceFeedbackStep =
-    (feedbackStep === 0 && (dateMemberIds.length > 0 || dateMembersUnsure)) ||
+    (feedbackStep === 0 && dateMemberReflectionsComplete) ||
     (feedbackStep === 1 && (vibeMemberIds.length > 0 || vibeMembersUnsure)) ||
     (feedbackStep === 2 && meetingRatings.firstPlace !== null) ||
-    (feedbackStep === 3 && meetingRatings.secondPlace !== null);
+    (feedbackStep === 3 && meetingRatings.secondPlace !== null) ||
+    (feedbackStep === 4 && meetingRatings.recommendation !== null);
   const selectedPositiveMemberIds = Array.from(
     new Set([...dateMemberIds, ...vibeMemberIds]),
   );
 
-  const selectDateMember = (memberId: string) => {
-    setDateMembersUnsure(false);
-    setDateMemberIds((current) =>
-      current.includes(memberId)
-        ? current.filter((id) => id !== memberId)
-        : [...current, memberId],
+  const selectMemberReflection = (
+    memberId: string,
+    choice: MemberReflectionChoice,
+  ) => {
+    setMemberReflections((current) => ({ ...current, [memberId]: choice }));
+    if (choice === "interested" || choice === "no_show") {
+      setVibeMemberIds((current) => current.filter((id) => id !== memberId));
+    }
+  };
+
+  const advanceReflectionMember = (memberId: string) => {
+    const selectedIndex = dateCandidateMembers.findIndex(
+      (member) => member.id === memberId,
     );
+    if (selectedIndex < 0 || selectedIndex >= dateCandidateMembers.length - 1) return;
+    window.setTimeout(() => {
+      setReflectionMemberIndex((current) =>
+        current === selectedIndex ? selectedIndex + 1 : current,
+      );
+    }, 220);
+  };
+
+  const selectConnectionStrength = (
+    memberId: string,
+    strength: ConnectionStrength,
+  ) => {
+    setConnectionStrengths((current) => ({ ...current, [memberId]: strength }));
+    selectMemberReflection(memberId, strength >= 3 ? "interested" : "enough");
+    advanceReflectionMember(memberId);
+  };
+
+  const selectNoShowMember = (memberId: string) => {
+    setConnectionStrengths((current) => {
+      const next = { ...current };
+      delete next[memberId];
+      return next;
+    });
+    selectMemberReflection(memberId, "no_show");
+    advanceReflectionMember(memberId);
   };
 
   const selectVibeMember = (memberId: string) => {
@@ -5421,10 +5489,19 @@ function TicketFeedbackForm({
 
   const payloadMemberFeedback = () => {
     return Object.fromEntries(
-      vibeMemberIds.map((memberId) => [
+      [
+        ...dateCandidateMembers
+          .filter((member) => memberReflections[member.id])
+          .map((member) => [member.id, memberReflections[member.id]] as const),
+        ...vibeMemberIds
+          .filter((memberId) => !memberReflections[memberId])
+          .map((memberId) => [memberId, "interested" as const] as const),
+      ].map(([memberId, connectionIntent]) => [
         memberId,
         {
           status: "done",
+          connection_intent: connectionIntent,
+          connection_strength: connectionStrengths[memberId] ?? null,
           temperature: null,
           texture: null,
           tone: null,
@@ -5447,10 +5524,14 @@ function TicketFeedbackForm({
         rating: meetingRatings.secondPlace,
       },
     },
+    recommendation_rating: meetingRatings.recommendation,
     dinner_member_ids: dateMemberIds,
     overall_member_ids: vibeMemberIds,
-    dinner_member_unsure: dateMembersUnsure,
+    dinner_member_unsure: false,
     overall_member_unsure: vibeMembersUnsure,
+    negative_member_feedback: Object.fromEntries(
+      noShowMemberIds.map((memberId) => [memberId, { reasons: ["no_show"] }]),
+    ),
     disruptive_member_note: disruptiveMemberNote.trim() || null,
   });
 
@@ -5529,56 +5610,158 @@ function TicketFeedbackForm({
             className="min-h-[340px] py-2"
           >
             {feedbackStep === 0 && (
-              <>
-                <h3 className="text-[17px] font-black leading-7 text-black">
-                  저녁 멤버 중에서 단 둘이 만나고 싶은 사람이 있나요?
-                  <span className="block font-medium text-black/35">(중복 선택 가능)</span>
-                </h3>
-                <p className="mt-2 text-xs font-semibold leading-5 text-black/42">
-                  서로 선택한 경우 1:1 만남 자리를 준비해드려요.
-                </p>
-                {dateCandidateMembers.length > 0 ? (
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {dateCandidateMembers.map((member) => {
-                      const selected = dateMemberIds.includes(member.id);
-                      return (
+              activeReflectionMember ? (
+                <div className="pb-3 pt-1 text-[#24211d]">
+                  <div className="flex items-center justify-end">
+                    <span className="text-[11px] font-bold tabular-nums text-black/42">
+                      {reflectionMemberIndex + 1} / {dateCandidateMembers.length}
+                    </span>
+                  </div>
+                  <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-black/[0.09]">
+                    <motion.div
+                      className="h-full rounded-full bg-[#24211d]"
+                      animate={{
+                        width: `${((reflectionMemberIndex + 1) / dateCandidateMembers.length) * 100}%`,
+                      }}
+                      transition={{ duration: 0.28, ease: "easeOut" }}
+                    />
+                  </div>
+
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={activeReflectionMember.id}
+                      initial={{ opacity: 0, x: 18 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -14 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      <h3 className="mt-8 break-keep font-serif text-[27px] font-semibold leading-[1.18] tracking-[-0.025em] text-[#24211d]">
+                        {memberRealName(activeReflectionMember)}님을 조금 더 알아가고
+                        싶은가요?
+                      </h3>
+                      <button
+                        type="button"
+                        disabled={!activeReflectionMember.photoUrl}
+                        onClick={() => {
+                          if (!activeReflectionMember.photoUrl) return;
+                          setFeedbackPhotoPreview({
+                            url: activeReflectionMember.photoUrl,
+                            name: memberRealName(activeReflectionMember),
+                          });
+                        }}
+                        className="mt-6 flex items-center gap-3 text-left disabled:cursor-default"
+                      >
+                        <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/[0.08] bg-[#e2dccf] text-[10px] font-black text-black/45">
+                          {fallbackNickname(
+                            activeReflectionMember.nickname || activeReflectionMember.name,
+                          )}
+                          {activeReflectionMember.photoUrl && (
+                            <SafeImage
+                              src={activeReflectionMember.photoUrl}
+                              alt=""
+                              draggable={false}
+                              className="absolute inset-0 h-full w-full object-cover"
+                            />
+                          )}
+                        </span>
+                        <span>
+                          <strong className="block font-serif text-[18px] font-semibold text-[#24211d]">
+                            {memberRealName(activeReflectionMember)}
+                          </strong>
+                          <span className="mt-0.5 block text-[11px] font-semibold text-black/36">
+                            {activeReflectionMember.photoUrl
+                              ? "사진을 눌러 다시 보기"
+                              : "오늘 함께한 멤버"}
+                          </span>
+                        </span>
+                      </button>
+
+                      <div className="mt-9 border-y border-black/[0.08] py-5">
+                        <div className="grid grid-cols-4 gap-2">
+                          {([1, 2, 3, 4] as const).map((strength) => {
+                            const selected =
+                              connectionStrengths[activeReflectionMember.id] ===
+                              strength;
+                            return (
+                              <button
+                                key={strength}
+                                type="button"
+                                aria-label={`다시 만나고 싶은 정도 ${strength}점`}
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  selectConnectionStrength(
+                                    activeReflectionMember.id,
+                                    strength,
+                                  )
+                                }
+                                className={cn(
+                                  "flex h-12 items-center justify-center rounded-xl border text-sm font-black transition-all",
+                                  selected
+                                    ? "border-[#24211d] bg-[#24211d] text-[#faf8f3] shadow-[0_8px_18px_rgba(36,33,29,0.16)]"
+                                    : "border-[#d8d1c3] bg-[#f7f4ed] text-black/48 hover:border-[#aaa294] hover:bg-white hover:text-[#24211d]",
+                                )}
+                              >
+                                {strength}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 flex items-start justify-between gap-5 text-[10px] font-bold leading-4 text-black/42">
+                          <span className="max-w-[115px]">오늘 만남으로 충분해요</span>
+                          <span className="max-w-[115px] text-right">
+                            조금 더 알아가고 싶어요
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="flex gap-1.5">
+                          {dateCandidateMembers.map((member, index) => (
+                            <button
+                              key={member.id}
+                              type="button"
+                              aria-label={`${index + 1}번째 멤버 응답으로 이동`}
+                              onClick={() => setReflectionMemberIndex(index)}
+                              className={cn(
+                                "h-1.5 rounded-full transition-all",
+                                index === reflectionMemberIndex
+                                  ? "w-5 bg-[#24211d]"
+                                  : memberReflections[member.id]
+                                    ? "w-1.5 bg-black/45"
+                                    : "w-1.5 bg-black/[0.12]",
+                              )}
+                            />
+                          ))}
+                        </div>
                         <button
-                          key={member.id}
                           type="button"
-                          onClick={() => selectDateMember(member.id)}
+                          aria-pressed={
+                            memberReflections[activeReflectionMember.id] === "no_show"
+                          }
+                          onClick={() => selectNoShowMember(activeReflectionMember.id)}
                           className={cn(
-                            "min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                            selected
-                              ? "border-black bg-black text-white"
-                              : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
+                            "rounded-full border px-3 py-1.5 text-[10px] font-bold transition",
+                            memberReflections[activeReflectionMember.id] === "no_show"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-black/[0.09] bg-white/45 text-black/50 hover:border-red-200 hover:bg-red-50 hover:text-red-600",
                           )}
                         >
-                          {memberRealName(member)}
+                          노쇼했어요
                         </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="mt-6 bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
-                    선택 가능한 멤버가 없어요.
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
+
+                  <p className="mt-5 rounded-xl border border-black/[0.06] bg-white/45 px-3 py-2.5 text-[11px] font-semibold leading-[1.55] text-black/52">
+                    서로 3점 이상을 선택하면 교집합이 블라인드 데이트를
+                    준비해드려요.
                   </p>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDateMemberIds([]);
-                    setDateMembersUnsure(true);
-                  }}
-                  className={cn(
-                    "mt-3 min-h-10 rounded-full border px-4 text-sm font-bold transition",
-                    dateMembersUnsure
-                      ? "border-black bg-black text-white"
-                      : "border-[#d8d1c3]/90 bg-[#eee9df] text-[#24211d]/62 hover:border-[#aaa294] hover:text-[#24211d]",
-                  )}
-                >
-                  잘 모르겠어요
-                </button>
-              </>
+                </div>
+              ) : (
+                <p className="bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
+                  선택 가능한 멤버가 없어요.
+                </p>
+              )
             )}
 
             {feedbackStep === 1 && (
@@ -5592,9 +5775,9 @@ function TicketFeedbackForm({
                 <p className="mt-2 text-xs font-semibold leading-5 text-black/42">
                   서로 선택한 경우 1:1 만남 자리를 준비해드려요.
                 </p>
-                {overallMembers.length > 0 ? (
+                {overallCandidateMembers.length > 0 ? (
                   <div className="mt-6 flex flex-wrap gap-2">
-                    {overallMembers.map((member) => {
+                    {overallCandidateMembers.map((member) => {
                       const selected = vibeMemberIds.includes(member.id);
                       return (
                         <div
@@ -5680,7 +5863,7 @@ function TicketFeedbackForm({
 
             {feedbackStep === 2 && (
               <MeetingStarRating
-                label={`첫 장소 피드백 (${firstPlaceName})`}
+                label={`1차 장소 평가 (${firstPlaceName})`}
                 value={meetingRatings.firstPlace}
                 onChange={(rating) =>
                   setMeetingRatings((current) => ({ ...current, firstPlace: rating }))
@@ -5690,7 +5873,7 @@ function TicketFeedbackForm({
 
             {feedbackStep === 3 && (
               <MeetingStarRating
-                label={`두 번째 장소 피드백 (${secondPlaceName})`}
+                label={`2차 장소 평가 (${secondPlaceName})`}
                 value={meetingRatings.secondPlace}
                 onChange={(rating) =>
                   setMeetingRatings((current) => ({ ...current, secondPlace: rating }))
@@ -5699,14 +5882,32 @@ function TicketFeedbackForm({
             )}
 
             {feedbackStep === 4 && (
+              <MeetingStarRating
+                label="교집합을 친구에게 추천해주시겠어요?"
+                lowLabel="추천하지 않아요"
+                highLabel="추천하고 싶어요"
+                value={meetingRatings.recommendation}
+                onChange={(rating) =>
+                  setMeetingRatings((current) => ({
+                    ...current,
+                    recommendation: rating,
+                  }))
+                }
+              />
+            )}
+
+            {feedbackStep === 5 && (
               <>
+                <h3 className="text-[17px] font-black leading-7 text-black">
+                  불편 신고
+                  <span className="ml-1 font-medium text-black/35">(선택)</span>
+                </h3>
                 <label
                   htmlFor={`disruptive-member-note-${userTicket.waitlistId}`}
-                  className="block text-[17px] font-black leading-7 text-black"
+                  className="mt-3 block text-sm font-semibold leading-6 text-black/55"
                 >
                   모임 분위기를 해치거나, 주변 사람들의 기분을 상하게 하는 사람이
                   있다면 적어주세요.
-                  <span className="ml-1 font-medium text-black/35">(선택)</span>
                 </label>
                 <textarea
                   id={`disruptive-member-note-${userTicket.waitlistId}`}
@@ -5811,11 +6012,15 @@ function TicketFeedbackForm({
 }
 
 function MeetingStarRating({
+  highLabel = "좋았어요",
   label,
+  lowLabel = "아쉬워요",
   onChange,
   value,
 }: {
+  highLabel?: string;
   label: string;
+  lowLabel?: string;
   onChange: (rating: number) => void;
   value: number | null;
 }) {
@@ -5859,8 +6064,8 @@ function MeetingStarRating({
         })}
       </div>
       <div className="mt-2 flex justify-between px-1 text-[10px] font-semibold text-black/35">
-        <span>아쉬워요</span>
-        <span>좋았어요</span>
+        <span>{lowLabel}</span>
+        <span>{highLabel}</span>
       </div>
     </div>
   );

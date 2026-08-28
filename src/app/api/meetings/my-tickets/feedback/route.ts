@@ -9,6 +9,8 @@ type PersonAxis = "temperature" | "texture" | "tone" | "rhythm";
 
 type MemberFeedbackValue = {
   status?: "done" | "skipped";
+  connection_intent?: "interested" | "enough" | "no_show";
+  connection_strength?: 1 | 2 | 3 | 4;
 } & Partial<Record<PersonAxis, number | null>>;
 
 type FeedbackRequest = {
@@ -92,6 +94,28 @@ function normalizeMemberFeedback(value: unknown) {
     const normalized: MemberFeedbackValue = {
       status: entry.status === "done" ? "done" : "skipped",
     };
+    if (
+      entry.connection_intent === "interested" ||
+      entry.connection_intent === "enough" ||
+      entry.connection_intent === "no_show"
+    ) {
+      normalized.connection_intent = entry.connection_intent;
+    } else if (entry.connection_intent !== null && entry.connection_intent !== undefined) {
+      return null;
+    }
+    if (
+      typeof entry.connection_strength === "number" &&
+      Number.isInteger(entry.connection_strength) &&
+      entry.connection_strength >= 1 &&
+      entry.connection_strength <= 4
+    ) {
+      normalized.connection_strength = entry.connection_strength as 1 | 2 | 3 | 4;
+    } else if (
+      entry.connection_strength !== null &&
+      entry.connection_strength !== undefined
+    ) {
+      return null;
+    }
 
     for (const axis of personAxes) {
       const score = entry[axis];
@@ -145,8 +169,36 @@ function normalizePlaceFeedback(value: unknown) {
   };
   const first = ratings.first == null ? null : normalizePlaceRating(ratings.first);
   const second = normalizePlaceRating(ratings.second);
+  const recommendationRating =
+    raw.recommendation_rating == null
+      ? null
+      : isMeetingRating(raw.recommendation_rating)
+        ? raw.recommendation_rating
+        : undefined;
   const dinnerMemberIds = normalizeSelectedMemberIds(raw.dinner_member_ids);
   const overallMemberIds = normalizeSelectedMemberIds(raw.overall_member_ids);
+  const rawNegativeMemberFeedback = raw.negative_member_feedback;
+  const negativeMemberFeedback: Record<string, { reasons: ["no_show"] }> = {};
+  if (
+    !rawNegativeMemberFeedback ||
+    typeof rawNegativeMemberFeedback !== "object" ||
+    Array.isArray(rawNegativeMemberFeedback)
+  ) {
+    if (rawNegativeMemberFeedback !== null && rawNegativeMemberFeedback !== undefined) {
+      return null;
+    }
+  } else {
+    for (const [memberId, rawEntry] of Object.entries(rawNegativeMemberFeedback)) {
+      if (!isUuid(memberId) || !rawEntry || typeof rawEntry !== "object" || Array.isArray(rawEntry)) {
+        return null;
+      }
+      const reasons = (rawEntry as Record<string, unknown>).reasons;
+      if (!Array.isArray(reasons) || reasons.length !== 1 || reasons[0] !== "no_show") {
+        return null;
+      }
+      negativeMemberFeedback[memberId] = { reasons: ["no_show"] };
+    }
+  }
   const dinnerMemberUnsure = raw.dinner_member_unsure === true;
   const overallMemberUnsure = raw.overall_member_unsure === true;
   const disruptiveMemberNote =
@@ -161,7 +213,14 @@ function normalizePlaceFeedback(value: unknown) {
     !dinnerMemberIds ||
     !overallMemberIds ||
     overallMemberIds.length > 3 ||
+    Object.keys(negativeMemberFeedback).length > 3 ||
+    dinnerMemberIds.some((memberId) => overallMemberIds.includes(memberId)) ||
+    Object.keys(negativeMemberFeedback).some(
+      (memberId) =>
+        dinnerMemberIds.includes(memberId) || overallMemberIds.includes(memberId),
+    ) ||
     disruptiveMemberNote === undefined ||
+    recommendationRating === undefined ||
     (disruptiveMemberNote?.length ?? 0) > 500
   ) {
     return null;
@@ -169,10 +228,12 @@ function normalizePlaceFeedback(value: unknown) {
 
   return {
     place_ratings: { first, second },
+    recommendation_rating: recommendationRating,
     dinner_member_ids: dinnerMemberIds,
     overall_member_ids: overallMemberIds,
     dinner_member_unsure: dinnerMemberUnsure,
     overall_member_unsure: overallMemberUnsure,
+    negative_member_feedback: negativeMemberFeedback,
     disruptive_member_note: disruptiveMemberNote,
   };
 }
@@ -185,6 +246,13 @@ function feedbackTargetIds(placeFeedback: Record<string, unknown>) {
     ...(Array.isArray(placeFeedback.overall_member_ids)
       ? placeFeedback.overall_member_ids.filter(isUuid)
       : []),
+    ...(
+      placeFeedback.negative_member_feedback &&
+      typeof placeFeedback.negative_member_feedback === "object" &&
+      !Array.isArray(placeFeedback.negative_member_feedback)
+        ? Object.keys(placeFeedback.negative_member_feedback).filter(isUuid)
+        : []
+    ),
   ];
 }
 
@@ -209,7 +277,7 @@ export async function POST(request: Request) {
     !waitlistId ||
     !selectedMemberIds ||
     !memberFeedback ||
-    Object.keys(memberFeedback).length > 3 ||
+    Object.keys(memberFeedback).length > 6 ||
     !placeFeedback
   ) {
     return NextResponse.json({ error: "Invalid feedback payload." }, { status: 400 });

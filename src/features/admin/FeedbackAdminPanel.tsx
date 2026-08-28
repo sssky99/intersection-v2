@@ -22,6 +22,8 @@ type MeetingFeedback = {
 
 type MemberFeedbackEntry = {
   status?: "done" | "skipped";
+  connection_intent?: "interested" | "enough" | "no_show";
+  connection_strength?: 1 | 2 | 3 | 4;
 } & Partial<Record<PersonAxis, number | null>>;
 
 type MeetingRatingsFeedback = {
@@ -42,6 +44,7 @@ type StructuredPlaceFeedback = Partial<Record<PlaceAxis, number>> & {
     first?: { name?: string | null; rating?: number | null };
     second?: { name?: string | null; rating?: number | null };
   };
+  recommendation_rating?: number | null;
   dinner_member_ids?: string[];
   overall_member_ids?: string[];
   dinner_member_unsure?: boolean;
@@ -688,7 +691,7 @@ function PersonFeedbackSummary({
   return (
     <div className="min-w-0 rounded-xl bg-white px-4 py-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-bold text-black/35">비슷한 결로 추천한 사람</p>
+        <p className="text-[11px] font-bold text-black/35">사람별 인연 응답</p>
         <span className="rounded-full bg-black/[0.04] px-2.5 py-1 text-[10px] font-bold text-black/45">
           {entries.length}명
         </span>
@@ -706,6 +709,23 @@ function PersonFeedbackSummary({
                   item.value !== null,
               );
 
+            const intentLabel =
+              entry?.connection_intent === "interested"
+                ? "더 알아가고 싶음"
+                : entry?.connection_intent === "enough"
+                  ? "오늘 만남으로 충분"
+                  : entry?.connection_intent === "no_show"
+                    ? "만나지 못함 · 노쇼"
+                    : entry?.status === "skipped"
+                      ? "건너뜀"
+                      : "추천 참고";
+            const intentClass =
+              entry?.connection_intent === "no_show"
+                ? "bg-red-50 text-red-700"
+                : entry?.connection_intent === "interested"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-sky-50 text-sky-700";
+
             return (
               <div
                 key={memberId}
@@ -715,8 +735,10 @@ function PersonFeedbackSummary({
                   <p className="text-sm font-black text-black">
                     {memberName(profileMap.get(memberId), memberId)}
                   </p>
-                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
-                    {entry?.status === "skipped" ? "건너뜀" : "추천 참고"}
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${intentClass}`}
+                  >
+                    {intentLabel}
                   </span>
                 </div>
                 {scores.length > 0 && (
@@ -730,6 +752,11 @@ function PersonFeedbackSummary({
                       </span>
                     ))}
                   </div>
+                )}
+                {entry?.connection_strength && (
+                  <p className="mt-2 text-[10px] font-bold text-black/38">
+                    다시 만나고 싶은 정도 {entry.connection_strength}/4
+                  </p>
                 )}
               </div>
             );
@@ -811,6 +838,7 @@ function MeetingFeedbackSummary({
   const hasRatings =
     feedbackScore(ratings?.overall) !== null ||
     feedbackScore(ratings?.expectation_match) !== null ||
+    feedbackScore(placeFeedback?.recommendation_rating) !== null ||
     feedbackScore(placeRatings?.first?.rating) !== null ||
     feedbackScore(placeRatings?.second?.rating) !== null;
 
@@ -831,6 +859,10 @@ function MeetingFeedbackSummary({
               <RatingRow
                 label={`두 번째 장소 · ${placeRatings.second?.name || "장소명 없음"}`}
                 value={placeRatings.second?.rating}
+              />
+              <RatingRow
+                label="친구에게 추천할 의향"
+                value={placeFeedback?.recommendation_rating}
               />
             </>
           ) : (
