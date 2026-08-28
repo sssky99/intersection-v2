@@ -158,15 +158,33 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
   let profiles: AdminProfile[] = [];
   if (userIds.length > 0) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(profileSelect)
-      .in("user_id", userIds)
-      .order("name");
-    if (error) throw error;
-    profiles = ((data ?? []) as unknown as AdminProfile[]).map(
-      normalizeAdminProfile,
+    const [profilesResult, ratingsResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select(profileSelect)
+        .in("user_id", userIds)
+        .order("name"),
+      supabase
+        .from("profile_operator_ratings")
+        .select("user_id,rating,updated_at")
+        .in("user_id", userIds),
+    ]);
+    if (profilesResult.error) throw profilesResult.error;
+    if (ratingsResult.error) throw ratingsResult.error;
+
+    const ratingsByUserId = new Map(
+      (ratingsResult.data ?? []).map((row) => [row.user_id, row]),
     );
+    profiles = (
+      (profilesResult.data ?? []) as unknown as AdminProfile[]
+    ).map((profile) => {
+      const rating = ratingsByUserId.get(profile.user_id);
+      return normalizeAdminProfile({
+        ...profile,
+        operator_rating: rating ? Number(rating.rating) : null,
+        operator_rating_updated_at: rating?.updated_at ?? null,
+      });
+    });
   }
 
   let seedInstances: WaitlistTicketInstance[] = [];

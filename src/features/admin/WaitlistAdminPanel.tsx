@@ -1397,6 +1397,7 @@ function DistributionApplicantCard({
             <AdminMemberName
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
+              showOperatorRating
             />
           ) : (
             "신청자 미확인"
@@ -1445,6 +1446,7 @@ function ApplicantRow({
             <AdminMemberName
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
+              showOperatorRating
             />
           ) : (
             "신청자 미확인"
@@ -1517,6 +1519,7 @@ function WaitlistDetailPanel({
             <AdminMemberName
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
+              showOperatorRating
             />
           ) : (
             "신청자 미확인"
