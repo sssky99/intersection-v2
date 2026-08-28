@@ -1919,15 +1919,7 @@ export async function GET(request: Request) {
               feedbackReferenceInstanceId,
             ]
           : [];
-        const viewerFeedbackGroup =
-          feedbackGroupByInstance.get(feedbackReferenceInstanceId) ??
-          (instanceId ? feedbackGroupByInstance.get(instanceId) : undefined);
-        const feedbackRelatedInstanceIds = viewerFeedbackGroup
-          ? allFeedbackRelatedInstanceIds.filter(
-              (relatedInstanceId) =>
-                feedbackGroupByInstance.get(relatedInstanceId) === viewerFeedbackGroup,
-            )
-          : allFeedbackRelatedInstanceIds;
+        const feedbackRelatedInstanceIds = allFeedbackRelatedInstanceIds;
         const feedbackGroupByMemberId = new Map<string, "123" | "456">();
         for (const relatedInstanceId of feedbackRelatedInstanceIds) {
           const feedbackGroup = feedbackGroupByInstance.get(relatedInstanceId);

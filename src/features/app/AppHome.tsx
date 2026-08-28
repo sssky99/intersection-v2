@@ -5273,8 +5273,12 @@ function memberRealName(member: UserTicket["members"][number]) {
 }
 
 function feedbackOwnerPossessive(member?: UserTicket["members"][number]) {
+  return `${feedbackOwnerHonorific(member)}의`;
+}
+
+function feedbackOwnerHonorific(member?: UserTicket["members"][number]) {
   const displayName = member?.nickname?.trim() || member?.name?.trim() || "회원";
-  return displayName.endsWith("님") ? `${displayName}의` : `${displayName}님의`;
+  return displayName.endsWith("님") ? displayName : `${displayName}님`;
 }
 
 function TicketFeedbackForm({
@@ -5289,6 +5293,7 @@ function TicketFeedbackForm({
     [userTicket.members],
   );
   const feedbackOwner = feedbackOwnerPossessive(selfMember);
+  const feedbackOwnerName = feedbackOwnerHonorific(selfMember);
   const feedbackTitle = ticketStageText(userTicket.ticket.stageCopy, "feedbackTitle");
   const feedbackBody = ticketFeedbackBodyText(
     userTicket.ticket.stageCopy,
@@ -5302,11 +5307,9 @@ function TicketFeedbackForm({
   const overallMembers = useMemo(
     () =>
       (userTicket.feedbackMembers ?? userTicket.members).filter(
-        (member) =>
-          !member.isSelf &&
-          (!selfGender || !member.gender || member.gender !== selfGender),
+        (member) => !member.isSelf,
       ),
-    [selfGender, userTicket.feedbackMembers, userTicket.members],
+    [userTicket.feedbackMembers, userTicket.members],
   );
   const dateCandidateMembers = useMemo(
     () =>
@@ -5408,7 +5411,7 @@ function TicketFeedbackForm({
     dateCandidateMembers[reflectionMemberIndex] ?? dateCandidateMembers[0];
   const overallCandidateMembers = overallMembers.filter(
     (member) =>
-      !dateMemberIds.includes(member.id) && !noShowMemberIds.includes(member.id),
+      !dateCandidateMembers.some((candidate) => candidate.id === member.id),
   );
   const canAdvanceFeedbackStep =
     (feedbackStep === 0 && dateMemberReflectionsComplete) ||
@@ -5480,6 +5483,15 @@ function TicketFeedbackForm({
     setFeedbackStepIndex(boundedStep);
     setSubmitError(null);
   };
+
+  const selectMeetingRating = (key: MeetingRatingKey, rating: number) => {
+    const nextStepIndex = feedbackStepIndex + 1;
+    setMeetingRatings((current) => ({ ...current, [key]: rating }));
+    window.setTimeout(() => moveFeedbackStep(nextStepIndex), 220);
+  };
+
+  const autoAdvancesAfterChoice =
+    feedbackStep === 2 || feedbackStep === 3 || feedbackStep === 4;
 
   const submitLabel = (() => {
     if (submitting) return "저장 중이에요";
@@ -5593,9 +5605,14 @@ function TicketFeedbackForm({
     <div className="py-5">
       <section>
         <h2 className="text-[22px] font-black text-black">{feedbackTitle}</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-black/52">
-          {feedbackBody}
-        </p>
+        <div className="mt-2 space-y-1.5 text-sm leading-6">
+          <p className="font-semibold text-black/52">{feedbackBody}</p>
+          <p className="font-bold text-black/65">
+            교집합이 {feedbackOwnerName}에게 잘 맞는 사람을 찾아가는 데에는{" "}
+            <strong className="font-black text-black">평균 다섯 번</strong>의 참여와
+            피드백이 필요해요.
+          </p>
+        </div>
       </section>
 
       <div className="mt-8 overflow-hidden">
@@ -5752,10 +5769,18 @@ function TicketFeedbackForm({
                     </motion.div>
                   </AnimatePresence>
 
-                  <p className="mt-5 rounded-xl border border-black/[0.06] bg-white/45 px-3 py-2.5 text-[11px] font-semibold leading-[1.55] text-black/52">
-                    서로 3점 이상을 선택하면 교집합이 블라인드 데이트를
-                    준비해드려요.
-                  </p>
+                  <div className="mt-5 flex items-center gap-2.5 rounded-xl border border-[#cfc6b6] bg-[#e8e1d5] px-3 py-2.5 text-[11px] font-bold leading-[1.55] text-black/65">
+                    <span
+                      aria-hidden
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/70 text-[15px] shadow-sm"
+                    >
+                      💌
+                    </span>
+                    <p>
+                      서로 3점 이상을 선택하면 교집합이 블라인드 데이트를
+                      준비해드려요.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <p className="bg-black/[0.03] px-4 py-4 text-sm font-semibold leading-6 text-black/50">
@@ -5865,9 +5890,7 @@ function TicketFeedbackForm({
               <MeetingStarRating
                 label={`1차 장소 평가 (${firstPlaceName})`}
                 value={meetingRatings.firstPlace}
-                onChange={(rating) =>
-                  setMeetingRatings((current) => ({ ...current, firstPlace: rating }))
-                }
+                onChange={(rating) => selectMeetingRating("firstPlace", rating)}
               />
             )}
 
@@ -5875,9 +5898,7 @@ function TicketFeedbackForm({
               <MeetingStarRating
                 label={`2차 장소 평가 (${secondPlaceName})`}
                 value={meetingRatings.secondPlace}
-                onChange={(rating) =>
-                  setMeetingRatings((current) => ({ ...current, secondPlace: rating }))
-                }
+                onChange={(rating) => selectMeetingRating("secondPlace", rating)}
               />
             )}
 
@@ -5887,12 +5908,7 @@ function TicketFeedbackForm({
                 lowLabel="추천하지 않아요"
                 highLabel="추천하고 싶어요"
                 value={meetingRatings.recommendation}
-                onChange={(rating) =>
-                  setMeetingRatings((current) => ({
-                    ...current,
-                    recommendation: rating,
-                  }))
-                }
+                onChange={(rating) => selectMeetingRating("recommendation", rating)}
               />
             )}
 
@@ -5940,7 +5956,9 @@ function TicketFeedbackForm({
         >
           <ChevronLeft size={19} aria-hidden />
         </button>
-        {feedbackStepIndex < feedbackStepCount - 1 && canAdvanceFeedbackStep ? (
+        {feedbackStepIndex < feedbackStepCount - 1 &&
+        canAdvanceFeedbackStep &&
+        !autoAdvancesAfterChoice ? (
           <button
             type="button"
             aria-label="다음 질문"
