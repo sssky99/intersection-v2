@@ -6,9 +6,9 @@ import {
 } from "./ticketCourse";
 
 describe("ticket course timing", () => {
-  it("reveals later course places 30 minutes before the activity starts", () => {
+  it("reveals later course places 40 minutes before the activity starts", () => {
     expect(courseStepOpenOffsetMinutes(90, 1)).toBe(90);
-    expect(courseStepPlaceRevealOffsetMinutes(90, 1)).toBe(60);
+    expect(courseStepPlaceRevealOffsetMinutes(90, 1)).toBe(50);
   });
 
   it("does not move the first course reveal before the meeting starts", () => {
@@ -27,6 +27,6 @@ describe("ticket course timing", () => {
       steps.map((step, index) =>
         courseStepPlaceRevealOffsetMinutes(step.openOffsetMinutes, index),
       ),
-    ).toEqual([0, 60, 120]);
+    ).toEqual([0, 50, 110]);
   });
 });
