@@ -65,6 +65,7 @@ import {
   MatchingLoader,
   MeetingRecommendation,
 } from "@/features/meetings/MeetingRecommendation";
+import { ConversationCards } from "@/features/meetings/ConversationCards";
 import { useDragScroll } from "@/features/app/useDragScroll";
 import {
   CompactParticipationSparkleProgress,
@@ -4765,6 +4766,7 @@ function TicketStageContent({
             />
           }
         />
+        <ConversationCards />
         <FeedbackGuide userTicket={userTicket} />
       </>
     );
