@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft, MessageCircle, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MessageCircle, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 function cn(...values: Array<string | false | null | undefined>) {
@@ -185,24 +185,47 @@ export function ConversationCards() {
                       {group.questions[index]}
                     </p>
                     <p className="text-[10px] font-bold text-black/28">
-                      좌우로 밀어 다음 카드를 확인하세요
+                      좌우로 밀거나 아래 버튼으로 넘겨보세요
                     </p>
                   </motion.article>
                 </AnimatePresence>
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-center gap-1.5" aria-label={`${index + 1} / ${group.questions.length}`}>
-              {group.questions.map((_, dotIndex) => (
-                <span
-                  key={dotIndex}
-                  aria-hidden
-                  className={cn(
-                    "h-1.5 rounded-full transition-all",
-                    dotIndex === index ? "w-5 bg-black/72" : "w-1.5 bg-black/16",
-                  )}
-                />
-              ))}
+            <div className="mt-4 grid grid-cols-[44px_1fr_44px] items-center gap-3">
+              <button
+                type="button"
+                onClick={() => move(-1)}
+                aria-label="이전 대화 카드"
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-[#faf8f3] text-[#24211d] shadow-[0_5px_14px_rgba(36,33,29,0.06)] transition active:scale-95 hover:border-black/20 hover:bg-[#f3eee5]"
+              >
+                <ChevronLeft size={19} strokeWidth={2.4} aria-hidden />
+              </button>
+
+              <div
+                className="flex items-center justify-center gap-1.5"
+                aria-label={`${index + 1} / ${group.questions.length}`}
+              >
+                {group.questions.map((_, dotIndex) => (
+                  <span
+                    key={dotIndex}
+                    aria-hidden
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      dotIndex === index ? "w-5 bg-black/72" : "w-1.5 bg-black/16",
+                    )}
+                  />
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => move(1)}
+                aria-label="다음 대화 카드"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-[#24211d] text-[#faf8f3] shadow-[0_7px_16px_rgba(36,33,29,0.18)] transition active:scale-95 hover:bg-black"
+              >
+                <ChevronRight size={19} strokeWidth={2.4} aria-hidden />
+              </button>
             </div>
           </motion.div>
         )}
