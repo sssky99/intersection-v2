@@ -156,6 +156,17 @@ function addStructuredAnswerReasons(
     });
   }
 
+  if (answerForOrder(answers, 31)?.answer_value?.toUpperCase() === "ISTP") {
+    reasons.push({
+      id: "mbti_istp",
+      label: "MBTI가 ISTP임",
+      score: 0.3,
+      source: "answer",
+      detail: "MBTI 문항에서 ISTP 선택",
+      questionOrder: 31,
+    });
+  }
+
   if (answerForOrder(answers, 201)?.answer_value === "club") {
     reasons.push({
       id: "prefers_club_over_picnic",

@@ -120,6 +120,21 @@ describe("calculateRedFlagAssessment", () => {
     expect(result.score).toBe(0.5);
   });
 
+  it("adds 0.3 for ISTP without flagging other MBTI values", () => {
+    const istp = calculateRedFlagAssessment({
+      answers: [answer(31, "ISTP")],
+      participations: [],
+    });
+    const other = calculateRedFlagAssessment({
+      answers: [answer(31, "ENFP")],
+      participations: [],
+    });
+
+    expect(istp.score).toBe(0.3);
+    expect(istp.reasons[0]?.id).toBe("mbti_istp");
+    expect(other.score).toBe(0);
+  });
+
   it("uses the one-character penalty instead of stacking short-answer penalties", () => {
     const result = calculateRedFlagAssessment({
       answers: [
