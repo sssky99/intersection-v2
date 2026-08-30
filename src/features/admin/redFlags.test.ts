@@ -24,6 +24,7 @@ describe("calculateRedFlagAssessment", () => {
   it("applies the requested structured-answer weights", () => {
     const result = calculateRedFlagAssessment({
       answers: [
+        answer(201, "club"),
         answer(624, "5"),
         answer(605, "4"),
         answer(610, "1"),
@@ -33,14 +34,25 @@ describe("calculateRedFlagAssessment", () => {
       participations: [],
     });
 
-    expect(result.score).toBe(3);
+    expect(result.score).toBe(3.5);
     expect(result.reasons.map((reason) => reason.id)).toEqual([
+      "prefers_club_over_picnic",
       "lateness",
       "finds_faults",
       "group_conversation_low",
       "inappropriate_humor",
       "second_date_rate",
     ]);
+  });
+
+  it("does not flag the picnic choice", () => {
+    const result = calculateRedFlagAssessment({
+      answers: [answer(201, "picnic")],
+      participations: [],
+    });
+
+    expect(result.score).toBe(0);
+    expect(result.reasons).toEqual([]);
   });
 
   it("uses the one-character penalty instead of stacking short-answer penalties", () => {
@@ -87,5 +99,22 @@ describe("calculateRedFlagAssessment", () => {
       "contradictory_answers",
       "derogatory_hateful_or_sexual",
     ]);
+  });
+
+  it("supports a manual adjustment without allowing a negative total", () => {
+    const adjusted = calculateRedFlagAssessment({
+      answers: [answer(624, "7")],
+      participations: [],
+      manualAdjustment: -1.5,
+    });
+    expect(adjusted.score).toBe(0.5);
+    expect(adjusted.manualAdjustment).toBe(-1.5);
+
+    const floored = calculateRedFlagAssessment({
+      answers: [],
+      participations: [],
+      manualAdjustment: -5,
+    });
+    expect(floored.score).toBe(0);
   });
 });

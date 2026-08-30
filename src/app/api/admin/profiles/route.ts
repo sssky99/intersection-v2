@@ -466,10 +466,11 @@ async function attachRedFlagAssessment(
 ) {
   const { data: review, error: reviewError } = await supabase
     .from("profile_red_flag_reviews")
-    .select("manual_flags,updated_at")
+    .select("manual_flags,manual_adjustment,updated_at")
     .eq("user_id", profile.user_id)
     .maybeSingle<{
       manual_flags: Record<string, unknown> | null;
+      manual_adjustment: number | null;
       updated_at: string | null;
     }>();
   if (reviewError) throw reviewError;
@@ -511,6 +512,7 @@ async function attachRedFlagAssessment(
     answers: profile.answers ?? [],
     participations: history,
     manualFlags: normalizeRedFlagManualFlags(review?.manual_flags),
+    manualAdjustment: Number(review?.manual_adjustment ?? 0),
     reviewedAt: review?.updated_at ?? null,
   });
 
@@ -519,6 +521,7 @@ async function attachRedFlagAssessment(
     red_flag_score: assessment.score,
     red_flag_reasons: assessment.reasons,
     red_flag_manual_flags: assessment.manualFlags,
+    red_flag_manual_adjustment: assessment.manualAdjustment,
     red_flag_reviewed_at: assessment.reviewedAt,
   });
 }
@@ -562,13 +565,13 @@ function operatorRatingValue(value: unknown) {
   if (
     typeof value !== "number" ||
     !Number.isFinite(value) ||
-    value < 0.5 ||
+    value < 0.1 ||
     value > 5 ||
-    !Number.isInteger(value * 2)
+    !Number.isInteger(value * 10)
   ) {
     return undefined;
   }
-  return value;
+  return Math.round(value * 10) / 10;
 }
 
 function trimmedText(value: unknown) {
@@ -665,12 +668,14 @@ export async function PATCH(request: NextRequest) {
     matchingPrecisionBonus?: unknown;
     operatorRating?: unknown;
     redFlagManualFlags?: unknown;
+    redFlagManualAdjustment?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
   const updates: Record<string, unknown> = {};
   let operatorRating: number | null | undefined;
   let redFlagManualFlags: RedFlagManualFlags | undefined;
+  let redFlagManualAdjustment: number | undefined;
 
   if (isMembershipStatus(status)) {
     updates.membership_status = status;
@@ -715,7 +720,7 @@ export async function PATCH(request: NextRequest) {
     const nextRating = operatorRatingValue(body.operatorRating);
     if (nextRating === undefined) {
       return NextResponse.json(
-        { error: "운영자 평점은 0.5부터 5까지 0.5 단위로 입력해주세요." },
+        { error: "운영자 평점은 0.1부터 5까지 0.1 단위로 입력해주세요." },
         { status: 400 },
       );
     }
@@ -748,10 +753,28 @@ export async function PATCH(request: NextRequest) {
     redFlagManualFlags = normalizeRedFlagManualFlags(body.redFlagManualFlags);
   }
 
+  if (body && "redFlagManualAdjustment" in body) {
+    const value = body.redFlagManualAdjustment;
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      value < -5 ||
+      value > 5 ||
+      !Number.isInteger(value * 2)
+    ) {
+      return NextResponse.json(
+        { error: "레드 플래그 보정값은 -5부터 5까지 0.5 단위로 입력해주세요." },
+        { status: 400 },
+      );
+    }
+    redFlagManualAdjustment = Math.round(value * 2) / 2;
+  }
+
   if (
     Object.keys(updates).length === 0 &&
     operatorRating === undefined &&
-    redFlagManualFlags === undefined
+    redFlagManualFlags === undefined &&
+    redFlagManualAdjustment === undefined
   ) {
     return NextResponse.json(
       { error: "저장할 프로필 변경 사항이 없습니다." },
@@ -809,16 +832,35 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    if (redFlagManualFlags !== undefined) {
+    if (
+      redFlagManualFlags !== undefined ||
+      redFlagManualAdjustment !== undefined
+    ) {
+      const { data: currentReview, error: currentReviewError } = await supabase
+        .from("profile_red_flag_reviews")
+        .select("manual_flags,manual_adjustment")
+        .eq("user_id", userId)
+        .maybeSingle<{
+          manual_flags: Record<string, unknown> | null;
+          manual_adjustment: number | null;
+        }>();
+      if (currentReviewError) throw currentReviewError;
+
+      const nextManualFlags =
+        redFlagManualFlags ??
+        normalizeRedFlagManualFlags(currentReview?.manual_flags);
+      const nextManualAdjustment =
+        redFlagManualAdjustment ?? Number(currentReview?.manual_adjustment ?? 0);
       const hasManualFlag = redFlagManualRules.some(
-        (rule) => redFlagManualFlags?.[rule.key] === true,
+        (rule) => nextManualFlags[rule.key] === true,
       );
-      if (hasManualFlag) {
+      if (hasManualFlag || nextManualAdjustment !== 0) {
         const { error } = await supabase
           .from("profile_red_flag_reviews")
           .upsert({
             user_id: userId,
-            manual_flags: redFlagManualFlags,
+            manual_flags: nextManualFlags,
+            manual_adjustment: nextManualAdjustment,
             updated_at: new Date().toISOString(),
           });
         if (error) throw error;

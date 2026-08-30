@@ -4,7 +4,6 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
-  ChevronDown,
   Flag,
   Eye,
   Image as ImageIcon,
@@ -477,6 +476,7 @@ type ProfileDetailPatch = {
   matchingPrecisionBonus?: number;
   operatorRating?: number | null;
   redFlagManualFlags?: RedFlagManualFlags;
+  redFlagManualAdjustment?: number;
 };
 
 function clampMatchingPrecisionBonus(value: number) {
@@ -499,9 +499,32 @@ function OperatorRatingControl({
   disabled?: boolean;
   onChange: (value: number | null) => void;
 }) {
+  const [draft, setDraft] = useState(value === null ? "" : value.toFixed(1));
+
+  useEffect(() => {
+    setDraft(value === null ? "" : value.toFixed(1));
+  }, [value]);
+
+  const parsedDraft = draft.trim() === "" ? null : Number(draft);
+  const draftValid =
+    parsedDraft === null ||
+    (Number.isFinite(parsedDraft) &&
+      parsedDraft >= 0.1 &&
+      parsedDraft <= 5 &&
+      Number.isInteger(parsedDraft * 10));
+  const draftDirty =
+    draftValid &&
+    (parsedDraft === null
+      ? value !== null
+      : value === null || Math.abs(parsedDraft - value) > 0.001);
+  const applyDraft = () => {
+    if (!draftDirty || disabled) return;
+    onChange(parsedDraft === null ? null : Math.round(parsedDraft * 10) / 10);
+  };
+
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50/70 px-2 py-1"
+      className="inline-flex flex-wrap items-center gap-1.5 rounded-2xl border border-amber-200 bg-amber-50/70 px-2 py-1"
       aria-label={
         value === null ? "운영자 평점 미평가" : `운영자 평점 ${value.toFixed(1)}점`
       }
@@ -537,7 +560,11 @@ function OperatorRatingControl({
                     type="button"
                     disabled={disabled}
                     aria-label={`${rating.toFixed(1)}점${value === rating ? ", 다시 누르면 미평가" : ""}`}
-                    onClick={() => onChange(value === rating ? null : rating)}
+                    onClick={() => {
+                      const nextValue = value === rating ? null : rating;
+                      setDraft(nextValue === null ? "" : nextValue.toFixed(1));
+                      onChange(nextValue);
+                    }}
                     className={cn(
                       "absolute inset-y-0 z-10 disabled:cursor-wait",
                       step === 0.5 ? "left-0 w-1/2" : "right-0 w-1/2",
@@ -549,35 +576,49 @@ function OperatorRatingControl({
           );
         })}
       </div>
-      <span className="min-w-6 text-right text-[11px] font-black tabular-nums text-amber-700">
-        {value === null ? "-" : value.toFixed(1)}
-      </span>
+      <label className="ml-1 inline-flex items-center gap-1">
+        <span className="sr-only">운영자 평점 직접 입력</span>
+        <input
+          type="number"
+          min="0.1"
+          max="5"
+          step="0.1"
+          inputMode="decimal"
+          value={draft}
+          disabled={disabled}
+          placeholder="3.8"
+          aria-invalid={!draftValid}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") applyDraft();
+          }}
+          className={cn(
+            "h-7 w-14 rounded-lg border bg-white px-1.5 text-center text-xs font-black tabular-nums outline-none transition disabled:opacity-45",
+            draftValid
+              ? "border-amber-200 focus:border-amber-400"
+              : "border-red-300 text-red-600",
+          )}
+        />
+      </label>
+      <button
+        type="button"
+        disabled={!draftDirty || disabled}
+        onClick={applyDraft}
+        className="h-7 rounded-lg bg-amber-600 px-2 text-[11px] font-black text-white transition hover:bg-amber-700 disabled:bg-amber-200"
+      >
+        적용
+      </button>
     </div>
   );
 }
 
-function RedFlagAssessmentCard({
-  profile,
-  disabled,
-  onSave,
+function RedFlagScoreButton({
+  score,
+  onClick,
 }: {
-  profile: AdminProfile;
-  disabled: boolean;
-  onSave: (flags: RedFlagManualFlags) => Promise<void>;
+  score: number;
+  onClick: () => void;
 }) {
-  const savedFlags = profile.red_flag_manual_flags ?? {};
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<RedFlagManualFlags>(savedFlags);
-
-  useEffect(() => {
-    setDraft(savedFlags);
-  }, [profile.user_id, profile.red_flag_reviewed_at]);
-
-  const dirty = redFlagManualRules.some(
-    (rule) => Boolean(draft[rule.key]) !== Boolean(savedFlags[rule.key]),
-  );
-  const score = profile.red_flag_score ?? 0;
-  const reasons = profile.red_flag_reasons ?? [];
   const scoreTone =
     score >= 5
       ? "border-red-200 bg-red-50 text-red-700"
@@ -588,41 +629,98 @@ function RedFlagAssessmentCard({
           : "border-emerald-200 bg-emerald-50 text-emerald-700";
 
   return (
-    <div className="col-span-2 rounded-2xl border border-black/10 bg-white px-4 py-3">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-3 text-left"
-      >
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
-            유형 배정 · 레드 플래그
-          </p>
-          <p className="mt-1 text-sm font-bold text-black">
-            {adminProfileArchetypeLabel(profile)}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-black tabular-nums",
-              scoreTone,
-            )}
-          >
-            <Flag size={13} aria-hidden />
-            {score.toFixed(1)}점
-          </span>
-          <ChevronDown
-            size={16}
-            aria-hidden
-            className={cn("text-black/35 transition", open && "rotate-180")}
-          />
-        </div>
-      </button>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`레드 플래그 ${score.toFixed(1)}점, 산정 근거 보기`}
+      className={cn(
+        "inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-black tabular-nums transition hover:brightness-95",
+        scoreTone,
+      )}
+    >
+      <Flag size={14} aria-hidden />
+      레드 플래그 {score.toFixed(1)}
+    </button>
+  );
+}
 
-      {open && (
-        <div className="mt-4 border-t border-black/8 pt-4">
+function RedFlagAssessmentDialog({
+  profile,
+  disabled,
+  onSave,
+  onClose,
+}: {
+  profile: AdminProfile;
+  disabled: boolean;
+  onSave: (flags: RedFlagManualFlags, adjustment: number) => Promise<void>;
+  onClose: () => void;
+}) {
+  const savedFlags = profile.red_flag_manual_flags ?? {};
+  const savedAdjustment = profile.red_flag_manual_adjustment ?? 0;
+  const [draft, setDraft] = useState<RedFlagManualFlags>(savedFlags);
+  const [adjustmentDraft, setAdjustmentDraft] = useState(
+    savedAdjustment.toFixed(1),
+  );
+
+  useEffect(() => {
+    setDraft(savedFlags);
+    setAdjustmentDraft(savedAdjustment.toFixed(1));
+  }, [profile.user_id, profile.red_flag_reviewed_at, savedAdjustment]);
+
+  const parsedAdjustment = Number(adjustmentDraft);
+  const adjustmentValid =
+    Number.isFinite(parsedAdjustment) &&
+    parsedAdjustment >= -5 &&
+    parsedAdjustment <= 5 &&
+    Number.isInteger(parsedAdjustment * 2);
+
+  const dirty =
+    redFlagManualRules.some(
+      (rule) => Boolean(draft[rule.key]) !== Boolean(savedFlags[rule.key]),
+    ) ||
+    (adjustmentValid && Math.abs(parsedAdjustment - savedAdjustment) > 0.001);
+  const score = profile.red_flag_score ?? 0;
+  const reasons = profile.red_flag_reasons ?? [];
+
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="red-flag-assessment-title"
+        className="flex max-h-[88dvh] w-full max-w-[620px] flex-col overflow-hidden rounded-[24px] border border-black/10 bg-[#f7f7f5] shadow-[0_30px_100px_rgba(0,0,0,0.22)]"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-black/10 bg-white px-5 py-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-accent">
+              red flag assessment
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h2 id="red-flag-assessment-title" className="text-xl font-bold">
+                {profile.name ?? "신청자"} · 산정 근거
+              </h2>
+              <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-black tabular-nums text-red-700">
+                {score.toFixed(1)}점
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="레드 플래그 산정 근거 닫기"
+            className="grid size-9 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-black/45 transition hover:border-black/25 hover:text-black"
+          >
+            <X size={16} aria-hidden />
+          </button>
+        </header>
+
+        <div className="overflow-y-auto px-5 py-5">
           <div>
             <p className="text-xs font-black text-black/65">산정 근거</p>
             {reasons.length > 0 ? (
@@ -684,10 +782,37 @@ function RedFlagAssessmentCard({
                 </label>
               ))}
             </div>
+            <div className="mt-3 rounded-xl border border-black/8 bg-white px-3 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black text-black/70">
+                    운영자 점수 보정
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-black/40">
+                    자동 판정이 과하거나 부족할 때 -5~+5점
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  min="-5"
+                  max="5"
+                  step="0.5"
+                  value={adjustmentDraft}
+                  disabled={disabled}
+                  aria-label="레드 플래그 운영자 보정값"
+                  aria-invalid={!adjustmentValid}
+                  onChange={(event) => setAdjustmentDraft(event.target.value)}
+                  className={cn(
+                    "h-9 w-20 rounded-lg border bg-[#f7f7f5] px-2 text-center text-sm font-black tabular-nums outline-none",
+                    adjustmentValid ? "border-black/10" : "border-red-300 text-red-600",
+                  )}
+                />
+              </div>
+            </div>
             <button
               type="button"
-              disabled={!dirty || disabled}
-              onClick={() => void onSave(draft)}
+              disabled={!dirty || !adjustmentValid || disabled}
+              onClick={() => void onSave(draft, parsedAdjustment)}
               className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-xs font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
             >
               <Save size={14} aria-hidden />
@@ -695,7 +820,104 @@ function RedFlagAssessmentCard({
             </button>
           </div>
         </div>
-      )}
+      </section>
+    </div>
+  );
+}
+
+const automaticRedFlagCriteria = [
+  ["클럽·한강 피크닉 선호", "클럽 선택 시 +0.5"],
+  ["지각 성향", "5점 +0.5 · 6점 +1 · 7점 +2"],
+  ["서술형 답변 길이", "2~3글자 +1 · 한 글자 +5"],
+  ["과거 참여 이력", "노쇼 1회당 +2 · 당일 취소 1회당 +1"],
+  ["다른 사람의 단점을 찾는 편", "4점 +0.5 · 5점 +1"],
+  ["그룹 자리에서 말하는 정도", "1점 선택 시 +0.5"],
+  ["정치적으로 부적절한 유머 선호", "6점 +0.5 · 7점 +1"],
+  ["첫 데이트의 두 번째 데이트 전환", "1점 +2 · 2점 +1"],
+] as const;
+
+function RedFlagCriteriaDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="red-flag-criteria-title"
+        className="flex max-h-[90dvh] w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] border border-black/10 bg-[#f7f7f5] shadow-[0_30px_100px_rgba(0,0,0,0.22)]"
+      >
+        <header className="flex items-start justify-between gap-5 border-b border-black/10 bg-white px-6 py-5">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
+              red flag scoring guide
+            </p>
+            <h2 id="red-flag-criteria-title" className="mt-1 text-2xl font-bold">
+              레드 플래그 산정 기준
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-black/55">
+              구조화된 답변과 참여 이력은 자동 계산하고, 문맥 판단이 필요한
+              항목은 신청자별로 직접 검토합니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="레드 플래그 산정 기준 닫기"
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-black/55 transition hover:border-black/25 hover:text-black"
+          >
+            <X size={18} aria-hidden />
+          </button>
+        </header>
+
+        <div className="overflow-y-auto px-6 py-6">
+          <section>
+            <h3 className="text-sm font-black">자동 산정</h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {automaticRedFlagCriteria.map(([label, score]) => (
+                <div key={label} className="rounded-2xl border border-black/10 bg-white p-4">
+                  <p className="text-sm font-bold">{label}</p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
+                    {score}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <h3 className="text-sm font-black">운영자 문맥 검토</h3>
+            <div className="mt-3 space-y-2">
+              {redFlagManualRules.map((rule) => (
+                <div
+                  key={rule.key}
+                  className="flex items-start justify-between gap-4 rounded-2xl border border-black/10 bg-white px-4 py-3"
+                >
+                  <p className="text-sm font-bold leading-5">{rule.label}</p>
+                  <span className="shrink-0 text-sm font-black tabular-nums text-red-600">
+                    +{rule.score.toFixed(1)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-start justify-between gap-4 rounded-2xl border border-black/10 bg-white px-4 py-3">
+                <div>
+                  <p className="text-sm font-bold leading-5">운영자 직접 보정</p>
+                  <p className="mt-1 text-xs font-semibold text-black/40">
+                    자동 산정이 과하거나 부족한 경우 0.5점 단위로 조정
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-black tabular-nums text-black/55">
+                  -5~+5
+                </span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
     </div>
   );
 }
@@ -891,19 +1113,22 @@ export function AdminPageClient({
     useState<BirthYearSort>("default");
   const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
   const [assignmentCriteriaOpen, setAssignmentCriteriaOpen] = useState(false);
+  const [redFlagCriteriaOpen, setRedFlagCriteriaOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<
     Partial<Record<AdminTab, boolean>>
   >({ applicants: true });
 
   useEffect(() => {
-    if (!assignmentCriteriaOpen) return;
+    if (!assignmentCriteriaOpen && !redFlagCriteriaOpen) return;
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setAssignmentCriteriaOpen(false);
+      if (event.key !== "Escape") return;
+      setAssignmentCriteriaOpen(false);
+      setRedFlagCriteriaOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [assignmentCriteriaOpen]);
+  }, [assignmentCriteriaOpen, redFlagCriteriaOpen]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -1223,6 +1448,7 @@ export function AdminPageClient({
     setActiveTab("applicants");
     setVisitedTabs({ applicants: true });
     setAssignmentCriteriaOpen(false);
+    setRedFlagCriteriaOpen(false);
   };
 
   if (!authenticated) {
@@ -1293,6 +1519,14 @@ export function AdminPageClient({
                 >
                   <BookOpen size={15} aria-hidden />
                   유형 배정 기준
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRedFlagCriteriaOpen(true)}
+                  className="inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 bg-[#f7f7f5] px-3 text-xs font-bold text-black/60 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                >
+                  <Flag size={15} aria-hidden />
+                  레드 플래그 산정 기준
                 </button>
               </div>
             </div>
@@ -1428,6 +1662,9 @@ export function AdminPageClient({
         <AssignmentCriteriaDialog
           onClose={() => setAssignmentCriteriaOpen(false)}
         />
+      )}
+      {redFlagCriteriaOpen && (
+        <RedFlagCriteriaDialog onClose={() => setRedFlagCriteriaOpen(false)} />
       )}
     </main>
   );
@@ -1875,6 +2112,7 @@ function ProfileDetailPanel({
   );
   const [openingUserView, setOpeningUserView] = useState(false);
   const [userViewError, setUserViewError] = useState<string | null>(null);
+  const [redFlagAssessmentOpen, setRedFlagAssessmentOpen] = useState(false);
 
   useEffect(() => {
     setPrecisionBonusDraft(initialPrecisionBonusDraft);
@@ -1941,12 +2179,12 @@ function ProfileDetailPanel({
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
-            applicant detail
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <header className="shrink-0 border-b border-black/10 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent">
+              applicant detail
+            </p>
             <h2 className="text-xl font-bold">
               <AdminMemberName
                 profile={profile}
@@ -1958,35 +2196,41 @@ function ProfileDetailPanel({
                 </span>
               )}
             </h2>
-            <OperatorRatingControl
-              value={profile.operator_rating ?? null}
-              disabled={profileSaving}
-              onChange={(rating) =>
-                void onProfileDetailSave(profile.user_id, {
-                  operatorRating: rating,
-                })
-              }
-            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void openUserView()}
+              disabled={openingUserView}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-black px-3 text-xs font-bold text-white transition hover:bg-black/80 disabled:opacity-45"
+            >
+              <Eye size={15} aria-hidden />
+              {openingUserView ? "여는 중" : "사용자 화면"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="상세패널 닫기"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/45 transition hover:border-black/20 hover:text-black"
+            >
+              <X size={16} aria-hidden />
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void openUserView()}
-            disabled={openingUserView}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-black px-3 text-xs font-bold text-white transition hover:bg-black/80 disabled:opacity-45"
-          >
-            <Eye size={15} aria-hidden />
-            {openingUserView ? "여는 중" : "사용자 화면"}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="상세패널 닫기"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/45 transition hover:border-black/20 hover:text-black"
-          >
-            <X size={16} aria-hidden />
-          </button>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <OperatorRatingControl
+            value={profile.operator_rating ?? null}
+            disabled={profileSaving}
+            onChange={(rating) =>
+              void onProfileDetailSave(profile.user_id, {
+                operatorRating: rating,
+              })
+            }
+          />
+          <RedFlagScoreButton
+            score={profile.red_flag_score ?? 0}
+            onClick={() => setRedFlagAssessmentOpen(true)}
+          />
         </div>
       </header>
 
@@ -2007,12 +2251,9 @@ function ProfileDetailPanel({
           <DetailItem label="출생연도" value={display(profile.birth_year)} />
           <DetailItem label="MBTI" value={display(profile.mbti)} />
           <DetailItem label="전화번호" value={display(profile.phone)} />
-          <RedFlagAssessmentCard
-            profile={profile}
-            disabled={profileSaving}
-            onSave={(redFlagManualFlags) =>
-              onProfileDetailSave(profile.user_id, { redFlagManualFlags })
-            }
+          <DetailItem
+            label="성향 유형"
+            value={adminProfileArchetypeLabel(profile)}
           />
           <DetailItem label="가입일" value={formatCreatedAt(profile.created_at)} />
           <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
@@ -2174,6 +2415,19 @@ function ProfileDetailPanel({
           닫기
         </button>
       </footer>
+      {redFlagAssessmentOpen && (
+        <RedFlagAssessmentDialog
+          profile={profile}
+          disabled={profileSaving}
+          onClose={() => setRedFlagAssessmentOpen(false)}
+          onSave={(redFlagManualFlags, redFlagManualAdjustment) =>
+            onProfileDetailSave(profile.user_id, {
+              redFlagManualFlags,
+              redFlagManualAdjustment,
+            })
+          }
+        />
+      )}
     </aside>
   );
 }

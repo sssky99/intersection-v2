@@ -51,6 +51,7 @@ export type RedFlagAssessment = {
   score: number;
   reasons: RedFlagReason[];
   manualFlags: RedFlagManualFlags;
+  manualAdjustment: number;
   reviewedAt: string | null;
 };
 
@@ -95,6 +96,17 @@ function addStructuredAnswerReasons(
   reasons: RedFlagReason[],
   answers: AdminProfileAnswer[],
 ) {
+  if (answerForOrder(answers, 201)?.answer_value === "club") {
+    reasons.push({
+      id: "prefers_club_over_picnic",
+      label: "피크닉보다 클럽을 선호함",
+      score: 0.5,
+      source: "answer",
+      detail: "클럽·한강 피크닉 문항에서 ‘클럽’ 선택",
+      questionOrder: 201,
+    });
+  }
+
   const lateness = numericAnswer(answers, 624);
   const latenessScore = lateness === 5 ? 0.5 : lateness === 6 ? 1 : lateness === 7 ? 2 : 0;
   if (latenessScore) {
@@ -250,11 +262,13 @@ export function calculateRedFlagAssessment({
   answers,
   participations,
   manualFlags,
+  manualAdjustment = 0,
   reviewedAt = null,
 }: {
   answers: AdminProfileAnswer[];
   participations: RedFlagParticipation[];
   manualFlags?: RedFlagManualFlags | null;
+  manualAdjustment?: number | null;
   reviewedAt?: string | null;
 }): RedFlagAssessment {
   const normalizedManualFlags = normalizeRedFlagManualFlags(manualFlags);
@@ -274,14 +288,37 @@ export function calculateRedFlagAssessment({
     });
   }
 
-  const score = Math.round(
-    reasons.reduce((total, reason) => total + reason.score, 0) * 10,
-  ) / 10;
+  const normalizedManualAdjustment =
+    typeof manualAdjustment === "number" &&
+    Number.isFinite(manualAdjustment) &&
+    manualAdjustment >= -5 &&
+    manualAdjustment <= 5
+      ? Math.round(manualAdjustment * 2) / 2
+      : 0;
+  if (normalizedManualAdjustment !== 0) {
+    reasons.push({
+      id: "manual_adjustment",
+      label: "운영자 점수 보정",
+      score: normalizedManualAdjustment,
+      source: "manual",
+      detail:
+        normalizedManualAdjustment > 0
+          ? "자동 산정에서 부족한 위험도를 가산"
+          : "자동 산정의 과대 평가를 감산",
+    });
+  }
+
+  const score = Math.max(
+    0,
+    Math.round(reasons.reduce((total, reason) => total + reason.score, 0) * 10) /
+      10,
+  );
 
   return {
     score,
     reasons,
     manualFlags: normalizedManualFlags,
+    manualAdjustment: normalizedManualAdjustment,
     reviewedAt,
   };
 }
