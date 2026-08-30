@@ -65,6 +65,7 @@ type FeedbackInstance = {
   id: string;
   template_id: string | null;
   title: string | null;
+  operation_code: string | null;
   event_date: string | null;
   event_time: string | null;
   region: string | null;
@@ -146,6 +147,14 @@ function feedbackDate(row: MeetingFeedback, instance?: FeedbackInstance) {
 
 function ticketKey(row: MeetingFeedback) {
   return row.ticket_instance_id ?? row.ticket_template_id ?? `waitlist:${row.waitlist_id}`;
+}
+
+function meetingTicketLabel(
+  title: string,
+  operationCode: string | null | undefined,
+) {
+  const groupCode = operationCode?.trim();
+  return groupCode ? `${title} · ${groupCode}조` : title;
 }
 
 function blindDateTicketKey(offerId: string) {
@@ -287,12 +296,14 @@ export function FeedbackAdminPanel() {
         typeof feedback.ticket_snapshot?.title === "string"
           ? feedback.ticket_snapshot.title
           : null;
+      const baseLabel =
+        instance?.title ?? template?.title ?? snapshotTitle ?? "피드백 모임";
       const current = map.get(key);
       map.set(key, {
         key,
         instanceId: feedback.ticket_instance_id,
         templateId,
-        label: instance?.title ?? template?.title ?? snapshotTitle ?? "피드백 모임",
+        label: meetingTicketLabel(baseLabel, instance?.operation_code),
         date,
         count: (current?.count ?? 0) + 1,
       });

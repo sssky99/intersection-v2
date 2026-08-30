@@ -22,6 +22,7 @@ type TicketInstanceRow = {
   id: string;
   template_id: string | null;
   title: string | null;
+  operation_code: string | null;
   event_date: string | null;
   event_time: string | null;
   region: string | null;
@@ -142,7 +143,9 @@ export async function GET(request: NextRequest) {
         instanceIds.length
           ? supabase
               .from("ticket_instances")
-              .select("id,template_id,title,event_date,event_time,region,place_name,address")
+              .select(
+                "id,template_id,title,operation_code,event_date,event_time,region,place_name,address",
+              )
               .in("id", instanceIds)
               .returns<TicketInstanceRow[]>()
           : Promise.resolve({ data: [] as TicketInstanceRow[], error: null }),
