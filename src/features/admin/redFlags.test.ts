@@ -55,6 +55,71 @@ describe("calculateRedFlagAssessment", () => {
     expect(result.reasons).toEqual([]);
   });
 
+  it("applies self-perception and relationship-risk answer weights", () => {
+    const result = calculateRedFlagAssessment({
+      answers: [
+        answer(21, "1"),
+        answer(22, "1"),
+        answer(23, "physical_attraction_importance_scale_5"),
+        answer(24, "1"),
+        answer(602, "1"),
+        answer(616, "1"),
+        answer(617, "7"),
+        answer(619, "7"),
+        answer(620, "7"),
+        answer(629, "7"),
+      ],
+      participations: [],
+    });
+
+    expect(result.score).toBe(7);
+    expect(result.reasons.map((reason) => reason.id)).toEqual([
+      "self_attractiveness_extreme",
+      "self_intelligence_extreme",
+      "physical_attraction_very_important",
+      "differing_values_discomfort",
+      "low_trust",
+      "low_interest_signal_awareness",
+      "difficulty_relying_on_others",
+      "fear_of_not_being_loved",
+      "frequent_loneliness",
+      "highly_selective_relationships",
+    ]);
+  });
+
+  it("applies the lower edge weights without flagging neutral answers", () => {
+    const result = calculateRedFlagAssessment({
+      answers: [
+        answer(21, "2"),
+        answer(22, "10"),
+        answer(24, "2"),
+        answer(602, "2"),
+        answer(616, "2"),
+        answer(617, "6"),
+        answer(619, "6"),
+        answer(620, "6"),
+        answer(629, "6"),
+      ],
+      participations: [],
+    });
+
+    expect(result.score).toBe(2);
+    expect(result.reasons.map((reason) => reason.id)).toEqual([
+      "self_attractiveness_extreme",
+      "self_intelligence_extreme",
+      "differing_values_discomfort",
+    ]);
+  });
+
+  it("flags a self-attractiveness score of 10 by 0.5", () => {
+    const result = calculateRedFlagAssessment({
+      answers: [answer(21, "10")],
+      participations: [],
+    });
+
+    expect(result.score).toBe(0.5);
+  });
+
   it("uses the one-character penalty instead of stacking short-answer penalties", () => {
     const result = calculateRedFlagAssessment({
       answers: [

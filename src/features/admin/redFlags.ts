@@ -96,6 +96,66 @@ function addStructuredAnswerReasons(
   reasons: RedFlagReason[],
   answers: AdminProfileAnswer[],
 ) {
+  const selfAttractiveness = numericAnswer(answers, 21);
+  const selfAttractivenessScore =
+    selfAttractiveness === 1
+      ? 2
+      : selfAttractiveness === 2
+        ? 1
+        : selfAttractiveness === 10
+          ? 0.5
+          : 0;
+  if (selfAttractivenessScore) {
+    reasons.push({
+      id: "self_attractiveness_extreme",
+      label: "자신의 매력에 대한 극단적 평가",
+      score: selfAttractivenessScore,
+      source: "answer",
+      detail: `10점 척도 중 ${selfAttractiveness}점 선택`,
+      questionOrder: 21,
+    });
+  }
+
+  const selfIntelligence = numericAnswer(answers, 22);
+  if (selfIntelligence === 1 || selfIntelligence === 10) {
+    reasons.push({
+      id: "self_intelligence_extreme",
+      label: "자신의 지적 능력에 대한 극단적 평가",
+      score: 0.5,
+      source: "answer",
+      detail: `10점 척도 중 ${selfIntelligence}점 선택`,
+      questionOrder: 22,
+    });
+  }
+
+  if (
+    answerForOrder(answers, 23)?.answer_value ===
+    "physical_attraction_importance_scale_5"
+  ) {
+    reasons.push({
+      id: "physical_attraction_very_important",
+      label: "첫인상의 외적 끌림을 매우 중요하게 봄",
+      score: 0.5,
+      source: "answer",
+      detail: "‘처음 느껴지는 끌림이 정말 중요해요’ 선택",
+      questionOrder: 23,
+    });
+  }
+
+  const differingValuesComfort = numericAnswer(answers, 24);
+  const differingValuesScore =
+    differingValuesComfort === 1 ? 1 : differingValuesComfort === 2 ? 0.5 : 0;
+  if (differingValuesScore) {
+    reasons.push({
+      id: "differing_values_discomfort",
+      label: "다른 가치관과 생각을 나누는 데 불편함",
+      score: differingValuesScore,
+      source: "answer",
+      detail: `7점 척도 중 ${differingValuesComfort}점 선택`,
+      questionOrder: 24,
+    });
+  }
+
   if (answerForOrder(answers, 201)?.answer_value === "club") {
     reasons.push({
       id: "prefers_club_over_picnic",
@@ -133,6 +193,17 @@ function addStructuredAnswerReasons(
     });
   }
 
+  if (numericAnswer(answers, 602) === 1) {
+    reasons.push({
+      id: "low_trust",
+      label: "다른 사람을 신뢰하기 어려움",
+      score: 0.5,
+      source: "answer",
+      detail: "5점 척도 중 1점 선택",
+      questionOrder: 602,
+    });
+  }
+
   if (numericAnswer(answers, 610) === 1) {
     reasons.push({
       id: "group_conversation_low",
@@ -141,6 +212,35 @@ function addStructuredAnswerReasons(
       source: "answer",
       detail: "7점 척도 중 1점 선택",
       questionOrder: 610,
+    });
+  }
+
+  if (numericAnswer(answers, 616) === 1) {
+    reasons.push({
+      id: "low_interest_signal_awareness",
+      label: "상대의 호감 신호를 알아차리기 어려움",
+      score: 0.5,
+      source: "answer",
+      detail: "7점 척도 중 1점 선택",
+      questionOrder: 616,
+    });
+  }
+
+  const highRiskSevenPointAnswers = [
+    [617, "difficulty_relying_on_others", "다른 사람에게 의지하기 어려움"],
+    [619, "fear_of_not_being_loved", "진심으로 사랑받지 못할까 걱정함"],
+    [620, "frequent_loneliness", "외로움을 매우 자주 느낌"],
+    [629, "highly_selective_relationships", "가까이 지낼 사람을 매우 까다롭게 고름"],
+  ] as const;
+  for (const [questionOrder, id, label] of highRiskSevenPointAnswers) {
+    if (numericAnswer(answers, questionOrder) !== 7) continue;
+    reasons.push({
+      id,
+      label,
+      score: 0.5,
+      source: "answer",
+      detail: "7점 척도 중 7점 선택",
+      questionOrder,
     });
   }
 
