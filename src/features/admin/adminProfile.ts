@@ -2,6 +2,10 @@ import {
   displayMembershipStatus,
   type MembershipStatus,
 } from "@/features/membership/membershipTypes";
+import type {
+  RedFlagManualFlags,
+  RedFlagReason,
+} from "@/features/admin/redFlags";
 
 export type AdminProfileAnswer = {
   user_id: string;
@@ -72,6 +76,10 @@ export type AdminProfile = {
   matching_precision_bonus?: number | null;
   operator_rating?: number | null;
   operator_rating_updated_at?: string | null;
+  red_flag_score?: number;
+  red_flag_reasons?: RedFlagReason[];
+  red_flag_manual_flags?: RedFlagManualFlags;
+  red_flag_reviewed_at?: string | null;
   score_temperature?: number | null;
   score_texture?: number | null;
   score_tone?: number | null;
@@ -113,6 +121,10 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     matching_precision_bonus: profile.matching_precision_bonus ?? 0,
     operator_rating: profile.operator_rating ?? null,
     operator_rating_updated_at: profile.operator_rating_updated_at ?? null,
+    red_flag_score: profile.red_flag_score ?? 0,
+    red_flag_reasons: profile.red_flag_reasons ?? [],
+    red_flag_manual_flags: profile.red_flag_manual_flags ?? {},
+    red_flag_reviewed_at: profile.red_flag_reviewed_at ?? null,
     answers: profile.answers ?? [],
     algorithm_parameters: profile.algorithm_parameters ?? [],
     active_membership: hasActiveMembership(profile),

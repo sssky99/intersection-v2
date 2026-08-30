@@ -8,6 +8,13 @@ import {
   type AdminProfile,
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
+import {
+  calculateRedFlagAssessment,
+  normalizeRedFlagManualFlags,
+  redFlagManualRules,
+  type RedFlagManualFlags,
+  type RedFlagParticipation,
+} from "@/features/admin/redFlags";
 import { isMembershipStatus } from "@/features/membership/membershipTypes";
 
 export const dynamic = "force-dynamic";
@@ -453,6 +460,69 @@ async function attachOperatorRatings(
   });
 }
 
+async function attachRedFlagAssessment(
+  supabase: ReturnType<typeof createAdminClient>,
+  profile: AdminProfile,
+) {
+  const { data: review, error: reviewError } = await supabase
+    .from("profile_red_flag_reviews")
+    .select("manual_flags,updated_at")
+    .eq("user_id", profile.user_id)
+    .maybeSingle<{
+      manual_flags: Record<string, unknown> | null;
+      updated_at: string | null;
+    }>();
+  if (reviewError) throw reviewError;
+
+  const { data: participations, error: participationsError } = await supabase
+    .from("ticket_participations")
+    .select("status,arrival_status,cancelled_at,ticket_instance_id")
+    .eq("user_id", profile.user_id);
+  if (participationsError) throw participationsError;
+
+  const instanceIds = Array.from(
+    new Set(
+      (participations ?? [])
+        .map((participation) => participation.ticket_instance_id)
+        .filter((id): id is string => typeof id === "string" && Boolean(id)),
+    ),
+  );
+  const { data: instances, error: instancesError } = instanceIds.length
+    ? await supabase
+        .from("ticket_instances")
+        .select("id,event_date")
+        .in("id", instanceIds)
+    : { data: [], error: null };
+  if (instancesError) throw instancesError;
+
+  const eventDateByInstanceId = new Map(
+    (instances ?? []).map((instance) => [instance.id, instance.event_date]),
+  );
+  const history: RedFlagParticipation[] = (participations ?? []).map(
+    (participation) => ({
+      status: participation.status ?? null,
+      arrival_status: participation.arrival_status ?? null,
+      cancelled_at: participation.cancelled_at ?? null,
+      event_date:
+        eventDateByInstanceId.get(participation.ticket_instance_id) ?? null,
+    }),
+  );
+  const assessment = calculateRedFlagAssessment({
+    answers: profile.answers ?? [],
+    participations: history,
+    manualFlags: normalizeRedFlagManualFlags(review?.manual_flags),
+    reviewedAt: review?.updated_at ?? null,
+  });
+
+  return normalizeAdminProfile({
+    ...profile,
+    red_flag_score: assessment.score,
+    red_flag_reasons: assessment.reasons,
+    red_flag_manual_flags: assessment.manualFlags,
+    red_flag_reviewed_at: assessment.reviewedAt,
+  });
+}
+
 function mergeProfileAttachments(
   profiles: AdminProfile[],
   attachments: AdminProfile[][],
@@ -554,10 +624,14 @@ export async function GET(request: NextRequest) {
         [profile],
         [ratings, parameters, answers, oneTimePayments],
       );
+      const profileWithRedFlags = await attachRedFlagAssessment(
+        supabase,
+        profileWithDetails,
+      );
 
       return NextResponse.json({
         profile: normalizeAdminProfile({
-          ...profileWithDetails,
+          ...profileWithRedFlags,
           has_payment: paymentHistory.some((item) => item.status === "completed"),
           payment_history: paymentHistory,
           details_loaded: true,
@@ -590,11 +664,13 @@ export async function PATCH(request: NextRequest) {
     isTestParticipant?: unknown;
     matchingPrecisionBonus?: unknown;
     operatorRating?: unknown;
+    redFlagManualFlags?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
   const updates: Record<string, unknown> = {};
   let operatorRating: number | null | undefined;
+  let redFlagManualFlags: RedFlagManualFlags | undefined;
 
   if (isMembershipStatus(status)) {
     updates.membership_status = status;
@@ -646,7 +722,37 @@ export async function PATCH(request: NextRequest) {
     operatorRating = nextRating;
   }
 
-  if (Object.keys(updates).length === 0 && operatorRating === undefined) {
+  if (body && "redFlagManualFlags" in body) {
+    if (
+      !body.redFlagManualFlags ||
+      typeof body.redFlagManualFlags !== "object" ||
+      Array.isArray(body.redFlagManualFlags)
+    ) {
+      return NextResponse.json(
+        { error: "레드 플래그 검토 값이 올바르지 않습니다." },
+        { status: 400 },
+      );
+    }
+    const allowedKeys = new Set<string>(
+      redFlagManualRules.map((rule) => rule.key),
+    );
+    const submittedKeys = Object.keys(
+      body.redFlagManualFlags as Record<string, unknown>,
+    );
+    if (submittedKeys.some((key) => !allowedKeys.has(key))) {
+      return NextResponse.json(
+        { error: "지원하지 않는 레드 플래그 항목이 포함되어 있습니다." },
+        { status: 400 },
+      );
+    }
+    redFlagManualFlags = normalizeRedFlagManualFlags(body.redFlagManualFlags);
+  }
+
+  if (
+    Object.keys(updates).length === 0 &&
+    operatorRating === undefined &&
+    redFlagManualFlags === undefined
+  ) {
     return NextResponse.json(
       { error: "저장할 프로필 변경 사항이 없습니다." },
       { status: 400 },
@@ -703,6 +809,28 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    if (redFlagManualFlags !== undefined) {
+      const hasManualFlag = redFlagManualRules.some(
+        (rule) => redFlagManualFlags?.[rule.key] === true,
+      );
+      if (hasManualFlag) {
+        const { error } = await supabase
+          .from("profile_red_flag_reviews")
+          .upsert({
+            user_id: userId,
+            manual_flags: redFlagManualFlags,
+            updated_at: new Date().toISOString(),
+          });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("profile_red_flag_reviews")
+          .delete()
+          .eq("user_id", userId);
+        if (error) throw error;
+      }
+    }
+
     if (operatorUpdate?.data) {
       const { data: authUserData, error: authUserError } =
         await supabase.auth.admin.getUserById(userId);
@@ -749,10 +877,14 @@ export async function PATCH(request: NextRequest) {
       [profile],
       attachments,
     );
+    const profileWithRedFlags = await attachRedFlagAssessment(
+      supabase,
+      profileWithDetails,
+    );
 
     return NextResponse.json({
       profile: normalizeAdminProfile({
-        ...profileWithDetails,
+        ...profileWithRedFlags,
         details_loaded: true,
       }),
     });

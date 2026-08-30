@@ -4,6 +4,8 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  ChevronDown,
+  Flag,
   Eye,
   Image as ImageIcon,
   LogOut,
@@ -48,6 +50,10 @@ import {
   type AdminProfile,
   type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
+import {
+  redFlagManualRules,
+  type RedFlagManualFlags,
+} from "@/features/admin/redFlags";
 import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import {
   membershipStatusLabels,
@@ -470,6 +476,7 @@ type ProfileDetailPatch = {
   isTestParticipant?: boolean;
   matchingPrecisionBonus?: number;
   operatorRating?: number | null;
+  redFlagManualFlags?: RedFlagManualFlags;
 };
 
 function clampMatchingPrecisionBonus(value: number) {
@@ -545,6 +552,150 @@ function OperatorRatingControl({
       <span className="min-w-6 text-right text-[11px] font-black tabular-nums text-amber-700">
         {value === null ? "-" : value.toFixed(1)}
       </span>
+    </div>
+  );
+}
+
+function RedFlagAssessmentCard({
+  profile,
+  disabled,
+  onSave,
+}: {
+  profile: AdminProfile;
+  disabled: boolean;
+  onSave: (flags: RedFlagManualFlags) => Promise<void>;
+}) {
+  const savedFlags = profile.red_flag_manual_flags ?? {};
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<RedFlagManualFlags>(savedFlags);
+
+  useEffect(() => {
+    setDraft(savedFlags);
+  }, [profile.user_id, profile.red_flag_reviewed_at]);
+
+  const dirty = redFlagManualRules.some(
+    (rule) => Boolean(draft[rule.key]) !== Boolean(savedFlags[rule.key]),
+  );
+  const score = profile.red_flag_score ?? 0;
+  const reasons = profile.red_flag_reasons ?? [];
+  const scoreTone =
+    score >= 5
+      ? "border-red-200 bg-red-50 text-red-700"
+      : score >= 3
+        ? "border-orange-200 bg-orange-50 text-orange-700"
+        : score > 0
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+  return (
+    <div className="col-span-2 rounded-2xl border border-black/10 bg-white px-4 py-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
+            유형 배정 · 레드 플래그
+          </p>
+          <p className="mt-1 text-sm font-bold text-black">
+            {adminProfileArchetypeLabel(profile)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-black tabular-nums",
+              scoreTone,
+            )}
+          >
+            <Flag size={13} aria-hidden />
+            {score.toFixed(1)}점
+          </span>
+          <ChevronDown
+            size={16}
+            aria-hidden
+            className={cn("text-black/35 transition", open && "rotate-180")}
+          />
+        </div>
+      </button>
+
+      {open && (
+        <div className="mt-4 border-t border-black/8 pt-4">
+          <div>
+            <p className="text-xs font-black text-black/65">산정 근거</p>
+            {reasons.length > 0 ? (
+              <div className="mt-2 space-y-2">
+                {reasons.map((reason) => (
+                  <div
+                    key={reason.id}
+                    className="flex items-start justify-between gap-3 rounded-xl bg-black/[0.035] px-3 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-black/75">
+                        {reason.label}
+                      </p>
+                      {reason.detail && (
+                        <p className="mt-0.5 text-[11px] font-semibold text-black/40">
+                          {reason.detail}
+                        </p>
+                      )}
+                    </div>
+                    <span className="shrink-0 text-xs font-black tabular-nums text-red-600">
+                      +{reason.score.toFixed(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-700">
+                현재 자동·수동 레드 플래그 근거가 없어요.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-black text-black/65">문맥 검토 항목</p>
+            <div className="mt-2 space-y-2">
+              {redFlagManualRules.map((rule) => (
+                <label
+                  key={rule.key}
+                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/8 px-3 py-2.5 transition hover:border-black/15"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft[rule.key])}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        [rule.key]: event.target.checked,
+                      }))
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-black/20 accent-black"
+                  />
+                  <span className="min-w-0 flex-1 text-xs font-bold leading-5 text-black/65">
+                    {rule.label}
+                  </span>
+                  <span className="shrink-0 text-xs font-black tabular-nums text-red-600">
+                    +{rule.score.toFixed(1)}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <button
+              type="button"
+              disabled={!dirty || disabled}
+              onClick={() => void onSave(draft)}
+              className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-xs font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
+            >
+              <Save size={14} aria-hidden />
+              {disabled ? "저장 중..." : "문맥 검토 저장"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1855,11 +2006,14 @@ function ProfileDetailPanel({
           <DetailItem label="성별" value={display(profile.gender)} />
           <DetailItem label="출생연도" value={display(profile.birth_year)} />
           <DetailItem label="MBTI" value={display(profile.mbti)} />
-          <DetailItem
-            label="성향 유형"
-            value={adminProfileArchetypeLabel(profile)}
-          />
           <DetailItem label="전화번호" value={display(profile.phone)} />
+          <RedFlagAssessmentCard
+            profile={profile}
+            disabled={profileSaving}
+            onSave={(redFlagManualFlags) =>
+              onProfileDetailSave(profile.user_id, { redFlagManualFlags })
+            }
+          />
           <DetailItem label="가입일" value={formatCreatedAt(profile.created_at)} />
           <div className="rounded-2xl border border-black/10 bg-white px-4 py-3">
             <p className="text-[11px] font-bold uppercase tracking-wide text-black/35">
