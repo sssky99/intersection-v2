@@ -178,6 +178,17 @@ function addStructuredAnswerReasons(
     });
   }
 
+  if (numericAnswer(answers, 403) === 7) {
+    reasons.push({
+      id: "social_activism_over_self",
+      label: "사회적 활동을 자신보다 중요하게 여김",
+      score: 0.5,
+      source: "answer",
+      detail: "7점 척도 중 7점 선택",
+      questionOrder: 403,
+    });
+  }
+
   const lateness = numericAnswer(answers, 624);
   const latenessScore = lateness === 5 ? 0.5 : lateness === 6 ? 1 : lateness === 7 ? 2 : 0;
   if (latenessScore) {

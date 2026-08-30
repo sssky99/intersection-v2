@@ -135,6 +135,21 @@ describe("calculateRedFlagAssessment", () => {
     expect(other.score).toBe(0);
   });
 
+  it("adds 0.5 when social activism is rated above the self", () => {
+    const flagged = calculateRedFlagAssessment({
+      answers: [answer(403, "7")],
+      participations: [],
+    });
+    const neutral = calculateRedFlagAssessment({
+      answers: [answer(403, "6")],
+      participations: [],
+    });
+
+    expect(flagged.score).toBe(0.5);
+    expect(flagged.reasons[0]?.id).toBe("social_activism_over_self");
+    expect(neutral.score).toBe(0);
+  });
+
   it("uses the one-character penalty instead of stacking short-answer penalties", () => {
     const result = calculateRedFlagAssessment({
       answers: [
