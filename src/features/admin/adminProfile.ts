@@ -80,6 +80,8 @@ export type AdminProfile = {
   red_flag_reasons?: RedFlagReason[];
   red_flag_manual_flags?: RedFlagManualFlags;
   red_flag_manual_adjustment?: number;
+  red_flag_manual_no_show_count?: number;
+  red_flag_manual_same_day_cancellation_count?: number;
   red_flag_reviewed_at?: string | null;
   score_temperature?: number | null;
   score_texture?: number | null;
@@ -126,6 +128,10 @@ export function normalizeAdminProfile(profile: AdminProfile): AdminProfile {
     red_flag_reasons: profile.red_flag_reasons ?? [],
     red_flag_manual_flags: profile.red_flag_manual_flags ?? {},
     red_flag_manual_adjustment: profile.red_flag_manual_adjustment ?? 0,
+    red_flag_manual_no_show_count:
+      profile.red_flag_manual_no_show_count ?? 0,
+    red_flag_manual_same_day_cancellation_count:
+      profile.red_flag_manual_same_day_cancellation_count ?? 0,
     red_flag_reviewed_at: profile.red_flag_reviewed_at ?? null,
     answers: profile.answers ?? [],
     algorithm_parameters: profile.algorithm_parameters ?? [],

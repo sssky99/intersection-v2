@@ -2,6 +2,11 @@ import type { AdminProfileAnswer } from "@/features/admin/adminProfile";
 
 export const redFlagManualRules = [
   {
+    key: "low_effort_free_text",
+    label: "성의 없는 서술형 답변",
+    score: 1,
+  },
+  {
     key: "contradictory_answers",
     label: "답변끼리 모순됨",
     score: 0.5,
@@ -52,6 +57,8 @@ export type RedFlagAssessment = {
   reasons: RedFlagReason[];
   manualFlags: RedFlagManualFlags;
   manualAdjustment: number;
+  manualNoShowCount: number;
+  manualSameDayCancellationCount: number;
   reviewedAt: string | null;
 };
 
@@ -153,17 +160,6 @@ function addStructuredAnswerReasons(
       source: "answer",
       detail: `7점 척도 중 ${differingValuesComfort}점 선택`,
       questionOrder: 24,
-    });
-  }
-
-  if (answerForOrder(answers, 31)?.answer_value?.toUpperCase() === "ISTP") {
-    reasons.push({
-      id: "mbti_istp",
-      label: "MBTI가 ISTP임",
-      score: 0.3,
-      source: "answer",
-      detail: "MBTI 문항에서 ISTP 선택",
-      questionOrder: 31,
     });
   }
 
@@ -297,7 +293,7 @@ function addShortAnswerReason(
   reasons: RedFlagReason[],
   answers: AdminProfileAnswer[],
 ) {
-  const shortAnswers = answers
+  const oneCharacter = answers
     .filter(
       (answer) =>
         answer.question_type === "text" &&
@@ -309,9 +305,8 @@ function addShortAnswerReason(
       text: responseText(answer),
       length: meaningfulCharacterCount(responseText(answer)),
     }))
-    .filter(({ length }) => length >= 1 && length <= 3);
+    .find(({ length }) => length === 1);
 
-  const oneCharacter = shortAnswers.find(({ length }) => length === 1);
   if (oneCharacter) {
     reasons.push({
       id: "one_character_answer",
@@ -320,21 +315,6 @@ function addShortAnswerReason(
       source: "answer",
       detail: `문항 ${oneCharacter.answer.question_order} · “${oneCharacter.text}”`,
       questionOrder: oneCharacter.answer.question_order,
-    });
-    return;
-  }
-
-  const twoOrThreeCharacters = shortAnswers.find(
-    ({ length }) => length === 2 || length === 3,
-  );
-  if (twoOrThreeCharacters) {
-    reasons.push({
-      id: "very_short_answer",
-      label: "2~3글자로 작성한 서술형 답변",
-      score: 1,
-      source: "answer",
-      detail: `문항 ${twoOrThreeCharacters.answer.question_order} · “${twoOrThreeCharacters.text}”`,
-      questionOrder: twoOrThreeCharacters.answer.question_order,
     });
   }
 }
@@ -380,20 +360,37 @@ export function normalizeRedFlagManualFlags(value: unknown): RedFlagManualFlags 
   ) as RedFlagManualFlags;
 }
 
+export function normalizeRedFlagManualHistoryCount(value: unknown) {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 99
+    ? value
+    : 0;
+}
+
 export function calculateRedFlagAssessment({
   answers,
   participations,
   manualFlags,
   manualAdjustment = 0,
+  manualNoShowCount = 0,
+  manualSameDayCancellationCount = 0,
   reviewedAt = null,
 }: {
   answers: AdminProfileAnswer[];
   participations: RedFlagParticipation[];
   manualFlags?: RedFlagManualFlags | null;
   manualAdjustment?: number | null;
+  manualNoShowCount?: number | null;
+  manualSameDayCancellationCount?: number | null;
   reviewedAt?: string | null;
 }): RedFlagAssessment {
   const normalizedManualFlags = normalizeRedFlagManualFlags(manualFlags);
+  const normalizedManualNoShowCount =
+    normalizeRedFlagManualHistoryCount(manualNoShowCount);
+  const normalizedManualSameDayCancellationCount =
+    normalizeRedFlagManualHistoryCount(manualSameDayCancellationCount);
   const reasons: RedFlagReason[] = [];
 
   addStructuredAnswerReasons(reasons, answers);
@@ -407,6 +404,26 @@ export function calculateRedFlagAssessment({
       label: rule.label,
       score: rule.score,
       source: "manual",
+    });
+  }
+
+  if (normalizedManualNoShowCount > 0) {
+    reasons.push({
+      id: "manual_no_show_history",
+      label: "운영자 입력 추가 노쇼 이력",
+      score: normalizedManualNoShowCount * 2,
+      source: "manual",
+      detail: `${normalizedManualNoShowCount}회 × 2점 · 자동 참여 이력 외 추가 입력`,
+    });
+  }
+
+  if (normalizedManualSameDayCancellationCount > 0) {
+    reasons.push({
+      id: "manual_same_day_cancellation_history",
+      label: "운영자 입력 추가 당일 취소 이력",
+      score: normalizedManualSameDayCancellationCount,
+      source: "manual",
+      detail: `${normalizedManualSameDayCancellationCount}회 × 1점 · 자동 참여 이력 외 추가 입력`,
     });
   }
 
@@ -441,6 +458,9 @@ export function calculateRedFlagAssessment({
     reasons,
     manualFlags: normalizedManualFlags,
     manualAdjustment: normalizedManualAdjustment,
+    manualNoShowCount: normalizedManualNoShowCount,
+    manualSameDayCancellationCount:
+      normalizedManualSameDayCancellationCount,
     reviewedAt,
   };
 }

@@ -11,6 +11,7 @@ import {
 import {
   calculateRedFlagAssessment,
   normalizeRedFlagManualFlags,
+  normalizeRedFlagManualHistoryCount,
   redFlagManualRules,
   type RedFlagManualFlags,
   type RedFlagParticipation,
@@ -466,11 +467,15 @@ async function attachRedFlagAssessment(
 ) {
   const { data: review, error: reviewError } = await supabase
     .from("profile_red_flag_reviews")
-    .select("manual_flags,manual_adjustment,updated_at")
+    .select(
+      "manual_flags,manual_adjustment,manual_no_show_count,manual_same_day_cancellation_count,updated_at",
+    )
     .eq("user_id", profile.user_id)
     .maybeSingle<{
       manual_flags: Record<string, unknown> | null;
       manual_adjustment: number | null;
+      manual_no_show_count: number | null;
+      manual_same_day_cancellation_count: number | null;
       updated_at: string | null;
     }>();
   if (reviewError) throw reviewError;
@@ -513,6 +518,10 @@ async function attachRedFlagAssessment(
     participations: history,
     manualFlags: normalizeRedFlagManualFlags(review?.manual_flags),
     manualAdjustment: Number(review?.manual_adjustment ?? 0),
+    manualNoShowCount: Number(review?.manual_no_show_count ?? 0),
+    manualSameDayCancellationCount: Number(
+      review?.manual_same_day_cancellation_count ?? 0,
+    ),
     reviewedAt: review?.updated_at ?? null,
   });
 
@@ -522,6 +531,9 @@ async function attachRedFlagAssessment(
     red_flag_reasons: assessment.reasons,
     red_flag_manual_flags: assessment.manualFlags,
     red_flag_manual_adjustment: assessment.manualAdjustment,
+    red_flag_manual_no_show_count: assessment.manualNoShowCount,
+    red_flag_manual_same_day_cancellation_count:
+      assessment.manualSameDayCancellationCount,
     red_flag_reviewed_at: assessment.reviewedAt,
   });
 }
@@ -669,6 +681,8 @@ export async function PATCH(request: NextRequest) {
     operatorRating?: unknown;
     redFlagManualFlags?: unknown;
     redFlagManualAdjustment?: unknown;
+    redFlagManualNoShowCount?: unknown;
+    redFlagManualSameDayCancellationCount?: unknown;
   } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
   const status = body?.status;
@@ -676,6 +690,8 @@ export async function PATCH(request: NextRequest) {
   let operatorRating: number | null | undefined;
   let redFlagManualFlags: RedFlagManualFlags | undefined;
   let redFlagManualAdjustment: number | undefined;
+  let redFlagManualNoShowCount: number | undefined;
+  let redFlagManualSameDayCancellationCount: number | undefined;
 
   if (isMembershipStatus(status)) {
     updates.membership_status = status;
@@ -770,11 +786,41 @@ export async function PATCH(request: NextRequest) {
     redFlagManualAdjustment = Math.round(value * 2) / 2;
   }
 
+  if (body && "redFlagManualNoShowCount" in body) {
+    const value = body.redFlagManualNoShowCount;
+    if (
+      typeof value !== "number" ||
+      normalizeRedFlagManualHistoryCount(value) !== value
+    ) {
+      return NextResponse.json(
+        { error: "추가 노쇼 횟수는 0부터 99까지 정수로 입력해주세요." },
+        { status: 400 },
+      );
+    }
+    redFlagManualNoShowCount = value;
+  }
+
+  if (body && "redFlagManualSameDayCancellationCount" in body) {
+    const value = body.redFlagManualSameDayCancellationCount;
+    if (
+      typeof value !== "number" ||
+      normalizeRedFlagManualHistoryCount(value) !== value
+    ) {
+      return NextResponse.json(
+        { error: "추가 당일 취소 횟수는 0부터 99까지 정수로 입력해주세요." },
+        { status: 400 },
+      );
+    }
+    redFlagManualSameDayCancellationCount = value;
+  }
+
   if (
     Object.keys(updates).length === 0 &&
     operatorRating === undefined &&
     redFlagManualFlags === undefined &&
-    redFlagManualAdjustment === undefined
+    redFlagManualAdjustment === undefined &&
+    redFlagManualNoShowCount === undefined &&
+    redFlagManualSameDayCancellationCount === undefined
   ) {
     return NextResponse.json(
       { error: "저장할 프로필 변경 사항이 없습니다." },
@@ -834,15 +880,21 @@ export async function PATCH(request: NextRequest) {
 
     if (
       redFlagManualFlags !== undefined ||
-      redFlagManualAdjustment !== undefined
+      redFlagManualAdjustment !== undefined ||
+      redFlagManualNoShowCount !== undefined ||
+      redFlagManualSameDayCancellationCount !== undefined
     ) {
       const { data: currentReview, error: currentReviewError } = await supabase
         .from("profile_red_flag_reviews")
-        .select("manual_flags,manual_adjustment")
+        .select(
+          "manual_flags,manual_adjustment,manual_no_show_count,manual_same_day_cancellation_count",
+        )
         .eq("user_id", userId)
         .maybeSingle<{
           manual_flags: Record<string, unknown> | null;
           manual_adjustment: number | null;
+          manual_no_show_count: number | null;
+          manual_same_day_cancellation_count: number | null;
         }>();
       if (currentReviewError) throw currentReviewError;
 
@@ -851,16 +903,30 @@ export async function PATCH(request: NextRequest) {
         normalizeRedFlagManualFlags(currentReview?.manual_flags);
       const nextManualAdjustment =
         redFlagManualAdjustment ?? Number(currentReview?.manual_adjustment ?? 0);
+      const nextManualNoShowCount =
+        redFlagManualNoShowCount ??
+        Number(currentReview?.manual_no_show_count ?? 0);
+      const nextManualSameDayCancellationCount =
+        redFlagManualSameDayCancellationCount ??
+        Number(currentReview?.manual_same_day_cancellation_count ?? 0);
       const hasManualFlag = redFlagManualRules.some(
         (rule) => nextManualFlags[rule.key] === true,
       );
-      if (hasManualFlag || nextManualAdjustment !== 0) {
+      if (
+        hasManualFlag ||
+        nextManualAdjustment !== 0 ||
+        nextManualNoShowCount > 0 ||
+        nextManualSameDayCancellationCount > 0
+      ) {
         const { error } = await supabase
           .from("profile_red_flag_reviews")
           .upsert({
             user_id: userId,
             manual_flags: nextManualFlags,
             manual_adjustment: nextManualAdjustment,
+            manual_no_show_count: nextManualNoShowCount,
+            manual_same_day_cancellation_count:
+              nextManualSameDayCancellationCount,
             updated_at: new Date().toISOString(),
           });
         if (error) throw error;

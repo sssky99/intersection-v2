@@ -477,6 +477,8 @@ type ProfileDetailPatch = {
   operatorRating?: number | null;
   redFlagManualFlags?: RedFlagManualFlags;
   redFlagManualAdjustment?: number;
+  redFlagManualNoShowCount?: number;
+  redFlagManualSameDayCancellationCount?: number;
 };
 
 function clampMatchingPrecisionBonus(value: number) {
@@ -652,20 +654,45 @@ function RedFlagAssessmentDialog({
 }: {
   profile: AdminProfile;
   disabled: boolean;
-  onSave: (flags: RedFlagManualFlags, adjustment: number) => Promise<void>;
+  onSave: (
+    flags: RedFlagManualFlags,
+    adjustment: number,
+    manualNoShowCount: number,
+    manualSameDayCancellationCount: number,
+  ) => Promise<void>;
   onClose: () => void;
 }) {
   const savedFlags = profile.red_flag_manual_flags ?? {};
   const savedAdjustment = profile.red_flag_manual_adjustment ?? 0;
+  const savedManualNoShowCount = profile.red_flag_manual_no_show_count ?? 0;
+  const savedManualSameDayCancellationCount =
+    profile.red_flag_manual_same_day_cancellation_count ?? 0;
   const [draft, setDraft] = useState<RedFlagManualFlags>(savedFlags);
   const [adjustmentDraft, setAdjustmentDraft] = useState(
     savedAdjustment.toFixed(1),
   );
+  const [manualNoShowCountDraft, setManualNoShowCountDraft] = useState(
+    String(savedManualNoShowCount),
+  );
+  const [
+    manualSameDayCancellationCountDraft,
+    setManualSameDayCancellationCountDraft,
+  ] = useState(String(savedManualSameDayCancellationCount));
 
   useEffect(() => {
     setDraft(savedFlags);
     setAdjustmentDraft(savedAdjustment.toFixed(1));
-  }, [profile.user_id, profile.red_flag_reviewed_at, savedAdjustment]);
+    setManualNoShowCountDraft(String(savedManualNoShowCount));
+    setManualSameDayCancellationCountDraft(
+      String(savedManualSameDayCancellationCount),
+    );
+  }, [
+    profile.user_id,
+    profile.red_flag_reviewed_at,
+    savedAdjustment,
+    savedManualNoShowCount,
+    savedManualSameDayCancellationCount,
+  ]);
 
   const parsedAdjustment = Number(adjustmentDraft);
   const adjustmentValid =
@@ -673,12 +700,29 @@ function RedFlagAssessmentDialog({
     parsedAdjustment >= -5 &&
     parsedAdjustment <= 5 &&
     Number.isInteger(parsedAdjustment * 2);
+  const parsedManualNoShowCount = Number(manualNoShowCountDraft);
+  const parsedManualSameDayCancellationCount = Number(
+    manualSameDayCancellationCountDraft,
+  );
+  const manualNoShowCountValid =
+    Number.isInteger(parsedManualNoShowCount) &&
+    parsedManualNoShowCount >= 0 &&
+    parsedManualNoShowCount <= 99;
+  const manualSameDayCancellationCountValid =
+    Number.isInteger(parsedManualSameDayCancellationCount) &&
+    parsedManualSameDayCancellationCount >= 0 &&
+    parsedManualSameDayCancellationCount <= 99;
 
   const dirty =
     redFlagManualRules.some(
       (rule) => Boolean(draft[rule.key]) !== Boolean(savedFlags[rule.key]),
     ) ||
-    (adjustmentValid && Math.abs(parsedAdjustment - savedAdjustment) > 0.001);
+    (adjustmentValid && Math.abs(parsedAdjustment - savedAdjustment) > 0.001) ||
+    (manualNoShowCountValid &&
+      parsedManualNoShowCount !== savedManualNoShowCount) ||
+    (manualSameDayCancellationCountValid &&
+      parsedManualSameDayCancellationCount !==
+        savedManualSameDayCancellationCount);
   const score = profile.red_flag_score ?? 0;
   const reasons = profile.red_flag_reasons ?? [];
 
@@ -783,6 +827,66 @@ function RedFlagAssessmentDialog({
               ))}
             </div>
             <div className="mt-3 rounded-xl border border-black/8 bg-white px-3 py-3">
+              <div>
+                <p className="text-xs font-black text-black/70">
+                  추가 운영 이력
+                </p>
+                <p className="mt-0.5 text-[11px] font-semibold leading-4 text-black/40">
+                  위 참여 이력에 자동으로 잡히지 않은 건만 입력해주세요.
+                </p>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="rounded-lg bg-[#f7f7f5] px-2.5 py-2">
+                  <span className="block text-[11px] font-bold text-black/50">
+                    노쇼 횟수 · 회당 +2
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="99"
+                    step="1"
+                    value={manualNoShowCountDraft}
+                    disabled={disabled}
+                    aria-label="추가 노쇼 횟수"
+                    aria-invalid={!manualNoShowCountValid}
+                    onChange={(event) =>
+                      setManualNoShowCountDraft(event.target.value)
+                    }
+                    className={cn(
+                      "mt-1 h-9 w-full rounded-lg border bg-white px-2 text-center text-sm font-black tabular-nums outline-none",
+                      manualNoShowCountValid
+                        ? "border-black/10"
+                        : "border-red-300 text-red-600",
+                    )}
+                  />
+                </label>
+                <label className="rounded-lg bg-[#f7f7f5] px-2.5 py-2">
+                  <span className="block text-[11px] font-bold text-black/50">
+                    당일 취소 횟수 · 회당 +1
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="99"
+                    step="1"
+                    value={manualSameDayCancellationCountDraft}
+                    disabled={disabled}
+                    aria-label="추가 당일 취소 횟수"
+                    aria-invalid={!manualSameDayCancellationCountValid}
+                    onChange={(event) =>
+                      setManualSameDayCancellationCountDraft(event.target.value)
+                    }
+                    className={cn(
+                      "mt-1 h-9 w-full rounded-lg border bg-white px-2 text-center text-sm font-black tabular-nums outline-none",
+                      manualSameDayCancellationCountValid
+                        ? "border-black/10"
+                        : "border-red-300 text-red-600",
+                    )}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl border border-black/8 bg-white px-3 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-black text-black/70">
@@ -811,8 +915,21 @@ function RedFlagAssessmentDialog({
             </div>
             <button
               type="button"
-              disabled={!dirty || !adjustmentValid || disabled}
-              onClick={() => void onSave(draft, parsedAdjustment)}
+              disabled={
+                !dirty ||
+                !adjustmentValid ||
+                !manualNoShowCountValid ||
+                !manualSameDayCancellationCountValid ||
+                disabled
+              }
+              onClick={() =>
+                void onSave(
+                  draft,
+                  parsedAdjustment,
+                  parsedManualNoShowCount,
+                  parsedManualSameDayCancellationCount,
+                )
+              }
               className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-xs font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
             >
               <Save size={14} aria-hidden />
@@ -830,7 +947,6 @@ const automaticRedFlagCriteria = [
   ["자신의 지적 능력 평가", "1점·10점 +0.5"],
   ["외적인 끌림의 중요도", "5번 선택 시 +0.5"],
   ["다른 가치관과 대화하는 편안함", "1점 +1 · 2점 +0.5"],
-  ["MBTI", "ISTP 선택 시 +0.3"],
   ["클럽·한강 피크닉 선호", "클럽 선택 시 +0.5"],
   ["사회적 활동을 자신보다 중요하게 여김", "7점 선택 시 +0.5"],
   ["다른 사람을 신뢰하는 편", "1점 선택 시 +0.5"],
@@ -840,7 +956,7 @@ const automaticRedFlagCriteria = [
   ["외로움을 느끼는 빈도", "7점 선택 시 +0.5"],
   ["가까이 지낼 사람을 까다롭게 고름", "7점 선택 시 +0.5"],
   ["지각 성향", "5점 +0.5 · 6점 +1 · 7점 +2"],
-  ["서술형 답변 길이", "2~3글자 +1 · 한 글자 +5"],
+  ["서술형 답변 길이", "한 글자 작성 시 +5"],
   ["과거 참여 이력", "노쇼 1회당 +2 · 당일 취소 1회당 +1"],
   ["다른 사람의 단점을 찾는 편", "4점 +0.5 · 5점 +1"],
   ["그룹 자리에서 말하는 정도", "1점 선택 시 +0.5"],
@@ -2432,10 +2548,17 @@ function ProfileDetailPanel({
           profile={profile}
           disabled={profileSaving}
           onClose={() => setRedFlagAssessmentOpen(false)}
-          onSave={(redFlagManualFlags, redFlagManualAdjustment) =>
+          onSave={(
+            redFlagManualFlags,
+            redFlagManualAdjustment,
+            redFlagManualNoShowCount,
+            redFlagManualSameDayCancellationCount,
+          ) =>
             onProfileDetailSave(profile.user_id, {
               redFlagManualFlags,
               redFlagManualAdjustment,
+              redFlagManualNoShowCount,
+              redFlagManualSameDayCancellationCount,
             })
           }
         />

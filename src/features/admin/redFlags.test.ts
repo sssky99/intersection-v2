@@ -120,7 +120,7 @@ describe("calculateRedFlagAssessment", () => {
     expect(result.score).toBe(0.5);
   });
 
-  it("adds 0.3 for ISTP without flagging other MBTI values", () => {
+  it("does not use MBTI values for red flag scoring", () => {
     const istp = calculateRedFlagAssessment({
       answers: [answer(31, "ISTP")],
       participations: [],
@@ -130,8 +130,8 @@ describe("calculateRedFlagAssessment", () => {
       participations: [],
     });
 
-    expect(istp.score).toBe(0.3);
-    expect(istp.reasons[0]?.id).toBe("mbti_istp");
+    expect(istp.score).toBe(0);
+    expect(istp.reasons).toEqual([]);
     expect(other.score).toBe(0);
   });
 
@@ -150,7 +150,7 @@ describe("calculateRedFlagAssessment", () => {
     expect(neutral.score).toBe(0);
   });
 
-  it("uses the one-character penalty instead of stacking short-answer penalties", () => {
+  it("keeps the one-character penalty without flagging two-character answers", () => {
     const result = calculateRedFlagAssessment({
       answers: [
         answer(19, null, { question_type: "text", answer_text: "네" }),
@@ -162,6 +162,27 @@ describe("calculateRedFlagAssessment", () => {
     expect(result.score).toBe(5);
     expect(result.reasons).toHaveLength(1);
     expect(result.reasons[0]?.id).toBe("one_character_answer");
+  });
+
+  it("scores low-effort free-text answers only after manual context review", () => {
+    const automatic = calculateRedFlagAssessment({
+      answers: [
+        answer(19, null, { question_type: "text", answer_text: "네요" }),
+      ],
+      participations: [],
+    });
+    const reviewed = calculateRedFlagAssessment({
+      answers: [
+        answer(19, null, { question_type: "text", answer_text: "네요" }),
+      ],
+      participations: [],
+      manualFlags: { low_effort_free_text: true },
+    });
+
+    expect(automatic.score).toBe(0);
+    expect(automatic.reasons).toEqual([]);
+    expect(reviewed.score).toBe(1);
+    expect(reviewed.reasons[0]?.id).toBe("low_effort_free_text");
   });
 
   it("adds no-show, same-day cancellation, and manual review reasons", () => {
@@ -193,6 +214,23 @@ describe("calculateRedFlagAssessment", () => {
       "same_day_cancellation_history",
       "contradictory_answers",
       "derogatory_hateful_or_sexual",
+    ]);
+  });
+
+  it("adds administrator-entered history counts separately from automatic history", () => {
+    const result = calculateRedFlagAssessment({
+      answers: [],
+      participations: [],
+      manualNoShowCount: 2,
+      manualSameDayCancellationCount: 1,
+    });
+
+    expect(result.score).toBe(5);
+    expect(result.manualNoShowCount).toBe(2);
+    expect(result.manualSameDayCancellationCount).toBe(1);
+    expect(result.reasons.map((reason) => reason.id)).toEqual([
+      "manual_no_show_history",
+      "manual_same_day_cancellation_history",
     ]);
   });
 
