@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   meetingAtmosphereDefaultsFromProfiles,
@@ -199,6 +200,30 @@ const atmosphereParticipationStatuses = [
 ];
 
 const weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"];
+
+const loadCachedAvailableMeetingEvents = unstable_cache(
+  async (includeTestOnly: boolean, today: string) => {
+    const supabase = createAdminClient();
+    const visibilities = includeTestOnly
+      ? ["public", "test_only"]
+      : ["public"];
+    const { data, error } = await supabase
+      .from("meeting_events")
+      .select(
+        "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,application_closes_at,detail_snapshot",
+      )
+      .in("visibility", visibilities)
+      .gte("event_date", today)
+      .order("event_date", { ascending: true })
+      .order("starts_at", { ascending: true })
+      .returns<PublicMeetingEventRow[]>();
+
+    if (error) throw error;
+    return data ?? [];
+  },
+  ["available-meeting-events-v1"],
+  { revalidate: 30 },
+);
 
 function dateLabel(value: string) {
   const [year, month, day] = value.split("-").map(Number);
@@ -551,23 +576,22 @@ export async function getAvailableMeetingTickets({
   includeTestOnly?: boolean;
 }): Promise<GatheringTicket[]> {
   const supabase = createAdminClient();
+  const today = todayInKst();
   const visibilities = includeTestOnly
     ? ["public", "test_only"]
     : ["public"];
-  const today = todayInKst();
+  let events: PublicMeetingEventRow[] = [];
+  try {
+    events = await loadCachedAvailableMeetingEvents(includeTestOnly, today);
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error && "code" in error
+        ? String(error.code)
+        : null;
+    if (errorCode !== "PGRST205") throw error;
+  }
 
-  const { data: events, error: eventsError } = await supabase
-    .from("meeting_events")
-    .select(
-      "id,program_id,title,short_description,event_date,starts_at,region,capacity,confirmed_application_count,application_closes_at,detail_snapshot",
-    )
-    .in("visibility", visibilities)
-    .gte("event_date", today)
-    .order("event_date", { ascending: true })
-    .order("starts_at", { ascending: true })
-    .returns<PublicMeetingEventRow[]>();
-
-  if (!eventsError && events && events.length > 0) {
+  if (events.length > 0) {
     const visibleEvents = events
       .filter((event) => !hasTicketStarted(event.event_date, event.starts_at))
       .map(toPublicEventTicket);
@@ -584,8 +608,6 @@ export async function getAvailableMeetingTickets({
       rejectedIds.has(ticket.id) ? { ...ticket, rejected: true } : ticket,
     );
   }
-  if (eventsError && eventsError.code !== "PGRST205") throw eventsError;
-
   const { data: instances, error: instancesError } = await supabase
     .from("ticket_instances")
     .select(publicTicketInstanceSelect)

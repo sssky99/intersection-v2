@@ -1196,7 +1196,7 @@ function MeetingDateApplicationFlow({
   );
 
   useEffect(() => {
-    if (guestMode) return;
+    if (guestMode || !active) return;
     let alive = true;
     const load = async () => {
       const localApplications = loadLocalDateApplications(userId);
@@ -1216,7 +1216,7 @@ function MeetingDateApplicationFlow({
     };
 
     void load();
-    if (active) window.addEventListener("focus", load);
+    window.addEventListener("focus", load);
     return () => {
       alive = false;
       window.removeEventListener("focus", load);
@@ -1224,6 +1224,7 @@ function MeetingDateApplicationFlow({
   }, [active, guestMode, userId]);
 
   useEffect(() => {
+    if (!active) return;
     let alive = true;
     const load = async () => {
       if (alive) setAvailableTicketsLoading(true);
@@ -1257,7 +1258,7 @@ function MeetingDateApplicationFlow({
     return () => {
       alive = false;
     };
-  }, [guestMode, onAvailableTicketsChange]);
+  }, [active, guestMode, onAvailableTicketsChange]);
 
   useEffect(() => {
     if (

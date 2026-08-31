@@ -557,6 +557,7 @@ export function AppHome({
     useState(false);
   const [blindDateOffers, setBlindDateOffers] = useState<BlindDateUserOffer[]>([]);
   const [blindDateOffersLoaded, setBlindDateOffersLoaded] = useState(guestMode);
+  const mainDataLoadStartedRef = useRef(guestMode);
   const [blindDateOpenRequestId, setBlindDateOpenRequestId] = useState(0);
   const [blindDateOpenRequestPending, setBlindDateOpenRequestPending] =
     useState(false);
@@ -880,16 +881,15 @@ export function AppHome({
   ]);
 
   useEffect(() => {
-    if (guestMode) return;
-    let cancelled = false;
+    if (guestMode || (activeTab !== "recommend" && activeTab !== "browse")) {
+      return;
+    }
+    if (mainDataLoadStartedRef.current) return;
+    mainDataLoadStartedRef.current = true;
 
-    void loadUserTicketsProgressively({
-      isCancelled: () => cancelled,
-    });
+    void loadUserTicketsProgressively();
     if (recommendationProfileReady && currentProfile.profile_completed) {
       void fetchBlindDateOffers().then((offers) => {
-        if (cancelled) return;
-
         if (offers) setBlindDateOffers(offers);
         setBlindDateOffersLoaded(true);
       });
@@ -897,48 +897,55 @@ export function AppHome({
       setBlindDateOffers([]);
       setBlindDateOffersLoaded(true);
     }
+  }, [
+    activeTab,
+    guestMode,
+    loadUserTicketsProgressively,
+    currentProfile.profile_completed,
+    recommendationProfileReady,
+  ]);
+
+  useEffect(() => {
+    if (guestMode || readOnly || activeTab !== "profile") return;
+    let cancelled = false;
     const answerQuestions = usesPreferenceProfile(profile)
       ? preferenceQuestions
       : profileQuestions;
 
-    if (!readOnly) {
-      createClient()
-        .from("user_answers")
-        .select("question_order,answer_value,answer_values,answer_text,other_text")
-        .eq("user_id", userId)
-        .order("question_order")
-        .returns<AnswerRow[]>()
-        .then(({ data, error }) => {
-          if (cancelled || error || !data) return;
+    createClient()
+      .from("user_answers")
+      .select("question_order,answer_value,answer_values,answer_text,other_text")
+      .eq("user_id", userId)
+      .order("question_order")
+      .returns<AnswerRow[]>()
+      .then(({ data, error }) => {
+        if (cancelled || error || !data) return;
 
-          setAnswerRows(data);
-          setAnswers(
-            Object.fromEntries(
-              data
-                .filter((row) =>
-                  answerQuestions.some(
-                    (question) =>
-                      (question.order ?? question.id) === row.question_order,
-                  ),
-                )
-                .map((row) => {
-                  const answer = rowToAnswer(row, answerQuestions);
-                  return [answer.questionId, answer];
-                }),
-            ) as AnswerMap,
-          );
-        });
-    }
+        setAnswerRows(data);
+        setAnswers(
+          Object.fromEntries(
+            data
+              .filter((row) =>
+                answerQuestions.some(
+                  (question) =>
+                    (question.order ?? question.id) === row.question_order,
+                ),
+              )
+              .map((row) => {
+                const answer = rowToAnswer(row, answerQuestions);
+                return [answer.questionId, answer];
+              }),
+          ) as AnswerMap,
+        );
+      });
 
     return () => {
       cancelled = true;
     };
   }, [
+    activeTab,
     guestMode,
-    loadUserTicketsProgressively,
-    currentProfile.profile_completed,
     profile.profile_experience_version,
-    recommendationProfileReady,
     readOnly,
     userId,
   ]);

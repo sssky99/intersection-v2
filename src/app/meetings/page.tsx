@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
 import {
@@ -59,20 +60,45 @@ const previewSelfReplacementProfile = {
   birthYear: "2007",
 } as const;
 
-async function loadPreviewMatchPhotoUrls(
+type PreviewPhotoProfile = {
+  user_id: string;
+  name: string | null;
+  birth_year: string | number | null;
+  photo_url: string | null;
+  created_at: string;
+};
+
+const loadPreviewPhotoProfiles = unstable_cache(
+  async () => {
+    const names = Array.from(
+      new Set([
+        ...previewMatchProfileNames,
+        ...previewOtherMemberProfiles.map(({ name }) => name),
+        previewSelfReplacementProfile.name,
+      ]),
+    );
+    const { data } = await createAdminClient()
+      .from("profiles")
+      .select("user_id,name,birth_year,photo_url,created_at")
+      .in("name", names)
+      .not("photo_url", "is", null)
+      .eq("profile_completed", true)
+      .order("created_at", { ascending: false })
+      .returns<PreviewPhotoProfile[]>();
+
+    return data ?? [];
+  },
+  ["meetings-preview-photo-profiles-v1"],
+  { revalidate: 300 },
+);
+
+function loadPreviewMatchPhotoUrls(
+  profiles: PreviewPhotoProfile[],
   currentUserId: string,
   selfReplacementPhotoUrl: string | null,
 ) {
-  const { data } = await createAdminClient()
-    .from("profiles")
-    .select("user_id,name,photo_url,created_at")
-    .in("name", [...previewMatchProfileNames])
-    .not("photo_url", "is", null)
-    .eq("profile_completed", true)
-    .order("created_at", { ascending: false });
-
   const newestPhotoByName = new Map<string, string>();
-  for (const row of data ?? []) {
+  for (const row of profiles) {
     const name = row.name?.trim();
     const photoUrl = row.photo_url?.trim();
     if (name && photoUrl && !newestPhotoByName.has(name)) {
@@ -82,7 +108,7 @@ async function loadPreviewMatchPhotoUrls(
 
   return previewMatchProfileNames
     .map((name) => {
-      const profile = (data ?? []).find((row) => row.name?.trim() === name);
+      const profile = profiles.find((row) => row.name?.trim() === name);
       if (profile?.user_id === currentUserId && selfReplacementPhotoUrl) {
         return selfReplacementPhotoUrl;
       }
@@ -91,21 +117,14 @@ async function loadPreviewMatchPhotoUrls(
     .filter((photoUrl): photoUrl is string => Boolean(photoUrl));
 }
 
-async function loadPreviewOtherMemberPhotoUrls(
+function loadPreviewOtherMemberPhotoUrls(
+  profiles: PreviewPhotoProfile[],
   currentUserId: string,
   selfReplacementPhotoUrl: string | null,
 ) {
-  const names = previewOtherMemberProfiles.map(({ name }) => name);
-  const { data } = await createAdminClient()
-    .from("profiles")
-    .select("user_id,name,birth_year,photo_url")
-    .in("name", names)
-    .not("photo_url", "is", null)
-    .eq("profile_completed", true);
-
   return previewOtherMemberProfiles
     .map(({ name, birthYear }) => {
-      const profile = data?.find(
+      const profile = profiles.find(
         (profile) =>
           profile.name?.trim() === name &&
           String(profile.birth_year) === birthYear,
@@ -118,17 +137,13 @@ async function loadPreviewOtherMemberPhotoUrls(
     .filter((photoUrl): photoUrl is string => Boolean(photoUrl));
 }
 
-async function loadPreviewSelfReplacementPhotoUrl() {
-  const { data } = await createAdminClient()
-    .from("profiles")
-    .select("photo_url")
-    .eq("name", previewSelfReplacementProfile.name)
-    .eq("birth_year", previewSelfReplacementProfile.birthYear)
-    .eq("profile_completed", true)
-    .not("photo_url", "is", null)
-    .maybeSingle();
-
-  return data?.photo_url?.trim() || null;
+function loadPreviewSelfReplacementPhotoUrl(profiles: PreviewPhotoProfile[]) {
+  const profile = profiles.find(
+    (row) =>
+      row.name?.trim() === previewSelfReplacementProfile.name &&
+      String(row.birth_year) === previewSelfReplacementProfile.birthYear,
+  );
+  return profile?.photo_url?.trim() || null;
 }
 
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps) {
@@ -170,13 +185,11 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
   const returnSession = decryptOperatorReturnSession(
     cookieStore.get(OPERATOR_RETURN_SESSION_COOKIE)?.value,
   );
-  const currentTestAccount = await loadOperatorTestAccountByUserId(user.id);
-  const { data: authoritativeUserData } =
-    await createAdminClient().auth.admin.getUserById(user.id);
-  const operatorMode = isOperatorAccount(
-    authoritativeUserData.user ?? user,
-    profile,
-  );
+  const operatorMode = isOperatorAccount(user, profile);
+  const currentTestAccount =
+    !operatorMode && profile.is_test_participant === true
+      ? await loadOperatorTestAccountByUserId(user.id, user)
+      : null;
   const testAccounts = operatorMode ? await loadOperatorTestAccounts() : [];
   const operatorAccountSwitcher: OperatorAccountSwitcher = operatorMode
     ? {
@@ -189,11 +202,20 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
     : currentTestAccount && returnSession?.targetUserId === user.id
       ? { mode: "test" }
       : null;
-  const selfReplacementPhotoUrl = await loadPreviewSelfReplacementPhotoUrl();
-  const [previewMatchPhotoUrls, previewOtherMemberPhotoUrls] = await Promise.all([
-    loadPreviewMatchPhotoUrls(user.id, selfReplacementPhotoUrl),
-    loadPreviewOtherMemberPhotoUrls(user.id, selfReplacementPhotoUrl),
-  ]);
+  const previewPhotoProfiles = await loadPreviewPhotoProfiles();
+  const selfReplacementPhotoUrl = loadPreviewSelfReplacementPhotoUrl(
+    previewPhotoProfiles,
+  );
+  const previewMatchPhotoUrls = loadPreviewMatchPhotoUrls(
+    previewPhotoProfiles,
+    user.id,
+    selfReplacementPhotoUrl,
+  );
+  const previewOtherMemberPhotoUrls = loadPreviewOtherMemberPhotoUrls(
+    previewPhotoProfiles,
+    user.id,
+    selfReplacementPhotoUrl,
+  );
 
   return (
     <MobileFrame>

@@ -31,24 +31,26 @@ function accountFromProfile(profile: TestProfile, user: User | null) {
   } satisfies OperatorTestAccount;
 }
 
-export async function loadOperatorTestAccountByUserId(userId: string) {
+export async function loadOperatorTestAccountByUserId(
+  userId: string,
+  verifiedUser?: User,
+) {
   if (!userId) return null;
 
   const admin = createAdminClient();
-  const [
-    { data: profile, error: profileError },
-    { data: userData, error: userError },
-  ] = await Promise.all([
-    admin
-      .from("profiles")
-      .select("user_id,name,nickname")
-      .eq("user_id", userId)
-      .eq("is_test_participant", true)
-      .maybeSingle<TestProfile>(),
-    admin.auth.admin.getUserById(userId),
-  ]);
+  const { data: profile, error: profileError } = await admin
+    .from("profiles")
+    .select("user_id,name,nickname")
+    .eq("user_id", userId)
+    .eq("is_test_participant", true)
+    .maybeSingle<TestProfile>();
 
-  if (profileError || userError || !profile) return null;
+  if (profileError || !profile) return null;
+  if (verifiedUser) return accountFromProfile(profile, verifiedUser);
+
+  const { data: userData, error: userError } =
+    await admin.auth.admin.getUserById(userId);
+  if (userError) return null;
   return accountFromProfile(profile, userData.user);
 }
 
