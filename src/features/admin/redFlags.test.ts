@@ -150,7 +150,7 @@ describe("calculateRedFlagAssessment", () => {
     expect(neutral.score).toBe(0);
   });
 
-  it("keeps the one-character penalty without flagging two-character answers", () => {
+  it("does not automatically flag short free-text answers", () => {
     const result = calculateRedFlagAssessment({
       answers: [
         answer(19, null, { question_type: "text", answer_text: "네" }),
@@ -159,9 +159,8 @@ describe("calculateRedFlagAssessment", () => {
       participations: [],
     });
 
-    expect(result.score).toBe(5);
-    expect(result.reasons).toHaveLength(1);
-    expect(result.reasons[0]?.id).toBe("one_character_answer");
+    expect(result.score).toBe(0);
+    expect(result.reasons).toEqual([]);
   });
 
   it("scores low-effort free-text answers only after manual context review", () => {

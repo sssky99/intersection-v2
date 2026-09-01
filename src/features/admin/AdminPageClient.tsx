@@ -7,6 +7,8 @@ import {
   Flag,
   Eye,
   Image as ImageIcon,
+  LayoutGrid,
+  List,
   LogOut,
   Save,
   Search,
@@ -74,7 +76,7 @@ type AdminTab =
   | "loginBlocklist"
   | "funnel";
 
-type ViewMode = "list" | "cards" | "dropoffs";
+type ViewMode = "list" | "cards";
 type MembershipFilter = "all" | "active" | "inactive";
 type PaymentFilter = "all" | "paid" | "unpaid";
 type CompletionFilter = "all" | "complete" | "incomplete";
@@ -143,17 +145,6 @@ function adminProfileArchetypeLabel(profile: AdminProfile) {
   return archetype
     ? `${archetype.koreanName} · ${archetype.englishName}`
     : "미배정";
-}
-
-function isDropoffProfile(
-  profile: Pick<AdminProfile, "photo_url" | "profile_archetype_id">,
-) {
-  const hasSubmittedPhoto = Boolean(profile.photo_url?.trim());
-  const hasAssignedArchetype = isProfileArchetypeId(
-    profile.profile_archetype_id,
-  );
-
-  return !hasSubmittedPhoto || !hasAssignedArchetype;
 }
 
 function questionOrder(question: ProfileQuestion) {
@@ -956,7 +947,6 @@ const automaticRedFlagCriteria = [
   ["외로움을 느끼는 빈도", "7점 선택 시 +0.5"],
   ["가까이 지낼 사람을 까다롭게 고름", "7점 선택 시 +0.5"],
   ["지각 성향", "5점 +0.5 · 6점 +1 · 7점 +2"],
-  ["서술형 답변 길이", "한 글자 작성 시 +5"],
   ["과거 참여 이력", "노쇼 1회당 +2 · 당일 취소 1회당 +1"],
   ["다른 사람의 단점을 찾는 편", "4점 +0.5 · 5점 +1"],
   ["그룹 자리에서 말하는 정도", "1점 선택 시 +0.5"],
@@ -1890,14 +1880,52 @@ function ApplicantsPanel({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={onReload}
-              disabled={loading}
-              className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
-            >
-              {loading ? "조회 중" : "새로고침"}
-            </button>
+            <div className="flex items-center gap-2">
+              <div
+                className="flex h-10 items-center rounded-xl border border-black/10 bg-[#f7f7f5] p-1"
+                aria-label="신청자 보기 방식"
+              >
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("list")}
+                  aria-label="목록 보기"
+                  aria-pressed={viewMode === "list"}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition",
+                    viewMode === "list"
+                      ? "bg-white text-black shadow-sm"
+                      : "text-black/40 hover:text-black/70",
+                  )}
+                >
+                  <List size={15} aria-hidden />
+                  목록
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("cards")}
+                  aria-label="사진 카드 보기"
+                  aria-pressed={viewMode === "cards"}
+                  className={cn(
+                    "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition",
+                    viewMode === "cards"
+                      ? "bg-white text-black shadow-sm"
+                      : "text-black/40 hover:text-black/70",
+                  )}
+                >
+                  <LayoutGrid size={15} aria-hidden />
+                  카드
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={onReload}
+                disabled={loading}
+                className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:cursor-not-allowed disabled:text-black/25"
+              >
+                {loading ? "조회 중" : "새로고침"}
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -2010,13 +2038,21 @@ function ApplicantsPanel({
               message="조건에 맞는 신청자가 없습니다."
             />
           ) : (
-            <ApplicantTable
-              profiles={profiles}
-              selectedProfileId={selectedProfileId}
-              onSelectProfile={onSelectProfile}
-              savingMembershipUserId={savingMembershipUserId}
-              onMembershipStatusChange={onMembershipStatusChange}
-            />
+            viewMode === "cards" ? (
+              <ApplicantCards
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                onSelectProfile={onSelectProfile}
+              />
+            ) : (
+              <ApplicantTable
+                profiles={profiles}
+                selectedProfileId={selectedProfileId}
+                onSelectProfile={onSelectProfile}
+                savingMembershipUserId={savingMembershipUserId}
+                onMembershipStatusChange={onMembershipStatusChange}
+              />
+            )
           )}
         </div>
         <div className="flex h-14 shrink-0 items-center justify-between border-t border-black/10 px-5 text-sm font-semibold text-black/55">
@@ -2177,12 +2213,14 @@ function ApplicantCards({
                 src={profile.photo_url}
                 alt={`${profile.name ?? "신청자"} 프로필 사진`}
                 className="h-64 w-full bg-[#f7f7f5]"
+                fit="cover"
               />
               <div className="space-y-2 p-4">
                 <h3 className="truncate text-base font-bold">
                   <AdminMemberName
                     profile={profile}
                     showOperatorRating
+                    showRedFlagScore
                     oneTimePaid={profile.one_time_paid}
                   />
                 </h3>
@@ -2195,6 +2233,14 @@ function ApplicantCards({
                   <InfoPill
                     label="성향 유형"
                     value={adminProfileArchetypeLabel(profile)}
+                  />
+                  <InfoPill
+                    label="결제"
+                    value={profile.has_payment ? "완료" : "없음"}
+                  />
+                  <InfoPill
+                    label="멤버십"
+                    value={membershipStatusLabels[membershipStatusValue(profile)]}
                   />
                 </div>
               </div>
@@ -2571,15 +2617,25 @@ function PhotoBox({
   src,
   alt,
   className,
+  fit = "contain",
 }: {
   src: string | null;
   alt: string;
   className: string;
+  fit?: "contain" | "cover";
 }) {
   return (
     <div className={cn("flex items-center justify-center overflow-hidden", className)}>
       {src ? (
-        <img src={src} alt={alt} className="h-full w-full object-contain" />
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className={cn(
+            "h-full w-full",
+            fit === "cover" ? "object-cover" : "object-contain",
+          )}
+        />
       ) : (
         <div className="flex flex-col items-center gap-2 text-xs font-semibold text-black/35">
           <ImageIcon size={28} aria-hidden />

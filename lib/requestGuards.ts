@@ -14,8 +14,28 @@ export function requestActorKey(request: Request) {
   return `${requestClientIp(request)}:${userAgent || "unknown"}`;
 }
 
+function firstForwardedValue(value: string | null) {
+  return value?.split(",")[0]?.trim() || null;
+}
+
+function publicRequestOrigin(request: Request) {
+  const requestUrl = new URL(request.url);
+  const host =
+    firstForwardedValue(request.headers.get("x-forwarded-host")) ||
+    request.headers.get("host")?.trim();
+  const forwardedProtocol = firstForwardedValue(
+    request.headers.get("x-forwarded-proto"),
+  );
+  const protocol =
+    forwardedProtocol === "http" || forwardedProtocol === "https"
+      ? forwardedProtocol
+      : requestUrl.protocol.replace(":", "");
+
+  return host ? `${protocol}://${host}` : requestUrl.origin;
+}
+
 export function isSameOriginRequest(request: Request) {
-  const requestOrigin = new URL(request.url).origin;
+  const requestOrigin = publicRequestOrigin(request);
   const origin = request.headers.get("origin");
 
   if (origin) {

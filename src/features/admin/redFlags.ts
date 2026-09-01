@@ -73,19 +73,6 @@ function numericAnswer(answers: AdminProfileAnswer[], order: number) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function responseText(answer: AdminProfileAnswer) {
-  return (
-    answer.answer_text?.trim() ||
-    answer.other_text?.trim() ||
-    (answer.question_type === "text" ? answer.answer_value?.trim() : "") ||
-    ""
-  );
-}
-
-function meaningfulCharacterCount(value: string) {
-  return Array.from(value.replace(/[\s\p{P}\p{S}]/gu, "")).length;
-}
-
 function sameSeoulDate(iso: string | null, eventDate: string | null) {
   if (!iso || !eventDate) return false;
   const date = new Date(iso);
@@ -289,36 +276,6 @@ function addStructuredAnswerReasons(
   }
 }
 
-function addShortAnswerReason(
-  reasons: RedFlagReason[],
-  answers: AdminProfileAnswer[],
-) {
-  const oneCharacter = answers
-    .filter(
-      (answer) =>
-        answer.question_type === "text" &&
-        answer.question_order !== 708 &&
-        responseText(answer),
-    )
-    .map((answer) => ({
-      answer,
-      text: responseText(answer),
-      length: meaningfulCharacterCount(responseText(answer)),
-    }))
-    .find(({ length }) => length === 1);
-
-  if (oneCharacter) {
-    reasons.push({
-      id: "one_character_answer",
-      label: "한 글자로 작성한 서술형 답변",
-      score: 5,
-      source: "answer",
-      detail: `문항 ${oneCharacter.answer.question_order} · “${oneCharacter.text}”`,
-      questionOrder: oneCharacter.answer.question_order,
-    });
-  }
-}
-
 function addHistoryReasons(
   reasons: RedFlagReason[],
   participations: RedFlagParticipation[],
@@ -394,7 +351,6 @@ export function calculateRedFlagAssessment({
   const reasons: RedFlagReason[] = [];
 
   addStructuredAnswerReasons(reasons, answers);
-  addShortAnswerReason(reasons, answers);
   addHistoryReasons(reasons, participations);
 
   for (const rule of redFlagManualRules) {
