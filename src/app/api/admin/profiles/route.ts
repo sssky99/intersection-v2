@@ -240,6 +240,7 @@ async function fetchProfilePage(
     "birth-asc",
     "birth-desc",
   ] as const);
+  const includePhotos = params.get("includePhotos") === "true";
 
   const { data, error } = await supabase.rpc("admin_list_profiles", {
     p_page: page,
@@ -257,8 +258,13 @@ async function fetchProfilePage(
   const totalCount = Number(rows[0]?.total_count ?? 0);
   const totalPages = Math.max(1, Math.ceil(totalCount / limit));
 
+  const listedProfiles = rows.map(listProfile);
+  const profiles = includePhotos
+    ? await attachProfilePhotos(supabase, listedProfiles)
+    : listedProfiles;
+
   return {
-    profiles: rows.map(listProfile),
+    profiles,
     pagination: {
       page,
       limit,
@@ -268,6 +274,31 @@ async function fetchProfilePage(
       hasNext: page < totalPages,
     },
   };
+}
+
+async function attachProfilePhotos(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("user_id,photo_url")
+    .in("user_id", userIds);
+  if (error) throw error;
+
+  const photosByUserId = new Map<string, string | null>(
+    (data ?? []).map(
+      (row) => [row.user_id, row.photo_url ?? null] as const,
+    ),
+  );
+
+  return profiles.map((profile) => ({
+    ...profile,
+    photo_url: photosByUserId.get(profile.user_id) ?? null,
+  }));
 }
 
 async function fetchPaymentHistory(

@@ -1267,6 +1267,7 @@ export function AdminPageClient({
       paymentFilter,
       completionFilter,
       birthYearSort,
+      viewMode,
       profileRefreshKey,
     });
     if (loadedProfileQueryRef.current === querySignature) return;
@@ -1288,6 +1289,7 @@ export function AdminPageClient({
     if (paymentFilter !== "all") params.set("payment", paymentFilter);
     if (completionFilter !== "all") params.set("completion", completionFilter);
     if (birthYearSort !== "default") params.set("birthSort", birthYearSort);
+    if (viewMode === "cards") params.set("includePhotos", "true");
 
     setProfilesLoading(true);
     setProfilesState("loading");
@@ -1345,6 +1347,7 @@ export function AdminPageClient({
     paymentFilter,
     profilePage,
     profileRefreshKey,
+    viewMode,
   ]);
 
   useEffect(() => {
@@ -2214,6 +2217,8 @@ function ApplicantCards({
                 alt={`${profile.name ?? "신청자"} 프로필 사진`}
                 className="h-64 w-full bg-[#f7f7f5]"
                 fit="cover"
+                loading="eager"
+                thumbnail={{ width: 440, height: 512, quality: 70 }}
               />
               <div className="space-y-2 p-4">
                 <h3 className="truncate text-base font-bold">
@@ -2618,19 +2623,58 @@ function PhotoBox({
   alt,
   className,
   fit = "contain",
+  loading = "lazy",
+  thumbnail,
 }: {
   src: string | null;
   alt: string;
   className: string;
   fit?: "contain" | "cover";
+  loading?: "eager" | "lazy";
+  thumbnail?: {
+    width: number;
+    height: number;
+    quality: number;
+  };
 }) {
+  const optimizedSrc = useMemo(() => {
+    if (!src || !thumbnail) return src;
+
+    try {
+      const url = new URL(src);
+      const publicObjectPath = "/storage/v1/object/public/";
+      if (!url.pathname.startsWith(publicObjectPath)) return src;
+
+      url.pathname = url.pathname.replace(
+        publicObjectPath,
+        "/storage/v1/render/image/public/",
+      );
+      url.searchParams.set("width", String(thumbnail.width));
+      url.searchParams.set("height", String(thumbnail.height));
+      url.searchParams.set("quality", String(thumbnail.quality));
+      url.searchParams.set("resize", "cover");
+      return url.toString();
+    } catch {
+      return src;
+    }
+  }, [src, thumbnail?.height, thumbnail?.quality, thumbnail?.width]);
+  const [displaySrc, setDisplaySrc] = useState(optimizedSrc);
+
+  useEffect(() => {
+    setDisplaySrc(optimizedSrc);
+  }, [optimizedSrc]);
+
   return (
     <div className={cn("flex items-center justify-center overflow-hidden", className)}>
-      {src ? (
+      {displaySrc ? (
         <img
-          src={src}
+          src={displaySrc}
           alt={alt}
-          loading="lazy"
+          loading={loading}
+          decoding="async"
+          onError={() => {
+            if (src && displaySrc !== src) setDisplaySrc(src);
+          }}
           className={cn(
             "h-full w-full",
             fit === "cover" ? "object-cover" : "object-contain",
