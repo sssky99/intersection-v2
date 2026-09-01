@@ -18,6 +18,10 @@ import {
   loadOperatorTestAccounts,
 } from "@/lib/operatorTestAccounts";
 import { normalizeFeedbackParticipationId } from "@/lib/feedbackDeepLink";
+import {
+  meetingEventDeepLinkPath,
+  normalizeMeetingEventId,
+} from "@/lib/meetingDeepLink";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type MeetingsPageProps = {
@@ -25,6 +29,7 @@ type MeetingsPageProps = {
     tab?: string | string[];
     account?: string | string[];
     feedback?: string | string[];
+    event?: string | string[];
     legacyPreview?: string | string[];
   }>;
 };
@@ -149,8 +154,15 @@ function loadPreviewSelfReplacementPhotoUrl(profiles: PreviewPhotoProfile[]) {
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps) {
   const params = await searchParams;
   const { supabase, user, profile } = await getAuthenticatedProfile();
+  const requestedMeetingEventId = normalizeMeetingEventId(params?.event);
 
-  if (!user || !profile) redirect("/");
+  if (!user || !profile) {
+    if (requestedMeetingEventId) {
+      const returnPath = meetingEventDeepLinkPath(requestedMeetingEventId);
+      redirect(`/?next=${encodeURIComponent(returnPath)}`);
+    }
+    redirect("/");
+  }
   if (!profile.questions_completed) redirect("/onboarding/questions");
   const requestedFeedbackParticipationId = normalizeFeedbackParticipationId(
     params?.feedback,

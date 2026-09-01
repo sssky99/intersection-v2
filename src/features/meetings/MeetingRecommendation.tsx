@@ -899,6 +899,7 @@ function MeetingDateApplicationFlow({
     useState<string | null>(null);
   const [blindDateTicketClosing, setBlindDateTicketClosing] = useState(false);
   const blindDateCloseTimerRef = useRef<number | null>(null);
+  const handledMeetingEventDeepLinkRef = useRef<string | null>(null);
   const funnelEntryRef = useRef<{
     step: ApplicationFunnelStep;
     enteredAt: number;
@@ -1096,6 +1097,7 @@ function MeetingDateApplicationFlow({
     applications.map((application) => [application.meetingDate, application]),
   );
   const resumeDate = searchParams.get("resumeDate");
+  const requestedMeetingEventId = searchParams.get("event")?.trim() || null;
   const activeBlindDateOffers = blindDateOffers.filter(
     (offer) =>
       !offer.isExpired &&
@@ -1314,6 +1316,45 @@ function MeetingDateApplicationFlow({
       meeting_date: ticket.date,
     });
   };
+
+  useEffect(() => {
+    if (
+      !active ||
+      !profileCompleted ||
+      availableTicketsLoading ||
+      !requestedMeetingEventId ||
+      handledMeetingEventDeepLinkRef.current === requestedMeetingEventId
+    ) {
+      return;
+    }
+
+    const ticket = availableTickets.find(
+      (candidate) => candidate.id === requestedMeetingEventId,
+    );
+    if (!ticket) {
+      handledMeetingEventDeepLinkRef.current = requestedMeetingEventId;
+      setScreen("dates");
+      return;
+    }
+
+    handledMeetingEventDeepLinkRef.current = requestedMeetingEventId;
+    void recordTicketInteraction(ticket, "open", { keepalive: true });
+    setMembershipSheetOpen(false);
+    setSelectedTicket(ticket);
+    setError(null);
+    setScreen("unlock");
+    trackEvent("meeting_ticket_detail_open", {
+      ticket_instance_id: ticket.id,
+      meeting_date: ticket.date,
+      entry_reason: "deep_link",
+    });
+  }, [
+    active,
+    availableTickets,
+    availableTicketsLoading,
+    profileCompleted,
+    requestedMeetingEventId,
+  ]);
 
   const acceptTicket = (ticket: GatheringTicket) => {
     if (saving) return;
@@ -2313,6 +2354,14 @@ function programDateLabel(value: string) {
   return `${month}월 ${day}일 ${weekday}`;
 }
 
+function meetingInvitationDisplayTitle(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized === "디너 & 교집합 시크릿 아지트") {
+    return "디너 &\n교집합 시크릿 아지트";
+  }
+  return normalized;
+}
+
 function ProgramListOption({
   ticket,
   application,
@@ -2384,7 +2433,7 @@ function TicketDetailRevealHeader({
       className="px-10 text-center"
     >
       <h1 className="font-ticket-latin whitespace-pre-line text-[30px] font-medium leading-[1.12] tracking-[-0.025em] text-[#24211d]">
-        {title.replace(/\s+/g, " ").trim()}
+        {meetingInvitationDisplayTitle(title)}
       </h1>
       <p className="font-ticket-latin mt-4 text-[13px] font-medium text-[#24211d]/75">
         {meta}
@@ -2414,7 +2463,7 @@ function TicketUnlockSequence({
   onBack: () => void;
   onComplete: () => void;
 }) {
-  const cleanTitle = title.replace(/\s+/g, " ").trim();
+  const cleanTitle = meetingInvitationDisplayTitle(title);
   const meta = `${dateText} · ${timeText} · ${placeText}`;
   const [phase, setPhase] = useState<"locked" | "loading" | "typing">("locked");
   const [unlockProgress, setUnlockProgress] = useState(0);
@@ -2561,7 +2610,7 @@ function TicketUnlockSequence({
                 <p className="truncate text-[11px] font-bold tracking-[-0.02em] text-black/46">
                   {meta}
                 </p>
-                <h1 className="mt-1.5 break-keep text-[18px] font-black leading-[1.35] tracking-[-0.045em] text-black">
+                <h1 className="mt-1.5 whitespace-pre-line break-keep text-[18px] font-black leading-[1.35] tracking-[-0.045em] text-black">
                   {cleanTitle}
                 </h1>
                 <button

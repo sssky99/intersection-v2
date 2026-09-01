@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { onboardingGuides } from "@/data/onboardingGuides";
 import { analyticsSessionId, trackEvent } from "@/lib/analytics";
+import { safeInternalPath } from "@/lib/authRedirect";
 import {
   isProfileSetupFailure,
   otpFailureCode,
@@ -99,6 +100,7 @@ export function FiftyQLandingClient({
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const phoneInputViewTrackedRef = useRef(false);
+  const landingViewTrackedRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [isIntroFinished, setIsIntroFinished] = useState(initialHasSeenIntro);
@@ -115,6 +117,10 @@ export function FiftyQLandingClient({
   const [promptKey, setPromptKey] = useState(0);
   const [guidePage, setGuidePage] = useState<0 | 1 | null>(null);
   const [nextPath, setNextPath] = useState("");
+  const [queryCompletionPath, setQueryCompletionPath] = useState<
+    string | undefined
+  >(undefined);
+  const resolvedCompletionPath = completionPath ?? queryCompletionPath;
   const prompt = step === "phone" ? phonePrompt : otpPrompt;
   const typedPrompt = useTypedText(prompt, isAuthContentVisible, 55);
   const guideText = guidePage === null ? "" : onboardingGuides[guidePage];
@@ -127,13 +133,25 @@ export function FiftyQLandingClient({
     isAuthContentVisible && typedPrompt.length === prompt.length;
 
   useEffect(() => {
+    if (completionPath) return;
+    const requestedPath = safeInternalPath(
+      new URLSearchParams(window.location.search).get("next"),
+      "",
+    );
+    setQueryCompletionPath(requestedPath || undefined);
+  }, [completionPath]);
+
+  useEffect(() => {
     if (previewPhoneOnly) {
       setAuthChecked(true);
       return;
     }
 
     let mounted = true;
-    if (trackLandingView) trackEvent("landing_view");
+    if (trackLandingView && !landingViewTrackedRef.current) {
+      landingViewTrackedRef.current = true;
+      trackEvent("landing_view");
+    }
     if (!hasSupabaseAuthCookie()) {
       setAuthChecked(true);
       return;
@@ -158,7 +176,7 @@ export function FiftyQLandingClient({
           if (!mounted) return;
           if (response.ok && body?.nextPath) {
             window.location.replace(
-              phoneAuthDestination(body.nextPath, completionPath),
+              phoneAuthDestination(body.nextPath, resolvedCompletionPath),
             );
             return;
           }
@@ -182,7 +200,7 @@ export function FiftyQLandingClient({
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, [completionPath, previewPhoneOnly, trackLandingView]);
+  }, [previewPhoneOnly, resolvedCompletionPath, trackLandingView]);
 
   useEffect(() => {
     if (
@@ -289,9 +307,9 @@ export function FiftyQLandingClient({
       source: authSource,
     });
 
-    if (completionPath) {
+    if (resolvedCompletionPath) {
       window.location.replace(
-        phoneAuthDestination(body.nextPath, completionPath),
+        phoneAuthDestination(body.nextPath, resolvedCompletionPath),
       );
       return;
     }
