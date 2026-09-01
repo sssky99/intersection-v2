@@ -1693,6 +1693,7 @@ function MeetingDateApplicationFlow({
         dateText={programDateLabel(selectedTicket.date)}
         timeText={formatTicketTimeLabel(selectedTicket.time)}
         placeText={seoulAreaLabel(selectedTicket.area)}
+        useApplicationBackground
         reducedMotion={shouldReduceMotion}
         onBack={() => {
           exitApplicationFunnel("ticket_unlock_back");
@@ -1766,7 +1767,7 @@ function MeetingDateApplicationFlow({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
         className={cn(
-          "relative min-h-full overflow-hidden bg-transparent px-5 pb-[calc(88px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]",
+          "relative min-h-full overflow-hidden bg-[linear-gradient(180deg,#faf8f3_0%,#f7f4ee_48%,#f2eee6_100%)] px-5 pb-[calc(88px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]",
           embedded ? "min-h-full" : "min-h-dvh md:min-h-[calc(100dvh-32px)]",
         )}
       >
@@ -2398,6 +2399,7 @@ function TicketUnlockSequence({
   dateText,
   timeText,
   placeText,
+  useApplicationBackground = false,
   reducedMotion,
   onBack,
   onComplete,
@@ -2407,13 +2409,14 @@ function TicketUnlockSequence({
   dateText: string;
   timeText: string;
   placeText: string;
+  useApplicationBackground?: boolean;
   reducedMotion: boolean;
   onBack: () => void;
   onComplete: () => void;
 }) {
   const cleanTitle = title.replace(/\s+/g, " ").trim();
   const meta = `${dateText} · ${timeText} · ${placeText}`;
-  const [phase, setPhase] = useState<"locked" | "typing">("locked");
+  const [phase, setPhase] = useState<"locked" | "loading" | "typing">("locked");
   const [unlockProgress, setUnlockProgress] = useState(0);
   const [typedParts, setTypedParts] = useState<[string, string, string, string]>([
     "",
@@ -2422,6 +2425,7 @@ function TicketUnlockSequence({
     "",
   ]);
   const [activeTypingPart, setActiveTypingPart] = useState(0);
+  const isLoading = phase === "loading";
   const onCompleteRef = useRef(onComplete);
   const unlockTrackRef = useRef<HTMLDivElement>(null);
   const draggingPointerRef = useRef<number | null>(null);
@@ -2437,7 +2441,7 @@ function TicketUnlockSequence({
     hasUnlockedRef.current = true;
     unlockProgressRef.current = 100;
     setUnlockProgress(100);
-    window.setTimeout(() => setPhase("typing"), reducedMotion ? 0 : 260);
+    window.setTimeout(() => setPhase("loading"), reducedMotion ? 0 : 220);
   };
 
   const setProgress = (value: number) => {
@@ -2458,6 +2462,12 @@ function TicketUnlockSequence({
     setProgress(nextProgress);
     return Math.min(100, Math.max(0, nextProgress));
   };
+
+  useEffect(() => {
+    if (phase !== "loading") return;
+    const loadingTimer = window.setTimeout(() => setPhase("typing"), 1000);
+    return () => window.clearTimeout(loadingTimer);
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== "typing") return;
@@ -2524,10 +2534,15 @@ function TicketUnlockSequence({
       animate={{ opacity: 1 }}
       exit={reducedMotion ? undefined : { opacity: 0 }}
       transition={{ duration: reducedMotion ? 0 : 0.24, ease: "easeOut" }}
-      className="relative flex min-h-full flex-col overflow-hidden bg-[radial-gradient(circle_at_50%_42%,#fbf9f4_0%,#f6f2ea_56%,#f0ece3_100%)] px-5 pb-[calc(26px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]"
+      className={cn(
+        "relative flex min-h-full flex-col overflow-hidden px-5 pb-[calc(26px+env(safe-area-inset-bottom))] pt-[calc(72px+env(safe-area-inset-top))] text-[#24211d]",
+        useApplicationBackground && phase !== "typing"
+          ? "bg-transparent"
+          : "bg-[radial-gradient(circle_at_50%_42%,#fbf9f4_0%,#f6f2ea_56%,#f0ece3_100%)]",
+      )}
     >
       <AnimatePresence mode="wait" initial={false}>
-        {phase === "locked" ? (
+        {phase !== "typing" ? (
           <motion.div
             key="locked"
             layoutId="program-selection-panel"
@@ -2613,8 +2628,29 @@ function TicketUnlockSequence({
                     unlock();
                   }
                 }}
-                className="relative h-[56px] touch-none select-none overflow-hidden border-t border-black/[0.075] bg-[#ede8de] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35"
+                className={cn(
+                  "relative h-[56px] touch-none select-none overflow-hidden border-t border-black/[0.075] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
+                  isLoading ? "bg-transparent" : "bg-[#ede8de]",
+                )}
               >
+                {isLoading && (
+                  <>
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 bg-[#c9c1b3]"
+                    />
+                    <motion.span
+                      aria-hidden
+                      className="pointer-events-none absolute -inset-[190%] bg-[conic-gradient(from_0deg,transparent_0deg,transparent_292deg,rgba(255,255,255,0.18)_314deg,rgba(255,255,255,1)_339deg,rgba(255,248,230,0.7)_351deg,transparent_360deg)]"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, ease: "linear" }}
+                    />
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-[2px] bg-[#ede8de]"
+                    />
+                  </>
+                )}
                 <motion.div
                   className="absolute inset-y-0 left-0 bg-black/[0.045]"
                   animate={{ width: `${unlockProgress}%` }}
@@ -2636,12 +2672,14 @@ function TicketUnlockSequence({
                 >
                   밀어서 티켓 열기
                 </motion.p>
-                <motion.span
-                  aria-hidden
-                  className="pointer-events-none absolute -top-4 h-20 w-16 -skew-x-12 bg-gradient-to-r from-transparent via-white/75 to-transparent blur-[3px]"
-                  animate={{ left: ["-25%", "115%"] }}
-                  transition={{ duration: 1.75, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
-                />
+                {!isLoading && (
+                  <motion.span
+                    aria-hidden
+                    className="pointer-events-none absolute -top-4 h-20 w-16 -skew-x-12 bg-gradient-to-r from-transparent via-white/75 to-transparent blur-[3px]"
+                    animate={{ left: ["-25%", "115%"] }}
+                    transition={{ duration: 1.75, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 }}
+                  />
+                )}
                 <motion.span
                   className="pointer-events-none absolute left-1 top-1 z-10 flex h-12 w-12 items-center justify-center rounded-[15px] border border-black/[0.065] bg-[#f3efe6] text-black/70 shadow-[6px_0_16px_rgba(66,57,44,0.09)]"
                   animate={{ left: `calc(4px + ${unlockProgress}% - ${unlockProgress * 0.56}px)` }}

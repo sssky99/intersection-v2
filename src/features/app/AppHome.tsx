@@ -1561,12 +1561,14 @@ export function AppHome({
           data-testid="app-tab-panel-recommend"
           aria-hidden={activeTab !== "recommend"}
           className={cn(
-            "application-stone-theme absolute inset-0 h-full overflow-y-auto scrollbar-none",
+            "application-stone-theme absolute inset-0 h-full overflow-y-auto bg-[#f7f3eb] bg-cover bg-center bg-no-repeat scrollbar-none",
             activeTab === "recommend"
               ? "pointer-events-auto"
               : "pointer-events-none",
           )}
           style={{
+            backgroundImage:
+              "linear-gradient(rgba(250, 248, 243, 0.18), rgba(250, 248, 243, 0.18)), url('/images/seoul-map-application-background.png')",
             transform:
               (blindDateOpenRequestSkipUnlock && !blindDateReturnSettling) ||
               activeTab === "recommend"
