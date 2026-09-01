@@ -80,7 +80,15 @@ type ViewMode = "list" | "cards";
 type MembershipFilter = "all" | "active" | "inactive";
 type PaymentFilter = "all" | "paid" | "unpaid";
 type CompletionFilter = "all" | "complete" | "incomplete";
-type OperatorRatingFilter = "all" | "rated" | "unrated";
+type OperatorRatingFilter =
+  | "all"
+  | "0-0.9"
+  | "1-1.9"
+  | "2-2.4"
+  | "2.5-2.9"
+  | "3-3.4"
+  | "3.5-3.9"
+  | "4-plus";
 type BirthYearSort = "default" | "birth-asc" | "birth-desc";
 type ProfilesState = "idle" | "loading" | "success" | "empty" | "timeout" | "error";
 
@@ -1227,6 +1235,8 @@ export function AdminPageClient({
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [completionFilter, setCompletionFilter] =
     useState<CompletionFilter>("all");
+  const [operatorRatingFilter, setOperatorRatingFilter] =
+    useState<OperatorRatingFilter>("all");
   const [birthYearSort, setBirthYearSort] =
     useState<BirthYearSort>("default");
   const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
@@ -1266,6 +1276,7 @@ export function AdminPageClient({
       membershipFilter,
       paymentFilter,
       completionFilter,
+      operatorRatingFilter,
       birthYearSort,
       viewMode,
       profileRefreshKey,
@@ -1288,6 +1299,9 @@ export function AdminPageClient({
     if (membershipFilter !== "all") params.set("membership", membershipFilter);
     if (paymentFilter !== "all") params.set("payment", paymentFilter);
     if (completionFilter !== "all") params.set("completion", completionFilter);
+    if (operatorRatingFilter !== "all") {
+      params.set("operatorRating", operatorRatingFilter);
+    }
     if (birthYearSort !== "default") params.set("birthSort", birthYearSort);
     if (viewMode === "cards") params.set("includePhotos", "true");
 
@@ -1344,6 +1358,7 @@ export function AdminPageClient({
     debouncedSearch,
     genderFilter,
     membershipFilter,
+    operatorRatingFilter,
     paymentFilter,
     profilePage,
     profileRefreshKey,
@@ -1698,6 +1713,7 @@ export function AdminPageClient({
                 membershipFilter={membershipFilter}
                 paymentFilter={paymentFilter}
                 completionFilter={completionFilter}
+                operatorRatingFilter={operatorRatingFilter}
                 birthYearSort={birthYearSort}
                 profilesState={profilesState}
                 membershipSaveError={membershipSaveError}
@@ -1711,6 +1727,7 @@ export function AdminPageClient({
                 onMembershipFilterChange={(value) => { setProfilePage(1); setMembershipFilter(value); }}
                 onPaymentFilterChange={(value) => { setProfilePage(1); setPaymentFilter(value); }}
                 onCompletionFilterChange={(value) => { setProfilePage(1); setCompletionFilter(value); }}
+                onOperatorRatingFilterChange={(value) => { setProfilePage(1); setOperatorRatingFilter(value); }}
                 onBirthYearSortChange={(value) => { setProfilePage(1); setBirthYearSort(value); }}
                 onSelectProfile={setSelectedProfileId}
                 onCloseDetail={() => setSelectedProfileId(null)}
@@ -1804,6 +1821,7 @@ function ApplicantsPanel({
   membershipFilter,
   paymentFilter,
   completionFilter,
+  operatorRatingFilter,
   birthYearSort,
   profilesState,
   membershipSaveError,
@@ -1817,6 +1835,7 @@ function ApplicantsPanel({
   onMembershipFilterChange,
   onPaymentFilterChange,
   onCompletionFilterChange,
+  onOperatorRatingFilterChange,
   onBirthYearSortChange,
   onSelectProfile,
   onCloseDetail,
@@ -1837,6 +1856,7 @@ function ApplicantsPanel({
   membershipFilter: MembershipFilter;
   paymentFilter: PaymentFilter;
   completionFilter: CompletionFilter;
+  operatorRatingFilter: OperatorRatingFilter;
   birthYearSort: BirthYearSort;
   profilesState: ProfilesState;
   membershipSaveError: string | null;
@@ -1850,6 +1870,7 @@ function ApplicantsPanel({
   onMembershipFilterChange: (value: MembershipFilter) => void;
   onPaymentFilterChange: (value: PaymentFilter) => void;
   onCompletionFilterChange: (value: CompletionFilter) => void;
+  onOperatorRatingFilterChange: (value: OperatorRatingFilter) => void;
   onBirthYearSortChange: (value: BirthYearSort) => void;
   onSelectProfile: (profileId: string) => void;
   onCloseDetail: () => void;
@@ -1991,6 +2012,25 @@ function ApplicantsPanel({
                 <option value="all">결제 전체</option>
                 <option value="paid">결제 완료</option>
                 <option value="unpaid">결제 없음</option>
+              </select>
+
+              <select
+                value={operatorRatingFilter}
+                onChange={(event) =>
+                  onOperatorRatingFilterChange(
+                    event.target.value as OperatorRatingFilter,
+                  )
+                }
+                className="h-10 w-[145px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                <option value="all">평점 전체</option>
+                <option value="0-0.9">0~0.9점</option>
+                <option value="1-1.9">1~1.9점</option>
+                <option value="2-2.4">2~2.4점</option>
+                <option value="2.5-2.9">2.5~2.9점</option>
+                <option value="3-3.4">3.0~3.4점</option>
+                <option value="3.5-3.9">3.5~3.9점</option>
+                <option value="4-plus">4.0점 이상</option>
               </select>
 
               <select

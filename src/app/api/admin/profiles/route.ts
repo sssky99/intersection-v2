@@ -174,6 +174,8 @@ type AdminProfileListRow = Pick<
   | "created_at"
   | "has_payment"
   | "one_time_paid"
+  | "operator_rating"
+  | "operator_rating_updated_at"
 > & { total_count: number };
 
 function positiveInteger(value: string | null, fallback: number) {
@@ -204,6 +206,8 @@ function listProfile(row: AdminProfileListRow): AdminProfile {
     created_at: row.created_at,
     has_payment: row.has_payment,
     one_time_paid: row.one_time_paid,
+    operator_rating: row.operator_rating,
+    operator_rating_updated_at: row.operator_rating_updated_at,
     nickname: null,
     mbti: null,
     photo_url: null,
@@ -240,9 +244,18 @@ async function fetchProfilePage(
     "birth-asc",
     "birth-desc",
   ] as const);
+  const operatorRating = allowedParam(params.get("operatorRating"), [
+    "0-0.9",
+    "1-1.9",
+    "2-2.4",
+    "2.5-2.9",
+    "3-3.4",
+    "3.5-3.9",
+    "4-plus",
+  ] as const);
   const includePhotos = params.get("includePhotos") === "true";
 
-  const { data, error } = await supabase.rpc("admin_list_profiles", {
+  const { data, error } = await supabase.rpc("admin_list_profiles_v2", {
     p_page: page,
     p_limit: limit,
     p_search: search,
@@ -251,6 +264,7 @@ async function fetchProfilePage(
     p_payment: payment,
     p_completion: completion,
     p_birth_sort: birthSort,
+    p_operator_rating: operatorRating,
   });
   if (error) throw error;
 
