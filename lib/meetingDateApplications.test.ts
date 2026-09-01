@@ -2,10 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   canCancelMeetingDateApplication,
   canResubmitMeetingDateApplication,
+  isMeetingDateClosed,
   isMeetingDateApplicationCancellationConfirmed,
   meetingDateApplicationMatchesTicket,
   requestedMeetingApplicationDates,
 } from "./meetingDateApplications";
+
+describe("isMeetingDateClosed", () => {
+  it("closes only the configured September 2 meeting this week", () => {
+    expect(isMeetingDateClosed("2026-09-02")).toBe(true);
+    expect(isMeetingDateClosed("2026-09-04")).toBe(false);
+    expect(isMeetingDateClosed("2026-09-05")).toBe(false);
+  });
+});
 
 describe("canCancelMeetingDateApplication", () => {
   it("allows only completed applications that are still awaiting assignment", () => {

@@ -5,6 +5,7 @@ const CLOSED_MEETING_DATES = new Set([
   "2026-08-05",
   "2026-08-07",
   "2026-08-08",
+  "2026-09-02",
 ]);
 export type MeetingDateApplicationStatus =
   | "payment_pending"
