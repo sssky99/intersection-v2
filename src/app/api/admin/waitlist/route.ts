@@ -4,7 +4,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   normalizeAdminProfile,
   type AdminProfile,
+  type AdminProfileAnswer,
 } from "@/features/admin/adminProfile";
+import {
+  calculateRedFlagAssessment,
+  normalizeRedFlagManualFlags,
+  type RedFlagParticipation,
+} from "@/features/admin/redFlags";
 import {
   type AdminArrivalStatus,
   isWaitlistStatus,
@@ -73,6 +79,8 @@ const profileSelect = [
 
 const instanceSelect =
   "id,template_id,title,event_date,event_time,region,operation_code";
+const redFlagBatchSize = 100;
+const redFlagPageSize = 1000;
 
 function isAdminRequest(request: NextRequest) {
   return isAdminSessionTokenValid(
@@ -89,6 +97,145 @@ function unauthorized() {
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+type RedFlagReviewRow = {
+  user_id: string;
+  manual_flags: Record<string, unknown> | null;
+  manual_adjustment: number | null;
+  manual_no_show_count: number | null;
+  manual_same_day_cancellation_count: number | null;
+  updated_at: string | null;
+};
+
+type RedFlagParticipationRow = {
+  user_id: string;
+  status: string | null;
+  arrival_status: string | null;
+  cancelled_at: string | null;
+  ticket_instance_id: string | null;
+};
+
+async function attachWaitlistRedFlagAssessments(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const answers: AdminProfileAnswer[] = [];
+  const reviews: RedFlagReviewRow[] = [];
+  const participations: RedFlagParticipationRow[] = [];
+
+  for (let start = 0; start < userIds.length; start += redFlagBatchSize) {
+    const userIdBatch = userIds.slice(start, start + redFlagBatchSize);
+    const { data: reviewRows, error: reviewError } = await supabase
+      .from("profile_red_flag_reviews")
+      .select(
+        "user_id,manual_flags,manual_adjustment,manual_no_show_count,manual_same_day_cancellation_count,updated_at",
+      )
+      .in("user_id", userIdBatch)
+      .returns<RedFlagReviewRow[]>();
+    if (reviewError) throw reviewError;
+    reviews.push(...(reviewRows ?? []));
+
+    for (let from = 0; ; from += redFlagPageSize) {
+      const { data, error } = await supabase
+        .from("user_answers")
+        .select(
+          "user_id,question_order,category,question_type,answer_value,answer_values,answer_text,other_text,updated_at",
+        )
+        .in("user_id", userIdBatch)
+        .order("user_id", { ascending: true })
+        .order("question_order", { ascending: true })
+        .range(from, from + redFlagPageSize - 1)
+        .returns<AdminProfileAnswer[]>();
+      if (error) throw error;
+      answers.push(...(data ?? []));
+      if ((data ?? []).length < redFlagPageSize) break;
+    }
+
+    for (let from = 0; ; from += redFlagPageSize) {
+      const { data, error } = await supabase
+        .from("ticket_participations")
+        .select(
+          "user_id,status,arrival_status,cancelled_at,ticket_instance_id",
+        )
+        .in("user_id", userIdBatch)
+        .order("user_id", { ascending: true })
+        .range(from, from + redFlagPageSize - 1)
+        .returns<RedFlagParticipationRow[]>();
+      if (error) throw error;
+      participations.push(...(data ?? []));
+      if ((data ?? []).length < redFlagPageSize) break;
+    }
+  }
+
+  const instanceIds = uniqueText(
+    participations.map((participation) => participation.ticket_instance_id),
+  );
+  const eventDateByInstanceId = new Map<string, string | null>();
+  for (let start = 0; start < instanceIds.length; start += redFlagBatchSize) {
+    const { data, error } = await supabase
+      .from("ticket_instances")
+      .select("id,event_date")
+      .in("id", instanceIds.slice(start, start + redFlagBatchSize));
+    if (error) throw error;
+    for (const instance of data ?? []) {
+      eventDateByInstanceId.set(instance.id, instance.event_date);
+    }
+  }
+
+  const answersByUserId = new Map<string, AdminProfileAnswer[]>();
+  for (const answer of answers) {
+    const current = answersByUserId.get(answer.user_id) ?? [];
+    current.push(answer);
+    answersByUserId.set(answer.user_id, current);
+  }
+  const reviewByUserId = new Map(
+    reviews.map((review) => [review.user_id, review]),
+  );
+  const participationsByUserId = new Map<string, RedFlagParticipation[]>();
+  for (const participation of participations) {
+    const current = participationsByUserId.get(participation.user_id) ?? [];
+    current.push({
+      status: participation.status,
+      arrival_status: participation.arrival_status,
+      cancelled_at: participation.cancelled_at,
+      event_date: participation.ticket_instance_id
+        ? eventDateByInstanceId.get(participation.ticket_instance_id) ?? null
+        : null,
+    });
+    participationsByUserId.set(participation.user_id, current);
+  }
+
+  return profiles.map((profile) => {
+    const review = reviewByUserId.get(profile.user_id);
+    const assessment = calculateRedFlagAssessment({
+      answers: answersByUserId.get(profile.user_id) ?? [],
+      participations: participationsByUserId.get(profile.user_id) ?? [],
+      manualFlags: normalizeRedFlagManualFlags(review?.manual_flags),
+      manualAdjustment: Number(review?.manual_adjustment ?? 0),
+      manualNoShowCount: Number(review?.manual_no_show_count ?? 0),
+      manualSameDayCancellationCount: Number(
+        review?.manual_same_day_cancellation_count ?? 0,
+      ),
+      reviewedAt: review?.updated_at ?? null,
+    });
+
+    return normalizeAdminProfile({
+      ...profile,
+      answers: answersByUserId.get(profile.user_id) ?? [],
+      red_flag_score: assessment.score,
+      red_flag_reasons: assessment.reasons,
+      red_flag_manual_flags: assessment.manualFlags,
+      red_flag_manual_adjustment: assessment.manualAdjustment,
+      red_flag_manual_no_show_count: assessment.manualNoShowCount,
+      red_flag_manual_same_day_cancellation_count:
+        assessment.manualSameDayCancellationCount,
+      red_flag_reviewed_at: assessment.reviewedAt,
+    });
+  });
 }
 
 async function loadWaitlistData(): Promise<AdminWaitlistData> {
@@ -185,6 +332,7 @@ async function loadWaitlistData(): Promise<AdminWaitlistData> {
         operator_rating_updated_at: rating?.updated_at ?? null,
       });
     });
+    profiles = await attachWaitlistRedFlagAssessments(supabase, profiles);
   }
 
   let seedInstances: WaitlistTicketInstance[] = [];

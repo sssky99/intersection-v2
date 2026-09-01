@@ -12,6 +12,7 @@ type NameLike = {
   membership_end_date?: string | null;
   public_intro_model?: string | null;
   operator_rating?: number | null;
+  red_flag_score?: number;
 };
 
 type GenderLike = {
@@ -57,10 +58,12 @@ function hasFallbackPublicIntro(profile: NameLike) {
 export function AdminMemberName({
   profile,
   showOperatorRating = false,
+  showRedFlagScore = false,
   oneTimePaid = false,
 }: {
   profile: NameLike;
   showOperatorRating?: boolean;
+  showRedFlagScore?: boolean;
   oneTimePaid?: boolean;
 }) {
   const active = hasActiveMembershipForDisplay(profile);
@@ -93,6 +96,14 @@ export function AdminMemberName({
           ★ {typeof profile.operator_rating === "number"
             ? profile.operator_rating.toFixed(1)
             : "-"}
+        </span>
+      )}
+      {showRedFlagScore && (
+        <span
+          className="shrink-0 text-xs font-black tabular-nums text-rose-600"
+          aria-label={`레드 플래그 ${Number(profile.red_flag_score ?? 0).toFixed(1)}점`}
+        >
+          🚩 {Number(profile.red_flag_score ?? 0).toFixed(1)}
         </span>
       )}
     </span>

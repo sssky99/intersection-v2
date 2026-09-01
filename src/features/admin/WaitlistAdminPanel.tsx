@@ -1398,6 +1398,7 @@ function DistributionApplicantCard({
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
               showOperatorRating
+              showRedFlagScore
             />
           ) : (
             "신청자 미확인"
@@ -1447,6 +1448,7 @@ function ApplicantRow({
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
               showOperatorRating
+              showRedFlagScore
             />
           ) : (
             "신청자 미확인"
@@ -1520,6 +1522,7 @@ function WaitlistDetailPanel({
               profile={profile}
               oneTimePaid={hasOneTimePayment(row)}
               showOperatorRating
+              showRedFlagScore
             />
           ) : (
             "신청자 미확인"
