@@ -121,9 +121,9 @@ export function CompactParticipationSparkleProgress({
 }
 
 const participationPhotoUrls = [
-  "/images/landing-50q/hero-photo-3.png",
-  "/images/landing-50q/hero-photo-2.jpeg",
-  "/videos/details-preview-poster.webp",
+  "/images/participation-progress/lounge-drinks.webp",
+  "/images/participation-progress/lounge-conversation.webp",
+  "/images/participation-progress/lounge-gathering.webp",
 ] as const;
 
 export function participationProgressHeadline(count: number) {
@@ -174,12 +174,12 @@ export function ParticipationProgressOverlay({
         type="button"
         onClick={onClose}
         aria-label="참여 기록 닫기"
-        className="absolute left-6 top-[calc(22px+env(safe-area-inset-top))] z-20 flex h-11 w-11 items-center justify-center rounded-full text-[#24211d]/55 transition hover:bg-black/[0.05] hover:text-[#24211d]"
+        className="absolute left-6 top-[calc(22px+env(safe-area-inset-top))] z-[70] flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-[#f7f4ed]/90 text-[#24211d]/70 shadow-[0_6px_18px_rgba(36,33,29,0.1)] backdrop-blur-md transition hover:bg-[#f7f4ed] hover:text-[#24211d]"
       >
         <X size={28} strokeWidth={1.35} aria-hidden />
       </button>
 
-      <div className="pointer-events-none absolute -right-2 -top-8 h-[300px] w-[290px] sm:right-0 sm:h-[340px] sm:w-[330px]">
+      <div className="pointer-events-none absolute left-1/2 -top-2 z-10 h-[360px] w-[516px] -translate-x-1/2 sm:-top-4 sm:h-[390px] sm:w-[558px]">
         {participationPhotoUrls.map((photoUrl, index) => (
           <motion.div
             key={photoUrl}
@@ -192,7 +192,7 @@ export function ParticipationProgressOverlay({
               opacity: 1,
               x: 0,
               y: 0,
-              rotate: index === 0 ? -12 : index === 1 ? 9 : -8,
+              rotate: index === 0 ? -6 : index === 1 ? 0 : 6,
             }}
             transition={{
               delay: 0.06 + index * 0.07,
@@ -201,10 +201,10 @@ export function ParticipationProgressOverlay({
             }}
             className={
               index === 0
-                ? "absolute left-[66px] -top-2 h-[184px] w-[150px] rounded-[20px] bg-[#fffdf5] p-1.5 pb-4 shadow-[0_16px_35px_rgba(36,33,29,0.14)] sm:left-[80px]"
+                ? "absolute left-0 top-2 z-10 h-[245px] w-[186px] overflow-hidden shadow-[0_18px_38px_rgba(36,33,29,0.16)] sm:h-[265px] sm:w-[200px]"
                 : index === 1
-                  ? "absolute -right-1 top-3 h-[172px] w-[142px] rounded-[19px] bg-[#fffdf5] p-1.5 pb-4 shadow-[0_16px_35px_rgba(36,33,29,0.15)]"
-                  : "absolute bottom-10 right-1 h-[166px] w-[150px] rounded-[19px] bg-[#fffdf5] p-1.5 pb-4 shadow-[0_16px_35px_rgba(36,33,29,0.14)]"
+                  ? "absolute left-[165px] -top-2 z-30 h-[258px] w-[186px] overflow-hidden shadow-[0_20px_42px_rgba(36,33,29,0.19)] sm:left-[179px] sm:h-[278px] sm:w-[200px]"
+                  : "absolute right-0 top-2 z-20 h-[245px] w-[186px] overflow-hidden shadow-[0_18px_38px_rgba(36,33,29,0.16)] sm:h-[265px] sm:w-[200px]"
             }
             aria-hidden
           >
@@ -212,13 +212,13 @@ export function ParticipationProgressOverlay({
               src={photoUrl}
               alt=""
               draggable={false}
-              className="block h-full w-full rounded-[15px] bg-[#eee9df] object-cover"
+              className="block h-full w-full object-cover"
             />
           </motion.div>
         ))}
       </div>
 
-      <div className="relative z-10 flex h-full flex-col items-center px-7 pb-[calc(52px+env(safe-area-inset-bottom))] pt-[min(33vh,300px)] text-center">
+      <div className="relative z-10 flex h-full flex-col items-center px-7 pb-[calc(52px+env(safe-area-inset-bottom))] pt-[min(37vh,330px)] text-center">
         <div className="w-full max-w-[290px] text-[#24211d]">
           <ParticipationSparkleStrip count={count} />
         </div>

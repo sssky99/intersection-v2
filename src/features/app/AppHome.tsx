@@ -1426,7 +1426,9 @@ export function AppHome({
           </button>
         )}
 
-      {activeTab === "browse" && activeBlindDateOfferCount > 0 && (
+      {activeTab === "browse" &&
+        !ticketTabFocusMode &&
+        activeBlindDateOfferCount > 0 && (
         <button
           type="button"
           onClick={() => openBlindDateStatus()}
@@ -2350,6 +2352,7 @@ function TicketListTab({
     return () => onFocusModeChange(false);
   }, [
     onFocusModeChange,
+    selectedTicket,
     selectedApplicationTicket,
     selectedApplicationTicketDeclined,
     selectedApplicationTicketOpen,
