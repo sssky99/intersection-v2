@@ -7,7 +7,10 @@ import {
   type MembershipPlan,
 } from "@/features/membership/membershipTypes";
 import { incrementMembershipApplicationCounter } from "@/lib/membershipApplicationCounter";
-import { grobleCompletedPaymentKind } from "@/lib/groblePaymentEvent";
+import {
+  grobleCancelledPaymentKind,
+  grobleCompletedPaymentKind,
+} from "@/lib/groblePaymentEvent";
 import { reportMetaPurchase } from "@/lib/metaConversions";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -67,6 +70,7 @@ type PaymentTransactionRow = {
   user_id: string | null;
   payment_kind: PaymentKind | "unknown";
   amount: number;
+  occurred_at: string;
   application_group_id: string | null;
   membership_payment_intent_id: number | string | null;
 };
@@ -182,6 +186,10 @@ function objectParts(object: JsonRecord) {
     finalAmount: number(pricing?.finalAmount),
     purchasedAt: text(payment?.purchasedAt),
     cancelRequestedAt: text(cancelRequest?.requestedAt),
+    cancelledAt:
+      text(payment?.cancelledAt) ??
+      text(cancelRequest?.completedAt) ??
+      text(object.cancelledAt),
   };
 }
 
@@ -1146,6 +1154,113 @@ async function processCancelRequested(
   return "processed";
 }
 
+async function processMembershipPaymentCancelled(
+  envelope: WebhookEnvelope,
+  idempotencyKey: string,
+) {
+  const details = objectParts(envelope.object);
+  if (!details.merchantUid) {
+    await eventStatus(idempotencyKey, {
+      processing_status: "unmatched",
+      processed_at: new Date().toISOString(),
+    });
+    return "unmatched";
+  }
+
+  const admin = createAdminClient();
+  const { data: transactions, error: transactionLookupError } = await admin
+    .from("payment_transactions")
+    .select(
+      "id,user_id,payment_kind,amount,occurred_at,application_group_id,membership_payment_intent_id",
+    )
+    .eq("provider", "groble")
+    .eq("merchant_uid", details.merchantUid)
+    .in("payment_kind", [
+      "membership_initial",
+      "membership_upgrade",
+      "membership_renewal",
+    ])
+    .limit(2)
+    .returns<PaymentTransactionRow[]>();
+  if (transactionLookupError) throw transactionLookupError;
+
+  if ((transactions ?? []).length !== 1) {
+    const status = (transactions ?? []).length === 0 ? "unmatched" : "ambiguous";
+    await eventStatus(idempotencyKey, {
+      processing_status: status,
+      merchant_uid: details.merchantUid,
+      processed_at: new Date().toISOString(),
+    });
+    return status;
+  }
+
+  const transaction = transactions![0];
+  const cancelledAt =
+    details.cancelledAt ?? envelope.occurredAt ?? new Date().toISOString();
+  const updatedAt = new Date().toISOString();
+
+  const { error: transactionUpdateError } = await admin
+    .from("payment_transactions")
+    .update({
+      status: "cancelled",
+      cancelled_at: cancelledAt,
+      updated_at: updatedAt,
+    })
+    .eq("id", transaction.id);
+  if (transactionUpdateError) throw transactionUpdateError;
+
+  if (transaction.membership_payment_intent_id !== null) {
+    const { error: intentUpdateError } = await admin
+      .from("membership_payment_intents")
+      .update({
+        status: "cancelled",
+        ended_at: cancelledAt,
+        updated_at: updatedAt,
+      })
+      .eq("id", transaction.membership_payment_intent_id);
+    if (intentUpdateError) throw intentUpdateError;
+  }
+
+  // A refund for an older membership payment must not revoke a membership that
+  // was activated by a newer payment. membership_updated_at is set to the
+  // transaction occurrence time whenever a membership payment is applied.
+  if (transaction.user_id) {
+    const { data: profile, error: profileLookupError } = await admin
+      .from("profiles")
+      .select("membership_updated_at")
+      .eq("user_id", transaction.user_id)
+      .maybeSingle<{ membership_updated_at: string | null }>();
+    if (profileLookupError) throw profileLookupError;
+
+    if (
+      profile &&
+      sameInstant(profile.membership_updated_at, transaction.occurred_at)
+    ) {
+      const { error: membershipUpdateError } = await admin
+        .from("profiles")
+        .update({
+          membership_status: "cancelled",
+          membership_updated_at: cancelledAt,
+        })
+        .eq("user_id", transaction.user_id)
+        .eq("membership_updated_at", profile.membership_updated_at!);
+      if (membershipUpdateError) throw membershipUpdateError;
+    }
+  }
+
+  await eventStatus(idempotencyKey, {
+    processing_status: "processed",
+    merchant_uid: details.merchantUid,
+    matched_user_id: transaction.user_id,
+    matched_membership_payment_intent_id:
+      transaction.membership_payment_intent_id,
+    payment_kind: transaction.payment_kind,
+    payment_amount: transaction.amount,
+    processed_at: updatedAt,
+  });
+  return "processed";
+}
+
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
@@ -1228,6 +1343,8 @@ export async function POST(request: Request) {
       status = await processPaymentCompleted(envelope, idempotencyKey);
     } else if (envelope.type === "payment.cancel_requested") {
       status = await processCancelRequested(envelope, idempotencyKey);
+    } else if (grobleCancelledPaymentKind(envelope.type) === "membership") {
+      status = await processMembershipPaymentCancelled(envelope, idempotencyKey);
     } else {
       status = "ignored";
       await eventStatus(idempotencyKey, {

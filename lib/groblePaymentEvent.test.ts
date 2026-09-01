@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { grobleCompletedPaymentKind } from "./groblePaymentEvent";
+import {
+  grobleCancelledPaymentKind,
+  grobleCompletedPaymentKind,
+} from "./groblePaymentEvent";
 
 describe("grobleCompletedPaymentKind", () => {
   it("routes one-time payment completion events to meeting applications", () => {
@@ -14,5 +17,23 @@ describe("grobleCompletedPaymentKind", () => {
 
   it("rejects unrelated event types", () => {
     expect(grobleCompletedPaymentKind("payment.failed")).toBeNull();
+  });
+});
+
+describe("grobleCancelledPaymentKind", () => {
+  it("routes subscription payment cancellation events to memberships", () => {
+    expect(grobleCancelledPaymentKind("subscription_payment.cancelled")).toBe(
+      "membership",
+    );
+  });
+
+  it("does not treat a cancellation request as a completed cancellation", () => {
+    expect(
+      grobleCancelledPaymentKind("subscription_payment.cancel_requested"),
+    ).toBeNull();
+  });
+
+  it("rejects unrelated event types", () => {
+    expect(grobleCancelledPaymentKind("payment.cancelled")).toBeNull();
   });
 });
