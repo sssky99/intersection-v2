@@ -37,6 +37,7 @@ import {
 } from "@/types/ticket";
 import { inferTicketCategory } from "@/types/ticketCategory";
 import { getMeetingTicketsByEventIds } from "@/lib/publicTicketPreview";
+import { visibleMeetingDateApplicationInstanceId } from "@/lib/meetingDateApplications";
 
 export const dynamic = "force-dynamic";
 
@@ -149,6 +150,7 @@ type DateApplicationTicketRow = {
   region: string | null;
   status: string;
   assigned_ticket_instance_id: string | null;
+  confirmed_at: string | null;
   ticket_participation_id: number | string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -1441,7 +1443,7 @@ export async function GET(request: Request) {
       supabase
         .from("meeting_date_applications")
         .select(
-          "id,user_id,event_id,meeting_date,meeting_time,region,status,assigned_ticket_instance_id,ticket_participation_id,created_at,updated_at",
+          "id,user_id,event_id,meeting_date,meeting_time,region,status,assigned_ticket_instance_id,confirmed_at,ticket_participation_id,created_at,updated_at",
         )
         .eq("user_id", userId)
         .in("status", ["waitlisted", "approved", "on_hold"])
@@ -1488,8 +1490,13 @@ export async function GET(request: Request) {
         const eventTicket = application.event_id
           ? applicationEventTicketMap.get(application.event_id) ?? null
           : null;
+        const visibleInstanceId = visibleMeetingDateApplicationInstanceId({
+          status: application.status,
+          confirmedAt: application.confirmed_at,
+          assignedTicketInstanceId: application.assigned_ticket_instance_id,
+        });
         const sourceId =
-          application.assigned_ticket_instance_id ??
+          visibleInstanceId ??
           application.event_id ??
           eventTicket?.id ??
           null;
@@ -1500,7 +1507,9 @@ export async function GET(request: Request) {
           user_id: application.user_id,
           ticket_id: sourceId,
           ticket_template_id: eventTicket?.templateId ?? null,
-          ticket_instance_id: application.assigned_ticket_instance_id,
+          // Draft group placement is intentionally private. Until the whole
+          // group is confirmed, the member keeps seeing the parent date ticket.
+          ticket_instance_id: visibleInstanceId,
           meeting_date: application.meeting_date,
           status: application.status,
           ticket_snapshot: eventTicket,

@@ -624,6 +624,68 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  if (action === "confirm_date_application_group") {
+    const instanceId = text(ticketInstanceId);
+    if (!instanceId) {
+      return NextResponse.json(
+        { error: "확정할 세부 티켓을 선택해주세요." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const supabase = createAdminClient();
+      const { data: applications, error: applicationsError } = await supabase
+        .from("meeting_date_applications")
+        .select("id")
+        .eq("assigned_ticket_instance_id", instanceId)
+        .eq("status", "waitlisted")
+        .is("ticket_participation_id", null)
+        .returns<Array<{ id: number }>>();
+      if (applicationsError) throw applicationsError;
+
+      const applicationIds = (applications ?? []).map((row) => row.id);
+      if (applicationIds.length === 0) {
+        return NextResponse.json(
+          { error: "이 그룹에 확정할 대기 신청자가 없습니다." },
+          { status: 409 },
+        );
+      }
+
+      const { data: assignedCount, error } = await supabase.rpc(
+        "assign_meeting_date_applications_to_ticket",
+        {
+          p_application_ids: applicationIds,
+          p_ticket_instance_id: instanceId,
+        },
+      );
+      if (error) throw error;
+
+      const { error: groupStatusError } = await supabase
+        .from("meeting_groups")
+        .update({ status: "confirmed", updated_at: new Date().toISOString() })
+        .eq("legacy_ticket_instance_id", instanceId);
+      if (groupStatusError) throw groupStatusError;
+
+      return NextResponse.json({
+        ...(await loadWaitlistData()),
+        assignedCount:
+          typeof assignedCount === "number"
+            ? assignedCount
+            : applicationIds.length,
+      });
+    } catch (error) {
+      console.error("Admin group confirmation failed:", {
+        ticketInstanceId: instanceId,
+        error,
+      });
+      return NextResponse.json(
+        { error: "그룹 전체를 참여 확정하지 못했습니다." },
+        { status: 500 },
+      );
+    }
+  }
+
   if (action === "assign_date_applications") {
     const applicationIds = Array.isArray(body?.applicationIds)
       ? Array.from(
@@ -656,6 +718,12 @@ export async function PATCH(request: NextRequest) {
         },
       );
       if (error) throw error;
+
+      const { error: groupStatusError } = await supabase
+        .from("meeting_groups")
+        .update({ status: "confirmed", updated_at: new Date().toISOString() })
+        .eq("legacy_ticket_instance_id", instanceId);
+      if (groupStatusError) throw groupStatusError;
 
       return NextResponse.json({
         ...(await loadWaitlistData()),
@@ -710,7 +778,7 @@ export async function PATCH(request: NextRequest) {
       const { data: current, error: currentError } = await supabase
         .from("meeting_date_applications")
         .select(
-          "id,user_id,meeting_date,status,assigned_ticket_instance_id,ticket_participation_id",
+          "id,user_id,meeting_date,status,assigned_group_id,assigned_ticket_instance_id,ticket_participation_id",
         )
         .eq("id", dateApplicationId)
         .single<{
@@ -718,6 +786,7 @@ export async function PATCH(request: NextRequest) {
           user_id: string;
           meeting_date: string;
           status: string;
+          assigned_group_id: string | null;
           assigned_ticket_instance_id: string | null;
           ticket_participation_id: number | string | null;
         }>();
@@ -745,16 +814,6 @@ export async function PATCH(request: NextRequest) {
         }
       }
 
-      if (
-        current.ticket_participation_id !== null &&
-        nextInstanceId !== current.assigned_ticket_instance_id
-      ) {
-        return NextResponse.json(
-          { error: "참여 확정된 신청은 세부 티켓을 다시 배정할 수 없습니다." },
-          { status: 409 },
-        );
-      }
-
       if (status === "approved" && !nextInstanceId) {
         return NextResponse.json(
           { error: "참여 확정 전에 세부 티켓을 배정해주세요." },
@@ -763,9 +822,49 @@ export async function PATCH(request: NextRequest) {
       }
 
       const now = new Date().toISOString();
+
+      const movingConfirmedApplication = Boolean(
+        current.ticket_participation_id !== null &&
+          nextInstanceId &&
+          nextInstanceId !== current.assigned_ticket_instance_id,
+      );
+      if (movingConfirmedApplication) {
+        const { error: moveError } = await supabase.rpc(
+          "reassign_confirmed_meeting_date_application",
+          {
+            p_application_id: dateApplicationId,
+            p_ticket_instance_id: nextInstanceId,
+          },
+        );
+        if (moveError) throw moveError;
+        return NextResponse.json(await loadWaitlistData());
+      }
+
+      if (
+        current.ticket_participation_id !== null &&
+        ticketInstanceId !== undefined &&
+        !nextInstanceId
+      ) {
+        return NextResponse.json(
+          { error: "확정된 참여자는 다른 세부 티켓으로 이동하거나 취소 처리해주세요." },
+          { status: 409 },
+        );
+      }
+
       const payload: Record<string, unknown> = { updated_at: now };
       if (ticketInstanceId !== undefined) {
         payload.assigned_ticket_instance_id = nextInstanceId;
+        let assignedGroupId: string | null = null;
+        if (nextInstanceId) {
+          const { data: group, error: groupError } = await supabase
+            .from("meeting_groups")
+            .select("id")
+            .eq("legacy_ticket_instance_id", nextInstanceId)
+            .maybeSingle<{ id: string }>();
+          if (groupError && groupError.code !== "PGRST205") throw groupError;
+          assignedGroupId = group?.id ?? null;
+        }
+        payload.assigned_group_id = assignedGroupId;
         payload.assigned_at = nextInstanceId ? now : null;
       }
       if (adminNote !== undefined) {

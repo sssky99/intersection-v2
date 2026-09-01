@@ -35,11 +35,9 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
   const [programId, setProgramId] = useState("");
   const [eventDate, setEventDate] = useState(today());
   const [startsAt, setStartsAt] = useState("18:00");
-  const [capacity, setCapacity] = useState("30");
   const [groupCode, setGroupCode] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
-  const [groupCapacity, setGroupCapacity] = useState("6");
-  const [eventDraft, setEventDraft] = useState({ title: "", shortDescription: "", eventDate: "", startsAt: "", region: "", capacity: "" });
+  const [eventDraft, setEventDraft] = useState({ title: "", shortDescription: "", eventDate: "", startsAt: "", region: "" });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -92,7 +90,6 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
       eventDate: selectedEvent.event_date,
       startsAt: selectedEvent.starts_at.slice(0, 5),
       region: selectedEvent.region,
-      capacity: String(selectedEvent.capacity),
     });
   }, [selectedEvent]);
 
@@ -169,8 +166,7 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
             <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} className="h-10 rounded-xl border border-black/10 px-3 text-sm font-bold" />
             <input type="time" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} className="h-10 rounded-xl border border-black/10 px-3 text-sm font-bold" />
           </div>
-          <input type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} placeholder="전체 정원" className="mt-2 h-10 w-full rounded-xl border border-black/10 px-3 text-sm font-bold" />
-          <button disabled={!programId || saving} onClick={() => void request("POST", { action: "create_event", programId, eventDate, startsAt, capacity: Number(capacity) }, "행사를 생성했습니다.")} className="mt-3 h-10 w-full rounded-xl bg-black text-sm font-black text-white disabled:bg-black/15">행사 생성</button>
+          <button disabled={!programId || saving} onClick={() => void request("POST", { action: "create_event", programId, eventDate, startsAt }, "행사를 생성했습니다.")} className="mt-3 h-10 w-full rounded-xl bg-black text-sm font-black text-white disabled:bg-black/15">행사 생성</button>
         </div>
       </aside>
 
@@ -184,7 +180,7 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">meeting event</p>
                 <h3 className="mt-2 text-2xl font-black">{selectedEvent.title}</h3>
-                <p className="mt-2 text-sm font-semibold text-black/45">{selectedEvent.event_date} · {selectedEvent.starts_at.slice(0, 5)} · {selectedEvent.region} · 정원 {selectedEvent.capacity}명</p>
+                <p className="mt-2 text-sm font-semibold text-black/45">{selectedEvent.event_date} · {selectedEvent.starts_at.slice(0, 5)} · {selectedEvent.region}</p>
               </div>
               <select value={selectedEvent.visibility} disabled={saving} onChange={(event) => void request("PATCH", { eventId: selectedEvent.id, visibility: event.target.value }, "공개 상태를 변경했습니다.")} className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-black">
                 {visibilityOptions.map((visibility) => <option key={visibility} value={visibility}>{visibilityLabels[visibility]}</option>)}
@@ -194,14 +190,13 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
             <section className="mt-5 rounded-2xl border border-black/10 bg-[#fbfbfa] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div><h4 className="text-base font-black">1. 행사 기본 정보</h4><p className="mt-1 text-xs font-semibold text-black/45">사용자 신청 목록에 표시되는 정보입니다.</p></div>
-                <button type="button" disabled={saving || !eventDraft.title.trim()} onClick={() => void request("PATCH", { action: "update_event", eventId: selectedEvent.id, ...eventDraft, capacity: Number(eventDraft.capacity) }, "행사 기본 정보를 저장했습니다.")} className="inline-flex h-9 items-center gap-2 rounded-xl bg-black px-4 text-xs font-black text-white disabled:bg-black/15"><Save size={14} />저장</button>
+                <button type="button" disabled={saving || !eventDraft.title.trim()} onClick={() => void request("PATCH", { action: "update_event", eventId: selectedEvent.id, ...eventDraft }, "행사 기본 정보를 저장했습니다.")} className="inline-flex h-9 items-center gap-2 rounded-xl bg-black px-4 text-xs font-black text-white disabled:bg-black/15"><Save size={14} />저장</button>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <EditField label="행사명"><input value={eventDraft.title} onChange={(e) => setEventDraft((d) => ({ ...d, title: e.target.value }))} className={inputClass} /></EditField>
                 <EditField label="날짜"><input type="date" value={eventDraft.eventDate} onChange={(e) => setEventDraft((d) => ({ ...d, eventDate: e.target.value }))} className={inputClass} /></EditField>
                 <EditField label="시작 시간"><input type="time" value={eventDraft.startsAt} onChange={(e) => setEventDraft((d) => ({ ...d, startsAt: e.target.value }))} className={inputClass} /></EditField>
                 <EditField label="대표 지역"><input value={eventDraft.region} onChange={(e) => setEventDraft((d) => ({ ...d, region: e.target.value }))} className={inputClass} /></EditField>
-                <EditField label="전체 정원"><input type="number" min="1" value={eventDraft.capacity} onChange={(e) => setEventDraft((d) => ({ ...d, capacity: e.target.value }))} className={inputClass} /></EditField>
                 <EditField label="목록 설명"><input value={eventDraft.shortDescription} onChange={(e) => setEventDraft((d) => ({ ...d, shortDescription: e.target.value }))} className={inputClass} /></EditField>
               </div>
             </section>
@@ -229,8 +224,7 @@ export function MeetingEventAdminPanel({ onOpenWaitlist }: { onOpenWaitlist?: ()
               <article className="rounded-2xl border border-dashed border-black/15 bg-white p-4">
                 <p className="flex items-center gap-2 text-sm font-black"><Plus size={15} />그룹 추가</p>
                 <div className="mt-3 grid grid-cols-[90px_minmax(0,1fr)] gap-2"><input value={groupCode} onChange={(event) => setGroupCode(event.target.value)} placeholder="A" className="h-10 rounded-xl border border-black/10 px-3 text-sm font-bold" /><input value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder="저녁 그룹 A" className="h-10 rounded-xl border border-black/10 px-3 text-sm font-bold" /></div>
-                <input type="number" min="1" value={groupCapacity} onChange={(event) => setGroupCapacity(event.target.value)} className="mt-2 h-10 w-full rounded-xl border border-black/10 px-3 text-sm font-bold" />
-                <button disabled={!groupCode.trim() || saving} onClick={() => void request("POST", { action: "create_group", eventId: selectedEvent.id, code: groupCode, title: groupTitle, capacity: Number(groupCapacity) }, "그룹을 추가했습니다.")} className="mt-2 h-10 w-full rounded-xl border border-black bg-white text-sm font-black transition hover:bg-black hover:text-white disabled:border-black/10 disabled:text-black/25">그룹 추가</button>
+                <button disabled={!groupCode.trim() || saving} onClick={() => void request("POST", { action: "create_group", eventId: selectedEvent.id, code: groupCode, title: groupTitle }, "그룹을 추가했습니다.")} className="mt-2 h-10 w-full rounded-xl border border-black bg-white text-sm font-black transition hover:bg-black hover:text-white disabled:border-black/10 disabled:text-black/25">그룹 추가</button>
               </article>
             </div>
 
@@ -310,14 +304,12 @@ function GroupEditor({
   const [draft, setDraft] = useState({
     code: group.code,
     title: group.title,
-    capacity: String(group.capacity),
     placeName: location?.place_name ?? "",
     address: location?.address ?? "",
   });
   useEffect(() => setDraft({
     code: group.code,
     title: group.title,
-    capacity: String(group.capacity),
     placeName: location?.place_name ?? "",
     address: location?.address ?? "",
   }), [group, location]);
@@ -328,7 +320,6 @@ function GroupEditor({
       groupId: group.id,
       code: draft.code,
       title: draft.title,
-      capacity: Number(draft.capacity),
     }, `${group.title} 정보를 저장했습니다.`);
     if (groupSaved && mealStage) {
       await onRequest("POST", {
@@ -347,12 +338,10 @@ function GroupEditor({
         <p className="flex items-center gap-2 text-sm font-black"><UsersRound size={15} />{group.title}</p>
         <button type="button" disabled={saving || group.assigned_count > 0} onClick={() => { if (window.confirm(`${group.title} 그룹을 삭제할까요?`)) void onRequest("DELETE", { groupId: group.id }, "그룹을 삭제했습니다."); }} className="text-black/30 hover:text-red-600 disabled:opacity-20" aria-label="그룹 삭제"><Trash2 size={15} /></button>
       </div>
-      <p className="mt-2 text-xs font-bold text-black/48">배정 {group.assigned_count}명 / 정원 {group.capacity}명</p>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/8"><div className="h-full rounded-full bg-black" style={{ width: `${Math.min(100, (group.assigned_count / group.capacity) * 100)}%` }} /></div>
-      <div className="mt-4 grid grid-cols-[72px_minmax(0,1fr)_70px] gap-2">
+      <p className="mt-2 text-xs font-bold text-black/48">현재 배정 {group.assigned_count}명</p>
+      <div className="mt-4 grid grid-cols-[72px_minmax(0,1fr)] gap-2">
         <input value={draft.code} onChange={(e) => setDraft((d) => ({ ...d, code: e.target.value }))} placeholder="A" className={inputClass} />
         <input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="저녁 그룹 A" className={inputClass} />
-        <input type="number" min="1" value={draft.capacity} onChange={(e) => setDraft((d) => ({ ...d, capacity: e.target.value }))} className={inputClass} />
       </div>
       {mealStage && <div className="mt-2 space-y-2"><div className="relative"><MapPin size={14} className="absolute left-3 top-3 text-black/30" /><input value={draft.placeName} onChange={(e) => setDraft((d) => ({ ...d, placeName: e.target.value }))} placeholder="저녁 장소명" className={`${inputClass} pl-9`} /></div><input value={draft.address} onChange={(e) => setDraft((d) => ({ ...d, address: e.target.value }))} placeholder="저녁 장소 주소" className={inputClass} /></div>}
       <button type="button" disabled={saving || !draft.code.trim() || !draft.title.trim()} onClick={() => void save()} className="mt-3 h-9 w-full rounded-xl bg-black text-xs font-black text-white disabled:bg-black/15">그룹·장소 저장</button>

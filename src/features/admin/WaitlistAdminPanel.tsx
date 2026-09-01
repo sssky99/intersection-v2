@@ -702,9 +702,8 @@ export function WaitlistAdminPanel() {
   ) => {
     if (bulkSavingGroupId) return;
 
-    const selectedRows = group.rows.filter(
+    const selectedRows = rows.filter(
       (row) =>
-        distributionSelection.has(rowKey(row)) &&
         row.source === "date_application" &&
         row.status === "waitlisted" &&
         row.ticket_instance_id === ticketInstanceId,
@@ -715,12 +714,12 @@ export function WaitlistAdminPanel() {
     const instance = instances.find((item) => item.id === ticketInstanceId);
 
     if (!instance || applicationIds.length === 0) {
-      setError("확정할 신청자를 해당 티켓 열에서 선택해주세요.");
+      setError("확정할 대기 신청자가 이 그룹에 없습니다.");
       return;
     }
     if (
       !window.confirm(
-        `${applicationIds.length}명을 '${instance.title}' 참여자로 확정할까요?`,
+        `'${instance.operation_code || instance.title}' 그룹 ${applicationIds.length}명을 한 번에 참여 확정할까요? 확정 후 사용자는 취소할 수 없습니다.`,
       )
     ) {
       return;
@@ -734,8 +733,7 @@ export function WaitlistAdminPanel() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "assign_date_applications",
-          applicationIds,
+          action: "confirm_date_application_group",
           ticketInstanceId,
         }),
       });
@@ -1229,10 +1227,8 @@ function WaitlistAccordion({
                         distributionSelection.has(rowKey(row)) &&
                         row.ticket_instance_id !== destinationId,
                     ).length;
-                    const confirmableSelectedCount = instance
-                      ? columnRows.filter((row) =>
-                          distributionSelection.has(rowKey(row)),
-                        ).length
+                    const confirmableGroupCount = instance
+                      ? columnRows.length
                       : 0;
 
                     return (
@@ -1290,11 +1286,11 @@ function WaitlistAccordion({
                           {instance && (
                             <button
                               type="button"
-                              disabled={confirmableSelectedCount === 0 || bulkSaving}
+                              disabled={confirmableGroupCount === 0 || bulkSaving}
                               onClick={() => onConfirm(instance.id)}
                               className="mt-2 h-8 w-full rounded-lg border border-black bg-white px-2 text-[11px] font-black text-black transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:border-black/10 disabled:text-black/25"
                             >
-                              선택 인원 티켓 확정 ({confirmableSelectedCount})
+                              그룹 전체 확정
                             </button>
                           )}
                         </div>

@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
           operation_note: groupTitle,
           visibility: "draft",
           minimum_participant_count: 2,
-          max_participant_count: groupCapacity,
+          max_participant_count: 2147483647,
         })
         .select("id")
         .single<{ id: string }>();
@@ -279,13 +279,11 @@ export async function POST(request: NextRequest) {
     } else if (action === "save_group") {
       const groupId = text(body?.groupId);
       if (!groupId) return NextResponse.json({ error: "그룹을 선택해주세요." }, { status: 400 });
-      const capacity = Math.max(1, Number(body?.capacity) || 1);
       const { data: group, error: groupError } = await admin
         .from("meeting_groups")
         .update({
           code: text(body?.code),
           title: text(body?.title),
-          capacity,
           operation_note: text(body?.operationNote) || null,
           updated_at: new Date().toISOString(),
         })
@@ -299,7 +297,7 @@ export async function POST(request: NextRequest) {
           .update({
             operation_code: text(body?.code),
             operation_note: text(body?.title),
-            max_participant_count: capacity,
+            max_participant_count: 2147483647,
             updated_at: new Date().toISOString(),
           })
           .eq("id", group.legacy_ticket_instance_id);

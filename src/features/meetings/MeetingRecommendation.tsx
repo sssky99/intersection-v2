@@ -899,7 +899,6 @@ function MeetingDateApplicationFlow({
     useState<string | null>(null);
   const [blindDateTicketClosing, setBlindDateTicketClosing] = useState(false);
   const blindDateCloseTimerRef = useRef<number | null>(null);
-  const [waitlistDialog, setWaitlistDialog] = useState<"success" | null>(null);
   const funnelEntryRef = useRef<{
     step: ApplicationFunnelStep;
     enteredAt: number;
@@ -1686,78 +1685,6 @@ function MeetingDateApplicationFlow({
     }
   };
 
-  const joinClosedDateWaitlist = async (date: string) => {
-    const existingApplication = applicationByDate.get(date);
-    if (existingApplication) {
-      return existingApplication.status === "waitlisted";
-    }
-    if (saving || !isMeetingDateClosed(date)) {
-      return false;
-    }
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      let waitlistApplications: MeetingDateApplication[];
-
-      if (isLocalTestHost()) {
-        const now = new Date().toISOString();
-        waitlistApplications = [
-          {
-            id: `local-waitlist:${date}`,
-            meetingDate: date,
-            meetingTime: meetingDateSchedule(date)?.time ?? "",
-            region: MEETING_DATE_REGION,
-            status: "waitlisted",
-            depositAmount: null,
-            depositStatus: null,
-            assignedTicketInstanceId: null,
-            createdAt: now,
-          },
-        ];
-      } else {
-        const response = await fetch("/api/meeting-date-applications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dates: [date], waitlist: true }),
-        });
-        const data = (await response.json().catch(() => null)) as
-          | DateApplicationsResponse
-          | null;
-        if (!response.ok || !data?.applications) {
-          throw new Error(data?.error ?? "waitlist-save-failed");
-        }
-        waitlistApplications = data.applications;
-      }
-
-      setApplications((current) => {
-        const nextApplications = mergeDateApplications(
-          current,
-          waitlistApplications,
-        );
-        saveLocalDateApplications(userId, nextApplications);
-        return nextApplications;
-      });
-      trackEvent("application_created", {
-        application_type: "closed_date_waitlist",
-        meeting_date: date,
-        deposit_amount: 0,
-      });
-      return true;
-    } catch (waitlistError) {
-      setError(
-        waitlistError instanceof Error &&
-          waitlistError.message !== "waitlist-save-failed"
-          ? waitlistError.message
-          : "빈 자리 대기를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
-      );
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (screen === "unlock" && selectedTicket) {
     return (
       <TicketUnlockSequence
@@ -1894,28 +1821,11 @@ function MeetingDateApplicationFlow({
         {active &&
           !readOnly &&
           typeof document !== "undefined" &&
-          createPortal(selectedEventClosed ? (
+          createPortal(selectedTicketClosed ? (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
             <div className="flex h-[56px] w-full items-center justify-center rounded-full bg-black/12 text-[15px] font-black tracking-[-0.02em] text-black/42">
               마감
             </div>
-          </div>
-        ) : selectedTicketClosed ? (
-          <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
-            <motion.button
-              type="button"
-              whileTap={!saving ? { scale: 0.98 } : undefined}
-              disabled={saving}
-              onClick={() => {
-                void (async () => {
-                  const joined = await joinClosedDateWaitlist(selectedTicket.date);
-                  if (joined) setWaitlistDialog("success");
-                })();
-              }}
-              className="flex h-[56px] w-full items-center justify-center rounded-full bg-black text-[15px] font-black tracking-[-0.02em] text-white shadow-[0_10px_26px_rgba(0,0,0,0.14)] disabled:bg-black/20"
-            >
-              {saving ? "알림 신청 중..." : "알림 받기"}
-            </motion.button>
           </div>
         ) : (
           <div className="fixed bottom-[calc(10px+env(safe-area-inset-bottom))] left-1/2 z-[70] grid h-[68px] w-[calc(100%-32px)] max-w-[388px] -translate-x-1/2 grid-cols-[0.72fr_2.1fr] items-center gap-2 rounded-full border border-black/12 bg-[#f7f4ed]/96 p-1.5 shadow-[0_16px_38px_rgba(24,24,20,0.2)] backdrop-blur-xl">
@@ -1939,46 +1849,6 @@ function MeetingDateApplicationFlow({
             </motion.button>
           </div>
           ), document.body)}
-
-        <AnimatePresence>
-          {waitlistDialog && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 px-5 backdrop-blur-[3px]"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="waitlist-dialog-title"
-            >
-              <motion.div
-                initial={{ opacity: 0, y: 16, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 10, scale: 0.98 }}
-                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                className="w-full max-w-[350px] rounded-[28px] border border-black/10 bg-[#f7f4ed] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.2)]"
-              >
-                <h2
-                  id="waitlist-dialog-title"
-                  className="text-[20px] font-black tracking-[-0.04em] text-black"
-                >
-                  알림 신청이 완료됐어요.
-                </h2>
-                <p className="mt-3 break-keep text-[13px] font-semibold leading-6 text-black/50">
-                  빈자리가 생기면 알림을 보내드릴게요.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => setWaitlistDialog(null)}
-                  className="mt-6 h-12 w-full rounded-full bg-black text-[13px] font-black text-white"
-                >
-                  확인
-                </button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {active && typeof document !== "undefined" &&
           createPortal(

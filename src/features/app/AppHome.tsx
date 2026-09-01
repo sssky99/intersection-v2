@@ -2383,6 +2383,19 @@ function TicketListTab({
       ) ?? null
     );
   }, [dateApplications, selectedTicket]);
+  const selectedApplicationDetailApplication = useMemo(() => {
+    if (!selectedApplicationTicket) return null;
+
+    return (
+      dateApplications.find(
+        (application) =>
+          meetingDateApplicationMatchesTicket(
+            application,
+            selectedApplicationTicket.id,
+          ) && canCancelMeetingDateApplication(application.status),
+      ) ?? null
+    );
+  }, [dateApplications, selectedApplicationTicket]);
   const ticketItems = useMemo<TicketListItem[]>(() => {
     const applicationItems = dateApplications.flatMap(
       (application): TicketListItem[] => {
@@ -2901,6 +2914,22 @@ function TicketListTab({
               setSelectedApplicationTicketDeclined(false);
               setSelectedApplicationTicketOpen(false);
             }}
+            onCancelApplication={
+              !readOnly && selectedApplicationDetailApplication
+                ? async () => {
+                    const cancelled = await onCancelApplication(
+                      selectedApplicationDetailApplication,
+                      selectedApplicationTicket,
+                    );
+                    if (cancelled) {
+                      setSelectedApplicationTicket(null);
+                      setSelectedApplicationTicketDeclined(false);
+                      setSelectedApplicationTicketOpen(false);
+                    }
+                    return cancelled;
+                  }
+                : undefined
+            }
             onReapply={
               !readOnly && selectedApplicationTicketDeclined
                 ? () => {
@@ -3427,7 +3456,6 @@ function DeclinedTicketCard({
         tags={ticket.moodTags}
         badgeLabel={null}
         badgeClassName="border-white/25 bg-white/[0.18] text-white"
-        remainingSeatCount={ticket.remainingSeatCount}
         className={cn(ticketPaperImageClass, "grayscale")}
       />
     </motion.div>
@@ -3470,7 +3498,6 @@ function StoredTicketCard({
         tags={ticket.moodTags}
         badgeLabel="신청 완료"
         badgeClassName={statusBadgeClass(userTicket.status)}
-        remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
     </motion.div>
@@ -3480,6 +3507,7 @@ function StoredTicketCard({
 function AssignedApplicationTicketDetailView({
   ticket,
   onClose,
+  onCancelApplication,
   onReapply,
   onAccept,
   onDecline,
@@ -3489,6 +3517,7 @@ function AssignedApplicationTicketDetailView({
 }: {
   ticket: GatheringTicket;
   onClose: () => void;
+  onCancelApplication?: () => Promise<boolean>;
   onReapply?: () => void;
   onAccept?: () => void;
   onDecline?: () => Promise<boolean>;
@@ -3564,6 +3593,9 @@ function AssignedApplicationTicketDetailView({
         <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
           {responseError}
         </p>
+      )}
+      {onCancelApplication && (
+        <DetailApplicationCancellationControl onCancel={onCancelApplication} />
       )}
       {typeof document !== "undefined" &&
         createPortal(
@@ -3645,7 +3677,6 @@ function AssignedApplicationTicketCard({
         tags={ticket.moodTags}
         badgeLabel="신청 완료"
         badgeClassName={dateApplicationBadgeClass(application)}
-        remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
     </motion.div>
@@ -3708,7 +3739,6 @@ function InteractionTicketCard({
                 ? "border-white/30 bg-black/55 text-white shadow-none"
                 : "border-white/25 bg-white/[0.18] text-white"
         }
-        remainingSeatCount={ticket.remainingSeatCount}
         className={ticketPaperImageClass}
       />
       {showsDeadline && (

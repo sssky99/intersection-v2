@@ -9,6 +9,7 @@ import {
   isMeetingDateClosed,
   meetingDateSchedule,
   requestedMeetingApplicationDates,
+  visibleMeetingDateApplicationInstanceId,
   type MeetingDateApplication,
 } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -110,6 +111,7 @@ type DateApplicationRow = {
   deposit_amount: number | null;
   deposit_status: MeetingDateApplication["depositStatus"];
   assigned_ticket_instance_id: string | null;
+  confirmed_at: string | null;
   created_at: string | null;
   updated_at: string | null;
 };
@@ -156,6 +158,11 @@ function toApplication(
   row: DateApplicationRow,
   schedule?: AssignedTicketSchedule,
 ): MeetingDateApplication {
+  const visibleInstanceId = visibleMeetingDateApplicationInstanceId({
+    status: row.status,
+    confirmedAt: row.confirmed_at,
+    assignedTicketInstanceId: row.assigned_ticket_instance_id,
+  });
   return {
     id: row.id,
     eventId: row.event_id,
@@ -165,7 +172,8 @@ function toApplication(
     status: row.status,
     depositAmount: row.deposit_amount,
     depositStatus: row.deposit_status,
-    assignedTicketInstanceId: row.assigned_ticket_instance_id,
+    assignedTicketInstanceId: visibleInstanceId,
+    confirmedAt: row.confirmed_at,
     ticketRevealsAt: ticketRevealsAt(schedule),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -199,7 +207,7 @@ export async function GET() {
     const { data, error } = await createAdminClient()
       .from("meeting_date_applications")
       .select(
-        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
       )
       .eq("user_id", requestUser.userId)
       .gte("meeting_date", todayInKst())
@@ -292,7 +300,7 @@ export async function DELETE(request: NextRequest) {
     const { data: current, error: currentError } = await admin
       .from("meeting_date_applications")
       .select(
-        "id,event_id,user_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,ticket_participation_id,created_at,updated_at",
+        "id,event_id,user_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,ticket_participation_id,created_at,updated_at",
       )
       .eq("id", applicationId)
       .eq("user_id", user.id)
@@ -331,7 +339,7 @@ export async function DELETE(request: NextRequest) {
       .eq("user_id", user.id)
       .in("status", ["waitlisted", "on_hold"])
       .select(
-        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
       )
       .single<DateApplicationRow>();
     if (cancelError) throw cancelError;
@@ -513,7 +521,7 @@ export async function POST(request: NextRequest) {
     const existingRowsLookup = admin
       .from("meeting_date_applications")
       .select(
-        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
       )
       .eq("user_id", user.id)
       .eq(selectedEvent ? "event_id" : "meeting_date", selectedEvent?.id ?? dates[0])
@@ -623,7 +631,7 @@ export async function POST(request: NextRequest) {
                 .upsert(rowsToSave, { onConflict: "user_id,meeting_date" });
       const { data, error } = await saveQuery
         .select(
-          "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,created_at,updated_at",
+          "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
         )
         .returns<DateApplicationRow[]>();
       if (error) throw error;

@@ -34,6 +34,7 @@ export type MeetingDateApplication = {
   depositAmount: number | null;
   depositStatus: MeetingDateDepositStatus | null;
   assignedTicketInstanceId: string | null;
+  confirmedAt?: string | null;
   ticketRevealsAt?: string | null;
   createdAt: string | null;
   updatedAt?: string | null;
@@ -49,6 +50,20 @@ export function canCancelMeetingDateApplication(
   status: MeetingDateApplicationStatus,
 ) {
   return status === "waitlisted" || status === "on_hold";
+}
+
+export function visibleMeetingDateApplicationInstanceId(input: {
+  status: string;
+  confirmedAt: string | null | undefined;
+  assignedTicketInstanceId: string | null | undefined;
+}) {
+  if (
+    !["approved", "completed", "feedback_done"].includes(input.status) ||
+    !input.confirmedAt
+  ) {
+    return null;
+  }
+  return input.assignedTicketInstanceId ?? null;
 }
 
 export function isMeetingDateApplicationCancellationConfirmed(value: unknown) {

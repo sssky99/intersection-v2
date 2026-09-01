@@ -6,6 +6,7 @@ import {
   isMeetingDateApplicationCancellationConfirmed,
   meetingDateApplicationMatchesTicket,
   requestedMeetingApplicationDates,
+  visibleMeetingDateApplicationInstanceId,
 } from "./meetingDateApplications";
 
 describe("isMeetingDateClosed", () => {
@@ -26,6 +27,28 @@ describe("canCancelMeetingDateApplication", () => {
     expect(canCancelMeetingDateApplication("payment_pending")).toBe(false);
     expect(canCancelMeetingDateApplication("approved")).toBe(false);
     expect(canCancelMeetingDateApplication("cancelled")).toBe(false);
+  });
+});
+
+describe("visibleMeetingDateApplicationInstanceId", () => {
+  it("keeps a draft group assignment private", () => {
+    expect(
+      visibleMeetingDateApplicationInstanceId({
+        status: "waitlisted",
+        confirmedAt: null,
+        assignedTicketInstanceId: "group-a-ticket",
+      }),
+    ).toBeNull();
+  });
+
+  it("reveals the detail ticket only after confirmation", () => {
+    expect(
+      visibleMeetingDateApplicationInstanceId({
+        status: "approved",
+        confirmedAt: "2026-09-01T12:00:00.000Z",
+        assignedTicketInstanceId: "group-a-ticket",
+      }),
+    ).toBe("group-a-ticket");
   });
 });
 
