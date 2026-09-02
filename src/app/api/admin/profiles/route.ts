@@ -1185,9 +1185,9 @@ export async function PATCH(request: NextRequest) {
       }),
     });
   } catch (error) {
-    console.error("Admin profile membership save failed:", error);
+    console.error("Admin profile save failed:", error);
     return NextResponse.json(
-      { error: "멤버십 상태를 저장하지 못했습니다." },
+      { error: "프로필 상세 정보를 저장하지 못했습니다." },
       { status: 503, headers: { "Retry-After": "5" } },
     );
   }

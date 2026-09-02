@@ -658,7 +658,7 @@ function RedFlagAssessmentDialog({
     adjustment: number,
     manualNoShowCount: number,
     manualSameDayCancellationCount: number,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   onClose: () => void;
 }) {
   const savedFlags = profile.red_flag_manual_flags ?? {};
@@ -677,6 +677,7 @@ function RedFlagAssessmentDialog({
     manualSameDayCancellationCountDraft,
     setManualSameDayCancellationCountDraft,
   ] = useState(String(savedManualSameDayCancellationCount));
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(savedFlags);
@@ -724,6 +725,31 @@ function RedFlagAssessmentDialog({
         savedManualSameDayCancellationCount);
   const score = profile.red_flag_score ?? 0;
   const reasons = profile.red_flag_reasons ?? [];
+  const saveReview = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (
+      !dirty ||
+      !adjustmentValid ||
+      !manualNoShowCountValid ||
+      !manualSameDayCancellationCountValid ||
+      disabled
+    ) {
+      return;
+    }
+
+    setSaveError(null);
+    const saved = await onSave(
+      draft,
+      parsedAdjustment,
+      parsedManualNoShowCount,
+      parsedManualSameDayCancellationCount,
+    );
+    if (saved) {
+      onClose();
+      return;
+    }
+    setSaveError("레드 플래그 점수를 저장하지 못했습니다. 다시 시도해주세요.");
+  };
 
   return (
     <div
@@ -763,7 +789,10 @@ function RedFlagAssessmentDialog({
           </button>
         </header>
 
-        <div className="overflow-y-auto px-5 py-5">
+        <form
+          className="overflow-y-auto px-5 py-5"
+          onSubmit={saveReview}
+        >
           <div>
             <p className="text-xs font-black text-black/65">산정 근거</p>
             {reasons.length > 0 ? (
@@ -913,7 +942,7 @@ function RedFlagAssessmentDialog({
               </div>
             </div>
             <button
-              type="button"
+              type="submit"
               disabled={
                 !dirty ||
                 !adjustmentValid ||
@@ -921,21 +950,21 @@ function RedFlagAssessmentDialog({
                 !manualSameDayCancellationCountValid ||
                 disabled
               }
-              onClick={() =>
-                void onSave(
-                  draft,
-                  parsedAdjustment,
-                  parsedManualNoShowCount,
-                  parsedManualSameDayCancellationCount,
-                )
-              }
               className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-xs font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/20"
             >
               <Save size={14} aria-hidden />
               {disabled ? "저장 중..." : "문맥 검토 저장"}
             </button>
+            {saveError && (
+              <p
+                role="alert"
+                className="mt-2 rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600"
+              >
+                {saveError}
+              </p>
+            )}
           </div>
-        </div>
+        </form>
       </section>
     </div>
   );
@@ -1495,7 +1524,7 @@ export function AdminPageClient({
     userId: string,
     patch: ProfileDetailPatch,
   ) => {
-    if (savingProfileUserId === userId) return;
+    if (savingProfileUserId === userId) return false;
 
     setProfileSaveError(null);
     setProfileSaveNotice(null);
@@ -1517,7 +1546,7 @@ export function AdminPageClient({
         setProfiles([]);
         setProfilesLoaded(false);
         setSelectedProfileId(null);
-        return;
+        return false;
       }
 
       if (!response.ok || !data?.profile) {
@@ -1530,12 +1559,14 @@ export function AdminPageClient({
         ),
       );
       setProfileSaveNotice("프로필 상세 정보를 저장했어요.");
+      return true;
     } catch (error) {
       setProfileSaveError(
         error instanceof Error
           ? error.message
           : "프로필 상세 정보를 저장하지 못했어요.",
       );
+      return false;
     } finally {
       setSavingProfileUserId(null);
     }
@@ -1883,7 +1914,7 @@ function ApplicantsPanel({
   onProfileDetailSave: (
     userId: string,
     patch: ProfileDetailPatch,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }) {
   return (
     <div className="grid h-[calc(100dvh-190px)] min-h-[620px] grid-cols-[minmax(0,1fr)_390px] gap-5">
@@ -2320,7 +2351,7 @@ function ProfileDetailPanel({
   onProfileDetailSave: (
     userId: string,
     patch: ProfileDetailPatch,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }) {
   const initialPrecisionBonusDraft = useMemo(
     () => adminMatchingPrecisionBonus(profile),
