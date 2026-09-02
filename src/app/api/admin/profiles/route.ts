@@ -273,9 +273,19 @@ async function fetchProfilePage(
   const totalPages = Math.max(1, Math.ceil(totalCount / limit));
 
   const listedProfiles = rows.map(listProfile);
-  const profiles = includePhotos
-    ? await attachProfilePhotos(supabase, listedProfiles)
-    : listedProfiles;
+  const [profilesWithPhotos, profilesWithRedFlags] = await Promise.all([
+    includePhotos
+      ? attachProfilePhotos(supabase, listedProfiles)
+      : Promise.resolve(listedProfiles),
+    attachRedFlagAssessments(supabase, listedProfiles),
+  ]);
+  const photosByUserId = new Map(
+    profilesWithPhotos.map((profile) => [profile.user_id, profile.photo_url]),
+  );
+  const profiles = profilesWithRedFlags.map((profile) => ({
+    ...profile,
+    photo_url: photosByUserId.get(profile.user_id) ?? profile.photo_url,
+  }));
 
   return {
     profiles,
@@ -580,6 +590,139 @@ async function attachRedFlagAssessment(
     red_flag_manual_same_day_cancellation_count:
       assessment.manualSameDayCancellationCount,
     red_flag_reviewed_at: assessment.reviewedAt,
+  });
+}
+
+type RedFlagReviewRow = {
+  user_id: string;
+  manual_flags: Record<string, unknown> | null;
+  manual_adjustment: number | null;
+  manual_no_show_count: number | null;
+  manual_same_day_cancellation_count: number | null;
+  updated_at: string | null;
+};
+
+type RedFlagParticipationRow = {
+  user_id: string;
+  status: string | null;
+  arrival_status: string | null;
+  cancelled_at: string | null;
+  ticket_instance_id: string | null;
+};
+
+async function attachRedFlagAssessments(
+  supabase: ReturnType<typeof createAdminClient>,
+  profiles: AdminProfile[],
+) {
+  const userIds = profiles.map((profile) => profile.user_id).filter(Boolean);
+  if (userIds.length === 0) return profiles;
+
+  const [profilesWithAnswers, reviewsResult] = await Promise.all([
+    attachProfileAnswers(supabase, profiles),
+    supabase
+      .from("profile_red_flag_reviews")
+      .select(
+        "user_id,manual_flags,manual_adjustment,manual_no_show_count,manual_same_day_cancellation_count,updated_at",
+      )
+      .in("user_id", userIds),
+  ]);
+  if (reviewsResult.error) throw reviewsResult.error;
+
+  const participations: RedFlagParticipationRow[] = [];
+  for (let from = 0; ; from += USER_ANSWERS_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("ticket_participations")
+      .select(
+        "user_id,status,arrival_status,cancelled_at,ticket_instance_id",
+      )
+      .in("user_id", userIds)
+      .order("user_id", { ascending: true })
+      .order("ticket_id", { ascending: true })
+      .range(from, from + USER_ANSWERS_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as RedFlagParticipationRow[];
+    participations.push(...page);
+    if (page.length < USER_ANSWERS_PAGE_SIZE) break;
+  }
+
+  const instanceIds = Array.from(
+    new Set(
+      participations
+        .map((participation) => participation.ticket_instance_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const eventDateByInstanceId = new Map<string, string | null>();
+  for (
+    let batchStart = 0;
+    batchStart < instanceIds.length;
+    batchStart += USER_ID_BATCH_SIZE
+  ) {
+    const { data, error } = await supabase
+      .from("ticket_instances")
+      .select("id,event_date")
+      .in(
+        "id",
+        instanceIds.slice(batchStart, batchStart + USER_ID_BATCH_SIZE),
+      );
+    if (error) throw error;
+    for (const instance of data ?? []) {
+      eventDateByInstanceId.set(instance.id, instance.event_date ?? null);
+    }
+  }
+
+  const answersByUserId = new Map(
+    profilesWithAnswers.map((profile) => [
+      profile.user_id,
+      profile.answers ?? [],
+    ]),
+  );
+  const reviewsByUserId = new Map(
+    ((reviewsResult.data ?? []) as RedFlagReviewRow[]).map((review) => [
+      review.user_id,
+      review,
+    ]),
+  );
+  const participationsByUserId = new Map<string, RedFlagParticipation[]>();
+  for (const participation of participations) {
+    const history = participationsByUserId.get(participation.user_id) ?? [];
+    history.push({
+      status: participation.status,
+      arrival_status: participation.arrival_status,
+      cancelled_at: participation.cancelled_at,
+      event_date: participation.ticket_instance_id
+        ? (eventDateByInstanceId.get(participation.ticket_instance_id) ?? null)
+        : null,
+    });
+    participationsByUserId.set(participation.user_id, history);
+  }
+
+  return profiles.map((profile) => {
+    const review = reviewsByUserId.get(profile.user_id);
+    const assessment = calculateRedFlagAssessment({
+      answers: answersByUserId.get(profile.user_id) ?? [],
+      participations: participationsByUserId.get(profile.user_id) ?? [],
+      manualFlags: normalizeRedFlagManualFlags(review?.manual_flags),
+      manualAdjustment: Number(review?.manual_adjustment ?? 0),
+      manualNoShowCount: Number(review?.manual_no_show_count ?? 0),
+      manualSameDayCancellationCount: Number(
+        review?.manual_same_day_cancellation_count ?? 0,
+      ),
+      reviewedAt: review?.updated_at ?? null,
+    });
+
+    return normalizeAdminProfile({
+      ...profile,
+      red_flag_score: assessment.score,
+      red_flag_reasons: assessment.reasons,
+      red_flag_manual_flags: assessment.manualFlags,
+      red_flag_manual_adjustment: assessment.manualAdjustment,
+      red_flag_manual_no_show_count: assessment.manualNoShowCount,
+      red_flag_manual_same_day_cancellation_count:
+        assessment.manualSameDayCancellationCount,
+      red_flag_reviewed_at: assessment.reviewedAt,
+    });
   });
 }
 
