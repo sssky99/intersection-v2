@@ -1154,6 +1154,80 @@ async function processCancelRequested(
   return "processed";
 }
 
+async function processOneTimePaymentCancelled(
+  envelope: WebhookEnvelope,
+  idempotencyKey: string,
+) {
+  const details = objectParts(envelope.object);
+  if (!details.merchantUid) {
+    await eventStatus(idempotencyKey, {
+      processing_status: "unmatched",
+      processed_at: new Date().toISOString(),
+    });
+    return "unmatched";
+  }
+
+  const admin = createAdminClient();
+  const { data: transactions, error: transactionLookupError } = await admin
+    .from("payment_transactions")
+    .select("id,user_id,payment_kind,amount,application_group_id")
+    .eq("provider", "groble")
+    .eq("merchant_uid", details.merchantUid)
+    .eq("payment_kind", "one_time")
+    .limit(2)
+    .returns<PaymentTransactionRow[]>();
+  if (transactionLookupError) throw transactionLookupError;
+
+  if ((transactions ?? []).length !== 1) {
+    const status = (transactions ?? []).length === 0 ? "unmatched" : "ambiguous";
+    await eventStatus(idempotencyKey, {
+      processing_status: status,
+      merchant_uid: details.merchantUid,
+      processed_at: new Date().toISOString(),
+    });
+    return status;
+  }
+
+  const transaction = transactions![0];
+  const cancelledAt =
+    details.cancelledAt ?? envelope.occurredAt ?? new Date().toISOString();
+  const updatedAt = new Date().toISOString();
+
+  const { error: transactionUpdateError } = await admin
+    .from("payment_transactions")
+    .update({
+      status: "cancelled",
+      cancelled_at: cancelledAt,
+      updated_at: updatedAt,
+    })
+    .eq("id", transaction.id);
+  if (transactionUpdateError) throw transactionUpdateError;
+
+  if (transaction.user_id && transaction.application_group_id) {
+    const { error: applicationUpdateError } = await admin
+      .from("meeting_date_applications")
+      .update({
+        deposit_status: "refunded",
+        refund_completed_at: cancelledAt,
+        updated_at: updatedAt,
+      })
+      .eq("user_id", transaction.user_id)
+      .eq("application_group_id", transaction.application_group_id);
+    if (applicationUpdateError) throw applicationUpdateError;
+  }
+
+  await eventStatus(idempotencyKey, {
+    processing_status: "processed",
+    merchant_uid: details.merchantUid,
+    matched_user_id: transaction.user_id,
+    matched_application_group_id: transaction.application_group_id,
+    payment_kind: "one_time",
+    payment_amount: transaction.amount,
+    processed_at: updatedAt,
+  });
+  return "processed";
+}
+
 async function processMembershipPaymentCancelled(
   envelope: WebhookEnvelope,
   idempotencyKey: string,
@@ -1343,6 +1417,8 @@ export async function POST(request: Request) {
       status = await processPaymentCompleted(envelope, idempotencyKey);
     } else if (envelope.type === "payment.cancel_requested") {
       status = await processCancelRequested(envelope, idempotencyKey);
+    } else if (grobleCancelledPaymentKind(envelope.type) === "one_time") {
+      status = await processOneTimePaymentCancelled(envelope, idempotencyKey);
     } else if (grobleCancelledPaymentKind(envelope.type) === "membership") {
       status = await processMembershipPaymentCancelled(envelope, idempotencyKey);
     } else {

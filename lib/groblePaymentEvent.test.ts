@@ -21,6 +21,10 @@ describe("grobleCompletedPaymentKind", () => {
 });
 
 describe("grobleCancelledPaymentKind", () => {
+  it("routes one-time payment cancellation events to meeting applications", () => {
+    expect(grobleCancelledPaymentKind("payment.cancelled")).toBe("one_time");
+  });
+
   it("routes subscription payment cancellation events to memberships", () => {
     expect(grobleCancelledPaymentKind("subscription_payment.cancelled")).toBe(
       "membership",
@@ -34,6 +38,6 @@ describe("grobleCancelledPaymentKind", () => {
   });
 
   it("rejects unrelated event types", () => {
-    expect(grobleCancelledPaymentKind("payment.cancelled")).toBeNull();
+    expect(grobleCancelledPaymentKind("payment.failed")).toBeNull();
   });
 });

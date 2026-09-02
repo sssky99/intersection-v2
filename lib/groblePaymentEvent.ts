@@ -1,5 +1,5 @@
 export type GrobleCompletedPaymentKind = "one_time" | "membership";
-export type GrobleCancelledPaymentKind = "membership";
+export type GrobleCancelledPaymentKind = "one_time" | "membership";
 
 export function grobleCompletedPaymentKind(
   eventType: string,
@@ -12,6 +12,7 @@ export function grobleCompletedPaymentKind(
 export function grobleCancelledPaymentKind(
   eventType: string,
 ): GrobleCancelledPaymentKind | null {
+  if (eventType === "payment.cancelled") return "one_time";
   if (eventType === "subscription_payment.cancelled") return "membership";
   return null;
 }
