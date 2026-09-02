@@ -1234,7 +1234,7 @@ export function AdminPageClient({
     useState<MembershipFilter>("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [completionFilter, setCompletionFilter] =
-    useState<CompletionFilter>("all");
+    useState<CompletionFilter>("complete");
   const [operatorRatingFilter, setOperatorRatingFilter] =
     useState<OperatorRatingFilter>("all");
   const [birthYearSort, setBirthYearSort] =
