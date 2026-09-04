@@ -416,7 +416,11 @@ export async function POST(request: NextRequest) {
           membership_purchase_clicked_at: now,
           membership_updated_at: now,
         })
-        .eq("user_id", user.id),
+        .eq("user_id", user.id)
+        // Checkout is not a payment: preserve paid membership state, plan and
+        // dates (including future-start memberships and renewal/upgrade clicks).
+        // Filter in the UPDATE so a concurrent payment webhook also stays active.
+        .or("membership_status.is.null,membership_status.neq.active"),
       ticketPaymentPendingPromise,
     ]);
   const intentLinkError = intentLinkResult.error;
