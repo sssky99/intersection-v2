@@ -1,4 +1,5 @@
 "use client";
+import { MembershipPaymentHistory } from "./MembershipPaymentHistory";
 
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -208,7 +209,9 @@ export function MembershipAdminPanel() {
       nextStatus === "active" &&
       (!draft.plan || !draft.startDate || !draft.endDate)
     ) {
-      setNotice("멤버십 적용중으로 변경하려면 플랜과 기간을 먼저 설정해주세요.");
+      setNotice(
+        "멤버십 적용중으로 변경하려면 플랜과 기간을 먼저 설정해주세요.",
+      );
       return false;
     }
 
@@ -267,7 +270,8 @@ export function MembershipAdminPanel() {
 
   const applyPlanDuration = (row: AdminMembership, plan: MembershipPlan) => {
     const current = drafts[row.user_id] ?? initialDraft(row);
-    const startDate = current.startDate || new Date().toISOString().slice(0, 10);
+    const startDate =
+      current.startDate || new Date().toISOString().slice(0, 10);
 
     changeDraft(row.user_id, {
       plan,
@@ -283,8 +287,8 @@ export function MembershipAdminPanel() {
           <div>
             <h2 className="text-lg font-bold">멤버십 관리</h2>
             <p className="mt-1 text-xs leading-5 text-black/45">
-              결제 확인 전, 적용중, 만료 상태를 운영자가 직접 관리합니다.
-              취소 상태는 저장 후 목록에서 제외됩니다.
+              결제 확인 전, 적용중, 만료 상태를 운영자가 직접 관리합니다. 취소
+              상태는 저장 후 목록에서 제외됩니다.
             </p>
             {loading && memberships.length > 0 && (
               <p className="mt-1 text-[11px] font-semibold text-accent">
@@ -302,6 +306,9 @@ export function MembershipAdminPanel() {
           </button>
         </div>
 
+        <div className="mt-3">
+          <MembershipPaymentHistory />
+        </div>
         <div className="mt-4 grid grid-cols-[minmax(300px,1fr)_180px] gap-2">
           <label className="relative block">
             <Search
@@ -508,9 +515,7 @@ export function MembershipAdminPanel() {
 
 function TableHead({ children }: { children: React.ReactNode }) {
   return (
-    <th className="border-b border-black/10 px-5 py-3 font-bold">
-      {children}
-    </th>
+    <th className="border-b border-black/10 px-5 py-3 font-bold">{children}</th>
   );
 }
 
