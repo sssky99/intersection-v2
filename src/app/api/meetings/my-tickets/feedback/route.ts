@@ -418,38 +418,21 @@ export async function POST(request: Request) {
       }
     }
 
-    const now = new Date().toISOString();
-    const { error: feedbackError } = await supabase
-      .from("meeting_feedback")
-      .upsert(
-        {
-          waitlist_id: row.id,
-          user_id: user.id,
-          ticket_instance_id: instance?.id ?? null,
-          ticket_template_id:
-            row.ticket_template_id ?? instance?.template_id ?? row.ticket_snapshot?.templateId ?? null,
-          ticket_snapshot: row.ticket_snapshot ?? {},
-          selected_member_ids: selectedMemberIds,
-          member_feedback: memberFeedback,
-          place_feedback: placeFeedback,
-          updated_at: now,
-        },
-        { onConflict: "waitlist_id" },
-      );
-    if (feedbackError) throw feedbackError;
-
-    const { error: updateError } = await supabase
-      .from("ticket_participations")
-      .update({
-        status: "feedback_done",
-        feedback_completed_at: now,
-        updated_at: now,
-      })
-      .eq("id", waitlistId)
-      .eq("user_id", user.id);
-    if (updateError) throw updateError;
-
-    return NextResponse.json({ ok: true, feedbackCompletedAt: now });
+    const { data: completedAt, error: saveError } = await supabase.rpc(
+      "save_validated_meeting_feedback",
+      {
+        p_participation_id: row.id,
+        p_user_id: user.id,
+        p_instance_id: instance?.id ?? null,
+        p_template_id: row.ticket_template_id ?? instance?.template_id ?? row.ticket_snapshot?.templateId ?? null,
+        p_snapshot: row.ticket_snapshot ?? {},
+        p_selected_member_ids: selectedMemberIds,
+        p_member_feedback: memberFeedback,
+        p_place_feedback: placeFeedback,
+      },
+    );
+    if (saveError) throw saveError;
+    return NextResponse.json({ ok: true, feedbackCompletedAt: completedAt });
   } catch (error) {
     console.error("[meetings my-tickets feedback]", error);
     return NextResponse.json(

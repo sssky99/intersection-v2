@@ -613,27 +613,28 @@ export async function POST(request: NextRequest) {
 
     let savedRows: DateApplicationRow[] = [];
     if (rowsToSave.length > 0) {
-      const existingEventApplication = selectedEvent
-        ? (existingRows ?? []).find((row) =>
-            canResubmitMeetingDateApplication(row.status),
-          )
-        : null;
+      const existingEventApplication = (existingRows ?? []).find((row) =>
+        canResubmitMeetingDateApplication(row.status),
+      );
       const saveQuery =
-        selectedEvent && existingEventApplication
+        existingEventApplication
           ? admin
               .from("meeting_date_applications")
               .update(rowsToSave[0])
               .eq("id", existingEventApplication.id)
-          : selectedEvent
-            ? admin.from("meeting_date_applications").insert(rowsToSave)
-            : admin
-                .from("meeting_date_applications")
-                .upsert(rowsToSave, { onConflict: "user_id,meeting_date" });
+              .in("status", ["payment_pending", "cancelled"])
+          : admin.from("meeting_date_applications").insert(rowsToSave);
       const { data, error } = await saveQuery
         .select(
           "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
         )
         .returns<DateApplicationRow[]>();
+      if (error?.code === "23505" || (!error && !data?.length)) {
+        return NextResponse.json(
+          { error: "신청 상태가 변경되었어요. 새로고침 후 다시 확인해주세요." },
+          { status: 409 },
+        );
+      }
       if (error) throw error;
       savedRows = data ?? [];
     }
@@ -656,13 +657,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (membershipCovered && selectedTicket) {
-      const { data: participationId, error: participationError } =
-        await admin.rpc("set_ticket_participation_status", {
+    const participationApplication = savedRows[0] ?? (existingRows ?? []).find(
+      (row) => row.status === "waitlisted" && row.assigned_ticket_instance_id === selectedTicket?.id,
+    );
+    if (membershipCovered && selectedTicket && participationApplication) {
+      const { error: participationError } =
+        await admin.rpc("ensure_application_participation", {
+          p_application_id: participationApplication.id,
           p_ticket_instance_id: selectedTicket.id,
           p_user_id: user.id,
-          p_status: "waitlisted",
-          p_ticket_snapshot: {
+          p_snapshot: {
             id: selectedTicket.id,
             templateId: selectedTicket.template_id,
             title: selectedTicket.title,
@@ -670,18 +674,8 @@ export async function POST(request: NextRequest) {
             time: selectedTicket.event_time,
             area: selectedTicket.region,
           },
-          p_invitation_id: null,
         });
       if (participationError) throw participationError;
-
-      if (participationId != null) {
-        const { error: linkError } = await admin
-          .from("meeting_date_applications")
-          .update({ ticket_participation_id: participationId, updated_at: now })
-          .eq("user_id", user.id)
-          .in("meeting_date", dates);
-        if (linkError) throw linkError;
-      }
     }
 
     const rows = dates

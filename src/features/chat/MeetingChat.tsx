@@ -1,5 +1,7 @@
 "use client";
 
+import { startVisiblePolling } from "@/lib/visiblePolling";
+
 import {
   ArrowLeft,
   Clock3,
@@ -422,14 +424,8 @@ export function MeetingChat({
   );
 
   useEffect(() => {
-    void loadRooms();
-    const intervalId = window.setInterval(() => void loadRooms(), 15_000);
-    return () => window.clearInterval(intervalId);
-  }, [loadRooms]);
-
-  useEffect(() => {
     if (!active) return;
-    void loadRooms();
+    return startVisiblePolling(loadRooms, 15_000);
   }, [active, loadRooms]);
 
   useEffect(() => {

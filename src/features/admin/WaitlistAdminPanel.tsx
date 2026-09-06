@@ -551,6 +551,7 @@ export function WaitlistAdminPanel() {
   const filteredRows = useMemo(
     () =>
       dateScopedRows.filter((row) => {
+        if (statusFilter === "all" && row.status === "cancelled") return false;
         if (statusFilter !== "all" && row.status !== statusFilter) return false;
         if (genderFilter !== "all" && rowGenderFilter(row) !== genderFilter) {
           return false;

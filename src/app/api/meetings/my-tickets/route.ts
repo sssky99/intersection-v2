@@ -1,3 +1,4 @@
+import { fetchTicketGroupContext, type TicketGroupRow } from "@/lib/ticketGroupContext";
 import { NextResponse } from "next/server";
 import { requestUserId } from "@/lib/adminUserView";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -276,25 +277,9 @@ async function fetchTemplateRows(
 
 async function fetchGroupStageLocationsByInstance(
   supabase: ReturnType<typeof createAdminClient>,
-  instanceIds: string[],
+  groups: TicketGroupRow[],
 ) {
   const result = new Map<string, GroupStageLocationOverride[]>();
-  if (instanceIds.length === 0) return result;
-
-  const { data: groupData, error: groupError } = await supabase
-    .from("meeting_groups")
-    .select("id,event_id,legacy_ticket_instance_id")
-    .in("legacy_ticket_instance_id", instanceIds)
-    .returns<
-      Array<{
-        id: string;
-        event_id: string;
-        legacy_ticket_instance_id: string | null;
-      }>
-    >();
-  if (groupError) throw groupError;
-
-  const groups = groupData ?? [];
   const groupIds = unique(groups.map((group) => group.id));
   const eventIds = unique(groups.map((group) => group.event_id));
   if (groupIds.length === 0 || eventIds.length === 0) return result;
@@ -385,27 +370,9 @@ async function fetchGroupStageLocationsByInstance(
   return result;
 }
 
-async function fetchParticipationStartStageByInstance(
-  supabase: ReturnType<typeof createAdminClient>,
-  instanceIds: string[],
-) {
+function participationStartStages(groups: TicketGroupRow[]) {
   const result = new Map<string, number>();
-  if (instanceIds.length === 0) return result;
-
-  const { data, error } = await supabase
-    .from("meeting_groups")
-    .select("code,title,legacy_ticket_instance_id")
-    .in("legacy_ticket_instance_id", instanceIds)
-    .returns<
-      Array<{
-        code: string | null;
-        title: string | null;
-        legacy_ticket_instance_id: string | null;
-      }>
-    >();
-  if (error) throw error;
-
-  for (const group of data ?? []) {
+  for (const group of groups) {
     if (!group.legacy_ticket_instance_id) continue;
     result.set(
       group.legacy_ticket_instance_id,
@@ -416,31 +383,8 @@ async function fetchParticipationStartStageByInstance(
   return result;
 }
 
-async function fetchEventInstanceIdsByInstance(
-  supabase: ReturnType<typeof createAdminClient>,
-  instanceIds: string[],
-) {
+function eventInstanceIdsByInstanceFromContext({ currentGroups, eventGroups }: { currentGroups: TicketGroupRow[]; eventGroups: TicketGroupRow[] }) {
   const result = new Map<string, string[]>();
-  if (instanceIds.length === 0) return result;
-
-  const { data: currentGroups, error: currentGroupsError } = await supabase
-    .from("meeting_groups")
-    .select("event_id,legacy_ticket_instance_id")
-    .in("legacy_ticket_instance_id", instanceIds)
-    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
-  if (currentGroupsError) throw currentGroupsError;
-
-  const eventIds = unique((currentGroups ?? []).map((group) => group.event_id));
-  if (eventIds.length === 0) return result;
-
-  const { data: eventGroups, error: eventGroupsError } = await supabase
-    .from("meeting_groups")
-    .select("event_id,legacy_ticket_instance_id")
-    .in("event_id", eventIds)
-    .not("legacy_ticket_instance_id", "is", null)
-    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
-  if (eventGroupsError) throw eventGroupsError;
-
   const instanceIdsByEvent = new Map<string, string[]>();
   for (const group of eventGroups ?? []) {
     if (!group.legacy_ticket_instance_id) continue;
@@ -460,38 +404,8 @@ async function fetchEventInstanceIdsByInstance(
   return result;
 }
 
-async function fetchFeedbackGroupByInstance(
-  supabase: ReturnType<typeof createAdminClient>,
-  instanceIds: string[],
-) {
+function feedbackGroupsByInstance(eventGroups: TicketGroupRow[]) {
   const result = new Map<string, "123" | "456">();
-  if (instanceIds.length === 0) return result;
-
-  const { data: currentGroups, error: currentGroupsError } = await supabase
-    .from("meeting_groups")
-    .select("event_id,legacy_ticket_instance_id")
-    .in("legacy_ticket_instance_id", instanceIds)
-    .returns<Array<{ event_id: string; legacy_ticket_instance_id: string | null }>>();
-  if (currentGroupsError) throw currentGroupsError;
-
-  const eventIds = unique((currentGroups ?? []).map((group) => group.event_id));
-  if (eventIds.length === 0) return result;
-
-  const { data: eventGroups, error: eventGroupsError } = await supabase
-    .from("meeting_groups")
-    .select("event_id,code,title,legacy_ticket_instance_id")
-    .in("event_id", eventIds)
-    .not("legacy_ticket_instance_id", "is", null)
-    .returns<
-      Array<{
-        event_id: string;
-        code: string;
-        title: string;
-        legacy_ticket_instance_id: string | null;
-      }>
-    >();
-  if (eventGroupsError) throw eventGroupsError;
-
   const groupsByEvent = new Map<string, typeof eventGroups>();
   for (const group of eventGroups ?? []) {
     const current = groupsByEvent.get(group.event_id) ?? [];
@@ -1549,33 +1463,12 @@ export async function GET(request: Request) {
         ),
       ],
     );
-    const feedbackPreviewSourceInstanceIds = unique(
-      waitlistRows.map(
-        (row) => row.ticket_snapshot?.feedbackPreviewSourceInstanceId,
-      ),
-    );
-    const relationshipLookupInstanceIds = unique([
-      ...instanceIds,
-      ...feedbackPreviewSourceInstanceIds,
-    ]);
-
     let instances: InstanceRow[] = [];
     if (instanceIds.length > 0) {
       instances = await fetchInstanceRows(supabase, instanceIds);
     }
 
     const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
-    const [
-      groupStageLocationsByInstance,
-      participationStartStageByInstance,
-      eventInstanceIdsByInstance,
-      feedbackGroupByInstance,
-    ] = await Promise.all([
-      fetchGroupStageLocationsByInstance(supabase, instanceIds),
-      fetchParticipationStartStageByInstance(supabase, instanceIds),
-      fetchEventInstanceIdsByInstance(supabase, relationshipLookupInstanceIds),
-      fetchFeedbackGroupByInstance(supabase, relationshipLookupInstanceIds),
-    ]);
     const userAssignedTemplateIds = new Set(
       waitlistRows
         .filter(
@@ -1659,6 +1552,22 @@ export async function GET(request: Request) {
         candidatePage.meta,
       );
     }
+
+    const feedbackPreviewSourceInstanceIds = unique(
+      pagedTicketSourceRows.map((row) => row.ticket_snapshot?.feedbackPreviewSourceInstanceId),
+    );
+    const relationshipIds = unique([
+      ...pagedInstanceIds,
+      ...feedbackPreviewSourceInstanceIds,
+    ]);
+    const groupContext = await fetchTicketGroupContext(supabase, relationshipIds);
+    const pageGroups = groupContext.currentGroups.filter((group) =>
+      group.legacy_ticket_instance_id && pagedInstanceIdSet.has(group.legacy_ticket_instance_id),
+    );
+    const groupStageLocationsByInstance = await fetchGroupStageLocationsByInstance(supabase, pageGroups);
+    const participationStartStageByInstance = participationStartStages(pageGroups);
+    const eventInstanceIdsByInstance = eventInstanceIdsByInstanceFromContext(groupContext);
+    const feedbackGroupByInstance = feedbackGroupsByInstance(groupContext.eventGroups);
 
     const templateIds = unique([
       ...pagedTicketSourceRows.map((row) => row.ticket_template_id),

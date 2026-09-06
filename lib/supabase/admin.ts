@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl } from "./config";
 import { createTimedFetch } from "@/lib/timedFetch";
 
-export function createAdminClient(options?: { timeoutMs?: number }) {
+export function createAdminClient(options?: { timeoutMs?: number; signal?: AbortSignal }) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
   if (!serviceRoleKey) {
@@ -16,7 +16,7 @@ export function createAdminClient(options?: { timeoutMs?: number }) {
       retry: false,
     },
     ...(options?.timeoutMs
-      ? { global: { fetch: createTimedFetch(options.timeoutMs) } }
+        ? { global: { fetch: createTimedFetch(options.timeoutMs, options.signal) } }
       : {}),
     auth: {
       autoRefreshToken: false,

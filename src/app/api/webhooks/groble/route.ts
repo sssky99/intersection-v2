@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { NextResponse } from "next/server";
 import {
   calculateMembershipEndDate,
@@ -12,10 +13,15 @@ import {
   grobleCompletedPaymentKind,
 } from "@/lib/groblePaymentEvent";
 import { reportMetaPurchase } from "@/lib/metaConversions";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient as createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+const webhookScope = new AsyncLocalStorage<{ token: string; signal: AbortSignal }>();
+function createAdminClient() {
+  return createSupabaseAdminClient({ timeoutMs: 10_000, signal: webhookScope.getStore()?.signal });
+}
 
 const maxBodyBytes = 1024 * 1024;
 const signatureToleranceSeconds = 5 * 60;
@@ -197,11 +203,16 @@ async function eventStatus(
   idempotencyKey: string,
   values: Record<string, unknown>,
 ) {
-  const { error } = await createAdminClient()
+  const token = webhookScope.getStore()?.token;
+  if (!token) throw new Error("Webhook processing claim is missing.");
+  const { data, error } = await createAdminClient()
     .from("groble_webhook_events")
-    .update({ ...values, updated_at: new Date().toISOString() })
-    .eq("idempotency_key", idempotencyKey);
+    .update({ ...values, processing_lease_until: null, updated_at: new Date().toISOString() })
+    .eq("idempotency_key", idempotencyKey)
+    .eq("processing_token", token)
+    .select("id");
   if (error) throw error;
+  if (!data?.length) throw new Error("Webhook processing claim was lost.");
 }
 
 async function pendingMembershipMatch({
@@ -375,6 +386,25 @@ async function existingMembershipMatch(eventId: string) {
     plan: intent.plan,
     creditAmount: intent.credit_amount,
   };
+}
+
+async function existingApplicationMatch(eventId: string) {
+  const admin = createAdminClient();
+  const { data: transaction, error } = await admin.from("payment_transactions")
+    .select("user_id,application_group_id")
+    .eq("provider", "groble").eq("provider_event_id", eventId)
+    .eq("payment_kind", "one_time")
+    .maybeSingle<{ user_id: string | null; application_group_id: string | null }>();
+  if (error) throw error;
+  if (!transaction?.user_id || !transaction.application_group_id) return null;
+  const { data: intent, error: intentError } = await admin.from("meeting_date_payment_intents")
+    .select("id").eq("user_id", transaction.user_id)
+    .eq("application_group_id", transaction.application_group_id)
+    .order("opened_at", { ascending: false }).limit(1)
+    .maybeSingle<{ id: number | string }>();
+  if (intentError) throw intentError;
+  return { status: "matched" as const, userId: transaction.user_id,
+    groupId: transaction.application_group_id, intentId: intent?.id ?? null };
 }
 
 async function pendingApplicationMatch({
@@ -887,7 +917,7 @@ async function processPaymentCompleted(
     return membershipMatch.status;
   }
 
-  const match = await pendingApplicationMatch({
+  const match = (await existingApplicationMatch(envelope.id)) ?? await pendingApplicationMatch({
     ...details,
     paidAt: paymentOccurredAt,
   });
@@ -926,7 +956,6 @@ async function processPaymentCompleted(
   const { error: updateError } = await admin
     .from("meeting_date_applications")
     .update({
-      status: "waitlisted",
       deposit_status: "confirmed",
       deposit_confirmed_at: paidAt,
       groble_merchant_uid: details.merchantUid,
@@ -934,8 +963,15 @@ async function processPaymentCompleted(
       updated_at: new Date().toISOString(),
     })
     .eq("application_group_id", match.groupId)
-    .eq("user_id", match.userId);
+    .eq("user_id", match.userId)
+    .in("status", [...activeApplicationStatuses]);
   if (updateError) throw updateError;
+
+  const { error: advanceError } = await admin.from("meeting_date_applications")
+    .update({ status: "waitlisted", updated_at: new Date().toISOString() })
+    .eq("application_group_id", match.groupId).eq("user_id", match.userId)
+    .eq("status", "payment_pending");
+  if (advanceError) throw advanceError;
 
   const { data: paidApplications, error: paidApplicationsError } = await admin
     .from("meeting_date_applications")
@@ -1204,16 +1240,48 @@ async function processOneTimePaymentCancelled(
   if (transactionUpdateError) throw transactionUpdateError;
 
   if (transaction.user_id && transaction.application_group_id) {
+    const { data: applications, error: applicationLookupError } = await admin
+      .from("meeting_date_applications")
+      .select("ticket_participation_id")
+      .eq("user_id", transaction.user_id)
+      .eq("application_group_id", transaction.application_group_id)
+      .returns<Array<{ ticket_participation_id: number | string | null }>>();
+    if (applicationLookupError) throw applicationLookupError;
+
     const { error: applicationUpdateError } = await admin
       .from("meeting_date_applications")
       .update({
+        status: "cancelled",
         deposit_status: "refunded",
+        cancelled_at: cancelledAt,
         refund_completed_at: cancelledAt,
         updated_at: updatedAt,
       })
       .eq("user_id", transaction.user_id)
       .eq("application_group_id", transaction.application_group_id);
     if (applicationUpdateError) throw applicationUpdateError;
+
+    const participationIds = Array.from(
+      new Set(
+        (applications ?? [])
+          .map((application) => application.ticket_participation_id)
+          .filter(
+            (id): id is number | string =>
+              typeof id === "number" || typeof id === "string",
+          ),
+      ),
+    );
+    if (participationIds.length > 0) {
+      const { error: participationUpdateError } = await admin
+        .from("ticket_participations")
+        .update({
+          status: "cancelled",
+          cancelled_at: cancelledAt,
+          updated_at: updatedAt,
+        })
+        .in("id", participationIds);
+      if (participationUpdateError) throw participationUpdateError;
+    }
   }
 
   await eventStatus(idempotencyKey, {
@@ -1394,48 +1462,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Event could not be stored." }, { status: 500 });
   }
 
-  if (insertError?.code === "23505") {
-    const { data: existing, error: existingError } = await admin
-      .from("groble_webhook_events")
-      .select("processing_status")
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle<{ processing_status: string }>();
-    if (existingError) {
-      return NextResponse.json({ error: "Event could not be checked." }, { status: 500 });
-    }
-    if (existing?.processing_status !== "failed") {
-      return NextResponse.json({ ok: true, duplicate: true });
-    }
+  const token = crypto.randomUUID();
+  const { data: claims, error: claimError } = await admin.rpc("claim_groble_webhook_event", {
+    p_event_id: envelope.id,
+    p_idempotency_key: idempotencyKey,
+    p_token: token,
+  });
+  const claim = claims?.[0] as { outcome: string; event_key: string | null } | undefined;
+  if (claimError || !claim) {
+    return NextResponse.json({ error: "Event could not be claimed." }, { status: 500 });
   }
-
-  try {
-    let status: string;
-    if (
-      envelope.type === "payment.completed" ||
-      envelope.type === "subscription_payment.completed"
-    ) {
-      status = await processPaymentCompleted(envelope, idempotencyKey);
-    } else if (envelope.type === "payment.cancel_requested") {
-      status = await processCancelRequested(envelope, idempotencyKey);
-    } else if (grobleCancelledPaymentKind(envelope.type) === "one_time") {
-      status = await processOneTimePaymentCancelled(envelope, idempotencyKey);
-    } else if (grobleCancelledPaymentKind(envelope.type) === "membership") {
-      status = await processMembershipPaymentCancelled(envelope, idempotencyKey);
-    } else {
-      status = "ignored";
-      await eventStatus(idempotencyKey, {
-        processing_status: status,
-        processed_at: new Date().toISOString(),
-      });
-    }
-
-    return NextResponse.json({ ok: true, status });
-  } catch (error) {
-    console.error("[groble-webhook] processing failed", error);
-    await eventStatus(idempotencyKey, {
-      processing_status: "failed",
-      last_error: error instanceof Error ? error.message.slice(0, 1000) : "Unknown error",
-    }).catch(() => undefined);
-    return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
+  if (claim.outcome === "done") return NextResponse.json({ ok: true, duplicate: true });
+  if (claim.outcome === "busy") {
+    return NextResponse.json({ error: "Event is still processing." }, {
+      status: 503, headers: { "Retry-After": "30" },
+    });
   }
+  if (claim.outcome !== "claimed" || !claim.event_key) {
+    return NextResponse.json({ error: "Conflicting event identity." }, { status: 409 });
+  }
+  const eventKey = claim.event_key;
+  const event = envelope;
+  // Abort this worker's DB requests well before its five-minute claim expires.
+  return webhookScope.run({ token, signal: AbortSignal.timeout(60_000) }, async () => {
+    try {
+      let status: string;
+      if (
+        event.type === "payment.completed" ||
+        event.type === "subscription_payment.completed"
+      ) {
+        status = await processPaymentCompleted(event, eventKey);
+      } else if (event.type === "payment.cancel_requested") {
+        status = await processCancelRequested(event, eventKey);
+      } else if (grobleCancelledPaymentKind(event.type) === "one_time") {
+        status = await processOneTimePaymentCancelled(event, eventKey);
+      } else if (grobleCancelledPaymentKind(event.type) === "membership") {
+        status = await processMembershipPaymentCancelled(event, eventKey);
+      } else {
+        status = "ignored";
+        await eventStatus(eventKey, {
+          processing_status: status,
+          processed_at: new Date().toISOString(),
+        });
+      }
+
+      return NextResponse.json({ ok: true, status });
+    } catch (error) {
+      console.error("[groble-webhook] processing failed", error);
+      await eventStatus(eventKey, {
+        processing_status: "failed",
+        last_error: error instanceof Error ? error.message.slice(0, 1000) : "Unknown error",
+      }).catch(() => undefined);
+      return NextResponse.json({ error: "Webhook processing failed." }, { status: 500 });
+    }
+  });
 }

@@ -1,50 +1,17 @@
 "use client";
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { startVisiblePolling } from "@/lib/visiblePolling";
+
 import {
-  ArrowRight,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  Clock3,
-  LogOut,
-  Loader2,
-  Mail,
-  MapPin,
-  MessageCircle,
-  X,
-  PenLine,
-  Sparkles,
-  Ticket as TicketIcon,
-  UserRound,
-  WandSparkles,
-} from "lucide-react";
-import dynamic from "next/dynamic";
-import { createPortal } from "react-dom";
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
-import { SafeImage } from "@/components/SafeImage";
-import {
+  IntersectionTicketCard,
   formatTicketDateLabel,
   formatTicketTimeLabel,
-  IntersectionTicketCard,
 } from "@/components/IntersectionTicketCard";
 import { NaverMapPreview } from "@/components/NaverMapPreview";
-import { VibeAxisBar, VibeGraph } from "@/components/vibe/VibeGraph";
+import { SafeImage } from "@/components/SafeImage";
 import {
-  vibeAxisConfig,
   type VibeAxis,
-  type VibeScores,
+  type VibeScores
 } from "@/components/vibe/vibeGraphConfig";
 import {
   preferenceQuestions,
@@ -61,22 +28,20 @@ import {
   profileSectionValuesQuestions,
 } from "@/data/profileDetailQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
-import {
-  MatchingLoader,
-  MeetingRecommendation,
-} from "@/features/meetings/MeetingRecommendation";
-import { ConversationCards } from "@/features/meetings/ConversationCards";
-import { useDragScroll } from "@/features/app/useDragScroll";
+import { AlgorithmParametersOverlay } from "@/features/app/AlgorithmParametersOverlay";
 import {
   CompactParticipationSparkleProgress,
   ParticipationProgressOverlay,
 } from "@/features/app/ParticipationSparkleProgress";
 import { PreferenceProfileTab } from "@/features/app/PreferenceProfileTab";
-import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
-import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
-import { OnboardingGuidePreview } from "@/features/onboarding/OnboardingGuidePreview";
 import { ProfileQuestionSectionOverlay } from "@/features/app/ProfileQuestionSectionOverlay";
-import { AlgorithmParametersOverlay } from "@/features/app/AlgorithmParametersOverlay";
+import { ProfileUpgradeLockedTab } from "@/features/app/ProfileUpgradeLockedTab";
+import { useDragScroll } from "@/features/app/useDragScroll";
+import { ConversationCards } from "@/features/meetings/ConversationCards";
+import {
+  MatchingLoader,
+  MeetingRecommendation,
+} from "@/features/meetings/MeetingRecommendation";
 import {
   TicketDetailContent,
   type TicketDetailSectionKey,
@@ -86,6 +51,8 @@ import {
   displayMembershipStatus,
   hasCurrentMembershipAccess,
 } from "@/features/membership/membershipTypes";
+import { OnboardingGuidePreview } from "@/features/onboarding/OnboardingGuidePreview";
+import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import {
   identifyAnalyticsUser,
   trackEvent,
@@ -94,15 +61,9 @@ import {
 import {
   canCancelMeetingDateApplication,
   meetingDateApplicationMatchesTicket,
-  meetingDateApplicationStatusLabels,
-  meetingDateSchedule,
-  type MeetingDateApplication,
+  type MeetingDateApplication
 } from "@/lib/meetingDateApplications";
 import { createClient } from "@/lib/supabase/client";
-import {
-  ticketFeedbackBodyText,
-  ticketStageText,
-} from "@/lib/ticketStageCopy";
 import { courseStepOpenOffsetMinutes } from "@/lib/ticketCourse";
 import { ticketStartAtInKst } from "@/lib/ticketDate";
 import {
@@ -112,12 +73,15 @@ import {
   saveGuestTicketInteraction,
   ticketInteractionBadgeLabel,
   ticketInteractionCanRespond,
-  ticketInteractionShowsDeadline,
-  ticketInteractionStatusLabel,
+  ticketInteractionShowsDeadline
 } from "@/lib/ticketInteractions";
-import type { ProfileRow } from "@/types/profile";
+import {
+  ticketFeedbackBodyText,
+  ticketStageText,
+} from "@/lib/ticketStageCopy";
 import type { BlindDateUserOffer } from "@/types/blindDate";
-import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
+import type { ProfileRow } from "@/types/profile";
+import type { ProfileQuestion,QuestionAnswer } from "@/types/question";
 import type {
   GatheringTicket,
   TicketArrivalStatus,
@@ -129,7 +93,37 @@ import type {
   UserTicketsResponse,
 } from "@/types/ticket";
 import type { Gender } from "@/types/user";
+import { AnimatePresence,motion,useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Clock3,
+  Loader2,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Sparkles,
+  Ticket as TicketIcon,
+  UserRound,
+  WandSparkles,
+  X
+} from "lucide-react";
+import dynamic from "next/dynamic";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
 
 const LazyMeetingChat = dynamic(
   () => import("@/features/chat/MeetingChat").then((module) => module.MeetingChat),
@@ -356,14 +350,6 @@ function profileVibeScores(profile: ProfileRow, answers: AnswerMap): VibeScores 
   };
 }
 
-function profileName(profile: ProfileRow) {
-  return profile.name?.trim() || "나";
-}
-
-function profileInitial(profile: ProfileRow) {
-  return profileNickname(profile);
-}
-
 function fallbackNickname(name: string | null | undefined) {
   const korean = (name ?? "").replace(/[^가-힣]/g, "");
   return korean.length >= 2 ? korean.slice(-2) : korean || "??";
@@ -464,7 +450,7 @@ async function fetchUserTickets(options: FetchUserTicketsOptions = {}) {
   }
 
   const existingRequest = userTicketsRequests.get(key);
-  if (!force && existingRequest) return existingRequest;
+  if (existingRequest) return existingRequest;
 
   const request = fetch(userTicketsRequestPath(options), { cache: "no-store" })
     .then(async (response) => {
@@ -738,7 +724,7 @@ export function AppHome({
   );
 
   const loadRemainingUserTickets = useCallback(
-    (
+    async (
       response: UserTicketsResponse,
       force = false,
       isCancelled: () => boolean = () => false,
@@ -746,7 +732,7 @@ export function AppHome({
       if (!response.hasMore || typeof response.nextOffset !== "number") return;
 
       setLoadingRemainingTickets(true);
-      void fetchUserTickets({
+      await fetchUserTickets({
         force,
         offset: response.nextOffset,
         scope: userId,
@@ -779,7 +765,7 @@ export function AppHome({
       if (isCancelled() || !response) return null;
 
       applyUserTicketsResponse(response, "replace");
-      loadRemainingUserTickets(response, force, isCancelled);
+      await loadRemainingUserTickets(response, force, isCancelled);
       return response;
     },
     [applyUserTicketsResponse, loadRemainingUserTickets, userId],
@@ -1014,16 +1000,14 @@ export function AppHome({
   }, [guestMode, operatorAccountSwitcher?.mode, readOnly, userId]);
 
   useEffect(() => {
-    if (guestMode) return;
-    const refreshTickets = () => {
-      void loadUserTicketsProgressively({
-        force: true,
-      });
-    };
-
-    const intervalId = window.setInterval(refreshTickets, 30_000);
-    return () => window.clearInterval(intervalId);
-  }, [guestMode, loadUserTicketsProgressively, readOnly]);
+    if (guestMode || (activeTab !== "browse" && activeTab !== "recommend")) return;
+    let cancelled = false;
+    const stop = startVisiblePolling(
+      () => loadUserTicketsProgressively({ force: true, isCancelled: () => cancelled }),
+      30_000,
+    );
+    return () => { cancelled = true; stop(); };
+  }, [activeTab, guestMode, loadUserTicketsProgressively]);
 
   const switchTab = (tab: AppTab) => {
     if (tab === activeTab) return;
@@ -4069,22 +4053,6 @@ function statusBadgeClass(_status: UserTicketStatus) {
   return "border-white/25 bg-white/20 text-white shadow-[0_10px_22px_rgba(0,0,0,0.2)]";
 }
 
-function detailStatusBadgeClass(status: UserTicketStatus) {
-  if (status === "payment_pending") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-  if (status === "waitlisted") {
-    return "border-sky-200 bg-sky-50 text-sky-700";
-  }
-  if (status === "feedback_open") {
-    return "border-violet-200 bg-violet-50 text-violet-700";
-  }
-  if (status === "in_progress") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  }
-  return "border-black/10 bg-black/[0.04] text-black/65";
-}
-
 const ticketProgressSteps: Array<{ key: TicketProgressStep; label: string }> = [
   { key: "applied", label: "신청 완료" },
   { key: "approved", label: "참여 확정" },
@@ -4274,13 +4242,6 @@ const appliedDetailSections: TicketDetailSectionKey[] = [
 ];
 const ticketGuidanceClass =
   "mt-4 rounded-2xl border border-[#d8d1c3]/80 bg-[#eee9df] px-4 py-3 text-xs font-bold leading-5 text-[#4b443b]";
-
-function progressStepIndex(step: TicketProgressStep) {
-  return Math.max(
-    ticketProgressSteps.findIndex((progressStep) => progressStep.key === step),
-    0,
-  );
-}
 
 function countdownText(targetIso: string | null, label: string, now: Date) {
   if (!targetIso) return null;
@@ -5050,7 +5011,6 @@ function DetailApplicationCancellationControl({
     </>
   );
 }
-
 
 const arrivalOptions: Array<{
   value: TicketArrivalStatus;
@@ -6133,27 +6093,6 @@ function MeetingStarRating({
   );
 }
 
-function TicketFeedbackPlaceholder() {
-  return (
-    <div className="py-5">
-      <section className="rounded-3xl border border-black/10 bg-white px-5 py-6 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/12 text-accent">
-          <PenLine size={20} aria-hidden />
-        </div>
-        <p className="mt-5 text-[11px] font-black uppercase tracking-[0.14em] text-accent">
-          feedback
-        </p>
-        <h2 className="mt-2 text-[23px] font-black text-black">피드백 작성 ✒️</h2>
-        <p className="mt-3 text-sm font-semibold leading-6 text-black/52">
-          이 자리에 대한 피드백을 남기는 화면이에요.
-          <br />
-          입력 항목은 곧 준비될 예정입니다.
-        </p>
-      </section>
-    </div>
-  );
-}
-
 type ProfileGenerateResponse = {
   intro?: string | null;
   generatedAt?: string | null;
@@ -6173,301 +6112,6 @@ function wait(ms: number) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-}
-
-function ProfileCompletionModal({
-  userId,
-  profile,
-  answers,
-  animationKey,
-  onComplete,
-}: {
-  userId: string;
-  profile: ProfileRow;
-  answers: AnswerMap;
-  animationKey: number;
-  onComplete: (profile: Partial<ProfileRow>) => void;
-}) {
-  const shouldReduceMotion = Boolean(useReducedMotion());
-  const displayName = profileNickname(profile);
-  const [phase, setPhase] = useState<"loading" | "typing" | "error">("loading");
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [intro, setIntro] = useState("");
-  const [generatedAt, setGeneratedAt] = useState<string | null>(
-    profile.public_intro_generated_at,
-  );
-  const [model, setModel] = useState<string | null>(profile.public_intro_model);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [typingDone, setTypingDone] = useState(false);
-  const [completionScreen, setCompletionScreen] = useState<"intro" | "vibe">(
-    "intro",
-  );
-  const [introAdvanceVisible, setIntroAdvanceVisible] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const modalProfile = useMemo(
-    () => ({
-      ...profile,
-      public_intro: intro || profile.public_intro,
-    }),
-    [intro, profile],
-  );
-  const modalVibeScores = useMemo(
-    () => profileVibeScores(modalProfile, answers),
-    [answers, modalProfile],
-  );
-
-  useEffect(() => {
-    let alive = true;
-    let messageTimer: number | null = null;
-
-    setPhase("loading");
-    setMessageIndex(0);
-    setIntro("");
-    setGeneratedAt(profile.public_intro_generated_at);
-    setModel(profile.public_intro_model);
-    setNotice(null);
-    setError(null);
-    setTypingDone(false);
-    setCompletionScreen("intro");
-    setIntroAdvanceVisible(false);
-    setClosing(false);
-
-    messageTimer = window.setInterval(() => {
-      setMessageIndex((current) =>
-        Math.min(current + 1, profileCompletionMessages.length - 1),
-      );
-    }, 500);
-
-    const loadProfile = async () => {
-      const existingIntro = profile.public_intro?.trim();
-      try {
-        const fallbackIntro =
-          "프로필을 준비하고 있어요.\n\n잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.";
-        const profilePromise = Promise.resolve<ProfileGenerateResponse>({
-          intro: existingIntro || fallbackIntro,
-          generatedAt: profile.public_intro_generated_at,
-          model: profile.public_intro_model,
-          notice: existingIntro
-            ? undefined
-            : "잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.",
-        });
-
-        const [result] = await Promise.all([profilePromise, wait(2500)]);
-        if (!alive) return;
-
-        setIntro(result.intro?.trim() || existingIntro || "");
-        setGeneratedAt(result.generatedAt ?? profile.public_intro_generated_at);
-        setModel(result.model ?? profile.public_intro_model);
-        setNotice(result.notice ?? null);
-        setPhase("typing");
-      } catch {
-        if (!alive) return;
-        setIntro(
-          existingIntro ||
-            "프로필을 준비하고 있어요.\n\n잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.",
-        );
-        setNotice("잠시 후 오른쪽 위 프로필 버튼에서 다시 확인할 수 있어요.");
-        setError(null);
-        setPhase("typing");
-      } finally {
-        if (messageTimer !== null) window.clearInterval(messageTimer);
-      }
-    };
-
-    void loadProfile();
-
-    return () => {
-      alive = false;
-      if (messageTimer !== null) window.clearInterval(messageTimer);
-    };
-  }, [
-    animationKey,
-    profile.public_intro,
-    profile.public_intro_generated_at,
-    profile.public_intro_model,
-  ]);
-
-  useEffect(() => {
-    if (!typingDone) return;
-
-    const timer = window.setTimeout(() => setIntroAdvanceVisible(true), 180);
-    return () => window.clearTimeout(timer);
-  }, [typingDone]);
-
-  const finish = async () => {
-    if (closing) return;
-    setClosing(true);
-
-    const revealedGeneratedAt = generatedAt ?? profile.public_intro_generated_at;
-    if (revealedGeneratedAt) {
-      await createClient()
-        .from("profiles")
-        .update({ public_intro_revealed_generated_at: revealedGeneratedAt })
-        .eq("user_id", userId);
-    }
-
-    onComplete({
-      public_intro: intro || profile.public_intro,
-      public_intro_generated_at: revealedGeneratedAt,
-      public_intro_revealed_generated_at: revealedGeneratedAt,
-      public_intro_model: model ?? profile.public_intro_model,
-    });
-  };
-
-  const loadingMessage = profileCompletionMessages[messageIndex].replace(
-    "{name}",
-    displayName,
-  );
-
-  return (
-    <motion.div
-      key="profile-completion-modal"
-      initial={shouldReduceMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={shouldReduceMotion ? undefined : { opacity: 0 }}
-      className="absolute inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-white/74 px-4 py-8 backdrop-blur-[5px]"
-    >
-      <motion.section
-        initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={shouldReduceMotion ? undefined : { opacity: 0, y: 10, scale: 0.98 }}
-        transition={{ duration: 0.28, ease: "easeOut" }}
-        className="w-full max-w-[390px] rounded-[30px] border border-black/10 bg-white px-5 py-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.14)]"
-      >
-        {phase === "loading" && (
-          <div className="flex min-h-[420px] flex-col items-center justify-center">
-            <ProfileCompletionLogo />
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={loadingMessage}
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  textShadow: "0 0 18px rgba(126,179,199,0.34)",
-                }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, y: -8 }}
-                transition={{ duration: 0.28, ease: "easeOut" }}
-                className="mt-8 min-h-6 text-sm font-black leading-6 text-black"
-              >
-                {loadingMessage}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-        )}
-
-        {phase === "error" && (
-          <div className="flex min-h-[360px] flex-col items-center justify-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-500">
-              <X size={20} aria-hidden />
-            </div>
-            <p className="mt-5 text-sm font-bold leading-6 text-red-600">
-              {error}
-            </p>
-          </div>
-        )}
-
-        {phase === "typing" && (
-          <AnimatePresence mode="wait" initial={false}>
-            {completionScreen === "intro" ? (
-              <motion.div
-                key="profile-completion-intro"
-                initial={shouldReduceMotion ? false : { opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, x: -14 }}
-                transition={{ duration: 0.24, ease: "easeOut" }}
-                className="flex min-h-[438px] flex-col text-left"
-              >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                  profile complete
-                </p>
-                <h2 className="mt-2 text-[24px] font-black leading-8 text-black">
-                  <span>{displayName}님의 프로필이 만들어졌어요</span>
-                </h2>
-                <div className="mt-5 min-h-[258px] rounded-[24px] border border-black/8 bg-[#fbfbfa] px-4 py-4">
-                  <div className="mb-4 text-xl font-black leading-7 text-black">
-                    {displayName}
-                  </div>
-                  <ProfileCompletionTypewriter
-                    text={intro}
-                    onComplete={() => setTypingDone(true)}
-                  />
-                </div>
-                {notice && (
-                  <p className="mt-3 rounded-2xl bg-accent/[0.08] px-4 py-3 text-[11px] font-semibold leading-5 text-black/48">
-                    {notice}
-                  </p>
-                )}
-
-                <div className="mt-auto flex items-center justify-end pt-5">
-                  <AnimatePresence>
-                    {introAdvanceVisible && (
-                      <motion.button
-                        type="button"
-                        title="나의 대화결 보기"
-                        aria-label="나의 대화결 보기"
-                        initial={
-                          shouldReduceMotion ? false : { opacity: 0, x: 10 }
-                        }
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={
-                          shouldReduceMotion
-                            ? undefined
-                            : { opacity: 0, x: 8 }
-                        }
-                        whileTap={{ scale: 0.96 }}
-                        onClick={() => setCompletionScreen("vibe")}
-                        className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(0,0,0,0.18)]"
-                      >
-                        <ArrowRight size={19} aria-hidden />
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="profile-completion-vibe"
-                initial={shouldReduceMotion ? false : { opacity: 0, x: 16 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={shouldReduceMotion ? undefined : { opacity: 0, x: 10 }}
-                transition={{ duration: 0.24, ease: "easeOut" }}
-                className="flex min-h-[438px] flex-col text-left"
-              >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-accent">
-                  conversation vibe
-                </p>
-                <VibeGraph
-                  title="나의 대화결"
-                  description="교집합이 자리를 제안할 때 참고하는 분위기예요."
-                  scores={modalVibeScores}
-                  visibleAxes={profileVibeAxes}
-                  showAxisHeader={false}
-                  scoreScale="internal"
-                  animationKey={`completion-${animationKey}-${generatedAt ?? "new"}-${completionScreen}`}
-                  className="mt-3 !rounded-[24px] !shadow-none"
-                />
-                <motion.button
-                  type="button"
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: 8 }}
-                  transition={{ delay: shouldReduceMotion ? 0 : 0.26 }}
-                  whileTap={!closing ? { scale: 0.98 } : undefined}
-                  disabled={closing}
-                  onClick={() => void finish()}
-                  className="mt-auto h-[52px] w-full rounded-full bg-black px-5 text-sm font-black text-white shadow-[0_14px_30px_rgba(0,0,0,0.16)] disabled:bg-black/25"
-                >
-                  {closing ? "이동 중..." : "나에게 맞는 자리 추천받기"}
-                </motion.button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
-      </motion.section>
-    </motion.div>
-  );
 }
 
 function ProfileCompletionLogo() {
@@ -6661,360 +6305,6 @@ function formatProfileRegenerationDate(value: string) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}.${month}.${day}`;
-}
-
-function BasicInfoPanel({
-  profile,
-  operatorAccountSwitcher,
-  switchingAccountId,
-  accountSwitchError,
-  onProfileUpdated,
-  onClose,
-  onSwitchAccount,
-  onReturnToOperator,
-}: {
-  profile: ProfileRow;
-  operatorAccountSwitcher: OperatorAccountSwitcher;
-  switchingAccountId: string | null;
-  accountSwitchError: string | null;
-  onProfileUpdated: (profile: ProfileRow) => void;
-  onClose: () => void;
-  onSwitchAccount: (targetUserId: string) => Promise<void>;
-  onReturnToOperator: () => Promise<void>;
-}) {
-  const initialDraft = useMemo<BasicInfoDraft>(
-    () => ({
-      nickname: profileNickname(profile),
-      name: profile.name ?? "",
-      phone: profile.phone ?? profile.phone_normalized ?? "",
-      gender: profile.gender ?? "",
-      birthYear: profile.birth_year == null ? "" : String(profile.birth_year),
-      mbti: profile.mbti ?? "",
-    }),
-    [
-      profile.birth_year,
-      profile.gender,
-      profile.mbti,
-      profile.name,
-      profile.nickname,
-      profile.phone,
-      profile.phone_normalized,
-    ],
-  );
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(initialDraft);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const canSave = useMemo(
-    () =>
-      isValidNickname(draft.nickname) &&
-      draft.name.trim().length > 1 &&
-      normalizePhone(draft.phone).length >= 10 &&
-      (draft.gender === "여성" || draft.gender === "남성") &&
-      isValidBasicInfoBirthYear(draft.birthYear) &&
-      mbtiOptions.includes(draft.mbti.toUpperCase()),
-    [draft],
-  );
-  const fields = [
-    { label: "닉네임", value: profileNickname(profile) },
-    { label: "이름", value: displayValue(profile.name) },
-    {
-      label: "전화번호",
-      value: displayValue(profile.phone ?? profile.phone_normalized),
-    },
-    { label: "성별", value: displayValue(profile.gender) },
-    { label: "출생연도", value: displayValue(profile.birth_year) },
-    { label: "MBTI", value: displayValue(profile.mbti) },
-  ];
-
-  useEffect(() => {
-    if (!editing) setDraft(initialDraft);
-  }, [editing, initialDraft]);
-
-  const save = async () => {
-    if (!canSave || saving) return;
-
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-
-    const normalizedPhone = normalizePhone(draft.phone);
-    const nextProfile: ProfileRow = {
-      ...profile,
-      nickname: draft.nickname.trim(),
-      name: draft.name.trim(),
-      phone: draft.phone.trim(),
-      phone_normalized: normalizedPhone,
-      gender: draft.gender,
-      birth_year: draft.birthYear,
-      mbti: draft.mbti.toUpperCase(),
-    };
-
-    const { error: saveError } = await createClient()
-      .from("profiles")
-      .update({
-        nickname: nextProfile.nickname,
-        name: nextProfile.name,
-        phone: nextProfile.phone,
-        phone_normalized: nextProfile.phone_normalized,
-        gender: nextProfile.gender,
-        birth_year: nextProfile.birth_year,
-        mbti: nextProfile.mbti,
-      })
-      .eq("user_id", profile.user_id);
-
-    if (saveError) {
-      setError("기본정보 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-      setSaving(false);
-      return;
-    }
-
-    onProfileUpdated(nextProfile);
-    setSaving(false);
-    setSaved(true);
-    setEditing(false);
-    window.setTimeout(() => setSaved(false), 1400);
-  };
-
-  const cancelEdit = () => {
-    setDraft(initialDraft);
-    setError(null);
-    setEditing(false);
-  };
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: -8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -8, scale: 0.98 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
-      className="absolute inset-x-4 top-[calc(64px+env(safe-area-inset-top))] z-40 max-h-[calc(100%_-_148px_-_env(safe-area-inset-top))] overflow-y-auto rounded-[20px] border border-black/10 bg-white p-4 shadow-[0_20px_60px_rgba(0,0,0,0.16)] scrollbar-none"
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-bold uppercase text-black/35">
-            profile
-          </p>
-          <h2 className="mt-0.5 text-base font-bold text-black">
-            기본정보 카드
-          </h2>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {editing ? (
-            <button
-              type="button"
-              onClick={cancelEdit}
-              className="h-8 rounded-full border border-black/10 px-3 text-[11px] font-semibold text-black/50"
-            >
-              취소
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              disabled={saving}
-              title="기본정보 수정"
-              aria-label="기본정보 수정"
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-black/10 text-black/50 disabled:opacity-50"
-            >
-              <PenLine size={14} aria-hidden />
-            </button>
-          )}
-          <button
-            type="button"
-            title="닫기"
-            aria-label="닫기"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-black/45"
-          >
-            <X size={17} aria-hidden />
-          </button>
-        </div>
-      </div>
-
-      {editing ? (
-        <div className="mt-4 space-y-4 border-t border-black/8 pt-4">
-          <BasicInfoField
-            label="닉네임"
-            labelAside="두 글자로 입력해주세요."
-            value={draft.nickname}
-            maxLength={2}
-            onChange={(nickname) =>
-              setDraft((current) => ({
-                ...current,
-                nickname: nickname.replace(/[^가-힣]/g, "").slice(0, 2),
-              }))
-            }
-          />
-          <BasicInfoField
-            label="이름"
-            value={draft.name}
-            onChange={(name) => setDraft((current) => ({ ...current, name }))}
-          />
-          <BasicInfoField
-            label="전화번호"
-            value={draft.phone}
-            inputMode="tel"
-            onChange={(phone) => setDraft((current) => ({ ...current, phone }))}
-          />
-
-          <fieldset>
-            <legend className="text-xs font-semibold text-black/45">성별</legend>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {(["여성", "남성"] as Gender[]).map((gender) => (
-                <button
-                  key={gender}
-                  type="button"
-                  onClick={() =>
-                    setDraft((current) => ({ ...current, gender }))
-                  }
-                  className={cn(
-                    "h-11 rounded-2xl border text-xs font-semibold transition",
-                    draft.gender === gender
-                      ? "border-black bg-black text-white"
-                      : "border-black/10 bg-white text-black/50",
-                  )}
-                >
-                  {gender}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="grid grid-cols-2 gap-3">
-            <BasicInfoBirthYearSelect
-              label="출생연도"
-              value={draft.birthYear}
-              onChange={(birthYear) =>
-                setDraft((current) => ({
-                  ...current,
-                  birthYear,
-                }))
-              }
-            />
-            <div>
-              <span className="flex items-baseline gap-2 text-xs font-semibold text-black/45">
-                <span>MBTI</span>
-              </span>
-              <MbtiSelect
-                value={draft.mbti}
-                onChange={(mbti) =>
-                  setDraft((current) => ({
-                    ...current,
-                    mbti,
-                  }))
-                }
-              />
-            </div>
-          </div>
-
-          {error && (
-            <p className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-600">
-              {error}
-            </p>
-          )}
-
-          <motion.button
-            type="button"
-            whileTap={canSave && !saving ? { scale: 0.98 } : undefined}
-            disabled={!canSave || saving}
-            onClick={() => void save()}
-            title="변경사항 저장"
-            aria-label="변경사항 저장"
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-black text-sm font-semibold text-white disabled:bg-black/[0.08] disabled:text-black/30"
-          >
-            <Check size={15} aria-hidden />
-            {saving ? "저장 중..." : "변경사항 저장"}
-          </motion.button>
-        </div>
-      ) : (
-        <>
-          <dl className="mt-4 space-y-2.5 border-t border-black/8 pt-4">
-            {fields.map((field) => (
-              <div
-                key={field.label}
-                className="flex items-center justify-between gap-4 py-1"
-              >
-                <dt className="shrink-0 text-xs font-semibold text-black/45">
-                  {field.label}
-                </dt>
-                <dd className="text-right text-xs font-semibold text-black/70">
-                  {field.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {saved && (
-            <p className="mt-4 rounded-2xl bg-accent/10 px-4 py-3 text-xs font-semibold text-accent">
-              기본정보가 저장됐어요.
-            </p>
-          )}
-
-          {operatorAccountSwitcher?.mode === "operator" && (
-            <section className="mt-4 border-t border-black/8 pt-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-black/35">
-                test account
-              </p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
-                실제 사용자 세션으로 전환합니다.
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {operatorAccountSwitcher.accounts.map((account) => {
-                  const switching = switchingAccountId === account.userId;
-                  return (
-                    <button
-                      key={account.userId}
-                      type="button"
-                      disabled={Boolean(switchingAccountId)}
-                      onClick={() => void onSwitchAccount(account.userId)}
-                      className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-black/10 bg-white text-xs font-bold text-black/65 transition hover:border-black/25 hover:text-black disabled:cursor-wait disabled:opacity-45"
-                    >
-                      {switching && (
-                        <Loader2
-                          size={13}
-                          className="animate-spin"
-                          aria-hidden
-                        />
-                      )}
-                      {account.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
-
-          {operatorAccountSwitcher?.mode === "test" && (
-            <section className="mt-4 border-t border-black/8 pt-4">
-              <button
-                type="button"
-                disabled={Boolean(switchingAccountId)}
-                onClick={() => void onReturnToOperator()}
-                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 text-xs font-bold text-red-500 transition hover:bg-red-50 disabled:cursor-wait disabled:opacity-45"
-              >
-                {switchingAccountId === "operator-return" ? (
-                  <Loader2 size={14} className="animate-spin" aria-hidden />
-                ) : (
-                  <LogOut size={14} aria-hidden />
-                )}
-                로그아웃
-              </button>
-              <p className="mt-2 text-center text-[11px] font-semibold text-black/38">
-                원래 운영자 계정으로 돌아갑니다.
-              </p>
-            </section>
-          )}
-
-          {accountSwitchError && (
-            <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-semibold leading-5 text-red-600">
-              {accountSwitchError}
-            </p>
-          )}
-        </>
-      )}
-    </motion.section>
-  );
 }
 
 function BasicInfoBirthYearSelect({

@@ -79,6 +79,7 @@ export function displayMembershipStatus({
 
 export function hasCurrentMembershipAccess({
   status,
+  startDate,
   endDate,
 }: {
   status: string | null | undefined;
@@ -87,9 +88,15 @@ export function hasCurrentMembershipAccess({
 }) {
   const today = todayKoreaDateString();
 
-  // 결제 확인 전인 pending 상태에는 기존 기간 값이 남아 있더라도
-  // 멤버십 혜택을 적용하지 않는다.
-  return status === "active" && (!endDate || endDate >= today);
+  if (status !== "active" || !startDate || !endDate) return false;
+  const validDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value;
+  };
+  return validDate(startDate) && validDate(endDate) &&
+    startDate <= today && today <= endDate;
 }
 
 function parseDateOnly(dateString: string) {
