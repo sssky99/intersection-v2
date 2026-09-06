@@ -35,7 +35,6 @@ export function BlindDateOfferList({
 }) {
   const [view, setView] = useState("active");
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [reset, setReset] = useState<{
     offer: BlindDateAdminOffer;
     participant: "a" | "b";
@@ -98,7 +97,7 @@ export function BlindDateOfferList({
       {visible.map((offer) => (
         <article
           key={offer.id}
-          className="rounded-2xl border border-black/10 bg-white p-5"
+          className="grid gap-5 rounded-2xl border border-black/10 bg-white p-5 xl:grid-cols-[minmax(180px,0.65fr)_minmax(0,2fr)]"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -122,105 +121,88 @@ export function BlindDateOfferList({
                 /2
               </p>
             </div>
-            <button
-              type="button"
-              disabled={saving}
-              aria-expanded={expanded === offer.id}
-              onClick={() =>
-                setExpanded(expanded === offer.id ? null : offer.id)
-              }
-              className="rounded-xl border px-4 py-2 text-sm disabled:opacity-40"
-            >
-              {expanded === offer.id ? "닫기" : "상세 관리"}
-            </button>
           </div>
-          {expanded === offer.id && (
-            <div className="mt-5 grid gap-5 border-t pt-5 lg:grid-cols-2">
-              <div className="space-y-4">
-                <label className="block text-sm font-semibold">
-                  상태
-                  <select
-                    aria-label="데이트 상태"
-                    value={offer.status}
-                    disabled={saving}
-                    onChange={(e) =>
-                      void onUpdate(offer.id, { status: e.target.value })
-                    }
-                    className="ml-3 rounded-xl border p-2"
+          <div className="grid min-w-0 gap-5 border-t pt-4 md:grid-cols-2 xl:border-l xl:border-t-0 xl:pl-5 xl:pt-0">
+            <div className="min-w-0 space-y-4">
+              <label className="block text-sm font-semibold">
+                상태
+                <select
+                  aria-label="데이트 상태"
+                  value={offer.status}
+                  disabled={saving}
+                  onChange={(e) =>
+                    void onUpdate(offer.id, { status: e.target.value })
+                  }
+                  className="ml-3 rounded-xl border p-2"
+                >
+                  {(Object.keys(labels) as BlindDateOfferStatus[]).map(
+                    (status) => (
+                      <option key={status} value={status}>
+                        {status === "offered" ? "초대장 생성" : labels[status]}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              {(["a", "b"] as const).map((participant) => {
+                const profile =
+                  participant === "a" ? offer.participantA : offer.participantB;
+                const dates =
+                  participant === "a"
+                    ? offer.a_available_dates
+                    : offer.b_available_dates;
+                return (
+                  <div
+                    key={participant}
+                    className="rounded-xl bg-black/[0.025] p-3 text-sm"
                   >
-                    {(Object.keys(labels) as BlindDateOfferStatus[]).map(
-                      (status) => (
-                        <option key={status} value={status}>
-                          {status === "offered"
-                            ? "초대장 생성"
-                            : labels[status]}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-                {(["a", "b"] as const).map((participant) => {
-                  const profile =
-                    participant === "a"
-                      ? offer.participantA
-                      : offer.participantB;
-                  const dates =
-                    participant === "a"
-                      ? offer.a_available_dates
-                      : offer.b_available_dates;
-                  return (
-                    <div
-                      key={participant}
-                      className="rounded-xl bg-black/[0.025] p-3 text-sm"
-                    >
-                      <p className="mb-2 font-semibold">
-                        {profile?.name || profile?.nickname || "이름 없음"} ·{" "}
-                        {profile?.phone || "전화번호 없음"}
-                      </p>
-                      <ResponseCell
-                        value={
-                          participant === "a"
-                            ? offer.a_response
-                            : offer.b_response
-                        }
-                        disabled={saving}
-                        onReset={() => setReset({ offer, participant })}
-                      />
-                      <p className="mt-2 text-xs text-black/50">
-                        가능 날짜: {dates.join(", ") || "미선택"}
-                      </p>
-                    </div>
-                  );
+                    <p className="mb-2 font-semibold">
+                      {profile?.name || profile?.nickname || "이름 없음"} ·{" "}
+                      {profile?.phone || "전화번호 없음"}
+                    </p>
+                    <ResponseCell
+                      value={
+                        participant === "a"
+                          ? offer.a_response
+                          : offer.b_response
+                      }
+                      disabled={saving}
+                      onReset={() => setReset({ offer, participant })}
+                    />
+                    <p className="mt-2 text-xs text-black/50">
+                      가능 날짜: {dates.join(", ") || "미선택"}
+                    </p>
+                  </div>
+                );
+              })}
+              <p className="text-xs text-black/50">
+                응답 마감:{" "}
+                {new Date(offer.expires_at).toLocaleString("ko-KR", {
+                  timeZone: "Asia/Seoul",
                 })}
-                <p className="text-xs text-black/50">
-                  응답 마감:{" "}
-                  {new Date(offer.expires_at).toLocaleString("ko-KR", {
-                    timeZone: "Asia/Seoul",
-                  })}
-                </p>
-              </div>
-              <OfferPlaceEditor
-                offer={offer}
-                saving={saving}
-                onSave={(
-                  o,
+              </p>
+            </div>
+            <OfferPlaceEditor
+              offer={offer}
+              saving={saving}
+              onSave={(
+                o,
+                actualPlaceName,
+                actualPlaceAddress,
+                reservationName,
+                scheduledDate,
+              ) =>
+                void onUpdate(o.id, {
                   actualPlaceName,
                   actualPlaceAddress,
                   reservationName,
-                  scheduledDate,
-                ) =>
-                  void onUpdate(o.id, {
-                    actualPlaceName,
-                    actualPlaceAddress,
-                    reservationName,
-                    ...(scheduledDate !== (o.scheduled_date ?? "")
-                      ? { scheduledDate }
-                      : {}),
-                  })
-                }
-              />
-            </div>
-          )}
+                  ...(scheduledDate !== (o.scheduled_date ?? "")
+                    ? { scheduledDate }
+                    : {}),
+                })
+              }
+            />
+          </div>
         </article>
       ))}
       {reset && (

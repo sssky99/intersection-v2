@@ -76,7 +76,7 @@ export function OfferPlaceEditor({
     scheduledDate !== (offer.scheduled_date ?? "");
 
   return (
-    <div className="grid min-w-[230px] gap-2">
+    <div className="grid min-w-0 content-start gap-2">
       <input
         value={actualPlaceName}
         disabled={saving}
