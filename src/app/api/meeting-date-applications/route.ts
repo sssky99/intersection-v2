@@ -316,50 +316,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const { data, error: cancelError } = await admin.rpc("cancel_own_meeting_application", {
+      p_application_id: current.id, p_user_id: user.id,
+    });
+    if (cancelError) {
+      if (cancelError.code === "P0001" || cancelError.code === "P0002") {
+        return NextResponse.json({ error: cancelError.message }, { status: cancelError.code === "P0002" ? 404 : 409 });
+      }
+      throw cancelError;
+    }
+    const cancelledApplication = data as DateApplicationRow;
     const now = new Date().toISOString();
-    if (
-      current.assigned_ticket_instance_id &&
-      current.ticket_participation_id !== null
-    ) {
-      const { error: participationError } = await admin.rpc(
-        "set_ticket_participation_status",
-        {
-          p_ticket_instance_id: current.assigned_ticket_instance_id,
-          p_user_id: user.id,
-          p_status: "cancelled",
-        },
-      );
-      if (participationError) throw participationError;
-    }
-
-    const { data: cancelledApplication, error: cancelError } = await admin
-      .from("meeting_date_applications")
-      .update({ status: "cancelled", cancelled_at: now, updated_at: now })
-      .eq("id", current.id)
-      .eq("user_id", user.id)
-      .in("status", ["waitlisted", "on_hold"])
-      .select(
-        "id,event_id,application_group_id,meeting_date,meeting_time,region,status,deposit_amount,deposit_status,assigned_ticket_instance_id,confirmed_at,created_at,updated_at",
-      )
-      .single<DateApplicationRow>();
-    if (cancelError) throw cancelError;
-
-    const interactionTarget = current.event_id
-      ? { column: "event_id", id: current.event_id }
-      : current.assigned_ticket_instance_id
-        ? {
-            column: "ticket_instance_id",
-            id: current.assigned_ticket_instance_id,
-          }
-        : null;
-    if (interactionTarget) {
-      const { error: interactionError } = await admin
-        .from("ticket_user_interactions")
-        .update({ status: "open", updated_at: now })
-        .eq("user_id", user.id)
-        .eq(interactionTarget.column, interactionTarget.id);
-      if (interactionError) throw interactionError;
-    }
 
     return NextResponse.json({
       application: toApplication(cancelledApplication),
@@ -838,11 +805,11 @@ export async function POST(request: NextRequest) {
         !protectedParticipationStatuses.has(
           existingParticipationResult.data?.status ?? "",
         )
-          ? admin.rpc("set_ticket_participation_status", {
-              p_ticket_instance_id: selectedTicket.id,
+          ? admin.rpc("prepare_checkout_participation", {
+              p_application_id: application.id,
+              p_instance_id: selectedTicket.id,
               p_user_id: user.id,
-              p_status: "payment_pending",
-              p_ticket_snapshot: {
+              p_snapshot: {
                 id: selectedTicket.id,
                 templateId: selectedTicket.template_id,
                 title: selectedTicket.title,

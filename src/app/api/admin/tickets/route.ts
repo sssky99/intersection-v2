@@ -1,15 +1,16 @@
+import { changesOperationalFields } from "@/server/meetings/ticketEdits";
 import { NextRequest, NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isAdminSessionTokenValid,
+} from "@/lib/adminAuth";
 import {
   meetingAtmosphereDefaultsFromProfiles,
   normalizeMeetingAtmosphereAgeBandId,
   normalizeMeetingAtmosphereGenderMood,
   type MeetingAtmosphereDefaults,
 } from "@/lib/meetingAtmosphere";
-import {
-  meetingPlaceAddress,
-  normalizeMeetingPlace,
-} from "@/lib/placePayload";
+import { meetingPlaceAddress, normalizeMeetingPlace } from "@/lib/placePayload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   courseStepOpenOffsetMinutes,
@@ -49,16 +50,11 @@ export const dynamic = "force-dynamic";
 
 type TemplateRow = Omit<
   AdminTicketTemplate,
-  | "instances"
-  | "instance_count"
-  | "participant_count"
-  | "waitlist_count"
+  "instances" | "instance_count" | "participant_count" | "waitlist_count"
 >;
 type InstanceRow = Omit<
   AdminTicketInstance,
-  | "participant_count"
-  | "waitlist_count"
-  | "participants"
+  "participant_count" | "waitlist_count" | "participants"
 >;
 type ParticipationRow = Omit<TicketParticipation, "profile">;
 type WaitlistRow = AdminTicketWaitlistEntry & {
@@ -300,7 +296,10 @@ function atmosphereInstanceId(
     return row.ticket_id;
   }
   if (row.ticket_template_id && row.meeting_date) {
-    return templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ?? null;
+    return (
+      templateDateMap.get(`${row.ticket_template_id}|${row.meeting_date}`) ??
+      null
+    );
   }
   return null;
 }
@@ -309,18 +308,20 @@ function primaryInstanceForTemplate(
   templateId: string,
   instances: AdminTicketInstance[],
 ) {
-  return instances
-    .filter((instance) => instance.template_id === templateId)
-    .sort((left, right) => {
-      const leftArchived = left.visibility === "archived" ? 1 : 0;
-      const rightArchived = right.visibility === "archived" ? 1 : 0;
-      return (
-        leftArchived - rightArchived ||
-        `${left.event_date ?? "9999"}${left.event_time ?? ""}${left.created_at}`.localeCompare(
-          `${right.event_date ?? "9999"}${right.event_time ?? ""}${right.created_at}`,
-        )
-      );
-    })[0] ?? null;
+  return (
+    instances
+      .filter((instance) => instance.template_id === templateId)
+      .sort((left, right) => {
+        const leftArchived = left.visibility === "archived" ? 1 : 0;
+        const rightArchived = right.visibility === "archived" ? 1 : 0;
+        return (
+          leftArchived - rightArchived ||
+          `${left.event_date ?? "9999"}${left.event_time ?? ""}${left.created_at}`.localeCompare(
+            `${right.event_date ?? "9999"}${right.event_time ?? ""}${right.created_at}`,
+          )
+        );
+      })[0] ?? null
+  );
 }
 
 function buildAtmosphereDefaultsByInstance({
@@ -332,7 +333,9 @@ function buildAtmosphereDefaultsByInstance({
   waitlist: WaitlistRow[];
   profileMap: Map<string, AdminProfile>;
 }) {
-  const instanceMap = new Map(instances.map((instance) => [instance.id, instance]));
+  const instanceMap = new Map(
+    instances.map((instance) => [instance.id, instance]),
+  );
   const templateDateMap = new Map(
     instances
       .filter((instance) => instance.event_date)
@@ -399,10 +402,7 @@ function testTimeTarget(mode: unknown, courseSteps: unknown = []) {
     const elapsedMinutes =
       nextOffset != null && nextOffset > selectedOffset
         ? Math.floor((selectedOffset + nextOffset) / 2)
-        : Math.min(
-            selectedOffset + 5,
-            TICKET_FEEDBACK_OPEN_OFFSET_MINUTES - 1,
-          );
+        : Math.min(selectedOffset + 5, TICKET_FEEDBACK_OPEN_OFFSET_MINUTES - 1);
 
     return new Date(now.getTime() - elapsedMinutes * 60 * 1000);
   }
@@ -464,8 +464,7 @@ function templatePayload(body: Record<string, unknown>) {
   return {
     title: text(body.title),
     template_kind: templateKind,
-    lifecycle_status:
-      visibility === "archived" ? "archived" : "active",
+    lifecycle_status: visibility === "archived" ? "archived" : "active",
     short_description: text(body.shortDescription),
     detail_summary: text(body.detailSummary),
     detail_activities: textList(body.detailActivities),
@@ -480,11 +479,10 @@ function templatePayload(body: Record<string, unknown>) {
       mainCourseStep?.activityType ?? body.activityType,
     ),
     recommendation_copy: text(body.recommendationCopy),
-    recommendation_preferred_activities:
-      normalizeRecommendationAudienceValues(
-        body.recommendationPreferredActivities,
-        activityValues,
-      ),
+    recommendation_preferred_activities: normalizeRecommendationAudienceValues(
+      body.recommendationPreferredActivities,
+      activityValues,
+    ),
     recommendation_recent_interests: normalizeRecommendationAudienceValues(
       body.recommendationRecentInterests,
       interestValues,
@@ -493,7 +491,9 @@ function templatePayload(body: Record<string, unknown>) {
     default_time: timeText(body.defaultTime),
     atmosphere_gender_mood: atmosphereGenderMood(body.atmosphereGenderMood),
     atmosphere_age_band_id: atmosphereAgeBandId(body.atmosphereAgeBandId),
-    visibility: isQuestionSample ? ("question" as TicketVisibility) : ("draft" as TicketVisibility),
+    visibility: isQuestionSample
+      ? ("question" as TicketVisibility)
+      : ("draft" as TicketVisibility),
     question_order: questionOrder(body.questionOrder),
     updated_at: new Date().toISOString(),
   };
@@ -583,7 +583,7 @@ async function fetchAllAdminTicketRows(
 
 async function loadTicketData() {
   const supabase = createAdminClient();
-  const [templateData, instanceData, participationData, profiles] =
+  const [templateData, instanceData, participationData, profiles, groupData] =
     await Promise.all([
       fetchAllAdminTicketRows((from, to) =>
         supabase
@@ -615,10 +615,29 @@ async function loadTicketData() {
           .range(from, to),
       ),
       fetchProfiles(supabase),
+      fetchAllAdminTicketRows((from, to) =>
+        supabase
+          .from("meeting_groups")
+          .select("id,event_id,legacy_ticket_instance_id")
+          .order("id")
+          .range(from, to),
+      ),
     ]);
 
+  const eventByInstance = new Map(
+    (
+      groupData as {
+        event_id: string;
+        legacy_ticket_instance_id: string | null;
+      }[]
+    )
+      .filter((group) => group.legacy_ticket_instance_id)
+      .map((group) => [group.legacy_ticket_instance_id, group.event_id]),
+  );
   const templateRows = templateData as unknown as TemplateRow[];
-  const profileMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
+  const profileMap = new Map(
+    profiles.map((profile) => [profile.user_id, profile]),
+  );
   const participations = participationData as unknown as ParticipationRow[];
   const waitlist = participations as unknown as WaitlistRow[];
   const waitlistCounts = new Map<string, number>();
@@ -639,85 +658,82 @@ async function loadTicketData() {
     }
   }
 
-  const instances = instanceRows.map(
-    (instance): AdminTicketInstance => {
-      const instanceParticipants = participations
-        .filter(
-          (participation) =>
-            participation.ticket_instance_id === instance.id &&
-            ["approved", "completed", "feedback_done"].includes(
-              participation.status,
-            ),
-        )
-        .map((participation) => ({
-          ...participation,
-          profile: profileMap.get(participation.user_id) ?? null,
-        }));
-      return {
-        ...instance,
-        place_payload: normalizeMeetingPlace(instance.place_payload),
-        place_visibility: isPlaceVisibility(instance.place_visibility)
-          ? instance.place_visibility
-          : "confirmed_only",
-        participants: instanceParticipants,
-        participant_count: instanceParticipants.length,
-        waitlist_count: waitlistCounts.get(instance.id) ?? 0,
-      };
-    },
-  );
+  const instances = instanceRows.map((instance): AdminTicketInstance => {
+    const instanceParticipants = participations
+      .filter(
+        (participation) =>
+          participation.ticket_instance_id === instance.id &&
+          ["approved", "completed", "feedback_done"].includes(
+            participation.status,
+          ),
+      )
+      .map((participation) => ({
+        ...participation,
+        profile: profileMap.get(participation.user_id) ?? null,
+      }));
+    return {
+      ...instance,
+      meeting_event_id: eventByInstance.get(instance.id) ?? null,
+      place_payload: normalizeMeetingPlace(instance.place_payload),
+      place_visibility: isPlaceVisibility(instance.place_visibility)
+        ? instance.place_visibility
+        : "confirmed_only",
+      participants: instanceParticipants,
+      participant_count: instanceParticipants.length,
+      waitlist_count: waitlistCounts.get(instance.id) ?? 0,
+    };
+  });
 
   const templates = templateRows.map((template): AdminTicketTemplate => {
-      const templateInstances = instances.filter(
-        (instance) => instance.template_id === template.id,
-      );
-      const primaryInstance = primaryInstanceForTemplate(template.id, instances);
-      const atmosphereDefaults = primaryInstance
-        ? atmosphereDefaultsByInstance.get(primaryInstance.id) ?? null
-        : null;
-      const storedCourseSteps = normalizeStoredTicketCourseSteps(
-        template.course_steps,
-      );
-      const courseSteps = ensureMinimumStoredTicketCourseSteps(
-        storedCourseSteps.length
-          ? storedCourseSteps
-          : legacyStoredTicketCourseSteps({
-              title: template.title,
-              activityType: template.activity_type,
-              imageUrl: template.image_url,
-              placeName: primaryInstance?.place_name,
-              address: primaryInstance?.address,
-              place: primaryInstance?.place_payload,
-            }),
-      );
+    const templateInstances = instances.filter(
+      (instance) => instance.template_id === template.id,
+    );
+    const primaryInstance = primaryInstanceForTemplate(template.id, instances);
+    const atmosphereDefaults = primaryInstance
+      ? (atmosphereDefaultsByInstance.get(primaryInstance.id) ?? null)
+      : null;
+    const storedCourseSteps = normalizeStoredTicketCourseSteps(
+      template.course_steps,
+    );
+    const courseSteps = ensureMinimumStoredTicketCourseSteps(
+      storedCourseSteps.length
+        ? storedCourseSteps
+        : legacyStoredTicketCourseSteps({
+            title: template.title,
+            activityType: template.activity_type,
+            imageUrl: template.image_url,
+            placeName: primaryInstance?.place_name,
+            address: primaryInstance?.address,
+            place: primaryInstance?.place_payload,
+          }),
+    );
 
-      return {
-        ...template,
-        course_steps: courseSteps,
-        detail_activities: dbTextList(template.detail_activities),
-        detail_flow: dbTextList(template.detail_flow),
-        detail_good_for: dbTextList(template.detail_good_for),
-        atmosphere_gender_mood: atmosphereGenderMood(
-          template.atmosphere_gender_mood,
-        ),
-        atmosphere_age_band_id: atmosphereAgeBandId(
-          template.atmosphere_age_band_id,
-        ),
-        atmosphere_default_gender_mood:
-          atmosphereDefaults?.genderMood ?? null,
-        atmosphere_default_age_band_id: atmosphereDefaults?.ageBandId ?? null,
-        instances: templateInstances,
-        instance_count: templateInstances.length,
-        participant_count: templateInstances.reduce(
-          (sum, instance) => sum + instance.participant_count,
-          0,
-        ),
-        waitlist_count: templateInstances.reduce(
-          (sum, instance) => sum + instance.waitlist_count,
-          0,
-        ),
-      };
-    },
-  );
+    return {
+      ...template,
+      course_steps: courseSteps,
+      detail_activities: dbTextList(template.detail_activities),
+      detail_flow: dbTextList(template.detail_flow),
+      detail_good_for: dbTextList(template.detail_good_for),
+      atmosphere_gender_mood: atmosphereGenderMood(
+        template.atmosphere_gender_mood,
+      ),
+      atmosphere_age_band_id: atmosphereAgeBandId(
+        template.atmosphere_age_band_id,
+      ),
+      atmosphere_default_gender_mood: atmosphereDefaults?.genderMood ?? null,
+      atmosphere_default_age_band_id: atmosphereDefaults?.ageBandId ?? null,
+      instances: templateInstances,
+      instance_count: templateInstances.length,
+      participant_count: templateInstances.reduce(
+        (sum, instance) => sum + instance.participant_count,
+        0,
+      ),
+      waitlist_count: templateInstances.reduce(
+        (sum, instance) => sum + instance.waitlist_count,
+        0,
+      ),
+    };
+  });
 
   return { templates, profiles, waitlist };
 }
@@ -806,7 +822,11 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
     } else if (action === "duplicate_template") {
       const templateId = text(body?.templateId);
-      if (!templateId) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+      if (!templateId)
+        return NextResponse.json(
+          { error: "잘못된 요청입니다." },
+          { status: 400 },
+        );
 
       const { data: source, error: sourceError } = await supabase
         .from("ticket_templates")
@@ -831,8 +851,7 @@ export async function POST(request: NextRequest) {
           stage_copy: sourceTemplate.stage_copy ?? {},
           image_url: sourceTemplate.image_url,
           course_steps: ensureMinimumStoredTicketCourseSteps(
-            normalizeStoredTicketCourseSteps(sourceTemplate.course_steps)
-              .length
+            normalizeStoredTicketCourseSteps(sourceTemplate.course_steps).length
               ? normalizeStoredTicketCourseSteps(sourceTemplate.course_steps)
               : legacyStoredTicketCourseSteps({
                   title: sourceTemplate.title,
@@ -875,8 +894,8 @@ export async function POST(request: NextRequest) {
           .select(instanceSelect)
           .eq("template_id", templateId);
         if (instancesError) throw instancesError;
-        const sourceInstanceRows =
-          (sourceInstances ?? []) as unknown as InstanceRow[];
+        const sourceInstanceRows = (sourceInstances ??
+          []) as unknown as InstanceRow[];
         if (sourceInstanceRows.length) {
           const { error } = await supabase.from("ticket_instances").insert(
             sourceInstanceRows.map((instance) => ({
@@ -892,7 +911,8 @@ export async function POST(request: NextRequest) {
               operation_note: instance.operation_note,
               place_visibility: instance.place_visibility,
               visibility: "draft",
-              remaining_seat_label_count: instance.remaining_seat_label_count ?? 0,
+              remaining_seat_label_count:
+                instance.remaining_seat_label_count ?? 0,
               minimum_participant_count: instance.minimum_participant_count,
               max_participant_count: instance.max_participant_count,
             })),
@@ -915,7 +935,11 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
     } else if (action === "duplicate_instance") {
       const instanceId = text(body?.instanceId);
-      if (!instanceId) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+      if (!instanceId)
+        return NextResponse.json(
+          { error: "잘못된 요청입니다." },
+          { status: 400 },
+        );
       const { data: source, error: sourceError } = await supabase
         .from("ticket_instances")
         .select(instanceSelect)
@@ -936,7 +960,8 @@ export async function POST(request: NextRequest) {
         operation_note: sourceInstance.operation_note,
         place_visibility: sourceInstance.place_visibility,
         visibility: "draft",
-        remaining_seat_label_count: sourceInstance.remaining_seat_label_count ?? 0,
+        remaining_seat_label_count:
+          sourceInstance.remaining_seat_label_count ?? 0,
         minimum_participant_count: sourceInstance.minimum_participant_count,
         max_participant_count: sourceInstance.max_participant_count,
       });
@@ -988,7 +1013,10 @@ export async function POST(request: NextRequest) {
       const instanceId = text(body?.instanceId);
       const profileId = text(body?.profileId);
       if (!instanceId || !profileId) {
-        return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+        return NextResponse.json(
+          { error: "잘못된 요청입니다." },
+          { status: 400 },
+        );
       }
 
       const { data: instance, error: instanceError } = await supabase
@@ -1014,8 +1042,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const { error } = await supabase.rpc("set_ticket_participation_status", {
-        p_ticket_instance_id: instanceId,
+      const { error } = await supabase.rpc("admin_set_instance_member_status", {
+        p_instance_id: instanceId,
         p_user_id: profileId,
         p_status: "approved",
       });
@@ -1038,13 +1066,19 @@ export async function POST(request: NextRequest) {
         .eq("id", instanceId);
       if (error) throw error;
     } else {
-      return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "지원하지 않는 작업입니다." },
+        { status: 400 },
+      );
     }
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
     if (error instanceof AdminTicketRequestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
     }
     console.error("[admin tickets]", { action, error });
     return NextResponse.json(
@@ -1063,10 +1097,50 @@ export async function PATCH(request: NextRequest) {
   > | null;
   const entity = body?.entity;
   const id = text(body?.id);
-  if (!id) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+  if (!id)
+    return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
 
   try {
     const supabase = createAdminClient();
+    const operationalInstanceId =
+      entity === "instance"
+        ? id
+        : entity === "ticket"
+          ? text(body?.instanceId)
+          : null;
+    if (
+      operationalInstanceId &&
+      (await changesOperationalFields(
+        supabase,
+        operationalInstanceId,
+        entity === "ticket"
+          ? ticketPayloads(body ?? {}).occurrence
+          : instancePayload(body ?? {}),
+      ))
+    ) {
+      throw new AdminTicketRequestError(
+        "행사에 연결된 티켓의 일정·장소는 행사 관리에서 수정해주세요.",
+        409,
+      );
+    }
+    if (entity === "publication") {
+      if (!isTicketVisibility(body?.visibility)) {
+        throw new AdminTicketRequestError("공개 상태가 올바르지 않습니다.");
+      }
+      const { data, error } = await supabase
+        .from("ticket_instances")
+        .update({
+          visibility: body.visibility,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .select("id")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data)
+        throw new AdminTicketRequestError("티켓을 찾을 수 없습니다.", 404);
+      return NextResponse.json(await loadTicketData());
+    }
     if (entity === "ticket") {
       const payloads = ticketPayloads(body ?? {});
       const instanceId = text(body?.instanceId);
@@ -1102,25 +1176,43 @@ export async function PATCH(request: NextRequest) {
     } else if (entity === "template") {
       const payload = templatePayload(body ?? {});
       if (!payload.title) {
-        return NextResponse.json({ error: "템플릿 제목을 입력해주세요." }, { status: 400 });
+        return NextResponse.json(
+          { error: "템플릿 제목을 입력해주세요." },
+          { status: 400 },
+        );
       }
-      const { error } = await supabase.from("ticket_templates").update(payload).eq("id", id);
+      const { error } = await supabase
+        .from("ticket_templates")
+        .update(payload)
+        .eq("id", id);
       if (error) throw error;
     } else if (entity === "instance") {
       const payload = instancePayload(body ?? {});
       if (!payload.title) {
-        return NextResponse.json({ error: "세부 티켓명을 입력해주세요." }, { status: 400 });
+        return NextResponse.json(
+          { error: "세부 티켓명을 입력해주세요." },
+          { status: 400 },
+        );
       }
-      const { error } = await supabase.from("ticket_instances").update(payload).eq("id", id);
+      const { error } = await supabase
+        .from("ticket_instances")
+        .update(payload)
+        .eq("id", id);
       if (error) throw error;
     } else {
-      return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "지원하지 않는 작업입니다." },
+        { status: 400 },
+      );
     }
 
     return NextResponse.json(await loadTicketData());
   } catch (error) {
     if (error instanceof AdminTicketRequestError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
     }
     console.error("[admin tickets]", { entity, id, error });
     return NextResponse.json(
@@ -1211,8 +1303,8 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const supabase = createAdminClient();
-    const { error } = await supabase.rpc("set_ticket_participation_status", {
-      p_ticket_instance_id: instanceId,
+    const { error } = await supabase.rpc("admin_set_instance_member_status", {
+      p_instance_id: instanceId,
       p_user_id: profileId,
       p_status: "not_selected",
     });

@@ -1,86 +1,51 @@
 "use client";
+import { TicketPublicationSettings } from "./tickets/TicketPublicationSettings";
 
-import {
-  Check,
-  ChevronDown,
-  Clock3,
-  Copy,
-  Eye,
-  Image as ImageIcon,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  Users,
-  X,
-  type LucideIcon,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
-import { NaverPlacePicker } from "@/components/NaverPlacePicker";
-import {
-  normalizeMeetingAtmosphereAgeBandId,
-  normalizeMeetingAtmosphereGenderMood,
-} from "@/lib/meetingAtmosphere";
-import {
-  ticketPlaceFromLegacyFields,
-  ticketPlaceFromMeetingPlace,
-} from "@/lib/placePayload";
-import { meetingRegionFromPlace } from "@/lib/seoulRegion";
-import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
-import {
-  courseStepOpenOffsetMinutes,
-  TICKET_COURSE_MAX_STEPS,
-  ensureMinimumStoredTicketCourseSteps,
-  legacyStoredTicketCourseSteps,
-  normalizeStoredTicketCourseSteps,
-  type StoredTicketCourseStep,
-} from "@/lib/ticketCourse";
-import { defaultTicketStageCopy } from "@/lib/ticketStageCopy";
-import {
-  AdminMemberName,
-  membershipLabel,
-  profileName,
-} from "@/features/admin/adminDisplay";
 import type { AdminProfile } from "@/features/admin/adminProfile";
-import { StoredTicketDetailView } from "@/features/app/AppHome";
-import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import {
-  placeVisibilities,
-  placeVisibilityLabels,
-  ticketVisibilities,
-  ticketVisibilityLabels,
-  type AdminTicketInstance,
-  type AdminTicketCourseStep,
   type AdminTicketTemplate,
   type AdminTicketWaitlistEntry,
-  type PlaceVisibility,
-  type TicketVisibility,
 } from "@/features/admin/ticketAdminTypes";
+import { TICKET_COURSE_MAX_STEPS } from "@/lib/ticketCourse";
 import {
   MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
   MEETING_MAX_PARTICIPANT_COUNT,
-  type GatheringTicket,
-  type TicketArrivalStatus,
-  type TicketMemberIntro,
-  type TicketProgressStep,
-  type TicketStageCopy,
-  type UserTicket,
 } from "@/types/ticket";
+import { inferTicketCategory } from "@/types/ticketCategory";
+import { Eye, Image as ImageIcon, Plus, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  inferTicketCategory,
-  normalizeTicketCategory,
-  ticketCategoryOptions,
-} from "@/types/ticketCategory";
-import type { MeetingPlace } from "@/types/place";
-import type { Gender } from "@/types/user";
+  BasicEditor,
+  CourseStepsEditor,
+  TicketEditorHeader,
+} from "./tickets/TicketEditors";
 import {
-  activityLabels,
-  activityValues,
-  interestLabels,
-  interestValues,
-} from "@/data/recommendationAudience";
+  IconButton,
+  normalizeTimeValue,
+  PanelMessage,
+} from "./tickets/TicketFormControls";
+import {
+  detailTicketLabel,
+  OccurrenceManager,
+  TestTimeControl,
+  TestTimeMode,
+  testTimeOptions,
+  VisibilityBadge,
+} from "./tickets/TicketOccurrences";
+import {
+  AdminProgressPreviewModal,
+  TicketPreviewPanel,
+} from "./tickets/TicketPreview";
+import { updatedDate } from "./tickets/ticketCourseDraft";
+import {
+  draftFromTicket,
+  firstNormalizedTimeValue,
+  primaryInstance,
+  progressPreviewUserTicket,
+  ticketPreview,
+  ticketRequestBody,
+} from "./tickets/ticketDraft";
+import { TicketDraft } from "./tickets/ticketDraftTypes";
 
 type TicketData = {
   templates: AdminTicketTemplate[];
@@ -88,127 +53,8 @@ type TicketData = {
   waitlist: AdminTicketWaitlistEntry[];
 };
 
-type TestTimeMode =
-  | "applied"
-  | "approved"
-  | "pre_start"
-  | "in_progress"
-  | "feedback"
-  | "closed"
-  | `activity:${number}`;
-
-type TestTimeOption = {
-  mode: TestTimeMode;
-  label: string;
-  description: string;
-};
-
-const testTimeBaseOptions: TestTimeOption[] = [
-  { mode: "applied", label: "신청", description: "시작 24시간 전" },
-  { mode: "approved", label: "확정", description: "시작 12시간 전" },
-  { mode: "pre_start", label: "시작 전", description: "시작 1시간 전" },
-  { mode: "feedback", label: "피드백", description: "시작 3시간 후" },
-  { mode: "closed", label: "종료", description: "채팅 종료 후" },
-];
-
-function testTimeOptions(courseSteps: AdminTicketCourseStep[]) {
-  const activityOptions = courseSteps.length
-    ? courseSteps.slice(0, TICKET_COURSE_MAX_STEPS).map((step, index) => ({
-        mode: `activity:${index + 1}` as TestTimeMode,
-        label: `${index + 1}차 활동`,
-        description: `시작 ${courseStepOpenOffsetMinutes(step.openOffsetMinutes, index)}분 후`,
-      }))
-    : [
-        {
-          mode: "in_progress" as const,
-          label: "진행 중",
-          description: "시작 5분 후",
-        },
-      ];
-
-  return [
-    ...testTimeBaseOptions.slice(0, 3),
-    ...activityOptions,
-    ...testTimeBaseOptions.slice(3),
-  ];
-}
-
-type TicketCourseStepDraft = {
-  id: string;
-  order: number;
-  title: string;
-  activityType: string;
-  imageUrl: string;
-  placeName: string;
-  address: string;
-  place: MeetingPlace | null;
-  openOffsetMinutes: string;
-  isMainActivity: boolean;
-};
-
-type TicketDraft = {
-  templateKind: "experience" | "question_sample";
-  title: string;
-  shortDescription: string;
-  detailSummary: string;
-  detailActivities: string;
-  detailFlow: string;
-  detailGoodFor: string;
-  detailNotice: string;
-  stagePaymentPendingText: string;
-  stageWaitlistedText: string;
-  stageAppliedText: string;
-  stageApprovedText: string;
-  stagePreStartText: string;
-  stageInProgressText: string;
-  stageFeedbackOpenText: string;
-  feedbackTitle: string;
-  feedbackBody: string;
-  imageUrl: string;
-  courseSteps: TicketCourseStepDraft[];
-  moodTags: string;
-  activityType: string;
-  recommendationCopy: string;
-  recommendationPreferredActivities: string[];
-  recommendationRecentInterests: string[];
-  eventDate: string;
-  eventTime: string;
-  region: string;
-  placeName: string;
-  address: string;
-  place: MeetingPlace | null;
-  atmosphereGenderMood: string;
-  atmosphereAgeBandId: string;
-  operationCode: string;
-  operationNote: string;
-  placeVisibility: PlaceVisibility;
-  visibility: TicketVisibility;
-  questionOrder: string;
-  remainingSeatLabelCount: string;
-  minimumParticipantCount: string;
-  maxParticipantCount: string;
-};
-
 let ticketDataCache: TicketData | null = null;
 let ticketDataRequest: Promise<TicketData> | null = null;
-
-const minuteSteps = ["00", "15", "30", "45"] as const;
-const timePeriods = ["오전", "오후"] as const;
-const timeHours = Array.from({ length: 12 }, (_, hour) =>
-  String(hour + 1).padStart(2, "0"),
-);
-type TimePeriod = (typeof timePeriods)[number];
-const editableTicketVisibilities = ticketVisibilities.filter(
-  (visibility) => visibility !== "question" && visibility !== "invite_only",
-);
-const ticketCategorySelectOptions = [
-  { value: "", label: "카테고리 선택" },
-  ...ticketCategoryOptions,
-];
-
-const fixedDetailNotices = [
-  "상세 장소는 참여 확정 후 안내돼요.",
-];
 
 async function fetchTicketData(force = false) {
   if (!force && ticketDataCache) return ticketDataCache;
@@ -232,671 +78,14 @@ async function fetchTicketData(force = false) {
   return ticketDataRequest;
 }
 
-function cn(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
-
-function lines(value: string, limit?: number) {
-  const items = value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return typeof limit === "number" ? items.slice(0, limit) : items;
-}
-
-function prose(value: string) {
-  const text = value.trim();
-  return text ? [text] : [];
-}
-
-function customNoticeLines(value: string) {
-  return lines(value).filter((item) => !fixedDetailNotices.includes(item));
-}
-
-function customNoticeText(value: string) {
-  return customNoticeLines(value).join("\n");
-}
-
-function tags(value: string) {
-  return value
-    .split("#")
-    .map((tag) => tag.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function limitTagInput(value: string) {
-  return value;
-}
-
-function normalizeTimeValue(value: string | null | undefined) {
-  const match = value?.trim().match(/^(\d{1,2}):(\d{2})/);
-  if (!match) return "";
-
-  const hour = Number(match[1]);
-  if (!Number.isFinite(hour)) return "";
-
-  const minute = minuteSteps.includes(match[2] as (typeof minuteSteps)[number])
-    ? match[2]
-    : "00";
-
-  return `${String(Math.max(0, Math.min(23, hour))).padStart(2, "0")}:${minute}`;
-}
-
-function firstNormalizedTimeValue(
-  ...values: Array<string | null | undefined>
-) {
-  for (const value of values) {
-    const normalized = normalizeTimeValue(value);
-    if (normalized) return normalized;
-  }
-  return "";
-}
-
-function parseTimeParts(value: string) {
-  const match = normalizeTimeValue(value).match(/^(\d{2}):(\d{2})$/);
-  const hour24 = match ? Number(match[1]) : 15;
-  const minute = match ? match[2] : "00";
-  const period: TimePeriod = hour24 >= 12 ? "오후" : "오전";
-  const hour12 = hour24 % 12 || 12;
-
-  return {
-    period,
-    hour: String(hour12).padStart(2, "0"),
-    minute: minuteSteps.includes(minute as (typeof minuteSteps)[number])
-      ? minute
-      : "00",
-  };
-}
-
-function composeTimeValue({
-  period,
-  hour,
-  minute,
-}: {
-  period: TimePeriod;
-  hour: string;
-  minute: string;
-}) {
-  const hourNumber = Number(hour);
-  const hour24 =
-    period === "오전"
-      ? hourNumber === 12
-        ? 0
-        : hourNumber
-      : hourNumber === 12
-        ? 12
-        : hourNumber + 12;
-
-  return `${String(hour24).padStart(2, "0")}:${minute}`;
-}
-
-function displayTimeValue(value: string) {
-  const normalized = normalizeTimeValue(value);
-  if (!normalized) return "시간 선택";
-  const parts = parseTimeParts(normalized);
-  return `${parts.period} ${parts.hour}:${parts.minute}`;
-}
-
-function primaryInstance(template: AdminTicketTemplate | null) {
-  if (!template?.instances.length) return null;
-
-  return [...template.instances]
-    .sort((left, right) => {
-      const leftArchived = left.visibility === "archived" ? 1 : 0;
-      const rightArchived = right.visibility === "archived" ? 1 : 0;
-      return (
-        leftArchived - rightArchived ||
-        `${left.event_date ?? "9999"}${left.event_time ?? ""}${left.created_at}`.localeCompare(
-          `${right.event_date ?? "9999"}${right.event_time ?? ""}${right.created_at}`,
-        )
-      );
-    })
-    .at(0)!;
-}
-
-const detailTicketLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
-function detailTicketLabel(index: number) {
-  const letter = detailTicketLetters[index] ?? String(index + 1);
-  return `세부티켓 ${letter}`;
-}
-
-function blankCourseStep(order: number): TicketCourseStepDraft {
-  return {
-    id: `step-${order}`,
-    order,
-    title: "",
-    activityType: "",
-    imageUrl: "",
-    placeName: "",
-    address: "",
-    place: null,
-    openOffsetMinutes: String(courseStepOpenOffsetMinutes(null, order - 1)),
-    isMainActivity: order === 1,
-  };
-}
-
-function courseStepDraftFromStored(
-  step: StoredTicketCourseStep,
-): TicketCourseStepDraft {
-  return {
-    id: step.id,
-    order: step.order,
-    title: step.title ?? "",
-    activityType: step.activityType ?? "",
-    imageUrl: step.imageUrl ?? "",
-    placeName: step.placeName ?? "",
-    address: step.address ?? "",
-    place: step.place,
-    openOffsetMinutes: String(step.openOffsetMinutes),
-    isMainActivity: step.isMainActivity,
-  };
-}
-
-function draftCourseStepsFromTicket(
-  template: AdminTicketTemplate,
-  instance: AdminTicketInstance | null,
-) {
-  const storedSteps = normalizeStoredTicketCourseSteps(template.course_steps);
-  const courseSteps = ensureMinimumStoredTicketCourseSteps(
-    storedSteps.length
-      ? storedSteps
-      : legacyStoredTicketCourseSteps({
-          title: template.title,
-          activityType: template.activity_type,
-          imageUrl: template.image_url,
-          placeName: instance?.place_name,
-          address: instance?.address,
-          place: instance?.place_payload,
-        }),
-  );
-
-  const draftSteps = courseSteps.map(courseStepDraftFromStored);
-  const instancePlace = instance?.place_payload ?? null;
-  const instancePlaceName = instance?.place_name ?? instancePlace?.name ?? null;
-  const instanceAddress =
-    instance?.address ??
-    instancePlace?.roadAddress ??
-    instancePlace?.jibunAddress ??
-    null;
-
-  if (!instancePlace && !instancePlaceName && !instanceAddress) {
-    return draftSteps;
-  }
-
-  return draftSteps.map((step, index) =>
-    index === 0
-      ? {
-          ...step,
-          place: instancePlace ?? step.place,
-          placeName: instancePlaceName ?? step.placeName,
-          address: instanceAddress ?? step.address,
-        }
-      : step,
-  );
-}
-
-function normalizeDraftCourseSteps(steps: TicketCourseStepDraft[]) {
-  const next = steps.slice(0, TICKET_COURSE_MAX_STEPS).map((step, index) => ({
-    ...step,
-    id: step.id || `step-${index + 1}`,
-    order: index + 1,
-  }));
-
-  while (next.length < 2) {
-    next.push(blankCourseStep(next.length + 1));
-  }
-
-  const mainIndex = Math.max(
-    0,
-    next.findIndex((step) => step.isMainActivity),
-  );
-
-  let previousOpenOffset = 0;
-  return next.map((step, index) => {
-    const openOffsetMinutes = Math.max(
-      previousOpenOffset,
-      courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
-    );
-    previousOpenOffset = openOffsetMinutes;
-
-    return {
-      ...step,
-      order: index + 1,
-      openOffsetMinutes: String(openOffsetMinutes),
-      isMainActivity: index === mainIndex,
-    };
-  });
-}
-
-function mainDraftCourseStep(steps: TicketCourseStepDraft[]) {
-  return (
-    steps.find((step) => step.isMainActivity) ??
-    steps[0] ??
-    blankCourseStep(1)
-  );
-}
-
-function firstDraftCourseStep(steps: TicketCourseStepDraft[]) {
-  return steps[0] ?? blankCourseStep(1);
-}
-
-function storedCourseStepsFromDraft(steps: TicketCourseStepDraft[]) {
-  return normalizeDraftCourseSteps(steps).map((step, index) => ({
-    id: step.id,
-    order: step.order,
-    title: step.title.trim() || null,
-    activityType: normalizeTicketCategory(step.activityType) ?? null,
-    imageUrl: step.imageUrl.trim() || null,
-    placeName: step.placeName.trim() || null,
-    address: step.address.trim() || null,
-    place: step.place,
-    openOffsetMinutes: courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
-    isMainActivity: step.isMainActivity,
-  }));
-}
-
-function syncDraftCourseFields(draft: TicketDraft): TicketDraft {
-  const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
-  const mainStep = mainDraftCourseStep(courseSteps);
-  const firstStep = firstDraftCourseStep(courseSteps);
-
-  return {
-    ...draft,
-    courseSteps,
-    imageUrl: mainStep.imageUrl,
-    activityType: mainStep.activityType,
-    placeName: firstStep.placeName,
-    address: firstStep.address,
-    place: firstStep.place,
-  };
-}
-
-function courseStepDraftHasContent(step: TicketCourseStepDraft) {
-  return Boolean(
-    step.title.trim() ||
-      step.activityType.trim() ||
-      step.imageUrl.trim() ||
-      step.placeName.trim() ||
-      step.address.trim() ||
-      step.place,
-  );
-}
-
-function ticketCourseStepsFromDraft(
-  draft: TicketDraft,
-): GatheringTicket["courseSteps"] {
-  return normalizeDraftCourseSteps(draft.courseSteps)
-    .filter(courseStepDraftHasContent)
-    .map((step, index) => ({
-      id: step.id,
-      order: index + 1,
-      title: step.title.trim() || null,
-      activityType: normalizeTicketCategory(step.activityType) ?? null,
-      imageUrl: step.imageUrl.trim() || null,
-      placeName: step.placeName.trim() || null,
-      address: step.address.trim() || null,
-      place:
-        ticketPlaceFromMeetingPlace(step.place) ??
-        ticketPlaceFromLegacyFields({
-          placeName: step.placeName,
-          address: step.address,
-        }),
-      openOffsetMinutes: courseStepOpenOffsetMinutes(step.openOffsetMinutes, index),
-      isMainActivity: step.isMainActivity,
-    }));
-}
-
-function stageCopyValue(
-  stageCopy: TicketStageCopy | null | undefined,
-  key: keyof TicketStageCopy,
-) {
-  return stageCopy?.[key] ?? defaultTicketStageCopy[key];
-}
-
-function draftFromTicket(
-  template: AdminTicketTemplate,
-  instance: AdminTicketInstance | null = primaryInstance(template),
-): TicketDraft {
-  const courseSteps = draftCourseStepsFromTicket(template, instance);
-  const mainCourseStep = mainDraftCourseStep(courseSteps);
-  const firstCourseStep = firstDraftCourseStep(courseSteps);
-
-  return {
-    templateKind: template.template_kind,
-    title: template.title,
-    shortDescription: template.short_description ?? "",
-    detailSummary: template.detail_summary ?? "",
-    detailActivities: template.detail_activities.join("\n"),
-    detailFlow: template.detail_flow.join("\n"),
-    detailGoodFor: template.detail_good_for.join("\n"),
-    detailNotice: customNoticeText(template.detail_notice ?? ""),
-    stagePaymentPendingText: stageCopyValue(
-      template.stage_copy,
-      "paymentPending",
-    ),
-    stageWaitlistedText: stageCopyValue(template.stage_copy, "waitlisted"),
-    stageAppliedText: stageCopyValue(template.stage_copy, "applied"),
-    stageApprovedText: stageCopyValue(template.stage_copy, "approved"),
-    stagePreStartText: stageCopyValue(template.stage_copy, "preStart"),
-    stageInProgressText: stageCopyValue(template.stage_copy, "inProgress"),
-    stageFeedbackOpenText: stageCopyValue(template.stage_copy, "feedbackOpen"),
-    feedbackTitle: stageCopyValue(template.stage_copy, "feedbackTitle"),
-    feedbackBody: stageCopyValue(template.stage_copy, "feedbackBody"),
-    imageUrl: mainCourseStep.imageUrl || template.image_url || "",
-    courseSteps,
-    moodTags: template.mood_tags.map((tag) => `#${tag}`).join(" "),
-    activityType:
-      mainCourseStep.activityType ||
-      (inferTicketCategory({
-        activityType: template.activity_type,
-        title: template.title,
-        moodTags: template.mood_tags,
-        shortDescription: template.short_description,
-      }) ??
-        ""),
-    recommendationCopy: template.recommendation_copy ?? "",
-    recommendationPreferredActivities:
-      template.recommendation_preferred_activities ?? [],
-    recommendationRecentInterests:
-      template.recommendation_recent_interests ?? [],
-    eventDate: instance?.event_date ?? "",
-    eventTime: firstNormalizedTimeValue(
-      instance?.event_time,
-      template.default_time,
-    ),
-    region: instance?.region ?? template.default_region ?? "",
-    placeName: instance?.place_name || firstCourseStep.placeName || "",
-    address: instance?.address || firstCourseStep.address || "",
-    place: instance?.place_payload ?? firstCourseStep.place ?? null,
-    atmosphereGenderMood: template.atmosphere_gender_mood ?? "",
-    atmosphereAgeBandId: template.atmosphere_age_band_id ?? "",
-    operationCode: instance?.operation_code ?? "",
-    operationNote: instance?.operation_note ?? "",
-    placeVisibility:
-      instance?.place_visibility === "hidden" ? "hidden" : "confirmed_only",
-    visibility:
-      template.template_kind === "question_sample"
-        ? "question"
-        : instance?.visibility ?? "draft",
-    questionOrder: template.question_order
-      ? String(template.question_order)
-      : template.template_kind === "question_sample"
-        ? "1"
-        : "",
-    remainingSeatLabelCount: String(
-      instance?.remaining_seat_label_count ?? 0,
-    ),
-    minimumParticipantCount: String(
-      instance?.minimum_participant_count ??
-        MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
-    ),
-    maxParticipantCount: String(instance?.max_participant_count ?? 6),
-  };
-}
-
-function stageCopyFromDraft(draft: TicketDraft): TicketStageCopy {
-  return {
-    paymentPending: draft.stagePaymentPendingText,
-    waitlisted: draft.stageWaitlistedText,
-    applied: draft.stageAppliedText,
-    approved: draft.stageApprovedText,
-    preStart: draft.stagePreStartText,
-    inProgress: draft.stageInProgressText,
-    feedbackOpen: draft.stageFeedbackOpenText,
-    feedbackTitle: draft.feedbackTitle,
-    feedbackBody: draft.feedbackBody,
-  };
-}
-
-function ticketRequestBody(draft: TicketDraft) {
-  const syncedDraft = syncDraftCourseFields(draft);
-  const mainCourseStep = mainDraftCourseStep(syncedDraft.courseSteps);
-  const eventTime = normalizeTimeValue(draft.eventTime);
-
-  return {
-    templateKind: syncedDraft.templateKind,
-    title: syncedDraft.title,
-    shortDescription: syncedDraft.shortDescription,
-    detailSummary: syncedDraft.detailSummary,
-    detailActivities: prose(syncedDraft.detailActivities),
-    detailFlow: [],
-    detailGoodFor: lines(syncedDraft.detailGoodFor),
-    detailNotice: syncedDraft.detailNotice,
-    stageCopy: stageCopyFromDraft(syncedDraft),
-    imageUrl: mainCourseStep.imageUrl,
-    courseSteps: storedCourseStepsFromDraft(syncedDraft.courseSteps),
-    moodTags: tags(syncedDraft.moodTags),
-    activityType: normalizeTicketCategory(mainCourseStep.activityType),
-    recommendationCopy: syncedDraft.recommendationCopy,
-    recommendationPreferredActivities:
-      syncedDraft.recommendationPreferredActivities,
-    recommendationRecentInterests: syncedDraft.recommendationRecentInterests,
-    defaultRegion: syncedDraft.region,
-    defaultTime: eventTime,
-    eventDate: syncedDraft.eventDate,
-    eventTime,
-    region: syncedDraft.region,
-    placeName: syncedDraft.placeName,
-    address: syncedDraft.address,
-    place: syncedDraft.place,
-    atmosphereGenderMood: syncedDraft.atmosphereGenderMood || null,
-    atmosphereAgeBandId: syncedDraft.atmosphereAgeBandId || null,
-    operationCode: syncedDraft.operationCode,
-    operationNote: syncedDraft.operationNote,
-    placeVisibility: syncedDraft.placeVisibility,
-    visibility: syncedDraft.visibility,
-    questionOrder:
-      syncedDraft.templateKind === "question_sample"
-        ? syncedDraft.questionOrder
-        : null,
-    remainingSeatLabelCount: syncedDraft.remainingSeatLabelCount,
-    minimumParticipantCount: syncedDraft.minimumParticipantCount,
-    maxParticipantCount: syncedDraft.maxParticipantCount,
-  };
-}
-
-function updatedDate(value: string) {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-}
-
-function ticketAtmospherePreview(
-  draft: TicketDraft,
-  template: AdminTicketTemplate | null,
-): GatheringTicket["atmosphere"] {
-  const ageBandOverride = normalizeMeetingAtmosphereAgeBandId(
-    draft.atmosphereAgeBandId,
-  );
-  const genderMoodOverride = normalizeMeetingAtmosphereGenderMood(
-    draft.atmosphereGenderMood,
-  );
-
-  return {
-    ageBandId:
-      ageBandOverride ?? template?.atmosphere_default_age_band_id ?? null,
-    genderMood:
-      genderMoodOverride ?? template?.atmosphere_default_gender_mood ?? null,
-    defaultAgeBandId: template?.atmosphere_default_age_band_id ?? null,
-    defaultGenderMood: template?.atmosphere_default_gender_mood ?? null,
-    ageBandOverrideId: ageBandOverride,
-    genderMoodOverride,
-  };
-}
-
-function ticketPreview(
-  draft: TicketDraft,
-  template: AdminTicketTemplate | null,
-  instance: AdminTicketInstance | null,
-): GatheringTicket {
-  const syncedDraft = syncDraftCourseFields(draft);
-  const mainCourseStep = mainDraftCourseStep(syncedDraft.courseSteps);
-  const courseSteps = ticketCourseStepsFromDraft(syncedDraft);
-  const isSampleTicket = draft.templateKind === "question_sample";
-  const shortDescription =
-    syncedDraft.shortDescription.trim() ||
-    syncedDraft.recommendationCopy.trim();
-
-  return {
-    id: instance?.id ?? template?.id ?? "preview",
-    templateId: template?.id ?? "preview",
-    title: syncedDraft.title.trim() || "새 초대장",
-    subtitle: shortDescription || "교집합 초대장",
-    date: isSampleTicket ? "" : syncedDraft.eventDate,
-    time: isSampleTicket
-      ? ""
-      : normalizeTimeValue(syncedDraft.eventTime) || "시간 미정",
-    area: isSampleTicket ? "" : syncedDraft.region.trim() || "지역 미정",
-    moodTags: tags(syncedDraft.moodTags),
-    activityType:
-      normalizeTicketCategory(mainCourseStep.activityType) ?? undefined,
-    imageUrl: mainCourseStep.imageUrl.trim() || undefined,
-    courseSteps,
-    remainingSeatCount:
-      Number.parseInt(syncedDraft.remainingSeatLabelCount, 10) || 0,
-    minimumParticipantCount:
-      Number.parseInt(syncedDraft.minimumParticipantCount, 10) ||
-      MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
-    maxParticipantCount:
-      Number.parseInt(syncedDraft.maxParticipantCount, 10) ||
-      MEETING_MAX_PARTICIPANT_COUNT,
-    peopleHint:
-      syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
-    reason: syncedDraft.recommendationCopy.trim() || shortDescription || "초대장",
-    recommendationAudience: {
-      preferredActivities: syncedDraft.recommendationPreferredActivities,
-      recentInterests: syncedDraft.recommendationRecentInterests,
-    },
-    detailSummary:
-      syncedDraft.detailSummary.trim() || shortDescription || undefined,
-    detailActivities: prose(syncedDraft.detailActivities),
-    detailFlow: [],
-    detailGoodFor: lines(syncedDraft.detailGoodFor),
-    detailNotice: syncedDraft.detailNotice.trim() || undefined,
-    place:
-      ticketPlaceFromMeetingPlace(syncedDraft.place) ??
-      ticketPlaceFromLegacyFields({
-        placeName: syncedDraft.placeName,
-        address: syncedDraft.address,
-      }),
-    stageCopy: stageCopyFromDraft(syncedDraft),
-    atmosphere: ticketAtmospherePreview(syncedDraft, template),
-  };
-}
-
-function profileGender(profile: AdminProfile | null | undefined): Gender | null {
-  if (
-    profile?.gender === "여성" ||
-    profile?.gender === "남성" ||
-    profile?.gender === "비공개" ||
-    profile?.gender === ""
-  ) {
-    return profile.gender;
-  }
-  return null;
-}
-
-function ticketStartIso(ticket: GatheringTicket) {
-  if (!ticket.date || !ticket.time) return null;
-  const normalizedTime = ticket.time.slice(0, 5);
-  const date = new Date(`${ticket.date}T${normalizedTime}:00+09:00`);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
-}
-
-function addHoursIso(iso: string | null, hours: number) {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return null;
-  return new Date(date.getTime() + hours * 60 * 60 * 1000).toISOString();
-}
-
-function memberFromProfile({
-  profile,
-  fallbackDisplayName,
-  fallbackIntro,
-  isSelf,
-  arrivalStatus,
-}: {
-  profile: AdminProfile | null;
-  fallbackDisplayName: string;
-  fallbackIntro?: string | null;
-  isSelf: boolean;
-  arrivalStatus: TicketArrivalStatus | null;
-}): TicketMemberIntro {
-  return {
-    id: profile?.user_id ?? `preview-${fallbackDisplayName}`,
-    name: profile?.name ?? fallbackDisplayName,
-    nickname: profile?.nickname ?? fallbackDisplayName,
-    photoUrl: profile?.photo_url?.trim() || null,
-    gender: profileGender(profile),
-    publicIntro: profile?.public_intro ?? fallbackIntro ?? null,
-    arrivalStatus,
-    arrivalStatusUpdatedAt: arrivalStatus ? new Date().toISOString() : null,
-    isSelf,
-  };
-}
-
-function progressPreviewUserTicket({
-  ticket,
-  draft,
-  assignedProfiles,
-  selectedInstance,
-}: {
-  ticket: GatheringTicket;
-  draft: TicketDraft;
-  assignedProfiles: AdminProfile[];
-  selectedInstance: AdminTicketInstance | null;
-}): UserTicket {
-  const startAt = ticketStartIso(ticket);
-  const firstCourseStep = firstDraftCourseStep(draft.courseSteps);
-  const members = assignedProfiles.map((profile, index) =>
-    memberFromProfile({
-      profile,
-      fallbackDisplayName: profileName(profile),
-      isSelf: index === 0,
-      arrivalStatus: index % 2 === 0 ? "on_time" : null,
-    }),
-  );
-
-  return {
-    id: `admin-preview:${ticket.id}`,
-    waitlistId: `admin-preview:${ticket.id}`,
-    ticket,
-    rawStatus: "feedback_open",
-    status: "feedback_open",
-    statusLabel: "피드백 작성 가능",
-    progressStep: "feedback",
-    progressIndex: 4,
-    meetingStartAt: startAt,
-    arrivalOpensAt: addHoursIso(startAt, -3),
-    feedbackOpensAt: addHoursIso(startAt, 3),
-    canSetArrival: true,
-    arrivalStatus: "on_time",
-    arrivalStatusUpdatedAt: new Date().toISOString(),
-    place: {
-      name:
-        (selectedInstance?.place_name ?? firstCourseStep.placeName.trim()) ||
-        null,
-      address:
-        (selectedInstance?.address ?? firstCourseStep.address.trim()) || null,
-    },
-    members,
-  };
-}
-
 export function TicketAdminPanel({
   focusTicketId,
   onFocusTicketHandled,
+  onOpenEvent,
 }: {
   focusTicketId?: string | null;
   onFocusTicketHandled?: () => void;
+  onOpenEvent?: (eventId: string) => void;
 }) {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
@@ -919,24 +108,30 @@ export function TicketAdminPanel({
     setProfiles(data.profiles ?? []);
     setWaitlist(data.waitlist ?? []);
     setSelectedTicketId((current) => {
-      if (current && data.templates.some((template) => template.id === current)) {
+      if (
+        current &&
+        data.templates.some((template) => template.id === current)
+      ) {
         return current;
       }
       return data.templates[0]?.id ?? null;
     });
   }, []);
 
-  const load = useCallback(async (force = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      hydrate(await fetchTicketData(force));
-    } catch {
-      setError("티켓 정보를 불러오지 못했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }, [hydrate]);
+  const load = useCallback(
+    async (force = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        hydrate(await fetchTicketData(force));
+      } catch {
+        setError("티켓 정보를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [hydrate],
+  );
 
   useEffect(() => {
     void load();
@@ -971,9 +166,7 @@ export function TicketAdminPanel({
 
   useEffect(() => {
     setDraft(
-      selectedTicket
-        ? draftFromTicket(selectedTicket, selectedInstance)
-        : null,
+      selectedTicket ? draftFromTicket(selectedTicket, selectedInstance) : null,
     );
     setProgressPreviewOpen(false);
   }, [selectedInstance, selectedTicket]);
@@ -997,8 +190,12 @@ export function TicketAdminPanel({
           selectedInstance,
         })
       : null;
-  const isSampleTicket =
-    draft?.templateKind === "question_sample";
+  const linkedEventId = selectedInstance?.meeting_event_id ?? null;
+  const templateHasEvent =
+    selectedTicket?.instances.some((instance) =>
+      Boolean(instance.meeting_event_id),
+    ) ?? false;
+  const isSampleTicket = draft?.templateKind === "question_sample";
 
   const filteredTickets = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -1166,8 +363,7 @@ export function TicketAdminPanel({
           baseInstance?.minimum_participant_count ??
           MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
         maxParticipantCount:
-          baseInstance?.max_participant_count ??
-          MEETING_MAX_PARTICIPANT_COUNT,
+          baseInstance?.max_participant_count ?? MEETING_MAX_PARTICIPANT_COUNT,
       },
       `${detailTicketLabel(nextIndex)}을 만들었습니다.`,
     );
@@ -1214,7 +410,8 @@ export function TicketAdminPanel({
   };
 
   const moveTestTime = async (mode: TestTimeMode) => {
-    if (!selectedInstance || selectedInstance.visibility !== "test_only") return;
+    if (!selectedInstance || selectedInstance.visibility !== "test_only")
+      return;
     const option = testTimeOptions(selectedTicket?.course_steps ?? []).find(
       (item) => item.mode === mode,
     );
@@ -1270,9 +467,10 @@ export function TicketAdminPanel({
       <header className="shrink-0 border-b border-black/10 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold">프로그램 관리</h2>
+            <h2 className="text-lg font-bold">티켓·프로그램 관리</h2>
             <p className="mt-1 text-xs font-semibold text-black/42">
-              저녁부터 다음 활동까지 이어지는 여정과 일정, 좌석을 관리합니다.
+              티켓과 프로그램 원본을 관리합니다. 실제 행사 일정·장소·조는 행사
+              관리에서 수정하세요.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1355,29 +553,82 @@ export function TicketAdminPanel({
           ) : (
             <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_390px] gap-5">
               <div className="min-w-0 space-y-5">
-                <TicketEditorHeader
-                  ticket={selectedTicket}
-                  draft={draft}
-                  saving={saving}
-                  onDraftChange={setDraft}
-                  onDuplicate={() => void duplicateTicket()}
-                  onSave={() => void saveTicket()}
-                  onDelete={() => void deleteTicket()}
-                />
-
-                {!isSampleTicket && (
-                  <CourseStepsEditor
+                {linkedEventId && (
+                  <section className="rounded-2xl border border-black/10 bg-white p-5">
+                    <h3 className="font-bold">행사에 연결된 티켓</h3>
+                    <p className="mt-2 text-sm text-black/55">
+                      {selectedInstance?.title} · {selectedInstance?.event_date}{" "}
+                      · {selectedInstance?.event_time}
+                    </p>
+                    <p className="mt-1 text-sm text-black/55">
+                      {selectedInstance?.place_name || "장소 미정"} · 참가{" "}
+                      {selectedInstance?.participant_count ?? 0}명
+                    </p>
+                    <p className="mt-3 text-xs text-black/50">
+                      일정·장소·조 변경은 행사 관리에서 반영됩니다.
+                    </p>
+                    {onOpenEvent && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenEvent(linkedEventId)}
+                        className="mt-3 rounded-xl bg-black px-4 py-2 text-sm text-white"
+                      >
+                        이 행사 관리하기
+                      </button>
+                    )}
+                  </section>
+                )}
+                {linkedEventId && selectedInstance && (
+                  <TicketPublicationSettings
+                    key={selectedInstance.id + selectedInstance.updated_at}
+                    instance={selectedInstance}
+                    saving={saving}
+                    onSave={(visibility) =>
+                      runAction(
+                        "PATCH",
+                        {
+                          entity: "publication",
+                          id: selectedInstance.id,
+                          visibility,
+                        },
+                        "티켓 공개 상태를 저장했습니다.",
+                      )
+                    }
+                  />
+                )}
+                {templateHasEvent && !linkedEventId && (
+                  <p className="rounded-xl bg-white p-4 text-sm text-black/55">
+                    이 프로그램은 다른 행사에서도 사용 중입니다. 연결된
+                    세부티켓을 선택하면 행사 관리로 이동할 수 있습니다.
+                  </p>
+                )}
+                <fieldset
+                  disabled={saving || templateHasEvent}
+                  className="space-y-5 disabled:opacity-60"
+                >
+                  <TicketEditorHeader
+                    ticket={selectedTicket}
                     draft={draft}
                     saving={saving}
                     onDraftChange={setDraft}
+                    onDuplicate={() => void duplicateTicket()}
+                    onSave={() => void saveTicket()}
+                    onDelete={() => void deleteTicket()}
                   />
-                )}
 
+                  {!isSampleTicket && (
+                    <CourseStepsEditor
+                      draft={draft}
+                      saving={saving}
+                      onDraftChange={setDraft}
+                    />
+                  )}
+                </fieldset>
                 {!isSampleTicket && (
                   <OccurrenceManager
                     instances={selectedTicket.instances}
                     selectedInstanceId={selectedInstance?.id ?? null}
-                    saving={saving}
+                    saving={saving || templateHasEvent}
                     onSelect={setSelectedInstanceId}
                     onCreate={() => void createDetailTicket()}
                     onDuplicate={() => void duplicateOccurrence()}
@@ -1385,27 +636,32 @@ export function TicketAdminPanel({
                   />
                 )}
 
-                {selectedInstance?.visibility === "test_only" && (
-                  <TestTimeControl
-                    instance={selectedInstance}
-                    courseSteps={selectedTicket.course_steps}
+                {!linkedEventId &&
+                  selectedInstance?.visibility === "test_only" && (
+                    <TestTimeControl
+                      instance={selectedInstance}
+                      courseSteps={selectedTicket.course_steps}
+                      saving={saving}
+                      onMove={(mode) => void moveTestTime(mode)}
+                    />
+                  )}
+
+                <fieldset disabled={saving || templateHasEvent}>
+                  <BasicEditor
+                    draft={draft}
                     saving={saving}
-                    onMove={(mode) => void moveTestTime(mode)}
+                    sampleOnly={isSampleTicket}
+                    onDraftChange={setDraft}
                   />
-                )}
+                </fieldset>
 
-                <BasicEditor
-                  draft={draft}
-                  saving={saving}
-                  sampleOnly={isSampleTicket}
-                  onDraftChange={setDraft}
-                />
-
-                {!isSampleTicket && progressPreviewTicket && (
-                  <ProgressPreviewLauncher
-                    onClick={() => setProgressPreviewOpen(true)}
-                  />
-                )}
+                {!templateHasEvent &&
+                  !isSampleTicket &&
+                  progressPreviewTicket && (
+                    <ProgressPreviewLauncher
+                      onClick={() => setProgressPreviewOpen(true)}
+                    />
+                  )}
               </div>
 
               {previewTicket && (
@@ -1486,7 +742,9 @@ function TicketListCard({
             : `${dateTime || "일정 미정"} · ${region || "지역 미정"}`}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <VisibilityBadge visibility={instance?.visibility ?? template.visibility} />
+          <VisibilityBadge
+            visibility={instance?.visibility ?? template.visibility}
+          />
           {!isSampleTicket && (
             <span className="rounded-full bg-black/[0.045] px-2 py-1 text-[10px] font-bold text-black/45">
               {courseCount}단계 여정
@@ -1506,903 +764,6 @@ function TicketListCard({
   );
 }
 
-function TicketEditorHeader({
-  ticket,
-  draft,
-  saving,
-  onDraftChange,
-  onDuplicate,
-  onSave,
-  onDelete,
-}: {
-  ticket: AdminTicketTemplate;
-  draft: TicketDraft;
-  saving: boolean;
-  onDraftChange: (draft: TicketDraft) => void;
-  onDuplicate: () => void;
-  onSave: () => void;
-  onDelete: () => void;
-}) {
-  const isSampleTicket = draft.templateKind === "question_sample";
-
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-            {isSampleTicket ? "sample ticket" : "course"}
-          </p>
-          <h3 className="mt-1 text-xl font-bold">
-            {draft.title || (isSampleTicket ? "새 샘플 티켓" : "새 코스")}
-          </h3>
-          <p className="mt-1 text-xs font-semibold text-black/42">
-            {ticketVisibilityLabels[draft.visibility]} ·{" "}
-            수정 {updatedDate(ticket.updated_at)}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <IconButton disabled={saving} onClick={onDuplicate} icon={Copy}>
-            복제
-          </IconButton>
-          <IconButton disabled={saving} onClick={onDelete} icon={Trash2}>
-            삭제
-          </IconButton>
-          <IconButton primary disabled={saving} onClick={onSave} icon={Check}>
-            저장
-          </IconButton>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-4 md:grid-cols-[220px_220px]">
-        <div>
-          <span className="text-xs font-semibold text-black/50">
-            {isSampleTicket ? "티켓 유형" : "코스 유형"}
-          </span>
-          <div className="mt-1.5 flex h-10 items-center rounded-xl border border-black/10 bg-black/[0.025] px-3 text-sm font-bold text-black/55">
-            {isSampleTicket ? "샘플 티켓" : "운영 코스"}
-          </div>
-        </div>
-        {isSampleTicket ? (
-          <SelectField
-            label="샘플 순서"
-            value={draft.questionOrder}
-            options={Array.from({ length: 5 }, (_, index) => {
-              const value = String(index + 1);
-              return { value, label: `${value}번째` };
-            })}
-            onChange={(questionOrder) =>
-              onDraftChange({ ...draft, questionOrder })
-            }
-          />
-        ) : (
-          <SelectField
-            label="선택 세부티켓 공개 상태"
-            value={draft.visibility}
-            options={editableTicketVisibilities.map((value) => ({
-              value,
-              label: ticketVisibilityLabels[value],
-            }))}
-            onChange={(visibility) =>
-              onDraftChange({
-                ...draft,
-                visibility: visibility as TicketVisibility,
-              })
-            }
-          />
-        )}
-      </div>
-    </section>
-  );
-}
-
-function OccurrenceManager({
-  instances,
-  selectedInstanceId,
-  saving,
-  onSelect,
-  onCreate,
-  onDuplicate,
-  onDelete,
-}: {
-  instances: AdminTicketInstance[];
-  selectedInstanceId: string | null;
-  saving: boolean;
-  onSelect: (instanceId: string) => void;
-  onCreate: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-bold">세부티켓</h3>
-          <p className="mt-1 text-xs font-semibold text-black/42">
-            한 티켓에 모인 신청자를 A/B/C 팀으로 나눕니다. 날짜와 시간은 공유하고, 장소와 참여자는 세부티켓별로 다르게 운영할 수 있어요.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <IconButton
-            disabled={saving || !selectedInstanceId}
-            onClick={onDuplicate}
-            icon={Copy}
-          >
-            세부티켓 복제
-          </IconButton>
-          <IconButton
-            disabled={saving || !selectedInstanceId}
-            onClick={onDelete}
-            icon={Trash2}
-          >
-            세부티켓 삭제
-          </IconButton>
-          <IconButton
-            primary
-            disabled={saving}
-            onClick={onCreate}
-            icon={Plus}
-          >
-            세부티켓 추가
-          </IconButton>
-        </div>
-      </div>
-
-      {instances.length ? (
-        <div className="mt-4 grid gap-2 md:grid-cols-2">
-          {instances.map((instance, index) => (
-            <button
-              key={instance.id}
-              type="button"
-              onClick={() => onSelect(instance.id)}
-              className={cn(
-                "rounded-xl border px-4 py-3 text-left transition",
-                instance.id === selectedInstanceId
-                  ? "border-accent bg-accent/10 ring-2 ring-accent/10"
-                  : "border-black/10 hover:border-black/20",
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-black">{detailTicketLabel(index)}</span>
-                <VisibilityBadge visibility={instance.visibility} />
-              </div>
-              <p className="mt-2 truncate text-sm font-bold">
-                {instance.title || detailTicketLabel(index)}
-              </p>
-              <p className="mt-2 truncate text-sm font-bold">
-                {[instance.event_date, instance.event_time]
-                  .filter(Boolean)
-                  .join(" ") || "일정 미정"}
-              </p>
-              <p className="mt-1 truncate text-xs font-semibold text-black/42">
-                {instance.place_name || instance.region || "장소 미정"} · 참여 {instance.participant_count}명
-              </p>
-              <div className="mt-3 border-t border-black/8 pt-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.08em] text-black/35">
-                  현재 그룹 멤버
-                </p>
-                {instance.participants.length ? (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {instance.participants.map((participation) => (
-                      <span
-                        key={participation.id}
-                        className="inline-flex rounded-full border border-black/8 bg-black/[0.035] px-2.5 py-1 text-[11px] font-bold text-black/70"
-                      >
-                        {participation.profile
-                          ? profileName(participation.profile)
-                          : "프로필 확인 필요"}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-[11px] font-semibold text-black/32">
-                    아직 배정된 멤버가 없습니다.
-                  </p>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-4 rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-          세부티켓 A가 아직 없습니다. 세부티켓을 추가해 주세요.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function TestTimeControl({
-  instance,
-  courseSteps,
-  saving,
-  onMove,
-}: {
-  instance: AdminTicketInstance;
-  courseSteps: AdminTicketCourseStep[];
-  saving: boolean;
-  onMove: (mode: TestTimeMode) => void;
-}) {
-  const options = testTimeOptions(courseSteps);
-
-  return (
-    <section className="rounded-2xl border border-dashed border-accent/40 bg-accent/5 p-5 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-          <Clock3 size={18} aria-hidden />
-        </div>
-        <div>
-          <h3 className="font-bold">테스트 시간 이동</h3>
-          <p className="mt-1 text-xs font-semibold leading-5 text-black/52">
-            운영자 전용 테스트 티켓에서만 사용할 수 있습니다. 단계를 선택하면
-            참여자 화면의 채팅, 도착 확인, 피드백 상태를 바로 점검할 수 있습니다.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {options.map((option) => (
-          <button
-            key={option.mode}
-            type="button"
-            disabled={saving}
-            onClick={() => onMove(option.mode)}
-            className="rounded-xl border border-black/10 bg-white px-3 py-3 text-left transition hover:border-accent hover:bg-accent/5 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <span className="block text-sm font-bold text-black">{option.label}</span>
-            <span className="mt-1 block text-[11px] font-semibold text-black/42">
-              {option.description}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <p className="mt-3 text-[11px] font-semibold text-black/42">
-        현재 설정: {[instance.event_date, instance.event_time].filter(Boolean).join(" ") || "일정 미정"}
-      </p>
-    </section>
-  );
-}
-
-function ImmediateRevealControl({
-  instance,
-  saving,
-  onReveal,
-}: {
-  instance: AdminTicketInstance;
-  saving: boolean;
-  onReveal: () => void;
-}) {
-  const revealedAt = instance.ticket_reveal_override_at
-    ? new Date(instance.ticket_reveal_override_at)
-    : null;
-  const revealed =
-    revealedAt !== null && Number.isFinite(revealedAt.getTime());
-
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent">
-            <Eye size={18} aria-hidden />
-          </div>
-          <div>
-            <h3 className="font-bold">참가자 티켓 공개</h3>
-            <p className="mt-1 text-xs font-semibold leading-5 text-black/52">
-              확정 참가자의 물음표 티켓을 24시간 공개 시점보다 먼저 열 수
-              있습니다. 여정별 활동과 장소의 순차 공개 시간은 바뀌지 않습니다.
-            </p>
-            {revealedAt && (
-              <p className="mt-2 text-[11px] font-semibold text-accent">
-                즉시 공개됨 · {revealedAt.toLocaleString("ko-KR")}
-              </p>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled={saving || revealed}
-          onClick={onReveal}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-black px-4 text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/10 disabled:text-black/35"
-        >
-          <Eye size={15} aria-hidden />
-          {revealed ? "즉시 공개됨" : "지금 공개"}
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function BasicEditor({
-  draft,
-  saving,
-  sampleOnly,
-  onDraftChange,
-}: {
-  draft: TicketDraft;
-  saving: boolean;
-  sampleOnly: boolean;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <h3 className="font-bold">기본 정보</h3>
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <TextAreaField
-          label={sampleOnly ? "샘플 티켓 제목" : "코스 이름"}
-          className="col-span-2"
-          value={draft.title}
-          onChange={(title) => onDraftChange({ ...draft, title })}
-        />
-        <FormField
-          label="분위기 태그"
-          className="col-span-2"
-          value={draft.moodTags}
-          placeholder="#영화 #산책 #편한 대화"
-          onChange={(moodTags) =>
-            onDraftChange({ ...draft, moodTags: limitTagInput(moodTags) })
-          }
-        />
-        {sampleOnly && (
-          <CourseStepsEditor
-            draft={draft}
-            saving={saving}
-            onDraftChange={onDraftChange}
-          />
-        )}
-        {!sampleOnly && (
-          <>
-            <SelectField
-              label="잔여 자리 문구"
-              value={draft.remainingSeatLabelCount}
-              options={Array.from({ length: 7 }, (_, count) => ({
-                value: String(count),
-                label: count === 0 ? "표시 안 함" : `${count}자리 남았어요`,
-              }))}
-              onChange={(remainingSeatLabelCount) =>
-                onDraftChange({ ...draft, remainingSeatLabelCount })
-              }
-            />
-            <SelectField
-              label="최소 진행 인원"
-              value={draft.minimumParticipantCount}
-              options={Array.from({ length: 19 }, (_, index) => {
-                const value = String(index + 2);
-                return { value, label: `${value}명` };
-              })}
-              onChange={(minimumParticipantCount) =>
-                onDraftChange({ ...draft, minimumParticipantCount })
-              }
-            />
-            <SelectField
-              label="최대 참여 인원"
-              value={draft.maxParticipantCount}
-              options={Array.from({ length: 19 }, (_, index) => {
-                const value = String(index + 2);
-                return { value, label: `${value}명` };
-              })}
-              onChange={(maxParticipantCount) =>
-                onDraftChange({ ...draft, maxParticipantCount })
-              }
-            />
-            <FormField
-              label="날짜"
-              type="date"
-              value={draft.eventDate}
-              onChange={(eventDate) => onDraftChange({ ...draft, eventDate })}
-            />
-            <TimeSplitField
-              label="시간"
-              value={draft.eventTime}
-              onChange={(eventTime) => onDraftChange({ ...draft, eventTime })}
-            />
-            <FormField
-              label="지역"
-              value={draft.region}
-              placeholder="성수, 을지로, 강남"
-              onChange={(region) => onDraftChange({ ...draft, region })}
-            />
-            <SelectField
-              label="장소 공개"
-              value={draft.placeVisibility}
-              options={placeVisibilities.map((value) => ({
-                value,
-                label: placeVisibilityLabels[value],
-              }))}
-              onChange={(placeVisibility) =>
-                onDraftChange({
-                  ...draft,
-                  placeVisibility: placeVisibility as PlaceVisibility,
-                })
-              }
-            />
-            <FormField
-              label="운영 코드"
-              value={draft.operationCode}
-              onChange={(operationCode) =>
-                onDraftChange({ ...draft, operationCode })
-              }
-            />
-            <TextAreaField
-              label="운영 메모"
-              className="col-span-2"
-              value={draft.operationNote}
-              onChange={(operationNote) =>
-                onDraftChange({ ...draft, operationNote })
-              }
-            />
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function CourseStepsEditor({
-  draft,
-  saving,
-  onDraftChange,
-}: {
-  draft: TicketDraft;
-  saving: boolean;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  const courseSteps = normalizeDraftCourseSteps(draft.courseSteps);
-
-  const commit = (
-    steps: TicketCourseStepDraft[],
-    patch: Partial<TicketDraft> = {},
-  ) => {
-    onDraftChange(
-      syncDraftCourseFields({
-        ...draft,
-        ...patch,
-        courseSteps: normalizeDraftCourseSteps(steps),
-      }),
-    );
-  };
-
-  const updateStep = (
-    stepId: string,
-    updater: (step: TicketCourseStepDraft) => TicketCourseStepDraft,
-    patch: Partial<TicketDraft> = {},
-  ) => {
-    commit(
-      courseSteps.map((step) => (step.id === stepId ? updater(step) : step)),
-      patch,
-    );
-  };
-
-  const setMainStep = (stepId: string) => {
-    commit(
-      courseSteps.map((step) => ({
-        ...step,
-        isMainActivity: step.id === stepId,
-      })),
-    );
-  };
-
-  const addStep = () => {
-    if (courseSteps.length >= TICKET_COURSE_MAX_STEPS) return;
-    commit([...courseSteps, blankCourseStep(courseSteps.length + 1)]);
-  };
-
-  const removeStep = (stepId: string) => {
-    if (courseSteps.length <= 2) return;
-    commit(courseSteps.filter((step) => step.id !== stepId));
-  };
-
-  return (
-    <div className="col-span-2 space-y-3 rounded-2xl border border-black/8 bg-black/[0.025] p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-bold">여정 구성</h4>
-          <p className="mt-1 text-xs font-semibold text-black/42">
-            향수 공방을 제외하고 1차 저녁 식사, 2차 활동으로 구성해요.
-            필요하면 3차까지 추가할 수 있어요.
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={saving || courseSteps.length >= TICKET_COURSE_MAX_STEPS}
-          onClick={addStep}
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
-        >
-          <Plus size={14} aria-hidden />
-          3차 여정 추가
-        </button>
-      </div>
-
-      <p className="text-[11px] font-semibold leading-5 text-black/42">
-        활동 공개 시점은 모임 시작 기준이며, 피드백은 시작 3시간 후에 고정됩니다.
-      </p>
-
-      {courseSteps.map((step, index) => {
-        const canRemove = courseSteps.length > 2 && index >= 2;
-        const stepLabel = `${index + 1}차`;
-
-        return (
-          <section
-            key={step.id}
-            className="rounded-2xl border border-black/10 bg-white p-4"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black text-accent">{stepLabel}</p>
-                <h5 className="mt-1 text-sm font-bold">
-                  {step.title.trim() || `${stepLabel} 활동`}
-                </h5>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setMainStep(step.id)}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-bold transition disabled:opacity-40",
-                    step.isMainActivity
-                      ? "bg-accent text-white"
-                      : "border border-black/10 bg-white text-black/50 hover:border-black/20 hover:text-black",
-                  )}
-                >
-                  {step.isMainActivity && <Check size={14} aria-hidden />}
-                  메인 활동
-                </button>
-                {canRemove && (
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => removeStep(step.id)}
-                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-red-500 transition hover:bg-red-50 disabled:opacity-40"
-                    aria-label={`${stepLabel} 여정 삭제`}
-                  >
-                    <Trash2 size={14} aria-hidden />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <FormField
-                label={`${stepLabel} 활동명`}
-                value={step.title}
-                placeholder={index === 0 ? "저녁 식사" : "볼링 · 전시 · 보드게임"}
-                onChange={(title) =>
-                  updateStep(step.id, (current) => ({ ...current, title }))
-                }
-              />
-              <SelectField
-                label={`${stepLabel} 활동 카테고리`}
-                value={step.activityType}
-                options={ticketCategorySelectOptions}
-                onChange={(activityType) =>
-                  updateStep(step.id, (current) => ({
-                    ...current,
-                    activityType,
-                  }))
-                }
-              />
-              <FormField
-                label={`${stepLabel} 공개 시점 (모임 시작 후 분)`}
-                type="number"
-                value={step.openOffsetMinutes}
-                placeholder="0~179"
-                onChange={(openOffsetMinutes) =>
-                  updateStep(step.id, (current) => ({
-                    ...current,
-                    openOffsetMinutes,
-                  }))
-                }
-              />
-              <NaverPlacePicker
-                className="col-span-2"
-                title={`${stepLabel} 장소 검색`}
-                value={step.place}
-                onChange={(place) => {
-                  const nextRegion = place
-                    ? meetingRegionFromPlace(place) ?? draft.region
-                    : draft.region;
-                  const shouldSyncRegion =
-                    step.isMainActivity || !draft.region.trim();
-                  updateStep(
-                    step.id,
-                    (current) => ({
-                      ...current,
-                      place,
-                      placeName: place?.name ?? current.placeName,
-                      address:
-                        place?.roadAddress ??
-                        place?.jibunAddress ??
-                        current.address,
-                    }),
-                    {
-                      region: shouldSyncRegion ? nextRegion : draft.region,
-                      placeVisibility:
-                        place && draft.placeVisibility === "hidden"
-                          ? "confirmed_only"
-                          : draft.placeVisibility,
-                    },
-                  );
-                }}
-              />
-              <FormField
-                label={`${stepLabel} 상세 장소명`}
-                value={step.placeName}
-                onChange={(placeName) =>
-                  updateStep(step.id, (current) => ({
-                    ...current,
-                    placeName,
-                  }))
-                }
-              />
-              <FormField
-                label={`${stepLabel} 상세 주소`}
-                value={step.address}
-                onChange={(address) =>
-                  updateStep(step.id, (current) => ({ ...current, address }))
-                }
-              />
-            </div>
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-function ContentEditor({
-  draft,
-  onDraftChange,
-}: {
-  draft: TicketDraft;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <h3 className="font-bold">상세 화면 문구</h3>
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <TextAreaField
-          label="한 줄 요약"
-          className="col-span-2"
-          value={draft.detailSummary}
-          onChange={(detailSummary) =>
-            onDraftChange({ ...draft, detailSummary })
-          }
-        />
-        <TextAreaField
-          label="이 자리에서는 이런 걸 해요"
-          className="col-span-2"
-          value={draft.detailActivities}
-          placeholder="이 자리에서 함께할 활동과 이야기를 자유롭게 적어주세요."
-          rows={10}
-          onChange={(detailActivities) =>
-            onDraftChange({ ...draft, detailActivities })
-          }
-        />
-        <NoticeEditor
-          value={draft.detailNotice}
-          onChange={(detailNotice) =>
-            onDraftChange({ ...draft, detailNotice })
-          }
-        />
-      </div>
-    </section>
-  );
-}
-
-function RecommendationAudienceEditor({
-  preferredActivities,
-  recentInterests,
-  disabled,
-  onPreferredActivitiesChange,
-  onRecentInterestsChange,
-}: {
-  preferredActivities: string[];
-  recentInterests: string[];
-  disabled: boolean;
-  onPreferredActivitiesChange: (values: string[]) => void;
-  onRecentInterestsChange: (values: string[]) => void;
-}) {
-  const toggle = (
-    values: string[],
-    value: string,
-    onChange: (nextValues: string[]) => void,
-  ) => {
-    if (values.includes(value)) {
-      onChange(values.filter((item) => item !== value));
-      return;
-    }
-    if (values.length >= 3) return;
-    onChange([...values, value]);
-  };
-
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div>
-        <h3 className="font-bold">추천 대상 설정</h3>
-        <p className="mt-1 text-xs font-semibold leading-5 text-black/45">
-          추천 이유에 표시할 선호 활동과 최근 관심사를 각각 최대 3개까지
-          선택해주세요.
-        </p>
-      </div>
-
-      <RecommendationAudienceChoices
-        title="선호 활동"
-        values={activityValues}
-        labels={activityLabels}
-        selectedValues={preferredActivities}
-        disabled={disabled}
-        onToggle={(value) =>
-          toggle(preferredActivities, value, onPreferredActivitiesChange)
-        }
-      />
-      <RecommendationAudienceChoices
-        title="최근 관심사"
-        values={interestValues}
-        labels={interestLabels}
-        selectedValues={recentInterests}
-        disabled={disabled}
-        onToggle={(value) =>
-          toggle(recentInterests, value, onRecentInterestsChange)
-        }
-      />
-    </section>
-  );
-}
-
-function RecommendationAudienceChoices({
-  title,
-  values,
-  labels,
-  selectedValues,
-  disabled,
-  onToggle,
-}: {
-  title: string;
-  values: string[];
-  labels: Record<string, string>;
-  selectedValues: string[];
-  disabled: boolean;
-  onToggle: (value: string) => void;
-}) {
-  return (
-    <div className="mt-5">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="text-sm font-bold">{title}</h4>
-        <span className="text-xs font-bold text-black/40">
-          {selectedValues.length}/3 선택
-        </span>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {values.map((value) => {
-          const selected = selectedValues.includes(value);
-          const selectionFull = selectedValues.length >= 3;
-
-          return (
-            <button
-              key={value}
-              type="button"
-              disabled={disabled || (!selected && selectionFull)}
-              onClick={() => onToggle(value)}
-              className={cn(
-                "inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-xs font-bold transition disabled:cursor-not-allowed",
-                selected
-                  ? "border-black bg-black text-white"
-                  : "border-black/10 bg-[#fbfbfa] text-black/55 hover:border-black/25 hover:text-black disabled:opacity-35",
-              )}
-            >
-              {selected && <Check size={13} strokeWidth={2.5} aria-hidden />}
-              {labels[value] ?? value}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function NoticeEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [editableItems, setEditableItems] = useState(() => {
-    const customItems = customNoticeLines(value);
-    return customItems.length ? customItems : [""];
-  });
-
-  useEffect(() => {
-    const customItems = customNoticeLines(value);
-    setEditableItems(customItems.length ? customItems : [""]);
-  }, [value]);
-
-  const commit = (items: string[]) => {
-    setEditableItems(items.length ? items : [""]);
-    onChange(
-      items
-        .map((item) => item.trim())
-        .filter((item) => item && !fixedDetailNotices.includes(item))
-        .join("\n"),
-    );
-  };
-
-  const updateItem = (index: number, nextValue: string) => {
-    const nextItems = [...editableItems];
-    nextItems[index] = nextValue;
-    commit(nextItems);
-  };
-
-  const addItem = () => {
-    commit([...editableItems, ""]);
-  };
-
-  const removeItem = (index: number) => {
-    const nextItems = editableItems.filter((_, itemIndex) => itemIndex !== index);
-    commit(nextItems.length ? nextItems : [""]);
-  };
-
-  return (
-    <div className="col-span-2">
-      <span className="text-xs font-semibold text-black/50">안내사항</span>
-      <div className="mt-1.5 rounded-2xl border border-black/10 bg-black/[0.025] px-4 py-4">
-        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-accent">
-          fixed
-        </p>
-        <div className="mt-2 space-y-2">
-          {fixedDetailNotices.map((notice) => (
-            <div
-              key={notice}
-              className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-black/62"
-            >
-              <Check size={14} className="shrink-0 text-accent" aria-hidden />
-              <span>{notice}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-2">
-        {editableItems.map((item, index) => (
-          <div
-            key={index}
-            className="grid grid-cols-[minmax(0,1fr)_36px] items-center gap-2"
-          >
-            <input
-              type="text"
-              value={item}
-              placeholder={
-                index === 0
-                  ? "추가 안내를 입력해요"
-                  : "다음 안내를 입력해요"
-              }
-              onChange={(event) => updateItem(index, event.target.value)}
-              className="h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
-            />
-            <button
-              type="button"
-              onClick={() => removeItem(index)}
-              disabled={editableItems.length === 1 && !item.trim()}
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-black/10 text-black/35 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"
-              aria-label={`${index + 1}번 추가 안내 삭제`}
-            >
-              <Trash2 size={14} aria-hidden />
-            </button>
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={addItem}
-        className="mt-2 inline-flex h-9 items-center gap-2 rounded-xl border border-black/10 px-3 text-xs font-bold text-black/55 transition hover:border-black/20 hover:text-black"
-      >
-        <Plus size={14} aria-hidden />
-        안내 추가
-      </button>
-    </div>
-  );
-}
-
 function ProgressPreviewLauncher({ onClick }: { onClick: () => void }) {
   return (
     <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
@@ -2418,710 +779,4 @@ function ProgressPreviewLauncher({ onClick }: { onClick: () => void }) {
   );
 }
 
-function AdminProgressPreviewModal({
-  userTicket,
-  draft,
-  saving,
-  onDraftChange,
-  onSave,
-  onClose,
-}: {
-  userTicket: UserTicket;
-  draft: TicketDraft;
-  saving: boolean;
-  onDraftChange: (draft: TicketDraft) => void;
-  onSave: () => void;
-  onClose: () => void;
-}) {
-  const [selectedProgressStep, setSelectedProgressStep] = useState<string>(
-    userTicket.progressStep,
-  );
-  const selectedCopyProgressStep = (
-    selectedProgressStep.startsWith("activity:")
-      ? "in_progress"
-      : selectedProgressStep
-  ) as TicketProgressStep;
-  const activeCopyConfig = progressStepCopyEditorConfig[selectedCopyProgressStep];
-
-  useEffect(() => {
-    setSelectedProgressStep(userTicket.progressStep);
-  }, [userTicket.id, userTicket.progressStep]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 px-4 py-6"
-      role="dialog"
-      aria-modal="true"
-      aria-label="실제 진행상황 문구 수정"
-    >
-      <div className="grid max-h-[92dvh] w-full max-w-[1040px] overflow-y-auto rounded-[32px] bg-white shadow-[0_30px_100px_rgba(0,0,0,0.28)] lg:grid-cols-[430px_minmax(0,1fr)] lg:overflow-hidden">
-        <div className="relative min-h-[560px] bg-white lg:max-h-[92dvh] lg:overflow-y-auto">
-          <StoredTicketDetailView
-            userTicket={userTicket}
-            onClose={onClose}
-            previewMode
-            selectedProgressStep={
-              selectedProgressStep as TicketProgressStep | `activity:${string}`
-            }
-            onProgressStepChange={(step) => setSelectedProgressStep(step)}
-          />
-        </div>
-
-        <aside className="min-h-0 border-t border-black/10 bg-[#fbfbfa] p-5 lg:max-h-[92dvh] lg:overflow-y-auto lg:border-l lg:border-t-0">
-          <div className="sticky top-0 z-10 -mx-5 -mt-5 border-b border-black/10 bg-[#fbfbfa]/95 px-5 py-4 backdrop-blur">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-accent">
-                  progress copy
-                </p>
-                <h3 className="mt-1 text-lg font-black">
-                  {activeCopyConfig.title}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/45 transition hover:text-black"
-                aria-label="진행상황 문구 수정 닫기"
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={onSave}
-              className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-black text-sm font-black text-white transition hover:bg-black/85 disabled:opacity-40"
-            >
-              <Check size={15} aria-hidden />
-              {saving ? "저장 중" : "저장"}
-            </button>
-          </div>
-
-          <div className="mt-5">
-            <ProgressStepCopyEditor
-              selectedProgressStep={selectedCopyProgressStep}
-              draft={draft}
-              onDraftChange={onDraftChange}
-            />
-          </div>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-type ProgressStepCopyDraftKey =
-  | "stageAppliedText"
-  | "stageApprovedText"
-  | "stagePreStartText"
-  | "stageInProgressText"
-  | "stageFeedbackOpenText"
-  | "feedbackTitle"
-  | "feedbackBody";
-
-const progressStepCopyEditorConfig: Record<
-  TicketProgressStep,
-  {
-    title: string;
-    eyebrow: string;
-    description: string;
-    fields: Array<{
-      key: ProgressStepCopyDraftKey;
-      label: string;
-      rows: number;
-    }>;
-  }
-> = {
-  applied: {
-    title: "신청 완료 문구 수정",
-    eyebrow: "applied",
-    description: "왼쪽 신청 완료 탭의 초록 안내 박스에 표시되는 문구입니다.",
-    fields: [{ key: "stageAppliedText", label: "신청 완료 안내", rows: 3 }],
-  },
-  approved: {
-    title: "참여 확정 문구 수정",
-    eyebrow: "approved",
-    description: "왼쪽 참여 확정 탭의 초록 안내 박스에 표시되는 문구입니다.",
-    fields: [{ key: "stageApprovedText", label: "참여 확정 안내", rows: 3 }],
-  },
-  pre_start: {
-    title: "시작 전 안내 문구 수정",
-    eyebrow: "pre start",
-    description: "왼쪽 시작 전 안내 탭의 초록 안내 박스에 표시되는 문구입니다.",
-    fields: [{ key: "stagePreStartText", label: "시작 전 안내", rows: 3 }],
-  },
-  in_progress: {
-    title: "진행 중 문구 수정",
-    eyebrow: "in progress",
-    description: "왼쪽 진행 중 탭의 초록 안내 박스에 표시되는 문구입니다.",
-    fields: [{ key: "stageInProgressText", label: "진행 중 안내", rows: 3 }],
-  },
-  feedback: {
-    title: "피드백 작성 문구 수정",
-    eyebrow: "feedback",
-    description:
-      "왼쪽 피드백 작성 탭의 초록 안내와 피드백 카드에 표시되는 문구입니다.",
-    fields: [
-      { key: "stageFeedbackOpenText", label: "피드백 오픈 안내", rows: 3 },
-      { key: "feedbackTitle", label: "피드백 카드 제목", rows: 1 },
-      { key: "feedbackBody", label: "피드백 카드 본문", rows: 4 },
-    ],
-  },
-};
-
-function ProgressStepCopyEditor({
-  selectedProgressStep,
-  draft,
-  onDraftChange,
-}: {
-  selectedProgressStep: TicketProgressStep;
-  draft: TicketDraft;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  const config = progressStepCopyEditorConfig[selectedProgressStep];
-
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-        {config.eyebrow}
-      </p>
-      <h3 className="mt-1 text-sm font-bold">{config.title}</h3>
-      <p className="mt-2 text-xs font-semibold leading-5 text-black/45">
-        {config.description}
-      </p>
-      <div className="mt-4 space-y-3">
-        {config.fields.map((field) => (
-          <TextAreaField
-            key={field.key}
-            label={field.label}
-            rows={field.rows}
-            value={draft[field.key]}
-            onChange={(value) =>
-              onDraftChange({ ...draft, [field.key]: value })
-            }
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ParticipantPanel({
-  instance,
-  ticketWaitlistCount,
-  assignedProfiles,
-  assignableProfiles,
-  memberQuery,
-  saving,
-  onMemberQueryChange,
-  onAddMember,
-  onRemoveMember,
-}: {
-  instance: AdminTicketInstance;
-  ticketWaitlistCount: number;
-  assignedProfiles: AdminProfile[];
-  assignableProfiles: AdminProfile[];
-  memberQuery: string;
-  saving: boolean;
-  onMemberQueryChange: (query: string) => void;
-  onAddMember: (profileId: string) => void;
-  onRemoveMember: (profileId: string) => void;
-}) {
-  return (
-    <section className="space-y-5 rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="font-bold">세부티켓 배정</h3>
-          <p className="mt-1 text-xs font-semibold text-black/42">
-            이 세부티켓 참여 {instance.participant_count}명 · 상위 티켓 신청 대기{" "}
-            {ticketWaitlistCount}명
-          </p>
-        </div>
-        <Users size={20} className="text-black/30" aria-hidden />
-      </div>
-
-      <div>
-        <h4 className="text-sm font-bold">배정된 멤버</h4>
-        <p className="mt-1 text-xs font-semibold text-black/40">
-          상위 티켓 신청자 중 이 세부티켓에 함께할 멤버를 배정합니다. 제거하면 해당 멤버의 확정 상태도 함께 취소됩니다.
-        </p>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-2">
-          {assignedProfiles.length ? (
-            assignedProfiles.map((profile) => (
-              <div
-                key={profile.user_id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-black/8 px-3 py-3"
-              >
-                <div className="min-w-0">
-                  <AdminMemberName profile={profile} />
-                  <p className="mt-1 truncate text-[11px] text-black/42">
-                    {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
-                    {profile.mbti ?? "-"} · {profile.phone ?? "-"}
-                  </p>
-                  <p className="mt-1 text-[10px] font-semibold text-accent">
-                    {membershipLabel(profile)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onRemoveMember(profile.user_id)}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-40"
-                  aria-label={`${profileName(profile)} 참여 제거`}
-                >
-                  <Trash2 size={15} aria-hidden />
-                </button>
-              </div>
-            ))
-          ) : (
-            <p className="rounded-xl border border-dashed border-black/15 py-8 text-center text-xs font-semibold text-black/35">
-              아직 이 세부티켓에 배정된 멤버가 없습니다.
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label className="relative block">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-black/30"
-              aria-hidden
-            />
-            <input
-              value={memberQuery}
-              onChange={(event) => onMemberQueryChange(event.target.value)}
-              placeholder="상위 티켓 신청자 검색"
-              className="h-10 w-full rounded-xl border border-black/10 pl-9 pr-3 text-sm outline-none focus:border-accent"
-            />
-          </label>
-          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
-            {assignableProfiles.length ? (
-              assignableProfiles.map((profile) => (
-                <button
-                  key={profile.user_id}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => onAddMember(profile.user_id)}
-                  className="flex w-full items-center justify-between rounded-xl bg-[#f7f7f5] px-3 py-2.5 text-left hover:bg-accent/12 disabled:opacity-40"
-                >
-                  <div>
-                    <AdminMemberName profile={profile} />
-                    <p className="mt-0.5 text-[10px] text-black/40">
-                      {profile.gender ?? "-"} · {profile.birth_year ?? "-"} ·{" "}
-                      {profile.mbti ?? "-"} · {profile.phone ?? "-"}
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-semibold text-accent">
-                      {membershipLabel(profile)}
-                    </p>
-                  </div>
-                  <Plus size={15} aria-hidden />
-                </button>
-              ))
-            ) : (
-              <p className="rounded-xl border border-dashed border-black/12 px-3 py-6 text-center text-xs font-semibold leading-5 text-black/35">
-                확정할 신청자가 없습니다.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-    </section>
-  );
-}
-
-function TicketPreviewPanel({
-  ticket,
-  sampleOnly,
-}: {
-  ticket: GatheringTicket;
-  sampleOnly: boolean;
-}) {
-  return (
-    <aside className="sticky top-5 self-start space-y-4">
-      <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-          ticket card
-        </p>
-        <div className="mx-auto mt-3 w-[min(78vw,320px,calc(61.73dvh-121px))]">
-          <IntersectionTicketCard
-            title={ticket.title}
-            imageUrl={ticket.imageUrl}
-            imageUrls={ticketBackgroundImageUrls(ticket)}
-            date={ticket.date}
-            time={ticket.time}
-            location={ticket.area}
-            tags={ticket.moodTags}
-            remainingSeatCount={ticket.remainingSeatCount}
-          />
-        </div>
-      </section>
-
-      {!sampleOnly && (
-        <section className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-          <p className="px-4 pt-4 text-xs font-bold uppercase tracking-[0.14em] text-accent">
-            detail
-          </p>
-          <div className="mt-3 overflow-hidden border-t border-black/8">
-            <TicketDetailHero ticket={ticket} />
-            <TicketDetailContent
-              ticket={ticket}
-              className="px-5 pb-5"
-              startWithBorder
-            />
-          </div>
-        </section>
-      )}
-    </aside>
-  );
-}
-
-function StageCopyEditor({
-  draft,
-  onDraftChange,
-}: {
-  draft: TicketDraft;
-  onDraftChange: (draft: TicketDraft) => void;
-}) {
-  return (
-    <section className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">
-        progress copy
-      </p>
-      <h3 className="mt-1 text-sm font-bold">실제 진행상황 문구</h3>
-      <div className="mt-3 space-y-3">
-        <TextAreaField
-          label="결제 확인 안내"
-          rows={2}
-          value={draft.stagePaymentPendingText}
-          onChange={(stagePaymentPendingText) =>
-            onDraftChange({ ...draft, stagePaymentPendingText })
-          }
-        />
-        <TextAreaField
-          label="대기열 안내"
-          rows={2}
-          value={draft.stageWaitlistedText}
-          onChange={(stageWaitlistedText) =>
-            onDraftChange({ ...draft, stageWaitlistedText })
-          }
-        />
-        <TextAreaField
-          label="신청 완료 단계 안내"
-          rows={2}
-          value={draft.stageAppliedText}
-          onChange={(stageAppliedText) =>
-            onDraftChange({ ...draft, stageAppliedText })
-          }
-        />
-        <TextAreaField
-          label="참여 확정 안내"
-          rows={2}
-          value={draft.stageApprovedText}
-          onChange={(stageApprovedText) =>
-            onDraftChange({ ...draft, stageApprovedText })
-          }
-        />
-        <TextAreaField
-          label="시작 전 안내"
-          rows={2}
-          value={draft.stagePreStartText}
-          onChange={(stagePreStartText) =>
-            onDraftChange({ ...draft, stagePreStartText })
-          }
-        />
-        <TextAreaField
-          label="진행 중 안내"
-          rows={2}
-          value={draft.stageInProgressText}
-          onChange={(stageInProgressText) =>
-            onDraftChange({ ...draft, stageInProgressText })
-          }
-        />
-        <TextAreaField
-          label="피드백 오픈 안내"
-          rows={2}
-          value={draft.stageFeedbackOpenText}
-          onChange={(stageFeedbackOpenText) =>
-            onDraftChange({ ...draft, stageFeedbackOpenText })
-          }
-        />
-        <TextAreaField
-          label="피드백 카드 제목"
-          rows={1}
-          value={draft.feedbackTitle}
-          onChange={(feedbackTitle) =>
-            onDraftChange({ ...draft, feedbackTitle })
-          }
-        />
-        <TextAreaField
-          label="피드백 카드 본문"
-          rows={3}
-          value={draft.feedbackBody}
-          onChange={(feedbackBody) => onDraftChange({ ...draft, feedbackBody })}
-        />
-      </div>
-    </section>
-  );
-}
-
-function VisibilityBadge({ visibility }: { visibility: TicketVisibility }) {
-  return (
-    <span className="shrink-0 rounded-full bg-black/[0.05] px-2.5 py-1 text-[10px] font-bold text-black/50">
-      {ticketVisibilityLabels[visibility]}
-    </span>
-  );
-}
-
-function IconButton({
-  primary = false,
-  disabled,
-  onClick,
-  icon: Icon,
-  children,
-}: {
-  primary?: boolean;
-  disabled: boolean;
-  onClick: () => void;
-  icon: LucideIcon;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-bold disabled:opacity-40",
-        primary
-          ? "bg-black text-white"
-          : "border border-black/10 bg-white text-black/55 hover:border-black/20 hover:text-black",
-      )}
-    >
-      <Icon size={15} aria-hidden />
-      {children}
-    </button>
-  );
-}
-
-function FormField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-  className,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  placeholder?: string;
-  className?: string;
-}) {
-  return (
-    <label className={className}>
-      <span className="text-xs font-semibold text-black/50">{label}</span>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 h-10 w-full rounded-xl border border-black/10 px-3 text-sm outline-none focus:border-accent"
-      />
-    </label>
-  );
-}
-
-function TextAreaField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  className,
-  rows,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
-  rows?: number;
-}) {
-  return (
-    <label className={className}>
-      <span className="text-xs font-semibold text-black/50">{label}</span>
-      <textarea
-        value={value}
-        placeholder={placeholder}
-        rows={rows}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "mt-1.5 w-full resize-y rounded-xl border border-black/10 px-3 py-2 text-sm leading-5 outline-none focus:border-accent",
-          rows ? "min-h-0" : "min-h-24",
-        )}
-      />
-    </label>
-  );
-}
-
-function TimeSplitField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const parts = parseTimeParts(value);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        containerRef.current?.contains(event.target)
-      ) {
-        return;
-      }
-      setOpen(false);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [open]);
-
-  const updatePart = (
-    patch: Partial<{ period: TimePeriod; hour: string; minute: string }>,
-  ) => {
-    onChange(composeTimeValue({ ...parts, ...patch }));
-  };
-
-  return (
-    <div ref={containerRef} className="relative block">
-      <span className="text-xs font-semibold text-black/50">{label}</span>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className="mt-1.5 flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-black/10 bg-[#fbfbfa] px-3 text-left text-sm font-bold text-black/72 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
-      >
-        <span>{displayTimeValue(value)}</span>
-        <Clock3 size={15} className="text-black/35" aria-hidden />
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-[calc(100%+6px)] z-50 grid w-[196px] grid-cols-3 overflow-hidden rounded-sm border border-black/20 bg-white py-1 shadow-[0_16px_42px_rgba(0,0,0,0.16)]">
-          <TimePickerColumn
-            values={timePeriods}
-            selected={parts.period}
-            onSelect={(period) => updatePart({ period })}
-          />
-          <TimePickerColumn
-            values={timeHours}
-            selected={parts.hour}
-            onSelect={(hour) => updatePart({ hour })}
-          />
-          <TimePickerColumn
-            values={minuteSteps}
-            selected={parts.minute}
-            onSelect={(minute) => {
-              updatePart({ minute });
-              setOpen(false);
-            }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TimePickerColumn<TValue extends string>({
-  values,
-  selected,
-  onSelect,
-}: {
-  values: readonly TValue[];
-  selected: string;
-  onSelect: (value: TValue) => void;
-}) {
-  return (
-    <div className="max-h-[224px] overflow-y-auto px-1 scrollbar-none">
-      {values.map((value) => (
-        <button
-          key={value}
-          type="button"
-          onClick={() => onSelect(value)}
-          className={cn(
-            "flex h-9 w-full items-center justify-center rounded-sm text-sm font-semibold transition",
-            selected === value
-              ? "bg-[#0b7cff] text-white"
-              : "text-black/78 hover:bg-black/[0.04]",
-          )}
-        >
-          {value}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-semibold text-black/50">{label}</span>
-      <div className="relative mt-1.5">
-        <select
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full appearance-none rounded-xl border border-black/10 bg-[#fbfbfa] px-3 pr-9 text-sm font-bold text-black/70 outline-none transition hover:border-black/20 focus:border-accent focus:bg-white focus:ring-4 focus:ring-accent/15"
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <ChevronDown
-          size={15}
-          aria-hidden
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/35"
-        />
-      </div>
-    </label>
-  );
-}
-
-function PanelMessage({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-black/15 px-5 text-center text-sm font-semibold text-black/40">
-      {children}
-    </div>
-  );
-}
+import { cn } from "@/lib/cn";

@@ -36,6 +36,8 @@ export type AdminMeetingGroup = {
   capacity: number;
   status: "draft" | "ready" | "confirmed" | "cancelled";
   operation_note: string | null;
+  feedback_scope_key: string | null;
+  starts_from_stage_sequence: number;
   assigned_count: number;
 };
 

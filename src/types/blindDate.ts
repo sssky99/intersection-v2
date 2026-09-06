@@ -115,22 +115,3 @@ export type BlindDateAdminOffer = {
   template: BlindDateTemplate | null;
   is_test: boolean;
 };
-
-export type BlindDateMutualCandidate = {
-  id: string;
-  participantA: BlindDateAdminProfile | null;
-  participantB: BlindDateAdminProfile | null;
-  participantAId: string;
-  participantBId: string;
-  ticketLabel: string;
-  occurredDate: string;
-  feedbackAId: string;
-  feedbackBId: string;
-  ticketInstanceId: string | null;
-  ticketTemplateId: string | null;
-  aSelectedB: boolean;
-  bSelectedA: boolean;
-  hasNegativeFeedback: boolean;
-  hasNoShowOrMannerIssue: boolean;
-  alreadyOffered: boolean;
-};

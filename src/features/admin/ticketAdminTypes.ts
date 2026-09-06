@@ -50,6 +50,7 @@ export type AdminTicketWaitlistEntry = {
 };
 
 export type AdminTicketInstance = {
+  meeting_event_id?: string | null;
   id: string;
   template_id: string;
   title: string;

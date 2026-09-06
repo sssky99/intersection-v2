@@ -5,6 +5,8 @@ export type TicketGroupRow = {
   event_id: string;
   code: string;
   title: string;
+  feedback_scope_key: string | null;
+  starts_from_stage_sequence: number;
   legacy_ticket_instance_id: string | null;
 };
 
@@ -14,7 +16,7 @@ export async function fetchTicketGroupContext(
 ) {
   if (!instanceIds.length) return { currentGroups: [], eventGroups: [] };
   const { data, error } = await client.from("meeting_groups")
-    .select("id,event_id,code,title,legacy_ticket_instance_id")
+    .select("id,event_id,code,title,legacy_ticket_instance_id,feedback_scope_key,starts_from_stage_sequence")
     .in("legacy_ticket_instance_id", [...new Set(instanceIds)])
     .returns<TicketGroupRow[]>();
   if (error) throw error;
@@ -22,7 +24,7 @@ export async function fetchTicketGroupContext(
   const eventIds = [...new Set(currentGroups.map((group) => group.event_id))];
   if (!eventIds.length) return { currentGroups, eventGroups: [] };
   const { data: eventGroups, error: eventError } = await client.from("meeting_groups")
-    .select("id,event_id,code,title,legacy_ticket_instance_id")
+    .select("id,event_id,code,title,legacy_ticket_instance_id,feedback_scope_key,starts_from_stage_sequence")
     .in("event_id", eventIds).not("legacy_ticket_instance_id", "is", null)
     .returns<TicketGroupRow[]>();
   if (eventError) throw eventError;

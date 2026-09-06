@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { syncMeetingEventSnapshotStageTitle } from "@/lib/meetingEventSnapshot";
 import type {
   AdminMeetingEvent,
   AdminMeetingEventsData,
@@ -79,7 +78,7 @@ async function loadData(): Promise<AdminMeetingEventsData> {
         .returns<AdminMeetingEvent[]>(),
       admin
         .from("meeting_groups")
-        .select("id,event_id,code,title,capacity,status,operation_note,legacy_ticket_instance_id")
+        .select("id,event_id,code,title,capacity,status,feedback_scope_key,starts_from_stage_sequence,operation_note,legacy_ticket_instance_id")
         .order("code")
         .returns<Array<Omit<AdminMeetingGroup, "assigned_count">>>(),
       admin
@@ -257,52 +256,23 @@ export async function POST(request: NextRequest) {
       const { error } = await query;
       if (error) throw error;
 
-      const { data: event, error: eventError } = await admin
-        .from("meeting_events")
-        .select("detail_snapshot")
-        .eq("id", eventId)
-        .single<{ detail_snapshot: Record<string, unknown> | null }>();
-      if (eventError) throw eventError;
-
-      const nextSnapshot = syncMeetingEventSnapshotStageTitle(
-        event.detail_snapshot,
-        payload.sequence,
-        title,
-      );
-      if (nextSnapshot !== event.detail_snapshot) {
-        const { error: snapshotError } = await admin
-          .from("meeting_events")
-          .update({ detail_snapshot: nextSnapshot, updated_at: new Date().toISOString() })
-          .eq("id", eventId);
-        if (snapshotError) throw snapshotError;
-      }
     } else if (action === "save_group") {
       const groupId = text(body?.groupId);
       if (!groupId) return NextResponse.json({ error: "그룹을 선택해주세요." }, { status: 400 });
-      const { data: group, error: groupError } = await admin
-        .from("meeting_groups")
-        .update({
-          code: text(body?.code),
-          title: text(body?.title),
-          operation_note: text(body?.operationNote) || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", groupId)
-        .select("legacy_ticket_instance_id")
-        .single<{ legacy_ticket_instance_id: string | null }>();
-      if (groupError) throw groupError;
-      if (group.legacy_ticket_instance_id) {
-        const { error: instanceError } = await admin
-          .from("ticket_instances")
-          .update({
-            operation_code: text(body?.code),
-            operation_note: text(body?.title),
-            max_participant_count: 2147483647,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", group.legacy_ticket_instance_id);
-        if (instanceError) throw instanceError;
+      const patch: Record<string, unknown> = { code: text(body?.code), title: text(body?.title) };
+      if (body?.operationNote !== undefined) patch.operationNote = text(body.operationNote) || null;
+      if (body?.feedbackScopeKey !== undefined) patch.feedbackScopeKey = text(body.feedbackScopeKey) || null;
+      if (body?.startsFromStageSequence !== undefined) {
+        const sequence = Number(body.startsFromStageSequence);
+        if (!Number.isSafeInteger(sequence) || sequence < 1) return NextResponse.json({ error: "합류 단계를 확인해주세요." }, { status: 400 });
+        patch.startsFromStageSequence = sequence;
       }
+      const { error } = await admin.rpc("save_operational_group", {
+        p_group_id: groupId, p_patch: patch, p_stage_id: text(body?.stageId) || null,
+        p_location: body?.placeName !== undefined || body?.address !== undefined
+          ? { placeName: text(body?.placeName), address: text(body?.address) } : null,
+      });
+      if (error) throw error;
     } else if (action === "save_group_location") {
       const groupId = text(body?.groupId);
       const stageId = text(body?.stageId);
@@ -315,23 +285,6 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       }, { onConflict: "group_id,stage_id" });
       if (error) throw error;
-      const { data: group, error: groupError } = await admin
-        .from("meeting_groups")
-        .select("legacy_ticket_instance_id")
-        .eq("id", groupId)
-        .single<{ legacy_ticket_instance_id: string | null }>();
-      if (groupError) throw groupError;
-      if (group.legacy_ticket_instance_id) {
-        const { error: instanceError } = await admin
-          .from("ticket_instances")
-          .update({
-            place_name: text(body?.placeName) || null,
-            address: text(body?.address) || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", group.legacy_ticket_instance_id);
-        if (instanceError) throw instanceError;
-      }
     } else {
       return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
     }
@@ -404,54 +357,6 @@ export async function PATCH(request: NextRequest) {
     }
     const { error } = await admin.from("meeting_events").update(payload).eq("id", eventId);
     if (error) throw error;
-    if (action === "update_event" && body?.startsAt !== undefined) {
-      const startsAt = text(body.startsAt);
-      const stageOffsets = new Map([[1, 0], [2, 90], [3, 180]]);
-      const { data: stages, error: stagesError } = await admin
-        .from("meeting_event_stages")
-        .select("id,sequence")
-        .eq("event_id", eventId)
-        .returns<Array<{ id: string; sequence: number }>>();
-      if (stagesError) throw stagesError;
-      for (const stage of stages) {
-        const offset = stageOffsets.get(stage.sequence);
-        if (offset === undefined) continue;
-        const { error: stageTimeError } = await admin
-          .from("meeting_event_stages")
-          .update({ starts_at: addMinutesToTime(startsAt, offset), updated_at: new Date().toISOString() })
-          .eq("id", stage.id);
-        if (stageTimeError) throw stageTimeError;
-      }
-    }
-    if (action === "update_event" && ["title", "eventDate", "startsAt", "region"].some((key) => body?.[key] !== undefined)) {
-      const { data: groups, error: groupsError } = await admin
-        .from("meeting_groups")
-        .select("legacy_ticket_instance_id")
-        .eq("event_id", eventId)
-        .not("legacy_ticket_instance_id", "is", null)
-        .returns<Array<{ legacy_ticket_instance_id: string }>>();
-      if (groupsError) throw groupsError;
-      const instanceIds = groups.map((group) => group.legacy_ticket_instance_id);
-      if (instanceIds.length > 0) {
-        const instancePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (body?.title !== undefined) instancePayload.title = text(body.title);
-        if (body?.eventDate !== undefined) instancePayload.event_date = text(body.eventDate);
-        if (body?.startsAt !== undefined) instancePayload.event_time = text(body.startsAt);
-        if (body?.region !== undefined) instancePayload.region = text(body.region);
-        const { error: instanceError } = await admin.from("ticket_instances").update(instancePayload).in("id", instanceIds);
-        if (instanceError) throw instanceError;
-      }
-      const applicationPayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (body?.eventDate !== undefined) applicationPayload.meeting_date = text(body.eventDate);
-      if (body?.startsAt !== undefined) applicationPayload.meeting_time = text(body.startsAt);
-      if (Object.keys(applicationPayload).length > 1) {
-        const { error: applicationError } = await admin
-          .from("meeting_date_applications")
-          .update(applicationPayload)
-          .eq("event_id", eventId);
-        if (applicationError) throw applicationError;
-      }
-    }
     return NextResponse.json(await loadData());
   } catch (error) {
     console.error("Admin meeting event update failed:", error);

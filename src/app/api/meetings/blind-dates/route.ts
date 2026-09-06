@@ -204,7 +204,7 @@ function sanitizeOffer(
     actualPlaceAddress: revealPlace
       ? row.actual_place_address ?? template?.actual_place_address ?? null
       : null,
-    reservationName: revealPlace ? row.reservation_name ?? "이소윤" : null,
+    reservationName: revealPlace ? row.reservation_name ?? "운영진 확인 중" : null,
     arrivalStatus,
     counterpartArrivalStatus: counterpartParticipation?.arrival_status ?? null,
     arrivalOpensAt: arrivalOpensAt?.toISOString() ?? null,

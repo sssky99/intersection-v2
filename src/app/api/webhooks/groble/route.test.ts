@@ -84,8 +84,7 @@ describe("webhook redelivery", () => {
     const { POST } = await import("./route");
     const response = await POST(request("payment.completed", { pricing: { finalAmount: 20000 } }));
     expect(response.status).toBe(200);
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(applicationWrites[0].value).not.toHaveProperty("status");
-    expect(applicationWrites[1].filters).toContainEqual(["status", "payment_pending"]);
+    expect(rpc).toHaveBeenCalledWith("advance_paid_meeting_applications", expect.objectContaining({ p_user_id: "user-1", p_group_id: "group-1", p_confirm_deposit: true }));
+    expect(applicationWrites).toEqual([]);
   });
 });

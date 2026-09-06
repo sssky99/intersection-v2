@@ -379,11 +379,11 @@ export async function POST(request: NextRequest) {
       return { error: null };
     }
 
-    const { error } = await admin.rpc("set_ticket_participation_status", {
-      p_ticket_instance_id: instance.id,
+    const { error } = await admin.rpc("prepare_checkout_participation", {
+      p_application_id: meetingDateApplicationId,
+      p_instance_id: instance.id,
       p_user_id: user.id,
-      p_status: "payment_pending",
-      p_ticket_snapshot: body.ticket,
+      p_snapshot: body.ticket,
       p_invitation_id: acceptedInvitationResult.data.id,
     });
     if (error) {

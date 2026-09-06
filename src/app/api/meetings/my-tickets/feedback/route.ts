@@ -1,3 +1,7 @@
+import { fetchGroupStageLocationsByInstance } from "@/server/meetings/operations";
+import { meetingFeedbackWindow } from "@/lib/meetingOperations";
+import { feedbackInstanceIdsForViewer } from "@/lib/feedbackScope";
+import { fetchTicketGroupContext } from "@/lib/ticketGroupContext";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -59,19 +63,6 @@ function toStartAt(date: string | null | undefined, time: string | null | undefi
   const normalizedTime = time?.slice(0, 5) || "00:00";
   const start = new Date(`${date}T${normalizedTime}:00+09:00`);
   return Number.isFinite(start.getTime()) ? start : null;
-}
-
-function addHours(date: Date, hours: number) {
-  return new Date(date.getTime() + hours * 60 * 60 * 1000);
-}
-
-function feedbackVenueGroup(code: string | null, title: string | null) {
-  const match = `${title ?? ""} ${code ?? ""}`.match(
-    /(?:^|\D)(\d+)\s*(?:그룹|$)/,
-  );
-  if (!match) return null;
-  const groupNumber = Number(match[1]);
-  return groupNumber <= 3 || groupNumber === 7 ? "123" : "456";
 }
 
 function normalizeSelectedMemberIds(value: unknown) {
@@ -319,19 +310,23 @@ export async function POST(request: Request) {
       instance = data as unknown as InstanceRow | null;
     }
 
+    const referenceId = row.ticket_snapshot?.feedbackPreviewSourceInstanceId?.trim() || instance?.id;
+    const groupContext = await fetchTicketGroupContext(supabase, [instance?.id, referenceId].filter((id): id is string => Boolean(id)));
+    const operations = await fetchGroupStageLocationsByInstance(supabase, groupContext.currentGroups);
     const startAt = toStartAt(
       instance?.event_date ?? row.ticket_snapshot?.date,
       instance?.event_time ?? row.ticket_snapshot?.time,
     );
     if (startAt) {
       const now = new Date();
-      if (now < addHours(startAt, 3)) {
+      const window = meetingFeedbackWindow(startAt, instance ? operations.get(instance.id) : undefined);
+      if (now < window.opensAt) {
         return NextResponse.json(
-          { error: "Feedback opens three hours after the meeting starts." },
+          { error: "Feedback is not open yet." },
           { status: 403 },
         );
       }
-      if (now >= addHours(startAt, 27)) {
+      if (now >= window.closesAt) {
         return NextResponse.json(
           { error: "Feedback is closed for this meeting." },
           { status: 403 },
@@ -345,44 +340,7 @@ export async function POST(request: Request) {
         row.ticket_snapshot?.feedbackPreviewSourceInstanceId?.trim() || null;
       const feedbackReferenceInstanceId =
         feedbackPreviewSourceInstanceId ?? instance.id;
-      let feedbackInstanceIds = [feedbackReferenceInstanceId];
-      const { data: currentGroup, error: currentGroupError } = await supabase
-        .from("meeting_groups")
-        .select("event_id,code,title")
-        .eq("legacy_ticket_instance_id", feedbackReferenceInstanceId)
-        .maybeSingle<{ event_id: string; code: string; title: string }>();
-      if (currentGroupError) throw currentGroupError;
-      if (currentGroup?.event_id) {
-        const { data: eventGroups, error: eventGroupsError } = await supabase
-          .from("meeting_groups")
-          .select("code,title,legacy_ticket_instance_id")
-          .eq("event_id", currentGroup.event_id)
-          .not("legacy_ticket_instance_id", "is", null)
-          .returns<
-            Array<{
-              code: string;
-              title: string;
-              legacy_ticket_instance_id: string | null;
-            }>
-          >();
-        if (eventGroupsError) throw eventGroupsError;
-        const viewerVenueGroup = feedbackVenueGroup(
-          currentGroup.code,
-          currentGroup.title,
-        );
-        feedbackInstanceIds = Array.from(
-          new Set(
-            (eventGroups ?? [])
-              .filter(
-                (group) =>
-                  !viewerVenueGroup ||
-                  feedbackVenueGroup(group.code, group.title) === viewerVenueGroup,
-              )
-              .map((group) => group.legacy_ticket_instance_id)
-              .filter((id): id is string => Boolean(id)),
-          ),
-        );
-      }
+      const feedbackInstanceIds = feedbackInstanceIdsForViewer(groupContext.eventGroups, feedbackReferenceInstanceId);
 
       const { data, error } = await supabase
         .from("ticket_participations")

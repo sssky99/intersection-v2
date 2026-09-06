@@ -1,18 +1,10 @@
+import type { WaitlistStatus } from "@/lib/waitlistStatus";
+export { isWaitlistStatus, waitlistStatuses, type WaitlistStatus } from "@/lib/waitlistStatus";
 import type { AdminProfile } from "@/features/admin/adminProfile";
 import type { GatheringTicket } from "@/types/ticket";
 import type {
   MeetingDateDepositStatus,
 } from "@/lib/meetingDateApplications";
-
-export type WaitlistStatus =
-  | "waitlisted"
-  | "approved"
-  | "on_hold"
-  | "not_selected"
-  | "cancelled"
-  | "payment_pending"
-  | "feedback_done"
-  | "completed";
 
 export type AdminArrivalStatus =
   | "on_time"
@@ -20,17 +12,6 @@ export type AdminArrivalStatus =
   | "late_20"
   | "late_30_plus"
   | "no_show";
-
-export const waitlistStatuses: WaitlistStatus[] = [
-  "waitlisted",
-  "approved",
-  "on_hold",
-  "not_selected",
-  "cancelled",
-  "payment_pending",
-  "feedback_done",
-  "completed",
-];
 
 export const waitlistStatusLabels: Record<WaitlistStatus, string> = {
   waitlisted: "대기중",
@@ -94,10 +75,3 @@ export type AdminWaitlistData = {
   templates: WaitlistTicketTemplate[];
   instances: WaitlistTicketInstance[];
 };
-
-export function isWaitlistStatus(value: unknown): value is WaitlistStatus {
-  return (
-    typeof value === "string" &&
-    waitlistStatuses.includes(value as WaitlistStatus)
-  );
-}
