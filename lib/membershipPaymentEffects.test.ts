@@ -33,7 +33,7 @@ grant all on all tables in schema public to service_role;
 
  create table profiles(user_id uuid primary key,name text,nickname text, membership_status text,membership_plan text,
  membership_start_date date,membership_end_date date,membership_updated_at timestamptz);
- create table groble_webhook_events(merchant_uid text,event_type text,event_id text unique);
+ create table groble_webhook_events(merchant_uid text,event_type text,event_id text unique,payload jsonb);
  create table deposit_message_registrations(user_id uuid primary key,first_ticket_instance_id uuid);
  alter table meeting_date_applications add created_at timestamptz default now();
  alter table ticket_user_interactions add opened_at timestamptz,add responded_at timestamptz,
@@ -63,6 +63,12 @@ grant all on all tables in schema public to service_role;
   ])
     await db.exec(readFileSync("supabase/migrations/" + name + ".sql", "utf8"));
   await db.exec(readFileSync(migration, "utf8"));
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20260907055229_handle_groble_refund_events.sql",
+      "utf8",
+    ),
+  );
   await db.exec(
     "grant usage on schema public to service_role; grant all on all tables in schema public to service_role; grant usage,select on all sequences in schema public to service_role",
   );
@@ -361,4 +367,129 @@ it("accepts the existing upgrade credit amount convention", async () => {
     (await pay(id, "upgrade-credit", "upgrade-credit", undefined, 5000))
       .payment_kind,
   ).toBe("membership_upgrade");
+});
+async function refundEvent(
+  merchant = "payment-1",
+  partial = false,
+  amount = 10000,
+) {
+  await db.query(
+    `insert into groble_webhook_events(event_id,event_type,merchant_uid,payload)
+    values('refund-1','subscription_payment.refunded',$1,$2)`,
+    [
+      merchant,
+      JSON.stringify({
+        data: {
+          object: {
+            refund: {
+              partialRefund: partial,
+              amount,
+              currency: "KRW",
+              refundedAt: today + "T13:00:00+09:00",
+            },
+          },
+        },
+      }),
+    ],
+  );
+}
+async function refund() {
+  return (await one("select apply_groble_refund('refund-1') as result")).result;
+}
+describe("stored refund events", () => {
+  async function setup() {
+    await db.query(
+      "insert into meeting_date_applications(id,user_id,status,meeting_date) values(10,$1,'payment_pending',$2)",
+      [user, today],
+    );
+    await pay(await intent("one_month", 0, 10));
+    await refundEvent();
+  }
+  it("cancels the paid upcoming application and membership atomically, without cancelling independent bookings", async () => {
+    await setup();
+    await db.query(
+      "insert into meeting_date_applications(id,user_id,status,meeting_date) values(11,$1,'waitlisted',$2)",
+      [user, today],
+    );
+    expect((await refund()).cancelled_applications).toEqual([10]);
+    expect(
+      (await one("select membership_status from profiles")).membership_status,
+    ).toBe("cancelled");
+    expect(
+      (
+        await one(
+          "select status,refund_completed_at from meeting_date_applications where id=10",
+        )
+      ).status,
+    ).toBe("cancelled");
+    expect(
+      (await one("select status from meeting_date_applications where id=11"))
+        .status,
+    ).toBe("waitlisted");
+    expect((await refund()).cancelled_applications).toEqual([]);
+    expect((await one("select status from payment_transactions")).status).toBe(
+      "cancelled",
+    );
+  });
+  it.each([
+    [true, 10000],
+    [false, 5000],
+  ])(
+    "rejects partial or inconsistent refunds (%s %s)",
+    async (partial, amount) => {
+      await pay(await intent());
+      await refundEvent("payment-1", partial, amount);
+      await expect(refund()).rejects.toThrow(/review/);
+      expect(
+        (await one("select status from payment_transactions")).status,
+      ).toBe("completed");
+      expect(
+        (await one("select membership_status from profiles")).membership_status,
+      ).toBe("active");
+    },
+  );
+  it("preserves replacement membership and its application when an older charge is refunded", async () => {
+    await setup();
+    await pay(
+      await intent("one_month", 0, 10),
+      "payment-2",
+      "payment-2",
+      today + "T12:30:00+09:00",
+    );
+    expect((await refund()).cancelled_applications).toEqual([]);
+    expect(
+      (await one("select membership_status from profiles")).membership_status,
+    ).toBe("active");
+    expect(
+      (await one("select status from meeting_date_applications where id=10"))
+        .status,
+    ).toBe("waitlisted");
+  });
+  it("rolls membership cancellation back if linked application cleanup fails", async () => {
+    await setup();
+    await db.exec(
+      "create function fail_refund_app() returns trigger language plpgsql as $$begin raise exception 'app refund failure'; end;$$; create trigger fail_refund_app before update on meeting_date_applications for each row execute function fail_refund_app()",
+    );
+    try {
+      await expect(refund()).rejects.toThrow("app refund failure");
+      expect(
+        (await one("select status from payment_transactions")).status,
+      ).toBe("completed");
+      expect(
+        (await one("select membership_status from profiles")).membership_status,
+      ).toBe("active");
+    } finally {
+      await db.exec(
+        "drop trigger fail_refund_app on meeting_date_applications; drop function fail_refund_app()",
+      );
+    }
+  });
+  it("blocks completion received after a stored refund notification", async () => {
+    const id = await intent();
+    await refundEvent();
+    await expect(pay(id)).rejects.toThrow(/review/i);
+    expect(
+      (await one("select count(*)::int as n from payment_transactions")).n,
+    ).toBe(0);
+  });
 });

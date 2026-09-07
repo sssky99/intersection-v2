@@ -9,6 +9,7 @@ import {
   processPaymentCompleted,
 } from "./groblePayments";
 import { WebhookEnvelope } from "./grobleVerification";
+import { processPaymentRefunded } from "./grobleRefunds";
 
 export async function handleVerifiedGrobleWebhook(
   envelope: WebhookEnvelope,
@@ -85,6 +86,11 @@ export async function handleVerifiedGrobleWebhook(
           event.type === "subscription_payment.completed"
         ) {
           status = await processPaymentCompleted(event, eventKey);
+        } else if (
+          event.type === "payment.refunded" ||
+          event.type === "subscription_payment.refunded"
+        ) {
+          status = await processPaymentRefunded(event, eventKey);
         } else if (event.type === "payment.cancel_requested") {
           status = await processCancelRequested(event, eventKey);
         } else if (grobleCancelledPaymentKind(event.type) === "one_time") {

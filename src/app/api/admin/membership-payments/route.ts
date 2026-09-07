@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
         .in("event_type", [
           "subscription_payment.completed",
           "subscription_payment.cancelled",
+          "subscription_payment.refunded",
         ])
         .in("processing_status", [
           "received",
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
       ![
         "subscription_payment.completed",
         "subscription_payment.cancelled",
+        "subscription_payment.refunded",
       ].includes(event.event_type) ||
       !["failed", "received"].includes(event.processing_status)
     )
