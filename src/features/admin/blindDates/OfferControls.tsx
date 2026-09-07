@@ -75,6 +75,13 @@ export function OfferPlaceEditor({
     reservationName !== (offer.reservation_name ?? "") ||
     scheduledDate !== (offer.scheduled_date ?? "");
 
+  const otherDates = new Set(offer.b_available_dates);
+  const commonDates = [...new Set(offer.a_available_dates)]
+    .filter((date) => otherDates.has(date))
+    .sort();
+  const awaitingDates =
+    offer.a_available_dates.length === 0 || offer.b_available_dates.length === 0;
+
   return (
     <div className="grid min-w-0 content-start gap-2">
       <input
@@ -123,6 +130,47 @@ export function OfferPlaceEditor({
       >
         일정·장소 저장
       </button>
+      <div className="mt-2 rounded-xl bg-black/[0.025] p-3">
+        <p className="text-xs font-bold">두 사람의 공통 가능 날짜</p>
+        {commonDates.length > 0 ? (
+          <>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {commonDates.map((date) => (
+                <button
+                  key={date}
+                  type="button"
+                  disabled={saving}
+                  aria-label={`확정 날짜로 ${date} 선택`}
+                  aria-pressed={scheduledDate === date}
+                  onClick={() => setScheduledDate(date)}
+                  className={
+                    "rounded-lg border px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-45 " +
+                    (scheduledDate === date
+                      ? "border-black bg-black text-white"
+                      : "border-black/10 bg-white hover:border-black/40")
+                  }
+                >
+                  {date.slice(5).replace("-", "/")} ({new Date(
+                    `${date}T00:00:00Z`,
+                  ).toLocaleDateString("ko-KR", {
+                    weekday: "short",
+                    timeZone: "UTC",
+                  })})
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] text-black/50">
+              날짜를 선택한 뒤 일정·장소 저장을 눌러주세요.
+            </p>
+          </>
+        ) : (
+          <p className="mt-2 text-xs text-black/50">
+            {awaitingDates
+              ? "두 사람이 가능 날짜를 선택하면 여기에 표시됩니다."
+              : "두 사람이 선택한 날짜 중 겹치는 날짜가 없습니다."}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
