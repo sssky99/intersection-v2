@@ -129,6 +129,9 @@ export function OperatorRatingControl({
           )}
         />
       </label>
+      {value === 0.5 && (
+        <span className="text-xs font-semibold text-black/55">판별 불가</span>
+      )}
       <button
         type="button"
         disabled={!draftDirty || disabled}

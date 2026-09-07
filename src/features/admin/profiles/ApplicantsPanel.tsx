@@ -33,6 +33,7 @@ export type CompletionFilter = "all" | "complete" | "incomplete";
 
 export type OperatorRatingFilter =
   | "all"
+  | "0.5"
   | "0-0.9"
   | "1-1.9"
   | "2-2.4"
@@ -300,6 +301,7 @@ export function ApplicantsPanel({
 
             <select
               value={operatorRatingFilter}
+              aria-label="평점 필터"
               onChange={(event) =>
                 onOperatorRatingFilterChange(
                   event.target.value as OperatorRatingFilter,
@@ -308,6 +310,7 @@ export function ApplicantsPanel({
               className="h-10 w-[145px] rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
             >
               <option value="all">평점 전체</option>
+              <option value="0.5">0.5점 · 판별 불가</option>
               <option value="0-0.9">0~0.9점</option>
               <option value="1-1.9">1~1.9점</option>
               <option value="2-2.4">2~2.4점</option>

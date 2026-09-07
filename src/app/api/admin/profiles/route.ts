@@ -245,6 +245,7 @@ async function fetchProfilePage(
     "birth-desc",
   ] as const);
   const operatorRating = allowedParam(params.get("operatorRating"), [
+    "0.5",
     "0-0.9",
     "1-1.9",
     "2-2.4",

@@ -96,6 +96,7 @@ export function AdminMemberName({
           ★ {typeof profile.operator_rating === "number"
             ? profile.operator_rating.toFixed(1)
             : "-"}
+          {profile.operator_rating === 0.5 && " · 판별 불가"}
         </span>
       )}
       {showRedFlagScore && (
