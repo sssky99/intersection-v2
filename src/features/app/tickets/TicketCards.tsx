@@ -279,7 +279,7 @@ export function BlindDateTicketCard({
         badgeLabel={
           feedbackRemainingTime
             ? `마감까지 ${feedbackRemainingTime}`
-            : "초대 도착"
+            : "일정 확정"
         }
         badgeClassName="border-[#bda9b4]/70 bg-[#f8f3f5]/70 text-[#765a69] shadow-none"
         className={ticketPaperImageClass}

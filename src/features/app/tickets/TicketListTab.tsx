@@ -61,14 +61,13 @@ export function ticketListItemUpdatedAt(item: TicketListItem) {
 export function shouldShowBlindDateTicket(offer: BlindDateUserOffer) {
   if (
     offer.isExpired ||
-    ["pending_admin", "declined", "expired", "cancelled", "completed"].includes(
-      offer.status,
-    )
+    offer.status !== "scheduled" ||
+    !offer.scheduledDate
   ) {
     return false;
   }
 
-  if (offer.status !== "scheduled" || !offer.feedbackClosesAt) return true;
+  if (!offer.feedbackClosesAt) return true;
   const feedbackClosesAt = new Date(offer.feedbackClosesAt).getTime();
   return !Number.isFinite(feedbackClosesAt) || feedbackClosesAt > Date.now();
 }
