@@ -18,12 +18,13 @@ import {
 } from "@/lib/phoneAuthFlow";
 import { createClient } from "@/lib/supabase/client";
 import { createTimedFetch } from "@/lib/timedFetch";
+import { sessionIsMissing } from "@/lib/sessionRecovery";
 
 const introVideoCookie = "intro_video_seen_v1";
 const introVideoCookieMaxAge = 60 * 60 * 24 * 365;
 const phonePrompt = "전화번호를 입력해주세요.";
 const otpPrompt = "6자리 인증 번호를 입력해주세요.";
-const phoneAuthFetch = createTimedFetch(8000);
+const phoneAuthFetch = createTimedFetch(15000);
 type AuthStep = "phone" | "otp";
 
 type FiftyQLandingClientProps = {
@@ -103,6 +104,8 @@ export function FiftyQLandingClient({
   const landingViewTrackedRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [authCheckFailed, setAuthCheckFailed] = useState(false);
+  const [authCheckAttempt, setAuthCheckAttempt] = useState(0);
   const [isIntroFinished, setIsIntroFinished] = useState(initialHasSeenIntro);
   const [isAuthVisible, setIsAuthVisible] = useState(initialHasSeenIntro);
   const [isAuthContentVisible, setIsAuthContentVisible] = useState(initialHasSeenIntro);
@@ -153,12 +156,17 @@ export function FiftyQLandingClient({
       trackEvent("landing_view");
     }
     if (!hasSupabaseAuthCookie()) {
+      setIsAuthenticated(false);
+      setAuthCheckFailed(false);
       setAuthChecked(true);
       return;
     }
+    setAuthChecked(false);
+    setAuthCheckFailed(false);
     const timer = window.setTimeout(() => {
-      void createClient({ timeoutMs: 3000 }).auth.getUser().then(async ({ data }) => {
+      void createClient().auth.getUser().then(async ({ data, error: lookupError }) => {
         if (!mounted) return;
+        if (!data.user && !sessionIsMissing(lookupError)) throw new Error("session-lookup-unavailable");
         if (data.user) {
           setIsAuthenticated(true);
           if (!data.user.phone) {
@@ -181,26 +189,26 @@ export function FiftyQLandingClient({
             return;
           }
           const code = body?.errorCode ?? "PROFILE_RESPONSE_INVALID";
-          if (isProfileSetupFailure(code)) {
-            await recoverProfileSetup();
-          } else {
-            setFailureCode(code);
-            setError(phoneAuthErrorMessage(code));
-          }
-          setAuthChecked(true);
+          setFailureCode(code);
+          setError(phoneAuthErrorMessage(code));
+          setAuthCheckFailed(true);
           return;
         }
+        setIsAuthenticated(false);
         setAuthChecked(true);
       }).catch(() => {
-        if (mounted) setAuthChecked(true);
+        if (mounted) {
+          setAuthCheckFailed(true);
+          setAuthChecked(false);
+        }
       });
-    }, 500);
+    }, 0);
 
     return () => {
       mounted = false;
       window.clearTimeout(timer);
     };
-  }, [previewPhoneOnly, resolvedCompletionPath, trackLandingView]);
+  }, [previewPhoneOnly, resolvedCompletionPath, trackLandingView, authCheckAttempt]);
 
   useEffect(() => {
     if (
@@ -381,7 +389,7 @@ export function FiftyQLandingClient({
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (previewPhoneOnly) return;
-    if (!canContinue || isSubmitting || isAuthenticated) return;
+    if (!authChecked || !canContinue || isSubmitting || isAuthenticated) return;
     setIsSubmitting(true);
     setError("");
     setFailureCode(null);
@@ -466,7 +474,16 @@ export function FiftyQLandingClient({
               : "pointer-events-none translate-y-5 opacity-0"
           }`}
         >
-          {guidePage === null ? (
+          {!authChecked ? (
+            <div className="mx-auto w-full max-w-[340px] text-center" role="status" aria-live="polite">
+              <p className="text-base font-semibold leading-7">
+                {authCheckFailed ? (error || "로그인 상태를 확인하지 못했어요. 잠시 후 다시 확인해 주세요.") : "기존 로그인 상태를 확인하고 있어요."}
+              </p>
+              {authCheckFailed && (failureCode === "ACCOUNT_BLOCKED"
+                ? <a href="https://pf.kakao.com/_xnweQn/chat" className="mt-6 inline-block rounded-full bg-[#FEE500] px-6 py-3 text-sm font-semibold">카카오톡 채널 문의하기</a>
+                : <button type="button" className="mt-6 rounded-full border border-black/20 px-6 py-3 text-sm font-semibold" onClick={() => { setError(""); setFailureCode(null); setAuthCheckFailed(false); setAuthCheckAttempt((value) => value + 1); }}>다시 확인</button>)}
+            </div>
+          ) : guidePage === null ? (
             <form className="mx-auto w-full max-w-[340px]" onSubmit={handleSubmit}>
             <div className="mb-14 min-h-[74px]">
               <p

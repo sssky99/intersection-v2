@@ -40,6 +40,13 @@ function phoneCompleteRequest() {
 }
 
 describe("POST /api/auth/phone/complete", () => {
+  it("reports a temporary lookup failure instead of treating a network timeout as logout", async () => {
+    createClientMock.mockResolvedValue({ auth: { getUser: vi.fn(async () => ({ data: { user: null }, error: { name: "AuthRetryableFetchError" } })) } });
+    const { POST } = await import("./route");
+    const response = await POST(phoneCompleteRequest());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ errorCode: "PROFILE_LOOKUP_FAILED" });
+  });
   beforeEach(() => {
     vi.resetModules();
     createClientMock.mockReset();

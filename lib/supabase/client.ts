@@ -1,6 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { supabaseAnonKey, supabaseUrl } from './config';
-import { createTimedFetch } from '@/lib/timedFetch';
+import { createBrowserSupabaseFetch } from './browserFetch';
 
 export function createClient(options?: { timeoutMs?: number }) {
   const timeoutMs = options?.timeoutMs ?? 5000;
@@ -14,7 +14,7 @@ export function createClient(options?: { timeoutMs?: number }) {
         // database is saturated, retries make the outage self-reinforcing.
         retry: false,
       },
-      global: { fetch: createTimedFetch(timeoutMs) },
+      global: { fetch: createBrowserSupabaseFetch(timeoutMs) },
     },
   );
 }

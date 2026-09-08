@@ -4,6 +4,7 @@ import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 import { findLoginBlock } from "@/lib/loginBlocklist";
 import { nextOnboardingPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
+import { sessionIsMissing } from "@/lib/sessionRecovery";
 import type { ProfileRow } from "@/types/profile";
 
 export const dynamic = "force-dynamic";
@@ -38,12 +39,12 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
     | { analyticsSessionId?: unknown }
     | null;
-  const supabase = await createClient({ timeoutMs: 3000 });
+  const supabase = await createClient({ timeoutMs: 8000 });
   const authResult = await supabase.auth.getUser().catch((error: unknown) => {
     console.error("[phone-auth] user lookup timed out", error);
     return null;
   });
-  if (!authResult) {
+  if (!authResult || (authResult.error && !sessionIsMissing(authResult.error))) {
     return profileError("PROFILE_LOOKUP_FAILED", 503);
   }
   const user = authResult.data.user;
