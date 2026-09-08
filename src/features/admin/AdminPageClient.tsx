@@ -87,10 +87,10 @@ const RoomChatAdminPanel = dynamic(
     ),
   { loading: AdminPanelLoading },
 );
-const TicketAdminPanel = dynamic(
+const ProgramAdminPanel = dynamic(
   () =>
-    import("@/features/admin/TicketAdminPanel").then(
-      (module) => module.TicketAdminPanel,
+    import("@/features/admin/ProgramAdminPanel").then(
+      (module) => module.ProgramAdminPanel,
     ),
   { loading: AdminPanelLoading },
 );
@@ -148,6 +148,7 @@ export function AdminPageClient({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const [focusProgramId, setFocusProgramId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>("applicants");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
@@ -735,7 +736,12 @@ export function AdminPageClient({
           )}
           {visitedTabs.tickets && (
             <div className={cn(activeTab === "tickets" ? "block" : "hidden")}>
-              <TicketAdminPanel
+              <ProgramAdminPanel
+                onCreateEvent={(programId) => {
+                  setFocusProgramId(programId);
+                  setActiveTab("events");
+                  setVisitedTabs((current) => ({ ...current, events: true }));
+                }}
                 onOpenEvent={(eventId) => {
                   setFocusEventId(eventId);
                   setActiveTab("events");
@@ -749,6 +755,8 @@ export function AdminPageClient({
           {visitedTabs.events && (
             <div className={cn(activeTab === "events" ? "block" : "hidden")}>
               <MeetingEventAdminPanel
+                focusProgramId={focusProgramId}
+                onFocusProgramHandled={() => setFocusProgramId(null)}
                 focusEventId={focusEventId}
                 onFocusEventHandled={() => setFocusEventId(null)}
                 onOpenWaitlist={() => setActiveTab("waitlist")}

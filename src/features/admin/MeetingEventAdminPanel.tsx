@@ -44,10 +44,14 @@ export function MeetingEventAdminPanel({
   onOpenWaitlist,
   focusEventId,
   onFocusEventHandled,
+  focusProgramId,
+  onFocusProgramHandled,
 }: {
   onOpenWaitlist?: () => void;
   focusEventId?: string | null;
   onFocusEventHandled?: () => void;
+  focusProgramId?: string | null;
+  onFocusProgramHandled?: () => void;
 }) {
   const [data, setData] = useState<AdminMeetingEventsData>({
     programs: [],
@@ -109,6 +113,17 @@ export function MeetingEventAdminPanel({
   }, [hydrate]);
 
   useEffect(() => void load(), [load]);
+
+  useEffect(() => {
+    if (focusProgramId) void load();
+  }, [focusProgramId, load]);
+
+  useEffect(() => {
+    if (!focusProgramId || !data.programs.some(program => program.id === focusProgramId)) return;
+    setProgramId(focusProgramId);
+    document.getElementById("meeting-event-create")?.scrollIntoView({ block: "center" });
+    onFocusProgramHandled?.();
+  }, [focusProgramId, data.programs, onFocusProgramHandled]);
 
   useEffect(() => {
     if (
@@ -226,7 +241,7 @@ export function MeetingEventAdminPanel({
           )}
         </div>
 
-        <div className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+        <div id="meeting-event-create" className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
           <p className="flex items-center gap-2 text-sm font-black">
             <CalendarPlus size={16} />새 행사
           </p>
@@ -239,6 +254,7 @@ export function MeetingEventAdminPanel({
             {data.programs.map((program) => (
               <option key={program.id} value={program.id}>
                 {program.title}
+                {program.updated_at ? ` · ${new Date(program.updated_at).toLocaleString("ko-KR")}` : ""}
               </option>
             ))}
           </select>

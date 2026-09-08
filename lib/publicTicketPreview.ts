@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
   meetingAtmosphereDefaultsFromProfiles,
   normalizeMeetingAtmosphereAgeBandId,
@@ -339,6 +340,7 @@ function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
   return {
     id: event.id,
     templateId: event.program_id,
+    stageCopy: sanitizeTicketStageCopy(snapshot.stageCopy),
     applicationClosed: Boolean(
       applicationClosesAt && applicationClosesAt.getTime() <= Date.now(),
     ),

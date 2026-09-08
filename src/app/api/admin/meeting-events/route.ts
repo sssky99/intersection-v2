@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { programEventStages } from "@/lib/programEventStages";
 import type {
   AdminMeetingEvent,
   AdminMeetingEventsData,
@@ -54,21 +55,16 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function addMinutesToTime(value: string, minutes: number) {
-  const [hours = 0, minute = 0] = value.split(":").map(Number);
-  const total = (hours * 60 + minute + minutes) % (24 * 60);
-  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-}
-
 async function loadData(): Promise<AdminMeetingEventsData> {
   const admin = createAdminClient();
   const [programResult, eventResult, groupResult, stageResult, locationResult, applicationResult] =
     await Promise.all([
       admin
         .from("ticket_templates")
-        .select("id,title")
+        .select("id,title,updated_at")
         .eq("template_kind", "experience")
-        .order("title")
+        .eq("lifecycle_status", "active")
+        .order("updated_at", { ascending: false })
         .returns<AdminMeetingProgram[]>(),
       admin
         .from("meeting_events")
@@ -152,8 +148,10 @@ export async function POST(request: NextRequest) {
       }
       const { data: program, error: programError } = await admin
         .from("ticket_templates")
-        .select("id,title,short_description,detail_summary,detail_activities,detail_flow,detail_good_for,detail_notice,course_steps,mood_tags,activity_type,default_region")
+        .select("id,title,short_description,detail_summary,detail_activities,detail_flow,detail_good_for,detail_notice,stage_copy,course_steps,mood_tags,activity_type,default_region")
         .eq("id", programId)
+        .eq("template_kind", "experience")
+        .eq("lifecycle_status", "active")
         .single();
       if (programError) throw programError;
 
@@ -172,17 +170,16 @@ export async function POST(request: NextRequest) {
           detailFlow: program.detail_flow,
           detailGoodFor: program.detail_good_for,
           detailNotice: program.detail_notice,
+          stageCopy: program.stage_copy,
           courseSteps: program.course_steps,
           moodTags: program.mood_tags,
           activityType: program.activity_type,
         },
       }).select("id,starts_at").single<{ id: string; starts_at: string }>();
       if (error) throw error;
-      const { error: stageError } = await admin.from("meeting_event_stages").insert([
-        { event_id: createdEvent.id, title: "저녁 식사", stage_type: "meal", sequence: 1, starts_at: addMinutesToTime(createdEvent.starts_at, 0), location_mode: "group_specific" },
-        { event_id: createdEvent.id, title: "공통 활동", stage_type: "activity", sequence: 2, starts_at: addMinutesToTime(createdEvent.starts_at, 90), location_mode: "shared" },
-        { event_id: createdEvent.id, title: "피드백", stage_type: "feedback", sequence: 3, starts_at: addMinutesToTime(createdEvent.starts_at, 180), location_mode: "hidden" },
-      ]);
+      const { error: stageError } = await admin.from("meeting_event_stages").insert(
+        programEventStages(createdEvent.id, createdEvent.starts_at, program.course_steps),
+      );
       if (stageError) throw stageError;
     } else if (action === "create_group") {
       const eventId = text(body?.eventId);

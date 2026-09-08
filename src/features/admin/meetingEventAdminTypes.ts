@@ -8,6 +8,7 @@ export type MeetingEventVisibility =
 export type AdminMeetingProgram = {
   id: string;
   title: string;
+  updated_at?: string;
 };
 export type AdminMeetingEvent = {
   id: string;
