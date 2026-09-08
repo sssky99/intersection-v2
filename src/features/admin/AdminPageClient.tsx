@@ -87,10 +87,10 @@ const RoomChatAdminPanel = dynamic(
     ),
   { loading: AdminPanelLoading },
 );
-const ProgramAdminPanel = dynamic(
+const TicketAdminPanel = dynamic(
   () =>
-    import("@/features/admin/ProgramAdminPanel").then(
-      (module) => module.ProgramAdminPanel,
+    import("@/features/admin/TicketAdminPanel").then(
+      (module) => module.TicketAdminPanel,
     ),
   { loading: AdminPanelLoading },
 );
@@ -127,7 +127,7 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "applicants", label: "신청자 관리" },
   { id: "visitors", label: "방문자 관리" },
   { id: "membership", label: "멤버십 관리" },
-  { id: "tickets", label: "프로그램 관리" },
+  { id: "tickets", label: "기존 티켓·샘플" },
   { id: "events", label: "행사 관리" },
   { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
@@ -148,7 +148,7 @@ export function AdminPageClient({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [focusEventId, setFocusEventId] = useState<string | null>(null);
-  const [focusProgramId, setFocusProgramId] = useState<string | null>(null);
+
   const [activeTab, setActiveTab] = useState<AdminTab>("applicants");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
@@ -736,12 +736,7 @@ export function AdminPageClient({
           )}
           {visitedTabs.tickets && (
             <div className={cn(activeTab === "tickets" ? "block" : "hidden")}>
-              <ProgramAdminPanel
-                onCreateEvent={(programId) => {
-                  setFocusProgramId(programId);
-                  setActiveTab("events");
-                  setVisitedTabs((current) => ({ ...current, events: true }));
-                }}
+              <TicketAdminPanel
                 onOpenEvent={(eventId) => {
                   setFocusEventId(eventId);
                   setActiveTab("events");
@@ -755,8 +750,8 @@ export function AdminPageClient({
           {visitedTabs.events && (
             <div className={cn(activeTab === "events" ? "block" : "hidden")}>
               <MeetingEventAdminPanel
-                focusProgramId={focusProgramId}
-                onFocusProgramHandled={() => setFocusProgramId(null)}
+
+
                 focusEventId={focusEventId}
                 onFocusEventHandled={() => setFocusEventId(null)}
                 onOpenWaitlist={() => setActiveTab("waitlist")}

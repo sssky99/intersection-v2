@@ -5,12 +5,8 @@ export type MeetingEventVisibility =
   | "closed"
   | "archived";
 
-export type AdminMeetingProgram = {
-  id: string;
-  title: string;
-  updated_at?: string;
-};
 export type AdminMeetingEvent = {
+  detail_snapshot: Record<string, unknown> | null;
   id: string;
   program_id: string;
   title: string;
@@ -63,7 +59,7 @@ export type AdminGroupStageLocation = {
 };
 
 export type AdminMeetingEventsData = {
-  programs: AdminMeetingProgram[];
+  createdEventId?: string;
   events: AdminMeetingEvent[];
   groups: AdminMeetingGroup[];
   stages: AdminMeetingEventStage[];

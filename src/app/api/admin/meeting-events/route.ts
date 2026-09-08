@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isAdminSessionTokenValid,
+} from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { programEventStages } from "@/lib/programEventStages";
+import { newEventSnapshot } from "@/lib/eventContent";
+import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import type {
   AdminMeetingEvent,
   AdminMeetingEventsData,
   AdminMeetingGroup,
   AdminMeetingEventStage,
   AdminGroupStageLocation,
-  AdminMeetingProgram,
   MeetingEventVisibility,
 } from "@/features/admin/meetingEventAdminTypes";
 
@@ -19,6 +22,7 @@ const eventSelect = [
   "program_id",
   "title",
   "short_description",
+  "detail_snapshot",
   "event_date",
   "starts_at",
   "region",
@@ -48,7 +52,10 @@ function isAdminRequest(request: NextRequest) {
 }
 
 function unauthorized() {
-  return NextResponse.json({ error: "관리자 인증이 필요합니다." }, { status: 401 });
+  return NextResponse.json(
+    { error: "관리자 인증이 필요합니다." },
+    { status: 401 },
+  );
 }
 
 function text(value: unknown) {
@@ -57,43 +64,53 @@ function text(value: unknown) {
 
 async function loadData(): Promise<AdminMeetingEventsData> {
   const admin = createAdminClient();
-  const [programResult, eventResult, groupResult, stageResult, locationResult, applicationResult] =
-    await Promise.all([
-      admin
-        .from("ticket_templates")
-        .select("id,title,updated_at")
-        .eq("template_kind", "experience")
-        .eq("lifecycle_status", "active")
-        .order("updated_at", { ascending: false })
-        .returns<AdminMeetingProgram[]>(),
-      admin
-        .from("meeting_events")
-        .select(eventSelect)
-        .order("event_date", { ascending: false })
-        .order("starts_at", { ascending: false })
-        .returns<AdminMeetingEvent[]>(),
-      admin
-        .from("meeting_groups")
-        .select("id,event_id,code,title,capacity,status,feedback_scope_key,starts_from_stage_sequence,operation_note,legacy_ticket_instance_id")
-        .order("code")
-        .returns<Array<Omit<AdminMeetingGroup, "assigned_count">>>(),
-      admin
-        .from("meeting_event_stages")
-        .select("id,event_id,title,stage_type,sequence,starts_at,location_mode,place_name,address")
-        .order("sequence")
-        .returns<AdminMeetingEventStage[]>(),
-      admin
-        .from("meeting_group_stage_locations")
-        .select("id,group_id,stage_id,place_name,address")
-        .returns<AdminGroupStageLocation[]>(),
-      admin
-        .from("meeting_date_applications")
-        .select("assigned_group_id,user_id,status")
-        .not("assigned_group_id", "is", null)
-        .in("status", ["waitlisted", "on_hold", "approved", "feedback_done", "completed"])
-        .returns<Array<{ assigned_group_id: string; user_id: string; status: string }>>(),
-    ]);
-  if (programResult.error) throw programResult.error;
+  const [
+    eventResult,
+    groupResult,
+    stageResult,
+    locationResult,
+    applicationResult,
+  ] = await Promise.all([
+    admin
+      .from("meeting_events")
+      .select(eventSelect)
+      .order("event_date", { ascending: false })
+      .order("starts_at", { ascending: false })
+      .returns<AdminMeetingEvent[]>(),
+    admin
+      .from("meeting_groups")
+      .select(
+        "id,event_id,code,title,capacity,status,feedback_scope_key,starts_from_stage_sequence,operation_note,legacy_ticket_instance_id",
+      )
+      .order("code")
+      .returns<Array<Omit<AdminMeetingGroup, "assigned_count">>>(),
+    admin
+      .from("meeting_event_stages")
+      .select(
+        "id,event_id,title,stage_type,sequence,starts_at,location_mode,place_name,address",
+      )
+      .order("sequence")
+      .returns<AdminMeetingEventStage[]>(),
+    admin
+      .from("meeting_group_stage_locations")
+      .select("id,group_id,stage_id,place_name,address")
+      .returns<AdminGroupStageLocation[]>(),
+    admin
+      .from("meeting_date_applications")
+      .select("assigned_group_id,user_id,status")
+      .not("assigned_group_id", "is", null)
+      .in("status", [
+        "waitlisted",
+        "on_hold",
+        "approved",
+        "feedback_done",
+        "completed",
+      ])
+      .returns<
+        Array<{ assigned_group_id: string; user_id: string; status: string }>
+      >(),
+  ]);
+
   if (eventResult.error) throw eventResult.error;
   if (groupResult.error) throw groupResult.error;
   if (stageResult.error) throw stageResult.error;
@@ -108,7 +125,6 @@ async function loadData(): Promise<AdminMeetingEventsData> {
   }
 
   return {
-    programs: programResult.data ?? [],
     events: eventResult.data ?? [],
     groups: (groupResult.data ?? []).map((group) => ({
       ...group,
@@ -126,7 +142,10 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Admin meeting events load failed:", error);
     return NextResponse.json(
-      { error: "행사 정보를 불러오지 못했습니다. DB 마이그레이션을 확인해주세요." },
+      {
+        error:
+          "행사 정보를 불러오지 못했습니다. DB 마이그레이션을 확인해주세요.",
+      },
       { status: 500 },
     );
   }
@@ -134,58 +153,58 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!isAdminRequest(request)) return unauthorized();
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const body = (await request.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
   const action = text(body?.action);
 
   try {
     const admin = createAdminClient();
     if (action === "create_event") {
-      const programId = text(body?.programId);
+      const title = text(body?.title);
       const eventDate = text(body?.eventDate);
       const startsAt = text(body?.startsAt);
-      if (!programId || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !startsAt) {
-        return NextResponse.json({ error: "프로그램, 날짜, 시간을 입력해주세요." }, { status: 400 });
+      if (
+        !title ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(eventDate) ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(startsAt)
+      ) {
+        return NextResponse.json(
+          { error: "행사 제목, 날짜, 시간을 입력해주세요." },
+          { status: 400 },
+        );
       }
-      const { data: program, error: programError } = await admin
-        .from("ticket_templates")
-        .select("id,title,short_description,detail_summary,detail_activities,detail_flow,detail_good_for,detail_notice,stage_copy,course_steps,mood_tags,activity_type,default_region")
-        .eq("id", programId)
-        .eq("template_kind", "experience")
-        .eq("lifecycle_status", "active")
-        .single();
-      if (programError) throw programError;
-
-      const { data: createdEvent, error } = await admin.from("meeting_events").insert({
-        program_id: program.id,
-        title: text(body?.title) || program.title,
-        short_description: program.short_description,
-        event_date: eventDate,
-        starts_at: startsAt,
-        region: text(body?.region) || program.default_region || "서울",
-        capacity: Number(body?.capacity) > 0 ? Number(body?.capacity) : 30,
-        visibility: "draft",
-        detail_snapshot: {
-          detailSummary: program.detail_summary,
-          detailActivities: program.detail_activities,
-          detailFlow: program.detail_flow,
-          detailGoodFor: program.detail_good_for,
-          detailNotice: program.detail_notice,
-          stageCopy: program.stage_copy,
-          courseSteps: program.course_steps,
-          moodTags: program.mood_tags,
-          activityType: program.activity_type,
+      let snapshot: unknown = null;
+      if (body?.sourceEventId) {
+        const { data, error } = await admin
+          .from("meeting_events")
+          .select("detail_snapshot")
+          .eq("id", text(body.sourceEventId))
+          .single();
+        if (error) throw error;
+        snapshot = data.detail_snapshot;
+      }
+      const { data: createdEventId, error } = await admin.rpc(
+        "create_standalone_meeting_event",
+        {
+          p_title: title,
+          p_date: eventDate,
+          p_time: startsAt,
+          p_region: text(body?.region) || "서울",
+          p_snapshot: newEventSnapshot(snapshot),
         },
-      }).select("id,starts_at").single<{ id: string; starts_at: string }>();
-      if (error) throw error;
-      const { error: stageError } = await admin.from("meeting_event_stages").insert(
-        programEventStages(createdEvent.id, createdEvent.starts_at, program.course_steps),
       );
-      if (stageError) throw stageError;
+      if (error) throw error;
+      return NextResponse.json({ ...(await loadData()), createdEventId });
     } else if (action === "create_group") {
       const eventId = text(body?.eventId);
       const code = text(body?.code);
       if (!eventId || !code) {
-        return NextResponse.json({ error: "행사와 그룹 코드를 입력해주세요." }, { status: 400 });
+        return NextResponse.json(
+          { error: "행사와 그룹 코드를 입력해주세요." },
+          { status: 400 },
+        );
       }
       const { data: event, error: eventError } = await admin
         .from("meeting_events")
@@ -201,7 +220,8 @@ export async function POST(request: NextRequest) {
         }>();
       if (eventError) throw eventError;
       const groupTitle = text(body?.title) || `${code} 그룹`;
-      const groupCapacity = Number(body?.capacity) > 0 ? Number(body?.capacity) : 6;
+      const groupCapacity =
+        Number(body?.capacity) > 0 ? Number(body?.capacity) : 6;
       const { data: instance, error: instanceError } = await admin
         .from("ticket_instances")
         .insert({
@@ -233,17 +253,29 @@ export async function POST(request: NextRequest) {
       const stageId = text(body?.stageId);
       const title = text(body?.title);
       const locationMode = text(body?.locationMode);
-      if (!eventId || !title || !["shared", "group_specific", "hidden"].includes(locationMode)) {
-        return NextResponse.json({ error: "일정 제목과 장소 방식을 확인해주세요." }, { status: 400 });
+      if (
+        !eventId ||
+        !title ||
+        !["shared", "group_specific", "hidden"].includes(locationMode)
+      ) {
+        return NextResponse.json(
+          { error: "일정 제목과 장소 방식을 확인해주세요." },
+          { status: 400 },
+        );
       }
       const payload = {
         event_id: eventId,
         title,
-        stage_type: ["meal", "activity", "feedback", "other"].includes(text(body?.stageType)) ? text(body?.stageType) : "activity",
+        stage_type: ["meal", "activity", "feedback", "other"].includes(
+          text(body?.stageType),
+        )
+          ? text(body?.stageType)
+          : "activity",
         sequence: Math.max(1, Number(body?.sequence) || 1),
         starts_at: text(body?.startsAt) || null,
         location_mode: locationMode,
-        place_name: locationMode === "shared" ? text(body?.placeName) || null : null,
+        place_name:
+          locationMode === "shared" ? text(body?.placeName) || null : null,
         address: locationMode === "shared" ? text(body?.address) || null : null,
         updated_at: new Date().toISOString(),
       };
@@ -252,51 +284,89 @@ export async function POST(request: NextRequest) {
         : admin.from("meeting_event_stages").insert(payload);
       const { error } = await query;
       if (error) throw error;
-
     } else if (action === "save_group") {
       const groupId = text(body?.groupId);
-      if (!groupId) return NextResponse.json({ error: "그룹을 선택해주세요." }, { status: 400 });
-      const patch: Record<string, unknown> = { code: text(body?.code), title: text(body?.title) };
-      if (body?.operationNote !== undefined) patch.operationNote = text(body.operationNote) || null;
-      if (body?.feedbackScopeKey !== undefined) patch.feedbackScopeKey = text(body.feedbackScopeKey) || null;
+      if (!groupId)
+        return NextResponse.json(
+          { error: "그룹을 선택해주세요." },
+          { status: 400 },
+        );
+      const patch: Record<string, unknown> = {
+        code: text(body?.code),
+        title: text(body?.title),
+      };
+      if (body?.operationNote !== undefined)
+        patch.operationNote = text(body.operationNote) || null;
+      if (body?.feedbackScopeKey !== undefined)
+        patch.feedbackScopeKey = text(body.feedbackScopeKey) || null;
       if (body?.startsFromStageSequence !== undefined) {
         const sequence = Number(body.startsFromStageSequence);
-        if (!Number.isSafeInteger(sequence) || sequence < 1) return NextResponse.json({ error: "합류 단계를 확인해주세요." }, { status: 400 });
+        if (!Number.isSafeInteger(sequence) || sequence < 1)
+          return NextResponse.json(
+            { error: "합류 단계를 확인해주세요." },
+            { status: 400 },
+          );
         patch.startsFromStageSequence = sequence;
       }
       const { error } = await admin.rpc("save_operational_group", {
-        p_group_id: groupId, p_patch: patch, p_stage_id: text(body?.stageId) || null,
-        p_location: body?.placeName !== undefined || body?.address !== undefined
-          ? { placeName: text(body?.placeName), address: text(body?.address) } : null,
+        p_group_id: groupId,
+        p_patch: patch,
+        p_stage_id: text(body?.stageId) || null,
+        p_location:
+          body?.placeName !== undefined || body?.address !== undefined
+            ? { placeName: text(body?.placeName), address: text(body?.address) }
+            : null,
       });
       if (error) throw error;
     } else if (action === "save_group_location") {
       const groupId = text(body?.groupId);
       const stageId = text(body?.stageId);
-      if (!groupId || !stageId) return NextResponse.json({ error: "그룹과 일정을 선택해주세요." }, { status: 400 });
-      const { error } = await admin.from("meeting_group_stage_locations").upsert({
-        group_id: groupId,
-        stage_id: stageId,
-        place_name: text(body?.placeName) || null,
-        address: text(body?.address) || null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "group_id,stage_id" });
+      if (!groupId || !stageId)
+        return NextResponse.json(
+          { error: "그룹과 일정을 선택해주세요." },
+          { status: 400 },
+        );
+      const { error } = await admin
+        .from("meeting_group_stage_locations")
+        .upsert(
+          {
+            group_id: groupId,
+            stage_id: stageId,
+            place_name: text(body?.placeName) || null,
+            address: text(body?.address) || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "group_id,stage_id" },
+        );
       if (error) throw error;
     } else {
-      return NextResponse.json({ error: "지원하지 않는 작업입니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "지원하지 않는 작업입니다." },
+        { status: 400 },
+      );
     }
     return NextResponse.json(await loadData());
   } catch (error) {
     console.error("Admin meeting event create failed:", error);
-    return NextResponse.json({ error: "행사 정보를 저장하지 못했습니다." }, { status: 500 });
+    return NextResponse.json(
+      { error: "행사 정보를 저장하지 못했습니다." },
+      { status: 500 },
+    );
   }
 }
 
 export async function DELETE(request: NextRequest) {
   if (!isAdminRequest(request)) return unauthorized();
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const body = (await request.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
   const groupId = text(body?.groupId);
-  if (!groupId) return NextResponse.json({ error: "그룹을 선택해주세요." }, { status: 400 });
+  if (!groupId)
+    return NextResponse.json(
+      { error: "그룹을 선택해주세요." },
+      { status: 400 },
+    );
   try {
     const admin = createAdminClient();
     const { data: group, error: groupError } = await admin
@@ -309,12 +379,24 @@ export async function DELETE(request: NextRequest) {
       .from("meeting_date_applications")
       .select("id", { count: "exact", head: true })
       .eq("assigned_group_id", groupId)
-      .in("status", ["waitlisted", "on_hold", "approved", "feedback_done", "completed"]);
+      .in("status", [
+        "waitlisted",
+        "on_hold",
+        "approved",
+        "feedback_done",
+        "completed",
+      ]);
     if (countError) throw countError;
     if ((count ?? 0) > 0) {
-      return NextResponse.json({ error: "배정 인원이 있는 그룹은 삭제할 수 없습니다." }, { status: 409 });
+      return NextResponse.json(
+        { error: "배정 인원이 있는 그룹은 삭제할 수 없습니다." },
+        { status: 409 },
+      );
     }
-    const { error } = await admin.from("meeting_groups").delete().eq("id", groupId);
+    const { error } = await admin
+      .from("meeting_groups")
+      .delete()
+      .eq("id", groupId);
     if (error) throw error;
     if (group.legacy_ticket_instance_id) {
       const { error: instanceError } = await admin
@@ -326,37 +408,69 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(await loadData());
   } catch (error) {
     console.error("Admin meeting group delete failed:", error);
-    return NextResponse.json({ error: "그룹을 삭제하지 못했습니다." }, { status: 500 });
+    return NextResponse.json(
+      { error: "그룹을 삭제하지 못했습니다." },
+      { status: 500 },
+    );
   }
 }
 
 export async function PATCH(request: NextRequest) {
   if (!isAdminRequest(request)) return unauthorized();
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const body = (await request.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
   const eventId = text(body?.eventId);
   const action = text(body?.action) || "update_event";
-  if (!eventId) return NextResponse.json({ error: "행사를 선택해주세요." }, { status: 400 });
+  if (!eventId)
+    return NextResponse.json(
+      { error: "행사를 선택해주세요." },
+      { status: 400 },
+    );
   try {
     const admin = createAdminClient();
     const visibility = text(body?.visibility) as MeetingEventVisibility;
     if (body?.visibility !== undefined && !visibilities.has(visibility)) {
-      return NextResponse.json({ error: "행사 공개 상태가 올바르지 않습니다." }, { status: 400 });
+      return NextResponse.json(
+        { error: "행사 공개 상태가 올바르지 않습니다." },
+        { status: 400 },
+      );
     }
-    const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const payload: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
     if (body?.visibility !== undefined) payload.visibility = visibility;
     if (action === "update_event") {
       if (body?.title !== undefined) payload.title = text(body.title);
-      if (body?.shortDescription !== undefined) payload.short_description = text(body.shortDescription) || null;
-      if (body?.eventDate !== undefined) payload.event_date = text(body.eventDate);
+      if (body?.shortDescription !== undefined)
+        payload.short_description = text(body.shortDescription) || null;
+      if (body?.eventDate !== undefined)
+        payload.event_date = text(body.eventDate);
       if (body?.startsAt !== undefined) payload.starts_at = text(body.startsAt);
       if (body?.region !== undefined) payload.region = text(body.region);
-      if (body?.capacity !== undefined) payload.capacity = Math.max(1, Number(body.capacity) || 1);
+      if (body?.capacity !== undefined)
+        payload.capacity = Math.max(1, Number(body.capacity) || 1);
     }
-    const { error } = await admin.from("meeting_events").update(payload).eq("id", eventId);
+    if (action === "update_copy") {
+      const { error } = await admin.rpc("update_event_stage_copy", {
+        p_event_id: eventId,
+        p_copy: sanitizeTicketStageCopy(body?.stageCopy),
+      });
+      if (error) throw error;
+      return NextResponse.json(await loadData());
+    }
+    const { error } = await admin
+      .from("meeting_events")
+      .update(payload)
+      .eq("id", eventId);
     if (error) throw error;
     return NextResponse.json(await loadData());
   } catch (error) {
     console.error("Admin meeting event update failed:", error);
-    return NextResponse.json({ error: "행사 공개 상태를 저장하지 못했습니다." }, { status: 500 });
+    return NextResponse.json(
+      { error: "행사 공개 상태를 저장하지 못했습니다." },
+      { status: 500 },
+    );
   }
 }

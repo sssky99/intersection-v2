@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { EventCommonContent } from "./EventCommonContent";
 import type {
   AdminGroupStageLocation,
   AdminMeetingEventStage,
@@ -44,24 +45,20 @@ export function MeetingEventAdminPanel({
   onOpenWaitlist,
   focusEventId,
   onFocusEventHandled,
-  focusProgramId,
-  onFocusProgramHandled,
 }: {
   onOpenWaitlist?: () => void;
   focusEventId?: string | null;
   onFocusEventHandled?: () => void;
-  focusProgramId?: string | null;
-  onFocusProgramHandled?: () => void;
 }) {
   const [data, setData] = useState<AdminMeetingEventsData>({
-    programs: [],
     events: [],
     groups: [],
     stages: [],
     groupLocations: [],
   });
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [programId, setProgramId] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [sourceEventId, setSourceEventId] = useState<string | null>(null);
   const [eventDate, setEventDate] = useState(today());
   const [startsAt, setStartsAt] = useState("18:00");
   const [groupCode, setGroupCode] = useState("");
@@ -80,7 +77,7 @@ export function MeetingEventAdminPanel({
 
   const hydrate = useCallback((next: AdminMeetingEventsData) => {
     setData(next);
-    setProgramId((current) => current || next.programs[0]?.id || "");
+
     setSelectedEventId((current) =>
       current && next.events.some((event) => event.id === current)
         ? current
@@ -113,17 +110,6 @@ export function MeetingEventAdminPanel({
   }, [hydrate]);
 
   useEffect(() => void load(), [load]);
-
-  useEffect(() => {
-    if (focusProgramId) void load();
-  }, [focusProgramId, load]);
-
-  useEffect(() => {
-    if (!focusProgramId || !data.programs.some(program => program.id === focusProgramId)) return;
-    setProgramId(focusProgramId);
-    document.getElementById("meeting-event-create")?.scrollIntoView({ block: "center" });
-    onFocusProgramHandled?.();
-  }, [focusProgramId, data.programs, onFocusProgramHandled]);
 
   useEffect(() => {
     if (
@@ -181,6 +167,7 @@ export function MeetingEventAdminPanel({
       if (!response.ok || !result)
         throw new Error(result?.error ?? "save-failed");
       hydrate(result);
+      if (result.createdEventId) setSelectedEventId(result.createdEventId);
       setMessage(success);
       return true;
     } catch (caught) {
@@ -241,23 +228,26 @@ export function MeetingEventAdminPanel({
           )}
         </div>
 
-        <div id="meeting-event-create" className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
+        <div
+          id="meeting-event-create"
+          className="mt-5 rounded-2xl border border-black/10 bg-white p-4"
+        >
           <p className="flex items-center gap-2 text-sm font-black">
             <CalendarPlus size={16} />새 행사
           </p>
-          <select
-            value={programId}
-            onChange={(event) => setProgramId(event.target.value)}
-            className="mt-3 h-10 w-full rounded-xl border border-black/10 px-3 text-sm font-bold"
-          >
-            <option value="">프로그램 선택</option>
-            {data.programs.map((program) => (
-              <option key={program.id} value={program.id}>
-                {program.title}
-                {program.updated_at ? ` · ${new Date(program.updated_at).toLocaleString("ko-KR")}` : ""}
-              </option>
-            ))}
-          </select>
+          <input
+            aria-label="새 행사 제목"
+            placeholder="행사 제목"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className="mt-3 h-10 w-full rounded-xl border border-black/10 px-3 text-sm"
+          />
+          {sourceEventId && (
+            <p className="mt-2 text-xs">
+              선택한 행사의 여정·안내를 복사합니다.{" "}
+              <button onClick={() => setSourceEventId(null)}>복제 해제</button>
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-2">
             <input
               type="date"
@@ -273,11 +263,17 @@ export function MeetingEventAdminPanel({
             />
           </div>
           <button
-            disabled={!programId || saving}
+            disabled={!newTitle.trim() || saving}
             onClick={() =>
               void request(
                 "POST",
-                { action: "create_event", programId, eventDate, startsAt },
+                {
+                  action: "create_event",
+                  title: newTitle,
+                  sourceEventId,
+                  eventDate,
+                  startsAt,
+                },
                 "행사를 생성했습니다.",
               )
             }
@@ -307,6 +303,18 @@ export function MeetingEventAdminPanel({
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">
                   meeting event
                 </p>
+                <button
+                  className="mb-2 rounded-lg border px-3 py-2 text-sm"
+                  onClick={() => {
+                    setNewTitle(selectedEvent.title);
+                    setSourceEventId(selectedEvent.id);
+                    document
+                      .getElementById("meeting-event-create")
+                      ?.scrollIntoView({ block: "center" });
+                  }}
+                >
+                  이 행사 복제
+                </button>
                 <h3 className="mt-2 text-2xl font-black">
                   {selectedEvent.title}
                 </h3>
@@ -423,6 +431,21 @@ export function MeetingEventAdminPanel({
               </div>
             </section>
 
+            <EventCommonContent
+              event={selectedEvent}
+              saving={saving}
+              onSave={(stageCopy) =>
+                request(
+                  "PATCH",
+                  {
+                    action: "update_copy",
+                    eventId: selectedEvent.id,
+                    stageCopy,
+                  },
+                  "공통 안내를 저장했습니다.",
+                )
+              }
+            />
             <section className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
               <div>
                 <h4 className="text-base font-black">2. 일정과 장소</h4>
