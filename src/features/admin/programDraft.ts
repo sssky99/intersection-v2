@@ -8,19 +8,13 @@ import type { GatheringTicket, TicketStageCopy } from "@/types/ticket";
 
 export type ProgramDraft = {
   title: string;
-  introduction: string;
-  summary: string;
-  notice: string;
-  steps: Array<{ title: string; activityType: string }>;
+  steps: Array<{ title: string }>;
   stageCopy: TicketStageCopy;
 };
 
 export type AdminProgram = {
   id: string;
   title: string;
-  short_description: string | null;
-  detail_summary: string | null;
-  detail_notice: string | null;
   course_steps: unknown;
   stage_copy: unknown;
   activity_type: string | null;
@@ -32,9 +26,6 @@ export function programDraft(program?: AdminProgram): ProgramDraft {
     program && normalizeStoredTicketCourseSteps(program.course_steps);
   return {
     title: program?.title ?? "",
-    introduction: program?.short_description ?? "",
-    summary: program?.detail_summary ?? "",
-    notice: program?.detail_notice ?? "",
     stageCopy: sanitizeTicketStageCopy(program?.stage_copy) ?? {},
     steps: ensureMinimumStoredTicketCourseSteps(
       steps?.length
@@ -44,8 +35,7 @@ export function programDraft(program?: AdminProgram): ProgramDraft {
             activityType: program?.activity_type,
           }),
     ).map((step, index) => ({
-      title: step.title ?? (index === 0 ? "저녁 식사" : "두 번째 활동"),
-      activityType: step.activityType ?? "",
+      title: step.title || step.activityType || (index === 0 ? "저녁 식사" : "두 번째 활동"),
     })),
   };
 }
@@ -66,19 +56,14 @@ export function programPayload(value: unknown) {
   ) {
     throw new Error("프로그램 제목과 2~3개의 활동 이름을 입력해주세요.");
   }
-  const text = (value: unknown) =>
-    typeof value === "string" ? value.trim() : "";
   return {
     title: draft.title.trim(),
-    short_description: text(draft.introduction),
-    detail_summary: text(draft.summary),
-    detail_notice: text(draft.notice),
     stage_copy: sanitizeTicketStageCopy(draft.stageCopy),
     course_steps: draft.steps.map((step, index) => ({
       id: `course-${index + 1}`,
       order: index + 1,
       title: step.title.trim(),
-      activityType: text(step.activityType) || null,
+      activityType: null,
       imageUrl: null,
       isMainActivity: index === 0,
       openOffsetMinutes: [0, 90, 150][index],
@@ -87,7 +72,7 @@ export function programPayload(value: unknown) {
       place: null,
       reservationName: null,
     })),
-    activity_type: text(draft.steps[0].activityType) || null,
+    activity_type: null,
     image_url: null,
     template_kind: "experience",
     lifecycle_status: "active",
@@ -100,15 +85,13 @@ export function programPreview(draft: ProgramDraft): GatheringTicket {
     id: "program-preview",
     templateId: "program-preview",
     title: draft.title || "프로그램 제목",
-    subtitle: draft.introduction,
+    subtitle: "",
     date: "",
     time: "",
     area: "",
     moodTags: [],
     peopleHint: "",
     reason: "",
-    detailSummary: draft.summary,
-    detailNotice: draft.notice,
     courseSteps: draft.steps.map((step, index) => ({
       ...step,
       id: `course-${index + 1}`,

@@ -25,8 +25,6 @@ import {
   courseStepPlaceRevealOffsetMinutes,
 } from "@/lib/ticketCourse";
 import {
-  MEETING_DEFAULT_MIN_PARTICIPANT_COUNT,
-  MEETING_MAX_PARTICIPANT_COUNT,
   type GatheringTicket,
   type TicketArrivalStatus,
 } from "@/types/ticket";
@@ -139,21 +137,6 @@ const defaultSections: TicketDetailSectionKey[] = [
   "course",
   "place",
 ];
-
-function participantNotice(ticket: GatheringTicket) {
-  const minimum =
-    ticket.minimumParticipantCount ?? MEETING_DEFAULT_MIN_PARTICIPANT_COUNT;
-  const maximum = ticket.maxParticipantCount ?? MEETING_MAX_PARTICIPANT_COUNT;
-
-  return [
-    `이 자리는 최소 ${minimum}명부터 최대 ${maximum}명까지 함께해요.`,
-    `최소 ${minimum}명이 모이지 않으면 모임이 자동 취소돼요.`,
-  ];
-}
-
-const commonNotices = ["상세 장소는 참여 확정 후 안내돼요."];
-
-const legacyDepositNoticePattern = /(?:참여\s*보증금|참가\s*보증금|보증금|환급)/;
 
 function cleanList(items: string[] | undefined) {
   return (items ?? []).map((item) => item.trim()).filter(Boolean);
@@ -318,14 +301,6 @@ export function TicketDetailContent({
   const resolvedOtherMemberPhotoUrls = matchMemberCount === undefined || withFriend
     ? randomPreviewPhotoUrls.slice(5, 11)
     : previewOtherMemberPhotoUrls;
-  const activities = cleanList(ticket.detailActivities);
-  const defaultNotices = [...participantNotice(ticket), ...commonNotices];
-  const customNotices = cleanList(ticket.detailNotice?.split(/\r?\n/)).filter(
-    (notice) =>
-      !defaultNotices.includes(notice) &&
-      !legacyDepositNoticePattern.test(notice),
-  );
-  const noticeItems = [...defaultNotices, ...customNotices];
   const visibleSections = new Set(sections);
   const courseSteps = cleanCourseSteps(ticket.courseSteps);
   const journeyDateTimeLabel = [

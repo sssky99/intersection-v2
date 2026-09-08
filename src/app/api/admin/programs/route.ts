@@ -8,7 +8,7 @@ import { programPayload } from "@/features/admin/programDraft";
 
 export const dynamic = "force-dynamic";
 const fields =
-  "id,title,short_description,detail_summary,detail_notice,course_steps,stage_copy,activity_type,updated_at";
+  "id,title,course_steps,stage_copy,activity_type,updated_at";
 function authorized(request: NextRequest) {
   return isAdminSessionTokenValid(
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,

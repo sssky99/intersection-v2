@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { ticketCategoryOptions } from "@/types/ticketCategory";
 import {
   programDraft,
   programPreview,
@@ -107,7 +106,7 @@ export function ProgramAdminPanel(props: {
         <div>
           <h2 className="text-xl font-black">프로그램 관리</h2>
           <p className="mt-1 text-sm text-black/50">
-            반복 사용하는 소개와 기본 여정을 준비하세요. 날짜와 장소는 행사
+            프로그램 제목과 기본 여정을 준비하세요. 날짜와 장소는 행사
             관리에서 정합니다.
           </p>
         </div>
@@ -198,23 +197,10 @@ export function ProgramAdminPanel(props: {
                   value={draft.title}
                   onChange={(title) => setDraft({ ...draft, title })}
                 />
-                <Field
-                  label="짧은 소개"
-                  value={draft.introduction}
-                  onChange={(introduction) =>
-                    setDraft({ ...draft, introduction })
-                  }
-                />
-                <Field
-                  label="상세 소개"
-                  value={draft.summary}
-                  multiline
-                  onChange={(summary) => setDraft({ ...draft, summary })}
-                />
                 <section className="space-y-3">
                   <h3 className="font-bold">기본 여정</h3>
                   <p className="text-xs text-black/50">
-                    활동 이름과 종류를 정하세요. 실제 시간·장소는 행사에서
+                    활동 이름과 순서를 정하세요. 실제 시간·장소는 행사에서
                     설정합니다.
                   </p>
                   {draft.steps.map((step, index) => (
@@ -234,30 +220,6 @@ export function ProgramAdminPanel(props: {
                           })
                         }
                       />
-                      <label className="block text-xs font-bold">
-                        활동 종류
-                        <select
-                          className={`${inputClass} mt-2`}
-                          value={step.activityType}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              steps: draft.steps.map((s, i) =>
-                                i === index
-                                  ? { ...s, activityType: e.target.value }
-                                  : s,
-                              ),
-                            })
-                          }
-                        >
-                          <option value="">선택해주세요</option>
-                          {ticketCategoryOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
                       {index === 2 && (
                         <button
                           className={buttonClass}
@@ -281,7 +243,7 @@ export function ProgramAdminPanel(props: {
                           ...draft,
                           steps: [
                             ...draft.steps,
-                            { title: "", activityType: "" },
+                            { title: "" },
                           ],
                         })
                       }
@@ -290,17 +252,12 @@ export function ProgramAdminPanel(props: {
                     </button>
                   )}
                 </section>
-                <Field
-                  label="기본 안내 문구"
-                  value={draft.notice}
-                  multiline
-                  onChange={(notice) => setDraft({ ...draft, notice })}
-                />
                 <details>
                   <summary className="cursor-pointer font-bold">
                     진행 단계별 안내 문구
                   </summary>
                   <div className="mt-4 space-y-3">
+                    <p className="text-xs leading-5 text-black/50">신청·참여 상태 문구는 티켓 상단에, 피드백 제목·본문은 피드백 작성 화면에 표시됩니다. 비워두면 공통 기본 문구를 사용합니다.</p>
                     {Object.entries(copyLabels).map(([key, label]) => (
                       <Field
                         key={key}
@@ -356,9 +313,6 @@ export function ProgramAdminPanel(props: {
                 <h2 className="px-6 pt-8 text-center text-2xl font-bold">
                   {preview.title}
                 </h2>
-                <p className="px-6 py-4 text-center text-sm">
-                  {preview.subtitle}
-                </p>
                 <TicketDetailContent
                   ticket={preview}
                   className="px-5 pb-6"
