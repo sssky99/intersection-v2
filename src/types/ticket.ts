@@ -150,6 +150,7 @@ export type TicketMemberIntro = {
 };
 
 export type UserTicket = {
+  friendInvitation?: { photoUrl: string | null };
   id: string;
   waitlistId: string;
   ticket: GatheringTicket;

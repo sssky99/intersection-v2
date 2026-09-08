@@ -1,4 +1,5 @@
 import { feedbackInstanceIdsForViewer } from "@/lib/feedbackScope";
+import { attachFriendTickets } from "./friendTickets";
 import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
 import { visibleMeetingDateApplicationInstanceId } from "@/lib/meetingDateApplications";
 import { meetingFeedbackWindow } from "@/lib/meetingOperations";
@@ -929,7 +930,7 @@ export async function loadUserTickets(request: Request, userId: string) {
     const visibleTickets = [...tickets].sort(sortUserTickets);
 
     return ticketsResponse(
-      visibleTickets,
+      await attachFriendTickets(visibleTickets, applicationRows, userId),
       participationCount,
       candidatePage.meta,
     );

@@ -953,7 +953,9 @@ export function TicketStageContent({
           participantArrivalStatus={arrivalStatus}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
-          matchMemberCount={matchMemberCount}
+          matchMemberCount={userTicket.friendInvitation ? 4 : matchMemberCount}
+          withFriend={Boolean(userTicket.friendInvitation)}
+          friendPhotoUrl={userTicket.friendInvitation?.photoUrl}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -987,7 +989,9 @@ export function TicketStageContent({
           participantArrivalStatus={arrivalStatus}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
-          matchMemberCount={matchMemberCount}
+          matchMemberCount={userTicket.friendInvitation ? 4 : matchMemberCount}
+          withFriend={Boolean(userTicket.friendInvitation)}
+          friendPhotoUrl={userTicket.friendInvitation?.photoUrl}
           sections={introDetailSections}
           className="mt-0"
           afterActivities={
@@ -1010,7 +1014,9 @@ export function TicketStageContent({
           participantPhotoUrl={participantPhotoUrl}
           previewMatchPhotoUrls={previewMatchPhotoUrls}
           previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
-          matchMemberCount={matchMemberCount}
+          matchMemberCount={userTicket.friendInvitation ? 4 : matchMemberCount}
+          withFriend={Boolean(userTicket.friendInvitation)}
+          friendPhotoUrl={userTicket.friendInvitation?.photoUrl}
           sections={introDetailSections}
           afterActivities={
             <PlaceSection
@@ -1030,7 +1036,9 @@ export function TicketStageContent({
       participantPhotoUrl={participantPhotoUrl}
       previewMatchPhotoUrls={previewMatchPhotoUrls}
       previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
-      matchMemberCount={matchMemberCount}
+          matchMemberCount={userTicket.friendInvitation ? 4 : matchMemberCount}
+          withFriend={Boolean(userTicket.friendInvitation)}
+          friendPhotoUrl={userTicket.friendInvitation?.photoUrl}
       sections={appliedDetailSections}
       className="mt-0"
       afterActivities={
