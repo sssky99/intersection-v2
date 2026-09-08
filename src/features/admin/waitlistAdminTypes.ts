@@ -49,6 +49,7 @@ export type WaitlistTicketInstance = {
 
 export type AdminWaitlistRow = {
   is_friend_application?: boolean;
+  friend_name?: string | null;
   id: number | string;
   source: "ticket_participation" | "date_application";
   source_id: number | string;

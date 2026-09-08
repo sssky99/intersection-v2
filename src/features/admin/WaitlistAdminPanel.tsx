@@ -1389,7 +1389,7 @@ function DistributionApplicantCard({
         <Check size={14} strokeWidth={3} aria-hidden />
       </button>
       <button type="button" onClick={onOpen} className="min-w-0 text-left">
-        <p className="truncate text-xs font-black">
+        <p className="flex flex-wrap items-center gap-y-1 text-xs font-black">
           {profile ? (
             <AdminMemberName
               profile={profile}
@@ -1417,7 +1417,7 @@ function DistributionApplicantCard({
 
 function FriendBadge({ row }: { row: AdminWaitlistRow }) {
   if (!row.is_friend_application) return null;
-  return <span className="ml-1 inline-flex shrink-0 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 align-middle text-[10px] font-bold text-violet-700">친구</span>;
+  return <span className="ml-1 inline-flex shrink-0 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 align-middle text-[10px] font-bold text-violet-700">친구-{row.friend_name || "이름 미확인"}</span>;
 }
 
 function ApplicantRow({
