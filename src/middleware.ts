@@ -113,7 +113,8 @@ export async function middleware(request: NextRequest) {
     nextUrl.pathname.startsWith('/admin/') ||
     nextUrl.pathname.startsWith('/api/admin/');
 
-  if (isNetlifyBranchDeploy(origin) && !isAdminPreviewPath) {
+  const isInvitationExamplePath = /^\/invite-example\/[0-9a-f-]{36}$/i.test(nextUrl.pathname);
+  if (isNetlifyBranchDeploy(origin) && !isAdminPreviewPath && !isInvitationExamplePath) {
     const productionUrl = new URL(
       `${nextUrl.pathname}${nextUrl.search}`,
       productionOAuthOrigin(),

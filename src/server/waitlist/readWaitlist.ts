@@ -20,6 +20,7 @@ import type { MeetingDateDepositStatus } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { GatheringTicket } from "@/types/ticket";
 import "server-only";
+import { friendApplicationIds, type WaitlistFriendInvitation } from "./friendApplications";
 
 
 type WaitlistDbRow = {
@@ -40,6 +41,7 @@ type WaitlistDbRow = {
 
 type DateApplicationDbRow = {
   id: number | string;
+  event_id: string | null;
   user_id: string;
   meeting_date: string;
   meeting_time: string;
@@ -370,6 +372,20 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
   }
 
   const profilesMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
+  const eventIds = uniqueText(dateApplicationRows.map((row) => row.event_id));
+  const friendInvitations: WaitlistFriendInvitation[] = [];
+  for (let start = 0; start < eventIds.length; start += 100) {
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase.from("friend_sms_invitations")
+        .select("application_id,inviter_id,event_id,friend_phone,status")
+        .in("event_id", eventIds.slice(start, start + 100))
+        .order("id").range(offset, offset + 999);
+      if (error) throw error;
+      friendInvitations.push(...(data ?? []));
+      if ((data ?? []).length < 1000) break;
+    }
+  }
+  const friendIds = friendApplicationIds(dateApplicationRows, profiles, friendInvitations);
   const instances = sortInstances(
     dedupeInstances([...seedInstances, ...templateInstances, ...dateInstances]),
   );
@@ -408,6 +424,7 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
       return {
         id: `date:${row.id}`,
         source: "date_application",
+        is_friend_application: friendIds.has(String(row.id)),
         source_id: row.id,
         user_id: row.user_id,
         ticket_id: `date:${row.meeting_date}`,

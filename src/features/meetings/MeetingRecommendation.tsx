@@ -1,4 +1,6 @@
 "use client";
+import { normalizeFriendInvitationId } from "@/lib/friendInvitationLink";
+import { ApplicationPathChoice, FriendApplicationFlow } from "./FriendApplicationFlow";
 import { BlindDateInvitationFlow, BlindDateOfferList, blindDateCandidateDateLabel, blindDateDateLabel, shouldPlayBlindDateUnlock } from "@/features/blindDates/BlindDateInvitationFlow";
 import { TicketDetailRevealHeader, meetingInvitationDisplayTitle } from "@/features/meetings/TicketDetailRevealHeader";
 
@@ -715,8 +717,15 @@ function MeetingDateApplicationFlow({
   onOpenTicketTab,
 }: MeetingRecommendationProps) {
   const searchParams = useSearchParams();
+  const receivedInvitationId = normalizeFriendInvitationId(searchParams.get("friendInvite"));
+  const [receivedInvitation, setReceivedInvitation] = useState<{ id: string; eventId: string; photoUrl: string | null } | null>(null);
+  const [receivedInvitationError, setReceivedInvitationError] = useState<string | null>(null);
+  const handledReceivedInvitation = useRef<string | null>(null);
   const shouldReduceMotion = Boolean(useReducedMotion());
   const [screen, setScreen] = useState<DateApplicationScreen>("intro");
+  const [friendPhotoUrl, setFriendPhotoUrl] = useState<string | null>(null);
+  const [friendPhone, setFriendPhone] = useState<string | null>(null);
+  const [applicationPath, setApplicationPath] = useState<"solo" | "friend" | null>(null);
   const [introDotCount, setIntroDotCount] = useState(1);
   const [introMinDurationElapsed, setIntroMinDurationElapsed] = useState(false);
   const [suppressProgramMorph, setSuppressProgramMorph] = useState(false);
@@ -727,6 +736,48 @@ function MeetingDateApplicationFlow({
     null,
   );
   const [membershipSheetOpen, setMembershipSheetOpen] = useState(false);
+  const [friendInvitationRefresh, setFriendInvitationRefresh] = useState(0);
+  const [hasSentFriendInvitation, setHasSentFriendInvitation] = useState(false);
+  useEffect(() => {
+    setFriendPhotoUrl(null);
+    setHasSentFriendInvitation(false);
+    if (!active || screen !== "ticket" || !selectedTicket?.id) return;
+    if (receivedInvitation?.eventId === selectedTicket.id) {
+      setHasSentFriendInvitation(true);
+      setFriendPhotoUrl(receivedInvitation.photoUrl);
+      return;
+    }
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    const load = async () => {
+      try {
+        const response = await fetch("/api/friend-invitations?eventId=" + encodeURIComponent(selectedTicket.id), { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        setHasSentFriendInvitation(!["not_sent", "inactive"].includes(data.status));
+        setFriendPhotoUrl(data.status === "sent" && typeof data.photoUrl === "string" ? data.photoUrl : null);
+        if (data.status === "submitted" && ++attempts < 12) timer = setTimeout(load, 5000);
+      } catch { /* Keep photos hidden until confirmed by the server. */ }
+    };
+    void load();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [active, screen, selectedTicket?.id, userId, friendInvitationRefresh, receivedInvitation]);
+
+  const sendFriendInvitation = async (savedApplications: MeetingDateApplication[], eventId?: string) => {
+    if (applicationPath !== "friend" || !friendPhone) return;
+    const application = savedApplications.find((item) => item.eventId === eventId);
+    if (!application) throw new Error("신청 기록을 확인하지 못해 친구 초대를 보내지 않았어요.");
+    const response = await fetch("/api/friend-invitations", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applicationId: application.id, phone: friendPhone, consent: true }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "친구 초대 문자를 보내지 못했어요.");
+    setFriendInvitationRefresh((value) => value + 1);
+  };
+
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [submittedDates, setSubmittedDates] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -743,6 +794,33 @@ function MeetingDateApplicationFlow({
     meetingDate: string | null;
   } | null>(null);
   const funnelStep = applicationFunnelStep(screen, membershipSheetOpen);
+  useEffect(() => {
+    if (!active || !profileCompleted || availableTicketsLoading || !receivedInvitationId || handledReceivedInvitation.current === receivedInvitationId) return;
+    const controller = new AbortController();
+    const loadInvitation = async () => {
+      try {
+        const response = await fetch("/api/friend-invitations/received?id=" + encodeURIComponent(receivedInvitationId), { signal: controller.signal, cache: "no-store" });
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        if (!response.ok) throw new Error(data.error || "초대를 확인하지 못했어요.");
+        const ticket = availableTickets.find((candidate) => candidate.id === data.eventId);
+        if (!ticket) throw new Error("신청 가능한 모임을 찾지 못했어요. 초대가 마감되었을 수 있어요.");
+        handledReceivedInvitation.current = receivedInvitationId;
+        setReceivedInvitation({ id: receivedInvitationId, eventId: data.eventId, photoUrl: data.photoUrl });
+        setApplicationPath("solo");
+        setSelectedTicket(ticket);
+        setMembershipSheetOpen(false);
+        setReceivedInvitationError(null);
+        setError(null);
+        setScreen("ticket");
+      } catch (error) {
+        if (!controller.signal.aborted) setReceivedInvitationError(error instanceof Error ? error.message : "초대를 확인하지 못했어요.");
+      }
+    };
+    void loadInvitation();
+    return () => controller.abort();
+  }, [active, profileCompleted, availableTicketsLoading, availableTickets, receivedInvitationId]);
+
 
   const exitApplicationFunnel = useCallback((exitReason: string) => {
     const entry = funnelEntryRef.current;
@@ -1158,6 +1236,7 @@ function MeetingDateApplicationFlow({
       !active ||
       !profileCompleted ||
       availableTicketsLoading ||
+      receivedInvitationId ||
       !requestedMeetingEventId ||
       handledMeetingEventDeepLinkRef.current === requestedMeetingEventId
     ) {
@@ -1311,6 +1390,10 @@ function MeetingDateApplicationFlow({
   const submitDateApplications = async (
     ticket: GatheringTicket | null = null,
   ) => {
+    if (applicationPath === "friend" && userId.startsWith("local-")) {
+      setError("디자인 미리보기에서는 문자를 보내지 않아요. 로그인한 계정으로 신청해 주세요.");
+      return;
+    }
     const targetDates = ticket ? [ticket.date] : [...selectedDates];
     if (targetDates.length !== 1 || saving) return;
 
@@ -1325,7 +1408,7 @@ function MeetingDateApplicationFlow({
     });
 
     try {
-      if (!isLocalTestHost()) {
+      if (!isLocalTestHost() || applicationPath === "friend") {
         const applicationResponse = await fetch(
           "/api/meeting-date-applications",
           {
@@ -1359,6 +1442,8 @@ function MeetingDateApplicationFlow({
             left.meetingDate.localeCompare(right.meetingDate),
           );
         });
+
+        await sendFriendInvitation(applicationData.applications, ticket?.id);
 
         if (applicationData.membershipCovered) {
           if (ticket) {
@@ -1465,6 +1550,10 @@ function MeetingDateApplicationFlow({
   };
 
   const submitSingleUseApplication = async (ticket: GatheringTicket) => {
+    if (applicationPath === "friend" && userId.startsWith("local-")) {
+      setError("디자인 미리보기에서는 문자를 보내지 않아요. 로그인한 계정으로 신청해 주세요.");
+      return;
+    }
     if (saving) return;
 
     setSaving(true);
@@ -1480,7 +1569,7 @@ function MeetingDateApplicationFlow({
     try {
       let checkoutUrl = oneTimeTicketStoreUrl;
 
-      if (!isLocalTestHost()) {
+      if (!isLocalTestHost() || applicationPath === "friend") {
         const response = await fetch("/api/meeting-date-applications", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1503,6 +1592,7 @@ function MeetingDateApplicationFlow({
           onDateApplicationsChange?.(next);
           return next;
         });
+        await sendFriendInvitation(data.applications, ticket.id);
         checkoutUrl = data.checkoutUrl ?? oneTimeTicketStoreUrl;
       } else {
         const now = new Date().toISOString();
@@ -1561,6 +1651,14 @@ function MeetingDateApplicationFlow({
       setSaving(false);
     }
   };
+
+  if (receivedInvitationError) {
+    return <section className="flex min-h-full flex-col justify-center px-6 text-center"><p role="alert" className="text-sm leading-6">{receivedInvitationError}</p><a href="/meetings?tab=recommend" className="mt-6 text-sm underline">다른 모임 보기</a></section>;
+  }
+
+  if (receivedInvitationId && !receivedInvitation) {
+    return <section className="flex min-h-full items-center justify-center px-6"><p role="status" className="text-sm text-black/50">친구의 초대장을 열고 있어요.</p></section>;
+  }
 
   if (screen === "unlock" && selectedTicket) {
     return (
@@ -1679,6 +1777,9 @@ function MeetingDateApplicationFlow({
           <TicketDetailContent
             ticket={selectedTicket}
             participantPhotoUrl={profilePhotoUrl}
+            withFriend={applicationPath === "friend" || hasSentFriendInvitation}
+            friendPhotoUrl={friendPhotoUrl}
+            matchMemberCount={applicationPath === "friend" || hasSentFriendInvitation ? 4 : undefined}
             previewMatchPhotoUrls={previewMatchPhotoUrls}
             previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
             sections={[
@@ -1814,6 +1915,15 @@ function MeetingDateApplicationFlow({
               message="나와 잘 어울리는 사람들을 찾는 중"
               dotCount={introDotCount}
             />
+          </motion.div>
+        ) : screen === "dates" && (applicationPath === null || (applicationPath === "friend" && !friendPhone)) ? (
+          <motion.div key="application-path" className="flex flex-1 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {applicationPath === "friend" ? <FriendApplicationFlow
+              previewTicket={availableTickets[0]}
+              participantPhotoUrl={profilePhotoUrl}
+              onContinue={(phone) => { setFriendPhotoUrl(null); setFriendPhone(phone); }}
+              onBack={() => setApplicationPath(null)}
+            /> : <ApplicationPathChoice onSolo={() => setApplicationPath("solo")} onFriend={() => setApplicationPath("friend")} />}
           </motion.div>
         ) : screen === "submitted" ? (
           <motion.div
@@ -2101,6 +2211,7 @@ function MeetingDateApplicationFlow({
             </div>
 
             <div className="flex flex-1 flex-col justify-center px-1">
+              {applicationPath !== null && <button type="button" onClick={() => setApplicationPath(null)} className="mb-5 flex min-h-11 items-center gap-2 self-start text-xs text-black/50"><ChevronLeft size={16} />참여 방식 다시 선택</button>}
               {availableTicketsLoading ? (
                 <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-bold text-black/42">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/15 border-t-black/55" />

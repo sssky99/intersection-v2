@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
+import { normalizeFriendInvitationId, pendingFriendInvitationCookie, receivedFriendInvitationPath } from "@/lib/friendInvitationLink";
 import { MobileFrame } from "@/components/MobileFrame";
 import {
   AppHome,
@@ -30,6 +31,7 @@ type MeetingsPageProps = {
     account?: string | string[];
     feedback?: string | string[];
     event?: string | string[];
+    friendInvite?: string | string[];
     legacyPreview?: string | string[];
   }>;
 };
@@ -153,10 +155,14 @@ function loadPreviewSelfReplacementPhotoUrl(profiles: PreviewPhotoProfile[]) {
 
 export default async function MeetingsPage({ searchParams }: MeetingsPageProps) {
   const params = await searchParams;
+  const pendingInvitation = normalizeFriendInvitationId((await cookies()).get(pendingFriendInvitationCookie)?.value);
+  const requestedFriendInvitation = normalizeFriendInvitationId(params?.friendInvite);
+  if (!requestedFriendInvitation && pendingInvitation && !params?.event) redirect(receivedFriendInvitationPath(pendingInvitation));
   const { supabase, user, profile } = await getAuthenticatedProfile();
   const requestedMeetingEventId = normalizeMeetingEventId(params?.event);
 
   if (!user || !profile) {
+    if (requestedFriendInvitation) redirect(`/?next=${encodeURIComponent(receivedFriendInvitationPath(requestedFriendInvitation))}`);
     if (requestedMeetingEventId) {
       const returnPath = meetingEventDeepLinkPath(requestedMeetingEventId);
       redirect(`/?next=${encodeURIComponent(returnPath)}`);

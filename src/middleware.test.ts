@@ -22,6 +22,7 @@ vi.mock("@/lib/supabase/middleware", () => ({
 }));
 
 import { config, middleware } from "./middleware";
+import { isNetlifyBranchDeploy } from "@/lib/authRedirect";
 
 function matches(
   url: string,
@@ -46,6 +47,18 @@ describe("middleware matcher", () => {
       response: NextResponse.next(),
       identity: null,
     });
+  });
+
+  it("keeps an invitation example on its preview host", async () => {
+    vi.mocked(isNetlifyBranchDeploy).mockReturnValueOnce(true);
+    const response = await middleware(new NextRequest("https://friend-invite-test--interv2.netlify.app/invite-example/540a7569-7b9d-499c-836b-020861d5711c"));
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("still redirects regular meeting pages from previews to production", async () => {
+    vi.mocked(isNetlifyBranchDeploy).mockReturnValueOnce(true);
+    const response = await middleware(new NextRequest("https://friend-invite-test--interv2.netlify.app/meetings"));
+    expect(response.headers.get("location")).toBe("https://interv2.netlify.app/meetings");
   });
 
   it.each([

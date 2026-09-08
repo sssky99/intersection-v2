@@ -1400,6 +1400,7 @@ function DistributionApplicantCard({
           ) : (
             "신청자 미확인"
           )}
+          <FriendBadge row={row} />
         </p>
         <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
           {[profile?.gender, profile?.birth_year, profile?.mbti]
@@ -1412,6 +1413,11 @@ function DistributionApplicantCard({
       )}
     </div>
   );
+}
+
+function FriendBadge({ row }: { row: AdminWaitlistRow }) {
+  if (!row.is_friend_application) return null;
+  return <span className="ml-1 inline-flex shrink-0 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 align-middle text-[10px] font-bold text-violet-700">친구</span>;
 }
 
 function ApplicantRow({
@@ -1450,6 +1456,7 @@ function ApplicantRow({
           ) : (
             "신청자 미확인"
           )}
+          <FriendBadge row={row} />
           {saving && (
             <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] font-bold text-black/45">
               저장 중
@@ -1524,6 +1531,7 @@ function WaitlistDetailPanel({
           ) : (
             "신청자 미확인"
           )}
+          <FriendBadge row={row} />
         </h3>
         <p className="mt-1 text-xs font-semibold text-black/45">
           {[profile?.gender, profile?.birth_year, profile?.mbti]

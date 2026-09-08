@@ -250,9 +250,41 @@ function randomMemberPhotoUrls(ticket: GatheringTicket) {
     .slice(0, 11);
 }
 
+export function FriendJourneyPreview({ ticket, participantPhotoUrl, friendPhotoUrl }: {
+  ticket: GatheringTicket;
+  participantPhotoUrl?: string | null;
+  friendPhotoUrl?: string | null;
+}) {
+  const photos = randomMemberPhotoUrls(ticket);
+  return (
+    <section className="my-7">
+      <h2 className="mb-5 text-sm font-bold">여정 미리보기</h2>
+      <TicketCoursePanel
+        friendPhotoUrl={friendPhotoUrl}
+        ticket={ticket}
+        steps={cleanCourseSteps(ticket.courseSteps).slice(0, 2).map((step, index) => ({
+          ...step,
+          title: index === 0 ? "첫 활동" : "두 번째 활동",
+        }))}
+        participantPhotoUrl={participantPhotoUrl}
+        withFriend
+        matchMemberCount={4}
+        previewMatchPhotoUrls={photos.slice(0, 4)}
+        previewOtherMemberPhotoUrls={photos.slice(5, 11)}
+        showFeedbackTime={false}
+        showJoinCountdown={false}
+        showActivityTimes={false}
+      />
+      <p className="mt-3 text-[11px] leading-5 text-black/40">여정 예시예요. 날짜에 따라 시간과 활동이 달라져요.</p>
+    </section>
+  );
+}
+
 export function TicketDetailContent({
   ticket,
   participantPhotoUrl,
+  withFriend = false,
+  friendPhotoUrl,
   participantArrivalStatus,
   previewMatchPhotoUrls = [],
   previewOtherMemberPhotoUrls = [],
@@ -266,6 +298,8 @@ export function TicketDetailContent({
 }: {
   ticket: GatheringTicket;
   participantPhotoUrl?: string | null;
+  friendPhotoUrl?: string | null;
+  withFriend?: boolean;
   participantArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls?: string[];
   previewOtherMemberPhotoUrls?: string[];
@@ -278,10 +312,10 @@ export function TicketDetailContent({
   footer?: ReactNode;
 }) {
   const randomPreviewPhotoUrls = randomMemberPhotoUrls(ticket);
-  const resolvedMatchPhotoUrls = matchMemberCount === undefined
-    ? randomPreviewPhotoUrls.slice(0, 5)
+  const resolvedMatchPhotoUrls = matchMemberCount === undefined || withFriend
+    ? randomPreviewPhotoUrls.slice(0, withFriend ? 4 : 5)
     : previewMatchPhotoUrls;
-  const resolvedOtherMemberPhotoUrls = matchMemberCount === undefined
+  const resolvedOtherMemberPhotoUrls = matchMemberCount === undefined || withFriend
     ? randomPreviewPhotoUrls.slice(5, 11)
     : previewOtherMemberPhotoUrls;
   const activities = cleanList(ticket.detailActivities);
@@ -338,6 +372,8 @@ export function TicketDetailContent({
           startWithBorder={startWithBorder}
         >
           <TicketCoursePanel
+        friendPhotoUrl={friendPhotoUrl}
+            withFriend={withFriend}
             ticket={ticket}
             steps={courseSteps}
             participantPhotoUrl={participantPhotoUrl}
@@ -430,6 +466,8 @@ export function TicketCoursePanel({
   ticket,
   steps,
   participantPhotoUrl,
+  withFriend = false,
+  friendPhotoUrl,
   participantArrivalStatus,
   counterpartArrivalStatus,
   previewMatchPhotoUrls,
@@ -438,10 +476,13 @@ export function TicketCoursePanel({
   variant = "default",
   showFeedbackTime = true,
   showJoinCountdown = true,
+  showActivityTimes = true,
 }: {
   ticket: GatheringTicket;
   steps: NonNullable<GatheringTicket["courseSteps"]>;
   participantPhotoUrl?: string | null;
+  friendPhotoUrl?: string | null;
+  withFriend?: boolean;
   participantArrivalStatus?: TicketArrivalStatus | null;
   counterpartArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
@@ -450,6 +491,7 @@ export function TicketCoursePanel({
   variant?: "default" | "blind-date";
   showFeedbackTime?: boolean;
   showJoinCountdown?: boolean;
+  showActivityTimes?: boolean;
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
@@ -577,11 +619,11 @@ export function TicketCoursePanel({
 
             <div className="px-4 pb-3 pt-4 pr-14">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
+                {showActivityTimes && <div className="flex flex-wrap items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-[0.04em] text-black/40">
                     {timeLabel}
                   </span>
-                </div>
+                </div>}
 
                 <p className="font-ticket-display mt-1.5 break-keep text-[18px] font-bold leading-6 tracking-[-0.035em] text-black">
                   {step.title || step.activityType || "활동"}
@@ -590,6 +632,8 @@ export function TicketCoursePanel({
             </div>
 
             <JourneyPeoplePanel
+              friendPhotoUrl={friendPhotoUrl}
+              withFriend={withFriend}
               stepIndex={index}
               participantPhotoUrl={participantPhotoUrl}
               participantArrivalStatus={participantArrivalStatus}
@@ -646,13 +690,7 @@ export function TicketCoursePanel({
             revealCopy={
               (mapStepIndex ?? 0) === 0
                 ? "정확한 장소는 모임 시작 24시간 전에 공개돼요."
-                : `${(mapStepIndex ?? 0) + 1}차 장소는 모임 당일 ${courseStepTimeLabel(
-                    ticket.time,
-                    courseStepPlaceRevealOffsetMinutes(
-                      selectedStep.openOffsetMinutes,
-                      mapStepIndex ?? 0,
-                    ),
-                  )}에 공개돼요.`
+                : `${(mapStepIndex ?? 0) + 1}차 장소는 모임 당일에 공개돼요.`
             }
             onClose={() => setMapStepIndex(null)}
           />
@@ -762,6 +800,7 @@ function BlindDateFollowupCard({
               />
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
+
           </div>
           <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
             <span
@@ -1133,6 +1172,8 @@ function participantArrivalStatusLabel(
 function JourneyPeoplePanel({
   stepIndex,
   participantPhotoUrl,
+  withFriend = false,
+  friendPhotoUrl,
   participantArrivalStatus,
   counterpartArrivalStatus,
   previewMatchPhotoUrls,
@@ -1143,6 +1184,8 @@ function JourneyPeoplePanel({
 }: {
   stepIndex: number;
   participantPhotoUrl?: string | null;
+  friendPhotoUrl?: string | null;
+  withFriend?: boolean;
   participantArrivalStatus?: TicketArrivalStatus | null;
   counterpartArrivalStatus?: TicketArrivalStatus | null;
   previewMatchPhotoUrls: string[];
@@ -1183,6 +1226,11 @@ function JourneyPeoplePanel({
               />
             </span>
             <span className="text-[11px] font-black text-black/68">나</span>
+            {withFriend && <>
+              <span className="text-[10px] text-black/30">+</span>
+              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48"><UserRound size={13} strokeWidth={2} aria-hidden /><SafeImage src={friendPhotoUrl} alt="내 친구 프로필" draggable={false} className="absolute inset-0 h-full w-full object-cover" /></span>
+              <span className="text-[11px] font-black text-black/68">내 친구</span>
+            </>}
           </div>
           <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-black/38">
             {participantArrivalStatusLabel(participantArrivalStatus)}
@@ -1218,9 +1266,12 @@ function JourneyPeoplePanel({
           tone="warm"
           photoUrls={[
             ...previewMatchPhotoUrls.slice(0, matchMemberCount ?? 5),
-            ...(participantPhotoUrl ? [participantPhotoUrl] : []),
+            ...(withFriend
+              ? [friendPhotoUrl ?? "", participantPhotoUrl ?? ""]
+              : participantPhotoUrl ? [participantPhotoUrl] : []),
           ]}
           clearLastPhoto={Boolean(participantPhotoUrl)}
+          clearLastCount={withFriend ? 2 : 0}
         />
         <p className="text-[10px] font-bold text-black/44">
           <strong className="font-black text-black/72">저녁을 함께한 멤버</strong>
@@ -1459,15 +1510,18 @@ function JourneyAvatarStack({
   tone,
   photoUrls = [],
   clearLastPhoto = false,
+  clearLastCount = 0,
 }: {
   tone: "warm" | "cool";
   photoUrls?: string[];
   clearLastPhoto?: boolean;
+  clearLastCount?: number;
 }) {
   const colors =
     tone === "warm"
       ? ["bg-[#d8b49b]", "bg-[#b9c7b0]", "bg-[#a9bbc9]"]
       : ["bg-[#d7aab7]", "bg-[#b5c8d7]", "bg-[#c6b6d4]"];
+  const clearFromIndex = photoUrls.length - Math.max(clearLastCount, clearLastPhoto ? 1 : 0);
 
   return (
     <span
@@ -1484,7 +1538,7 @@ function JourneyAvatarStack({
     >
       {(photoUrls.length > 0 ? photoUrls : colors).map((value, index) => (
         <span
-          key={value}
+          key={`${index}:${value}`}
           className={cn(
             "relative h-7 w-7 overflow-hidden rounded-full border-2 border-[#f8f4eb] shadow-sm",
             photoUrls.length === 0 && value,
@@ -1493,18 +1547,19 @@ function JourneyAvatarStack({
         >
           {photoUrls.length > 0 && (
             <>
+              {!value && <span className="absolute inset-0 flex items-center justify-center bg-[#eee8dc] text-black/48"><UserRound size={13} strokeWidth={2} aria-hidden /></span>}
               <SafeImage
                 src={value}
                 alt=""
                 draggable={false}
                 className={cn(
                   "absolute object-cover",
-                  clearLastPhoto && index === photoUrls.length - 1
+                  index >= clearFromIndex
                     ? "inset-0 h-full w-full"
                     : "-inset-1 h-[calc(100%+8px)] w-[calc(100%+8px)] scale-125 blur-[1px]",
                 )}
               />
-              {(!clearLastPhoto || index < photoUrls.length - 1) && (
+              {index < clearFromIndex && (
                 <span className="absolute inset-0 bg-black/[0.12]" />
               )}
             </>
