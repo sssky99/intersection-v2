@@ -181,7 +181,7 @@ it("uses operational times across midnight and does not inherit a missing group 
 
 describe("event-owned content",()=>{
   it("creates an event with its common waiting journey without a program",async()=>{
-    const result=await db.query("select create_standalone_meeting_event('New','2026-09-30','18:00','서울',$1) as id",[JSON.stringify({courseSteps:[{title:'Dinner',openOffsetMinutes:0},{title:'Games',openOffsetMinutes:90}],stageCopy:{}})]);
+    const result=await db.query<{id:string}>("select create_standalone_meeting_event('New','2026-09-30','18:00','서울',$1) as id",[JSON.stringify({courseSteps:[{title:'Dinner',openOffsetMinutes:0},{title:'Games',openOffsetMinutes:90}],stageCopy:{}})]);
     const id=result.rows[0].id;
     expect((await db.query("select count(*)::int as count from meeting_event_stages where event_id=$1",[id])).rows[0]).toEqual({count:3});
     expect((await db.query("select t.title from meeting_events e join ticket_templates t on t.id=e.program_id where e.id=$1",[id])).rows[0]).toEqual({title:'New'});
