@@ -14,7 +14,7 @@ describe("application resubmission", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  function setup(status: string) {
+  function setup(status: string, membershipStartDate = "2026-08-01") {
     const updates: unknown[] = [];
     const filters: unknown[] = [];
     const rpc = vi.fn(async () => ({ data: 1, error: null }));
@@ -25,7 +25,7 @@ describe("application resubmission", () => {
         update: (value: unknown) => { writing = true; updates.push(value); return q; },
         insert: () => { throw Error("must not insert existing application"); },
         maybeSingle: async () => ({ error: null, data: table === "profiles"
-          ? { membership_status: "active", membership_start_date: "2026-08-01", membership_end_date: "2026-12-31" }
+          ? { membership_status: "active", membership_start_date: membershipStartDate, membership_end_date: "2026-12-31" }
           : { id: table === "meeting_events" ? "event" : "ticket", event_date: "2026-09-12", event_time: "18:00", starts_at: "18:00", visibility: "public" } }),
         returns: async () => ({ error: null, data: writing ? [] : [{ id: 10, status,
           event_id: "event", meeting_date: "2026-09-12", meeting_time: "18:00", assigned_ticket_instance_id: "ticket" }] }),
@@ -42,6 +42,16 @@ describe("application resubmission", () => {
     const { POST } = await import("./route");
     expect((await POST(request())).status).toBe(200);
     expect(rpc).not.toHaveBeenCalled(); expect(updates).toEqual([]);
+  });
+  it("does not prepare another checkout before a paid membership starts when the meeting is covered", async () => {
+    const { rpc } = setup("approved", "2026-09-11");
+    const { POST } = await import("./route");
+    const response = await POST(new NextRequest("http://localhost/api/meeting-date-applications", {
+      method: "POST", body: JSON.stringify({ dates: ["2026-09-12"], eventId: "event", ticketInstanceId: "ticket", prepareCheckout: true }),
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ membershipCovered: true });
+    expect(rpc).not.toHaveBeenCalled();
   });
   it("returns conflict when approval races a payment-pending resubmission", async () => {
     const { rpc, filters } = setup("payment_pending");

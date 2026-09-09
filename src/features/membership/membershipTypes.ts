@@ -86,7 +86,16 @@ export function hasCurrentMembershipAccess({
   startDate: string | null | undefined;
   endDate: string | null | undefined;
 }) {
-  const today = todayKoreaDateString();
+  return hasMembershipAccessOnDate({ status, startDate, endDate, date: todayKoreaDateString() });
+}
+
+// Advance applications use the meeting date, not the date of checkout.
+export function hasMembershipAccessOnDate({ status, startDate, endDate, date }: {
+  status: string | null | undefined;
+  startDate: string | null | undefined;
+  endDate: string | null | undefined;
+  date: string;
+}) {
 
   if (status !== "active" || !startDate || !endDate) return false;
   const validDate = (value: string) => {
@@ -95,8 +104,8 @@ export function hasCurrentMembershipAccess({
     return Number.isFinite(parsed.getTime()) &&
       parsed.toISOString().slice(0, 10) === value;
   };
-  return validDate(startDate) && validDate(endDate) &&
-    startDate <= today && today <= endDate;
+  return validDate(startDate) && validDate(endDate) && validDate(date) &&
+    startDate <= date && date <= endDate;
 }
 
 function parseDateOnly(dateString: string) {

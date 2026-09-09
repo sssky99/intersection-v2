@@ -14,7 +14,7 @@ import {
 } from "@/lib/meetingDateApplications";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { hasCurrentMembershipAccess } from "@/features/membership/membershipTypes";
+import { hasMembershipAccessOnDate } from "@/features/membership/membershipTypes";
 import {
   hasTicketStarted,
   isTicketApplicationClosed,
@@ -377,11 +377,6 @@ export async function POST(request: NextRequest) {
   const openPayment = body.openPayment === true;
   const prepareCheckout = body.prepareCheckout === true;
   const joinWaitlist = body.waitlist === true;
-  const membershipCovered = hasCurrentMembershipAccess({
-    status: applicantProfile.membership_status,
-    startDate: applicantProfile.membership_start_date,
-    endDate: applicantProfile.membership_end_date,
-  });
   const ticketInstanceId =
     typeof body.ticketInstanceId === "string" && body.ticketInstanceId.trim()
       ? body.ticketInstanceId.trim()
@@ -427,6 +422,12 @@ export async function POST(request: NextRequest) {
     );
   }
   let selectedTicket: SelectedTicketInstance | null = null;
+  const membershipCovered = hasMembershipAccessOnDate({
+    status: applicantProfile.membership_status,
+    startDate: applicantProfile.membership_start_date,
+    endDate: applicantProfile.membership_end_date,
+    date: dates[0],
+  });
   if (ticketInstanceId) {
     const allowedVisibilities =
       applicantProfile.is_test_participant === true
