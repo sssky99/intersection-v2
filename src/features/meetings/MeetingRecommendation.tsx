@@ -2906,13 +2906,13 @@ export function MembershipPurchaseBottomSheet({
                       ? `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`
                       : ""}
                 </p>
-                <p className="mt-1.5 text-[11px] font-semibold text-black/38">
-                  {membershipSelected
-                    ? standalone
-                      ? "자동 결제 없이 한 번만 결제돼요."
-                      : `${meetingDateLabel(ticket!.date)} 모임 시작 기준`
-                    : ticket?.title}
-                </p>
+                {!(membershipSelected && standalone) && (
+                  <p className="mt-1.5 text-[11px] font-semibold text-black/38">
+                    {membershipSelected
+                      ? `${meetingDateLabel(ticket!.date)} 모임 시작 기준`
+                      : ticket?.title}
+                  </p>
+                )}
               </div>
             </div>
 
