@@ -126,15 +126,38 @@ describe("middleware matcher", () => {
     expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
   });
 
-  it("blocks writes while an admin user-view session is active", async () => {
+  it.each(["POST", "PATCH", "PUT", "DELETE"])("blocks %s to user APIs while previewing", async (method) => {
     const response = await middleware(
       new NextRequest("https://interv2.netlify.app/api/profile/name", {
-        method: "POST",
+        method,
         headers: { cookie: "inter_admin_user_view=preview-session" },
       }),
     );
 
     expect(response.status).toBe(403);
     expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["/api/admin/profiles", "PATCH"],
+    ["/api/admin/user-view", "POST"],
+    ["/api/admin/user-view", "DELETE"],
+    ["/api/admin/session", "POST"],
+  ])("lets %s %s reach its admin authorization while previewing", async (path, method) => {
+    const response = await middleware(new NextRequest(`https://interv2.netlify.app${path}`, {
+      method,
+      headers: { cookie: "inter_admin_user_view=preview-session" },
+    }));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(refreshSupabaseSessionMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["/api/admin-tools/profile", "/api/profile/photo", "/api/meetings/apply"])("does not exempt %s from read-only protection", async (path) => {
+    const response = await middleware(new NextRequest(`https://interv2.netlify.app${path}`, {
+      method: "POST",
+      headers: { cookie: "inter_admin_user_view=preview-session" },
+    }));
+    expect(response.status).toBe(403);
   });
 });

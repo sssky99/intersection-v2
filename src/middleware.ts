@@ -73,16 +73,14 @@ export async function middleware(request: NextRequest) {
     nextUrl.searchParams.has('error_description');
 
   const isApiRequest = nextUrl.pathname.startsWith('/api/');
-  const isAdminViewExit =
-    nextUrl.pathname === '/api/admin/user-view' && request.method === 'DELETE';
-  const isAdminSessionLogin =
-    nextUrl.pathname === '/api/admin/session' && request.method === 'POST';
+  // Preview cookies are shared across tabs. Admin endpoints act as the
+  // operator and validate their own admin session, never the preview user.
+  const isAdminApiRequest = nextUrl.pathname.startsWith('/api/admin/');
   if (
     isApiRequest &&
     request.cookies.has('inter_admin_user_view') &&
     !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
-    !isAdminViewExit &&
-    !isAdminSessionLogin
+    !isAdminApiRequest
   ) {
     return NextResponse.json(
       { error: '읽기 전용 보기에서는 정보를 변경할 수 없습니다.' },
