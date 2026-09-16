@@ -5,6 +5,7 @@ import {
 } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { newEventSnapshot } from "@/lib/eventContent";
+import { readMeetingEventOptions, validateMeetingEventOptions } from "@/lib/meetingEventOptions";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import type {
   AdminMeetingEvent,
@@ -440,8 +441,18 @@ export async function PATCH(request: NextRequest) {
     const payload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
+    let expectedUpdatedAt: string | undefined;
     if (body?.visibility !== undefined) payload.visibility = visibility;
     if (action === "update_event") {
+      if (body?.groupActivity !== undefined || body?.extraFee !== undefined) {
+        const validationError = validateMeetingEventOptions(body ?? {});
+        if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
+        const { data: current, error: readError } = await admin.from("meeting_events")
+          .select("detail_snapshot,updated_at").eq("id", eventId).single();
+        if (readError) throw readError;
+        expectedUpdatedAt = current.updated_at;
+        payload.detail_snapshot = { ...current.detail_snapshot, ...readMeetingEventOptions(body) };
+      }
       if (body?.title !== undefined) payload.title = text(body.title);
       if (body?.shortDescription !== undefined)
         payload.short_description = text(body.shortDescription) || null;
@@ -460,11 +471,14 @@ export async function PATCH(request: NextRequest) {
       if (error) throw error;
       return NextResponse.json(await loadData());
     }
-    const { error } = await admin
+    let updateQuery = admin
       .from("meeting_events")
       .update(payload)
       .eq("id", eventId);
+    if (expectedUpdatedAt) updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
+    const { data: updated, error } = await updateQuery.select("id").maybeSingle();
     if (error) throw error;
+    if (!updated) return NextResponse.json({ error: "행사가 변경되었습니다. 새로고침 후 다시 저장해주세요." }, { status: 409 });
     return NextResponse.json(await loadData());
   } catch (error) {
     console.error("Admin meeting event update failed:", error);

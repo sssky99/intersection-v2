@@ -437,13 +437,6 @@ function formatKstTimeLabel(value: Date) {
   }).format(value);
 }
 
-function keepsDinnerGroup(title: string) {
-  const normalizedTitle = title.replace(/\s+/g, "");
-  return ["덕수궁야간산책", "보드게임나이트", "베이킹클래스"].some((activity) =>
-    normalizedTitle.includes(activity),
-  );
-}
-
 export function TicketCoursePanel({
   ticket,
   steps,
@@ -617,7 +610,7 @@ export function TicketCoursePanel({
               friendPhotoUrl={friendPhotoUrl}
               withFriend={withFriend}
               stepIndex={index}
-              keepDinnerGroup={keepsDinnerGroup(ticket.title)}
+              keepDinnerGroup={ticket.groupActivity === false}
               participantPhotoUrl={participantPhotoUrl}
               participantArrivalStatus={participantArrivalStatus}
               counterpartArrivalStatus={counterpartArrivalStatus}
@@ -1377,7 +1370,7 @@ function MatchMembersSheet({
             ))}
           </div>
 
-          {activeStepIndex === 0 || keepsDinnerGroup(ticket.title) ? (
+          {activeStepIndex === 0 || ticket.groupActivity === false ? (
             <section className="mt-6 rounded-[26px] border border-black/10 bg-white/45 px-4 py-5 shadow-[0_18px_50px_rgba(39,34,24,0.08)]">
               <div className="flex items-center gap-2.5">
                 <h3 className="text-[17px] font-black tracking-[-0.035em]">내 테이블</h3>

@@ -733,6 +733,7 @@ function MeetingDateApplicationFlow({
   const [applications, setApplications] = useState<MeetingDateApplication[]>([]);
   const [availableTickets, setAvailableTickets] = useState<GatheringTicket[]>([]);
   const [availableTicketsLoading, setAvailableTicketsLoading] = useState(true);
+  const [feeConfirmationTicket, setFeeConfirmationTicket] = useState<GatheringTicket | null>(null);
   const [selectedTicket, setSelectedTicket] = useState<GatheringTicket | null>(
     null,
   );
@@ -1272,7 +1273,7 @@ function MeetingDateApplicationFlow({
     requestedMeetingEventId,
   ]);
 
-  const acceptTicket = (ticket: GatheringTicket) => {
+  const continueAcceptTicket = (ticket: GatheringTicket) => {
     if (saving) return;
 
     recordTicketInteraction(ticket, "yes");
@@ -1286,6 +1287,15 @@ function MeetingDateApplicationFlow({
     setMembershipSheetOpen(true);
   };
 
+  const acceptTicket = (ticket: GatheringTicket) => {
+    if (saving) return;
+    if (ticket.extraFee?.enabled) {
+      setFeeConfirmationTicket(ticket);
+      return;
+    }
+    continueAcceptTicket(ticket);
+  };
+
   useEffect(() => {
     if (!active || !ticketAcceptRequestId || !ticketAcceptRequestTicketId) {
       return;
@@ -1297,14 +1307,8 @@ function MeetingDateApplicationFlow({
 
     setSelectedTicket(ticket);
     setError(null);
-    recordTicketInteraction(ticket, "yes");
-
     setScreen("ticket");
-    if (membershipStatus === "active") {
-      void submitDateApplications(ticket);
-    } else {
-      setMembershipSheetOpen(true);
-    }
+    acceptTicket(ticket);
 
     onTicketAcceptRequestHandled?.();
   }, [
@@ -1833,6 +1837,27 @@ function MeetingDateApplicationFlow({
         {active && typeof document !== "undefined" &&
           createPortal(
             <AnimatePresence>
+              {feeConfirmationTicket && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-6" onClick={() => setFeeConfirmationTicket(null)}>
+                  <div role="alertdialog" aria-modal="true" aria-labelledby="extra-fee-title" aria-describedby="extra-fee-description" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => {
+                    if (event.key === "Escape") setFeeConfirmationTicket(null);
+                    if (event.key === "Tab") {
+                      const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+                      const first = buttons[0];
+                      const last = buttons[buttons.length - 1];
+                      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+                    }
+                  }} className="w-full max-w-sm rounded-3xl bg-[#f8f4eb] p-6 text-black shadow-xl">
+                    <h2 id="extra-fee-title" className="text-lg font-black">해당 만남은 확정 시 추가 요금이 발생합니다.</h2>
+                    <p id="extra-fee-description" className="mt-4 text-base font-bold">{feeConfirmationTicket.extraFee?.description} {feeConfirmationTicket.extraFee?.amount.toLocaleString("ko-KR")}원</p>
+                    <div className="mt-6 grid grid-cols-2 gap-3">
+                      <button type="button" autoFocus onClick={() => setFeeConfirmationTicket(null)} className="h-12 rounded-xl border border-black/15 font-bold">취소</button>
+                      <button type="button" disabled={saving} onClick={() => { const ticket = feeConfirmationTicket; setFeeConfirmationTicket(null); continueAcceptTicket(ticket); }} className="h-12 rounded-xl bg-black font-bold text-white disabled:opacity-40">확인하고 계속</button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {membershipSheetOpen && (
                 <MembershipPurchaseBottomSheet
                   ticket={selectedTicket}

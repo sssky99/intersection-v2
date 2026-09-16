@@ -1,4 +1,5 @@
 import { feedbackInstanceIdsForViewer } from "@/lib/feedbackScope";
+import { readMeetingEventOptions } from "@/lib/meetingEventOptions";
 import { attachFriendTickets } from "./friendTickets";
 import { normalizeProfileGender } from "@/lib/meetingAtmosphere";
 import { visibleMeetingDateApplicationInstanceId } from "@/lib/meetingDateApplications";
@@ -563,6 +564,18 @@ export async function loadUserTickets(request: Request, userId: string) {
     );
     const groupStageLocationsByInstance =
       await fetchGroupStageLocationsByInstance(supabase, pageGroups);
+    const eventIds = unique(pageGroups.map((group) => group.event_id));
+    const eventOptionsByInstance = new Map<string, ReturnType<typeof readMeetingEventOptions>>();
+    if (eventIds.length) {
+      const { data: events, error: eventError } = await supabase.from("meeting_events")
+        .select("id,detail_snapshot").in("id", eventIds);
+      if (eventError) throw eventError;
+      const optionsByEvent = new Map((events ?? []).map((event) => [event.id, readMeetingEventOptions(event.detail_snapshot)]));
+      for (const group of pageGroups) {
+        const options = optionsByEvent.get(group.event_id);
+        if (group.legacy_ticket_instance_id && options) eventOptionsByInstance.set(group.legacy_ticket_instance_id, options);
+      }
+    }
     const participationStartStageByInstance =
       participationStartStages(pageGroups);
     const eventInstanceIdsByInstance =
@@ -786,6 +799,8 @@ export async function loadUserTickets(request: Request, userId: string) {
             : (row.ticket_snapshot?.startsFromStageSequence ?? 1),
         );
         if (!ticket) return null;
+        const eventOptions = instanceId ? eventOptionsByInstance.get(instanceId) : undefined;
+        Object.assign(ticket, eventOptions ?? readMeetingEventOptions(row.ticket_snapshot));
 
         const participationStartAt = startAt
           ? addMinutes(startAt, ticket.participationStartOffsetMinutes ?? 0)

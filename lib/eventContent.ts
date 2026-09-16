@@ -1,5 +1,6 @@
 import { normalizeStoredTicketCourseSteps } from "@/lib/ticketCourse";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
+import { readMeetingEventOptions } from "@/lib/meetingEventOptions";
 
 // New dates copy only reusable content; attendees, venues and reveal state stay behind.
 export function newEventSnapshot(source: unknown) {
@@ -16,6 +17,7 @@ export function newEventSnapshot(source: unknown) {
           { title: "두 번째 활동", openOffsetMinutes: 90 },
         ];
   return {
+    ...readMeetingEventOptions(snapshot),
     stageCopy: sanitizeTicketStageCopy(snapshot.stageCopy),
     courseSteps: steps.map((step, index) => ({
       id: `course-${index + 1}`,
