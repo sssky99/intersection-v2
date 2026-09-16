@@ -48,6 +48,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 
@@ -2229,7 +2230,7 @@ function MeetingDateApplicationFlow({
                       </h1>
                     </div>
                   </header>
-                  <div>
+                  <ProgramScheduleList>
                     {availableTickets.map((ticket, index) => (
                       <motion.div
                         key={ticket.id}
@@ -2249,7 +2250,7 @@ function MeetingDateApplicationFlow({
                         />
                       </motion.div>
                     ))}
-                  </div>
+                  </ProgramScheduleList>
                 </motion.div>
               ) : (
                 <div className="flex min-h-[320px] flex-col items-center justify-center text-center">
@@ -2276,6 +2277,38 @@ function MeetingDateApplicationFlow({
       </AnimatePresence>
 
     </section>
+  );
+}
+
+function ProgramScheduleList({ children }: { children: ReactNode }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [maxHeight, setMaxHeight] = useState<number>();
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const rows = Array.from(list.children).slice(0, 5);
+    // Measure actual rows so application badges and font resizing still fit.
+    const measure = () => {
+      setMaxHeight(rows.reduce((height, row) => height + row.getBoundingClientRect().height, 0));
+    };
+    const observer = new ResizeObserver(measure);
+    rows.forEach((row) => observer.observe(row));
+    measure();
+    return () => observer.disconnect();
+  }, [children]);
+
+  return (
+    <div
+      ref={listRef}
+      role="region"
+      aria-label="참여 가능한 일정"
+      tabIndex={0}
+      className="max-h-[420px] overflow-y-auto overscroll-y-contain focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-black/40"
+      style={{ maxHeight }}
+    >
+      {children}
+    </div>
   );
 }
 
