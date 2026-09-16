@@ -441,14 +441,14 @@ export function MeetingEventAdminPanel({
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-sm font-bold">
                     <input type="checkbox" checked={eventDraft.extraFee.enabled} onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, enabled: e.target.checked } }))} />
-                    추가요금
+                    추가 예약 비용
                   </label>
-                  <input aria-label="추가요금 설명" placeholder="예: 베이킹 클래스" maxLength={80} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.description} onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, description: e.target.value } }))} className={`${inputClass} max-w-[240px] disabled:opacity-40`} />
+                  <input aria-label="추가 예약 비용 설명" placeholder="예: 베이킹 클래스" maxLength={80} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.description} onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, description: e.target.value } }))} className={`${inputClass} max-w-[240px] disabled:opacity-40`} />
                   <label className="flex items-center gap-2 text-sm">
-                    <input aria-label="추가요금 금액" type="number" min={0} max={100000000} step={1} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.amount || ""} placeholder="50000" onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, amount: Number(e.target.value) } }))} className={`${inputClass} max-w-[140px] disabled:opacity-40`} />원
+                    <input aria-label="추가 예약 비용 금액" type="number" min={0} max={100000000} step={1} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.amount || ""} placeholder="50000" onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, amount: Number(e.target.value) } }))} className={`${inputClass} max-w-[140px] disabled:opacity-40`} />원
                   </label>
                 </div>
-                <p className="text-xs text-black/45">추가요금을 체크하면 YES 선택 시 설명과 금액을 안내합니다.</p>
+                <p className="text-xs text-black/45">추가 예약 비용을 체크하면 YES 선택 시 설명과 금액을 안내합니다.</p>
               </div>
             </section>
 

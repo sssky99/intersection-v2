@@ -1849,7 +1849,7 @@ function MeetingDateApplicationFlow({
                       if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
                     }
                   }} className="w-full max-w-sm rounded-3xl bg-[#f8f4eb] p-6 text-black shadow-xl">
-                    <h2 id="extra-fee-title" className="text-lg font-black">해당 만남은 확정 시 추가 요금이 발생합니다.</h2>
+                    <h2 id="extra-fee-title" className="text-lg font-black">해당 만남은 확정 시 추가 예약 비용이 발생합니다.</h2>
                     <p id="extra-fee-description" className="mt-4 text-base font-bold">{feeConfirmationTicket.extraFee?.description} {feeConfirmationTicket.extraFee?.amount.toLocaleString("ko-KR")}원</p>
                     <div className="mt-6 grid grid-cols-2 gap-3">
                       <button type="button" autoFocus onClick={() => setFeeConfirmationTicket(null)} className="h-12 rounded-xl border border-black/15 font-bold">취소</button>
