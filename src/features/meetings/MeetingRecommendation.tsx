@@ -2329,7 +2329,7 @@ function ProgramScheduleList({ children }: { children: ReactNode }) {
       role="region"
       aria-label="참여 가능한 일정"
       tabIndex={0}
-      className="max-h-[420px] overflow-y-auto overscroll-y-contain focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-black/40"
+      className="scrollbar-none max-h-[420px] overflow-y-auto overscroll-y-contain focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-black/40"
       style={{ maxHeight }}
     >
       {children}
