@@ -14,7 +14,7 @@ export default async function GuestOnboardingImportPage() {
 
   return (
     <MobileFrame>
-      <GuestOnboardingImport userId={user.id} />
+      <GuestOnboardingImport userId={user.id} initialPhotoUrl={profile.photo_url ?? ""} />
     </MobileFrame>
   );
 }

@@ -38,13 +38,6 @@ const BlindDateAdminPanel = dynamic(
     ),
   { loading: AdminPanelLoading },
 );
-const CalendarAdminPanel = dynamic(
-  () =>
-    import("@/features/admin/CalendarAdminPanel").then(
-      (module) => module.CalendarAdminPanel,
-    ),
-  { loading: AdminPanelLoading },
-);
 const FeedbackAdminPanel = dynamic(
   () =>
     import("@/features/admin/FeedbackAdminPanel").then(
@@ -115,7 +108,6 @@ type AdminTab =
   | "membership"
   | "tickets"
   | "events"
-  | "calendar"
   | "waitlist"
   | "rooms"
   | "feedback"
@@ -129,7 +121,6 @@ const adminTabs: Array<{ id: AdminTab; label: string }> = [
   { id: "membership", label: "멤버십 관리" },
   { id: "tickets", label: "기존 티켓·샘플" },
   { id: "events", label: "행사 관리" },
-  { id: "calendar", label: "달력 관리" },
   { id: "waitlist", label: "대기열 관리" },
   { id: "rooms", label: "룸 관리" },
   { id: "feedback", label: "피드백 관리" },
@@ -197,7 +188,6 @@ export function AdminPageClient({
   const [operatorRatingFilter, setOperatorRatingFilter] =
     useState<OperatorRatingFilter>("all");
   const [birthYearSort, setBirthYearSort] = useState<BirthYearSort>("default");
-  const [ticketFocusId, setTicketFocusId] = useState<string | null>(null);
   const [assignmentCriteriaOpen, setAssignmentCriteriaOpen] = useState(false);
   const [redFlagCriteriaOpen, setRedFlagCriteriaOpen] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<
@@ -377,14 +367,6 @@ export function AdminPageClient({
     setActiveTab(tabId);
     setVisitedTabs((current) =>
       current[tabId] ? current : { ...current, [tabId]: true },
-    );
-  };
-
-  const openTicketFromCalendar = (ticketId: string) => {
-    setTicketFocusId(ticketId);
-    setActiveTab("tickets");
-    setVisitedTabs((current) =>
-      current.tickets ? current : { ...current, tickets: true },
     );
   };
 
@@ -742,8 +724,6 @@ export function AdminPageClient({
                   setActiveTab("events");
                   setVisitedTabs((current) => ({ ...current, events: true }));
                 }}
-                focusTicketId={ticketFocusId}
-                onFocusTicketHandled={() => setTicketFocusId(null)}
               />
             </div>
           )}
@@ -756,11 +736,6 @@ export function AdminPageClient({
                 onFocusEventHandled={() => setFocusEventId(null)}
                 onOpenWaitlist={() => setActiveTab("waitlist")}
               />
-            </div>
-          )}
-          {visitedTabs.calendar && (
-            <div className={cn(activeTab === "calendar" ? "block" : "hidden")}>
-              <CalendarAdminPanel onOpenTicket={openTicketFromCalendar} />
             </div>
           )}
           {visitedTabs.waitlist && (

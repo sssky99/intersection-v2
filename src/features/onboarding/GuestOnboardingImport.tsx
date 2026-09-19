@@ -23,12 +23,13 @@ import {
 } from "@/data/profileArchetypes";
 import { ProfileArchetypeResult } from "@/features/onboarding/ProfileArchetypeResult";
 
-export function GuestOnboardingImport({ userId }: { userId: string }) {
+export function GuestOnboardingImport({ userId, initialPhotoUrl = "" }: { userId: string; initialPhotoUrl?: string }) {
   const router = useRouter();
   const startedRef = useRef(false);
   const [draft, setDraft] = useState<GuestOnboardingDraft | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
-  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
+  const [savedPhotoUrl, setSavedPhotoUrl] = useState(initialPhotoUrl);
   const [savingPhoto, setSavingPhoto] = useState(false);
   const [importing, setImporting] = useState(false);
   const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
@@ -39,13 +40,13 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (!photo) {
-      setPhotoUrl("");
+      setPhotoUrl(savedPhotoUrl);
       return;
     }
     const objectUrl = URL.createObjectURL(photo);
     setPhotoUrl(objectUrl);
     return () => URL.revokeObjectURL(objectUrl);
-  }, [photo]);
+  }, [photo, savedPhotoUrl]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -77,13 +78,13 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
 
         const storedPhoto = await loadGuestProfilePhoto(storedDraft.id);
         setDraft(storedDraft);
-        setPhoto(storedPhoto);
+        if (!initialPhotoUrl) setPhoto(storedPhoto);
       } catch (loadError) {
         console.error("Guest onboarding draft load failed:", loadError);
         setError("임시 저장된 답변을 불러오지 못했어요.");
       }
     })();
-  }, [router]);
+  }, [router, initialPhotoUrl]);
 
   const choosePhoto = async (file: File | null) => {
     if (!file || !draft || savingPhoto || importing) return;
@@ -92,6 +93,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
     setError(null);
     try {
       await saveGuestProfilePhoto(file, draft.id);
+      setSavedPhotoUrl("");
       setPhoto(file);
     } catch (photoError) {
       console.error("Guest profile photo save failed:", photoError);
@@ -105,7 +107,7 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
   const completeProfile = async (allowMissingPhoto = false) => {
     if (
       !draft ||
-      (!photo && !allowMissingPhoto) ||
+      (!photo && !savedPhotoUrl && !allowMissingPhoto) ||
       importing ||
       savingPhoto
     ) return;
@@ -113,11 +115,12 @@ export function GuestOnboardingImport({ userId }: { userId: string }) {
     setError(null);
 
     try {
-      let uploadedPhotoUrl = "";
-      if (!allowMissingPhoto) {
+      let uploadedPhotoUrl = savedPhotoUrl;
+      if (!allowMissingPhoto && !uploadedPhotoUrl) {
         if (!photo) return;
         try {
           uploadedPhotoUrl = await uploadProfilePhoto(userId, photo);
+          setSavedPhotoUrl(uploadedPhotoUrl);
           setPhotoUploadFailed(false);
         } catch (photoError) {
           console.error("Guest profile photo upload failed:", photoError);

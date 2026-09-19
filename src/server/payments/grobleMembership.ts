@@ -32,6 +32,7 @@ type MembershipPaymentResult = {
   outcome: "applied" | "already_applied" | "cancelled";
   payment_kind: PaymentKind;
   transaction_id: number;
+  intent_id?: number;
 };
 
 export async function processMembershipPayment({
@@ -72,7 +73,7 @@ export async function processMembershipPayment({
     processing_status: "processed",
     merchant_uid: details.merchantUid,
     matched_user_id: match.userId,
-    matched_membership_payment_intent_id: match.intentId,
+    matched_membership_payment_intent_id: result.intent_id ?? match.intentId,
     payment_kind: result.payment_kind,
     payment_amount: details.finalAmount,
     processed_at: new Date().toISOString(),

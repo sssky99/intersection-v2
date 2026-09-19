@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CS_MODEL, CS_MANUAL_TOPIC_REPLY, generateCsReply, validCallback } from "./kakaoCsAi";
+import { CS_MODEL, CS_MANUAL_TOPIC_REPLY, csHandoff, generateCsReply, validCallback } from "./kakaoCsAi";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("CS AI boundaries", () => {
+  it("offers Kakao's native operator transfer without claiming assignment", () => {
+    const result = csHandoff(CS_MANUAL_TOPIC_REPLY);
+    expect(result.template.outputs[1].textCard?.buttons).toEqual([{ label: "운영진 상담", action: "operator" }]);
+    expect(result.template.outputs[0].simpleText?.text).toBe(CS_MANUAL_TOPIC_REPLY);
+  });
   it.each(["http://bot-api.kakao.com/cb", "https://bot-api.kakao.com.evil.test/cb", "https://127.0.0.1/cb", "https://user:pass@bot-api.kakao.com/cb", "https://bot-api.kakao.com:444/cb", "file:///etc/passwd"])("rejects untrusted callback %s", (url) => {
     expect(validCallback(url)).toBe(false);
   });

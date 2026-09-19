@@ -72,6 +72,7 @@ grant all on all tables in schema public to service_role;
   await db.exec(
     "grant usage on schema public to service_role; grant all on all tables in schema public to service_role; grant usage,select on all sequences in schema public to service_role",
   );
+  await db.exec(readFileSync("supabase/migrations/20260919020543_membership_renewal_thirty_days.sql", "utf8"));
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -211,8 +212,8 @@ describe("atomic membership payment effects", () => {
       (await one("select count(*)::int as n from payment_transactions")).n,
     ).toBe(1);
   });
-  it("rejects a different charge reusing the same intent and a wrong amount", async () => {
-    const id = await intent();
+  it("rejects reuse of a discounted upgrade intent and a wrong amount", async () => {
+    const id = await intent("one_month", 5000);
     await expect(pay(id, "p", "p", undefined, 9)).rejects.toThrow("amount");
     await pay(id);
     await expect(pay(id, "other", "other")).rejects.toThrow(
@@ -232,13 +233,13 @@ describe("atomic membership payment effects", () => {
       ).toBe(calculateMembershipEndDate("2028-01-31", plan));
     },
   );
-  it("extends active renewals from the day after expiry and preserves their original start", async () => {
+  it("extends renewals by exactly 30 days and preserves their original start", async () => {
     await pay(await intent());
     const current = await one(
       "select membership_start_date::text as s,membership_end_date::text as e from profiles",
     );
     const base = (
-      await one("select (membership_end_date+1)::text as b from profiles")
+      await one("select (membership_end_date+30)::text as b from profiles")
     ).b;
     const result = await pay(await intent("three_months"), "renewal");
     expect(result.payment_kind).toBe("membership_renewal");
@@ -248,10 +249,10 @@ describe("atomic membership payment effects", () => {
       ),
     ).toEqual({
       s: current.s,
-      e: calculateMembershipEndDate(base, "three_months"),
+      e: base,
     });
   });
-  it("retains upgrade policy and does not treat expired membership as an active renewal", async () => {
+  it("retains upgrade policy and adds 30 days to an expired membership", async () => {
     await pay(await intent());
     expect(
       (await pay(await intent("six_months", 5000), "upgrade")).payment_kind,
@@ -263,7 +264,7 @@ describe("atomic membership payment effects", () => {
     await pay(await intent(), "expired-renewal");
     expect(
       (await one("select membership_end_date::text as e from profiles")).e,
-    ).toBe(calculateMembershipEndDate(today, "one_month"));
+    ).toBe((await one("select (current_date+29)::text as e")).e);
   });
   it("protects a newer payment when cancelling an older one, even with identical occurrence timestamps", async () => {
     const first = await pay(await intent());
@@ -272,13 +273,13 @@ describe("atomic membership payment effects", () => {
     expect(
       (await one("select membership_status from profiles")).membership_status,
     ).toBe("active");
-    expect((await cancel(last.transaction_id)).revoked_access).toBe(true);
+    expect((await cancel(last.transaction_id)).revoked_access).toBe(false);
     expect((await cancel(last.transaction_id)).outcome).toBe(
       "already_cancelled",
     );
     expect(
       (await one("select membership_status from profiles")).membership_status,
-    ).toBe("cancelled");
+    ).toBe("active");
   });
   it("does not reactivate refunded membership on a late completion callback", async () => {
     const id = await intent(),
@@ -491,5 +492,58 @@ describe("stored refund events", () => {
     expect(
       (await one("select count(*)::int as n from payment_transactions")).n,
     ).toBe(0);
+  });
+});
+
+describe("recurring membership credits", () => {
+  it("deducts once across refund and cancellation notifications for the same renewal", async () => {
+    const id = await intent();
+    await pay(id);
+    const original = await one("select membership_end_date::text as e from profiles");
+    const renewed = await pay(id, "renew", "renew");
+    await refundEvent("renew");
+    await db.query("select apply_groble_refund('refund-1')");
+    await db.query("select apply_groble_refund('refund-1')");
+    expect((await cancel(renewed.transaction_id)).outcome).toBe("already_cancelled");
+    expect(await one("select membership_end_date::text as e from profiles")).toEqual(original);
+  });
+  it("reuses a subscription reference for separate charges, but credits each charge once", async () => {
+    const id = await intent();
+    await pay(id);
+    const original = await one("select membership_end_date::text as e from profiles");
+    const renewed = await pay(id, "renew-1", "charge-2");
+    expect(renewed.payment_kind).toBe("membership_renewal");
+    expect(renewed.intent_id).not.toBe(id);
+    expect((await pay(id, "renew-redelivery", "charge-2")).outcome).toBe("already_applied");
+    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(30);
+    await pay(id, "renew-2", "charge-3");
+    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(60);
+    expect((await one("select count(*)::int as n from membership_payment_effects")).n).toBe(3);
+    await cancel(renewed.transaction_id);
+    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(30);
+    expect((await cancel(renewed.transaction_id)).outcome).toBe("already_cancelled");
+    expect((await pay(id, "late", "charge-2")).outcome).toBe("cancelled");
+    await pay(id, "renew-3", "charge-4", "2099-01-01T00:00:00Z");
+    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(60);
+  });
+  it("preserves a future start, six-month plan and manual extension through renewal and cancellation", async () => {
+    const id = await intent();
+    await pay(id);
+    await db.exec("update profiles set membership_start_date='2099-01-20', membership_end_date='2099-07-19', membership_plan='six_months'");
+    const payment = await pay(id, "r", "r");
+    expect(await one("select membership_start_date::text as s,membership_end_date::text as e,membership_plan as p from profiles"))
+      .toEqual({s:"2099-01-20",e:"2099-08-18",p:"six_months"});
+    await db.exec("update profiles set membership_end_date=membership_end_date+14");
+    await cancel(payment.transaction_id);
+    expect((await one("select membership_end_date::text as e from profiles")).e).toBe("2099-08-02");
+  });
+  it("expires access only when the 30-day deduction removes all remaining time", async () => {
+    const id = await intent();
+    await pay(id);
+    await db.exec("update profiles set membership_end_date=current_date-1");
+    const renewed = await pay(id, "r", "r");
+    expect((await cancel(renewed.transaction_id)).revoked_access).toBe(true);
+    expect((await one("select membership_status as s from profiles")).s).toBe("expired");
+    expect((await one("select membership_end_date=current_date-1 as restored from profiles")).restored).toBe(true);
   });
 });

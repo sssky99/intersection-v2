@@ -44,6 +44,15 @@ beforeEach(() => {
   mocks.meta.mockResolvedValue(undefined);
 });
 describe("membership webhook adapter", () => {
+  it("records the renewal receipt intent instead of the original subscription intent", async () => {
+    mocks.rpc.mockResolvedValue({ data: {
+      outcome: "applied", transaction_id: 2, intent_id: 11, payment_kind: "membership_renewal",
+    }, error: null });
+    await processMembershipPayment(args);
+    expect(mocks.status).toHaveBeenCalledWith("claim", expect.objectContaining({
+      matched_membership_payment_intent_id: 11,
+    }));
+  });
   it("acknowledges only after the atomic write succeeds", async () => {
     mocks.rpc.mockResolvedValue({
       data: {

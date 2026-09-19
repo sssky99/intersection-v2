@@ -79,12 +79,8 @@ async function fetchTicketData(force = false) {
 }
 
 export function TicketAdminPanel({
-  focusTicketId,
-  onFocusTicketHandled,
   onOpenEvent,
 }: {
-  focusTicketId?: string | null;
-  onFocusTicketHandled?: () => void;
   onOpenEvent?: (eventId: string) => void;
 }) {
   const [templates, setTemplates] = useState<AdminTicketTemplate[]>([]);
@@ -143,14 +139,6 @@ export function TicketAdminPanel({
     selectedTicket?.instances.find(
       (instance) => instance.id === selectedInstanceId,
     ) ?? primaryInstance(selectedTicket);
-
-  useEffect(() => {
-    if (!focusTicketId) return;
-    if (!templates.some((template) => template.id === focusTicketId)) return;
-
-    setSelectedTicketId(focusTicketId);
-    onFocusTicketHandled?.();
-  }, [focusTicketId, onFocusTicketHandled, templates]);
 
   useEffect(() => {
     setSelectedInstanceId((current) => {
