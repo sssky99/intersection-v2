@@ -1,4 +1,5 @@
 "use client";
+import { readMeetingEventOptions } from "@/lib/meetingEventOptions";
 
 import {
   ArrowRight,
@@ -64,6 +65,7 @@ export function MeetingEventAdminPanel({
   const [groupCode, setGroupCode] = useState("");
   const [groupTitle, setGroupTitle] = useState("");
   const [eventDraft, setEventDraft] = useState({
+    ...readMeetingEventOptions(null),
     title: "",
     shortDescription: "",
     eventDate: "",
@@ -138,6 +140,7 @@ export function MeetingEventAdminPanel({
   useEffect(() => {
     if (!selectedEvent) return;
     setEventDraft({
+      ...readMeetingEventOptions(selectedEvent.detail_snapshot),
       title: selectedEvent.title,
       shortDescription: selectedEvent.short_description ?? "",
       eventDate: selectedEvent.event_date,
@@ -428,6 +431,24 @@ export function MeetingEventAdminPanel({
                     className={inputClass}
                   />
                 </EditField>
+              </div>
+              <div className="mt-4 space-y-3 border-t border-black/10 pt-4">
+                <label className="flex items-center gap-2 text-sm font-bold">
+                  <input type="checkbox" checked={eventDraft.groupActivity} onChange={(e) => setEventDraft((d) => ({ ...d, groupActivity: e.target.checked }))} />
+                  단체
+                  <span className="text-xs font-normal text-black/50">2차에서 다른 교집합 멤버들도 함께해요. 해제하면 저녁 멤버와 함께해요.</span>
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm font-bold">
+                    <input type="checkbox" checked={eventDraft.extraFee.enabled} onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, enabled: e.target.checked } }))} />
+                    추가 예약 비용
+                  </label>
+                  <input aria-label="추가 예약 비용 설명" placeholder="예: 베이킹 클래스" maxLength={80} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.description} onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, description: e.target.value } }))} className={`${inputClass} max-w-[240px] disabled:opacity-40`} />
+                  <label className="flex items-center gap-2 text-sm">
+                    <input aria-label="추가 예약 비용 금액" type="number" min={0} max={100000000} step={1} disabled={!eventDraft.extraFee.enabled} value={eventDraft.extraFee.amount || ""} placeholder="50000" onChange={(e) => setEventDraft((d) => ({ ...d, extraFee: { ...d.extraFee, amount: Number(e.target.value) } }))} className={`${inputClass} max-w-[140px] disabled:opacity-40`} />원
+                  </label>
+                </div>
+                <p className="text-xs text-black/45">추가 예약 비용을 체크하면 YES 선택 시 설명과 금액을 안내합니다.</p>
               </div>
             </section>
 

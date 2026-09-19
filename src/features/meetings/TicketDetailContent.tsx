@@ -610,6 +610,7 @@ export function TicketCoursePanel({
               friendPhotoUrl={friendPhotoUrl}
               withFriend={withFriend}
               stepIndex={index}
+              keepDinnerGroup={ticket.groupActivity === false}
               participantPhotoUrl={participantPhotoUrl}
               participantArrivalStatus={participantArrivalStatus}
               counterpartArrivalStatus={counterpartArrivalStatus}
@@ -1146,6 +1147,7 @@ function participantArrivalStatusLabel(
 
 function JourneyPeoplePanel({
   stepIndex,
+  keepDinnerGroup = false,
   participantPhotoUrl,
   withFriend = false,
   friendPhotoUrl,
@@ -1158,6 +1160,7 @@ function JourneyPeoplePanel({
   onOpenMatches,
 }: {
   stepIndex: number;
+  keepDinnerGroup?: boolean;
   participantPhotoUrl?: string | null;
   friendPhotoUrl?: string | null;
   withFriend?: boolean;
@@ -1169,7 +1172,7 @@ function JourneyPeoplePanel({
   variant: "default" | "blind-date";
   onOpenMatches: () => void;
 }) {
-  if (stepIndex === 0) {
+  if (stepIndex === 0 || keepDinnerGroup) {
     const matchCount = matchMemberCount ?? 5;
     const matchPhotos = previewMatchPhotoUrls.slice(0, matchCount);
     const matchRowContent = (
@@ -1367,7 +1370,7 @@ function MatchMembersSheet({
             ))}
           </div>
 
-          {activeStepIndex === 0 ? (
+          {activeStepIndex === 0 || ticket.groupActivity === false ? (
             <section className="mt-6 rounded-[26px] border border-black/10 bg-white/45 px-4 py-5 shadow-[0_18px_50px_rgba(39,34,24,0.08)]">
               <div className="flex items-center gap-2.5">
                 <h3 className="text-[17px] font-black tracking-[-0.035em]">내 테이블</h3>

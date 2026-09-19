@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { readMeetingEventOptions } from "@/lib/meetingEventOptions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sanitizeTicketStageCopy } from "@/lib/ticketStageCopy";
 import {
@@ -339,6 +340,7 @@ function toPublicEventTicket(event: PublicMeetingEventRow): GatheringTicket {
 
   return {
     id: event.id,
+    ...readMeetingEventOptions(snapshot),
     templateId: event.program_id,
     stageCopy: sanitizeTicketStageCopy(snapshot.stageCopy),
     applicationClosed: Boolean(
