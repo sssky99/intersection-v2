@@ -40,6 +40,8 @@ import {
   type WaitlistTicketTemplate,
 } from "@/features/admin/waitlistAdminTypes";
 
+import { isPaidUnassigned, summarizeReadiness } from "./waitlistReadiness";
+
 type WaitlistPatch = {
   status?: WaitlistStatus;
   adminNote?: string | null;
@@ -66,12 +68,6 @@ type WaitlistGroup = {
   total: number;
   counts: Record<WaitlistStatus, number>;
 };
-
-const actionableStatuses = new Set<WaitlistStatus>([
-  "waitlisted",
-  "payment_pending",
-  "on_hold",
-]);
 
 const waitlistStatusPriority: Record<WaitlistStatus, number> = {
   waitlisted: 0,
@@ -197,16 +193,6 @@ function waitlistDateOptions(
         .filter((date) => Boolean(date) && (!predicate || predicate(date))),
     ),
   ).sort();
-}
-
-function waitlistDateCounts(rows: AdminWaitlistRow[]) {
-  const counts = new Map<string, number>();
-  rows.forEach((row) => {
-    const date = rowDate(row);
-    if (!date) return;
-    counts.set(date, (counts.get(date) ?? 0) + 1);
-  });
-  return counts;
 }
 
 function rowTemplateId(row: AdminWaitlistRow) {
@@ -499,7 +485,15 @@ export function WaitlistAdminPanel() {
     () => waitlistDateOptions(rows, (date) => date >= today),
     [rows, today],
   );
-  const dateCounts = useMemo(() => waitlistDateCounts(rows), [rows]);
+  const dateReadiness = useMemo(() => {
+    const grouped = new Map<string, AdminWaitlistRow[]>();
+    for (const row of rows) {
+      const date = rowDate(row);
+      if (date) grouped.set(date, [...(grouped.get(date) ?? []), row]);
+    }
+    return new Map(Array.from(grouped, ([date, members]) => [date, summarizeReadiness(members)]));
+  }, [rows]);
+  const selectedReadiness = dateReadiness.get(selectedDate);
   const showingAllDates = selectedDate === allDatesValue;
   const showingActionableDates = selectedDate === actionableDatesValue;
   const showingPastDates = selectedDate === pastDatesValue;
@@ -508,11 +502,8 @@ export function WaitlistAdminPanel() {
 
   const actionableCount = useMemo(
     () =>
-      rows.filter((row) => {
-        const date = rowDate(row);
-        return date >= today && actionableStatuses.has(row.status);
-      }).length,
-    [rows, today],
+      Array.from(dateReadiness).reduce((total, [date, summary]) => total + (date >= today ? summary.unassigned : 0), 0),
+    [dateReadiness, today],
   );
   const pastCount = useMemo(
     () =>
@@ -528,7 +519,7 @@ export function WaitlistAdminPanel() {
     if (showingActionableDates) {
       return rows.filter((row) => {
         const date = rowDate(row);
-        return date >= today && actionableStatuses.has(row.status);
+        return date >= today && isPaidUnassigned(row);
       });
     }
     if (showingPastDates) {
@@ -935,8 +926,15 @@ export function WaitlistAdminPanel() {
                         : "bg-black/5 text-black/45",
                     )}
                   >
-                    {dateCounts.get(date) ?? 0}
+                    {dateReadiness.get(date)?.unassigned ?? 0}
                   </span>
+                  <span className={cn("rounded px-1.5 py-0.5 text-[10px]",
+                    dateReadiness.get(date)?.grade === "상" ? "bg-emerald-100 text-emerald-800" :
+                    dateReadiness.get(date)?.grade === "중" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800",
+                  )}>
+                    {dateReadiness.get(date)?.grade ?? "하"}
+                  </span>
+                  <span className="text-[10px]">여 {dateReadiness.get(date)?.women ?? 0} · 남 {dateReadiness.get(date)?.men ?? 0}</span>
                 </button>
               ))}
               {pastCount > 0 && (
@@ -988,6 +986,18 @@ export function WaitlistAdminPanel() {
             </div>
           </div>
         )}
+
+        <div className="shrink-0 border-b border-black/10 px-5 py-2 text-xs text-black/55">
+          <p>처리 필요·날짜 숫자: 결제된 미배정 인원 · 등급: 미배정 + 확정 인원 중 남녀가 적은 쪽 기준 (상 7명 이상 / 중 5~6명 / 하 4명 이하)</p>
+          {showingExactDate && selectedReadiness && (
+            <p className="mt-1 font-semibold text-black/75">
+              {selectedReadiness.womenNeeded === 0 && selectedReadiness.menNeeded === 0
+                ? "진행 최소 인원 충족 (여성 6명 · 남성 6명)"
+                : `진행 최소 인원까지 여성 ${selectedReadiness.womenNeeded}명 · 남성 ${selectedReadiness.menNeeded}명 부족`}
+              {selectedReadiness.unknown > 0 && ` · 성별 미입력 ${selectedReadiness.unknown}명은 등급에서 제외`}
+            </p>
+          )}
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#fbfbfa] px-5 py-4">
           {loading ? (
