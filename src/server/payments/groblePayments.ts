@@ -7,6 +7,7 @@ import {
   existingMembershipMatch,
   pendingApplicationMatch,
   pendingMembershipMatch,
+  recurringMembershipMatch,
 } from "./grobleMatching";
 import {
   PaymentTransactionRow,
@@ -25,8 +26,28 @@ export async function processPaymentCompleted(
   const completedPaymentKind = grobleCompletedPaymentKind(envelope.type);
 
   if (completedPaymentKind === "membership") {
+    // Resolve verified full refunds before checkout matching. A failed/missing
+    // completion may never have produced an intent or a transaction to match.
+    const { data: refund, error: refundError } = await createAdminClient().rpc(
+      "reconcile_groble_refunded_completion",
+      { p_event_id: envelope.id },
+    );
+    if (refundError) throw refundError;
+    if (refund) {
+      await eventStatus(idempotencyKey, {
+        processing_status: "processed",
+        merchant_uid: details.merchantUid,
+        matched_user_id: refund.user_id,
+        payment_kind: refund.payment_kind,
+        payment_amount: refund.amount,
+        last_error: null,
+        processed_at: new Date().toISOString(),
+      });
+      return "processed";
+    }
     const membershipMatch =
       (await existingMembershipMatch(envelope.id)) ??
+      (await recurringMembershipMatch(envelope)) ??
       (await pendingMembershipMatch({
         ...details,
         paidAt: paymentOccurredAt,

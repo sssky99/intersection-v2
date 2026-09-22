@@ -152,7 +152,9 @@ export function MembershipPaymentHistory() {
                 <p className="mt-2 whitespace-pre-wrap break-words">
                   {event.last_error ?? "결제자와 결제 상태를 확인해주세요."}
                 </p>
-                {["failed", "received"].includes(event.processing_status) && (
+                {["failed", "received", "unmatched"].includes(
+                  event.processing_status,
+                ) && (
                   <button
                     disabled={busy}
                     onClick={() => setTarget(event)}

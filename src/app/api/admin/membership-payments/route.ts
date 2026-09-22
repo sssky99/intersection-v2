@@ -83,12 +83,12 @@ export async function POST(request: NextRequest) {
         "subscription_payment.cancelled",
         "subscription_payment.refunded",
       ].includes(event.event_type) ||
-      !["failed", "received"].includes(event.processing_status)
+      !["failed", "received", "unmatched"].includes(event.processing_status)
     )
       return NextResponse.json(
         {
           error:
-            "처리 실패 또는 처리 대기 중인 멤버십 알림만 재처리할 수 있습니다.",
+            "처리 실패, 처리 대기 또는 연결 대기 중인 멤버십 알림만 재처리할 수 있습니다.",
         },
         { status: 409 },
       );
