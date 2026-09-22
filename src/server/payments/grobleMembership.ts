@@ -76,6 +76,7 @@ export async function processMembershipPayment({
     matched_membership_payment_intent_id: result.intent_id ?? match.intentId,
     payment_kind: result.payment_kind,
     payment_amount: details.finalAmount,
+    last_error: null,
     processed_at: new Date().toISOString(),
   });
   if (result.outcome !== "cancelled")

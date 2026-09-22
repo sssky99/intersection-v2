@@ -69,7 +69,7 @@ describe("membership payment retry authorization", () => {
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.handle).not.toHaveBeenCalled();
   });
-  it.each(["processed", "unmatched", "ambiguous"])(
+  it.each(["processed", "ambiguous"])(
     "does not replay %s events",
     async (status) => {
       mocks.event.processing_status = status;
@@ -79,27 +79,34 @@ describe("membership payment retry authorization", () => {
       expect(mocks.handle).not.toHaveBeenCalled();
     },
   );
-  it("reprocesses only the stored verified payload under its original key and records the attempt", async () => {
-    expect(
-      (
-        await POST(
-          request({ eventId: "stored-event", payload: { userId: "injected" } }),
-        )
-      ).status,
-    ).toBe(200);
-    expect(mocks.handle).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "stored-event",
-        object: { pricing: { finalAmount: 10000 } },
-      }),
-      "original-key",
-    );
-    expect(mocks.audit).toHaveBeenCalledWith({ event_id: "stored-event" });
-    expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.handle.mock.invocationCallOrder[0],
-    );
-    expect(mocks.updates).toHaveBeenCalledWith({ response_status: 200 });
-  });
+  it.each(["failed", "unmatched"])(
+    "reprocesses the stored verified %s payload under its original key and records the attempt",
+    async (status) => {
+      mocks.event.processing_status = status;
+      expect(
+        (
+          await POST(
+            request({
+              eventId: "stored-event",
+              payload: { userId: "injected" },
+            }),
+          )
+        ).status,
+      ).toBe(200);
+      expect(mocks.handle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "stored-event",
+          object: { pricing: { finalAmount: 10000 } },
+        }),
+        "original-key",
+      );
+      expect(mocks.audit).toHaveBeenCalledWith({ event_id: "stored-event" });
+      expect(mocks.audit.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.handle.mock.invocationCallOrder[0],
+      );
+      expect(mocks.updates).toHaveBeenCalledWith({ response_status: 200 });
+    },
+  );
   it("records unsuccessful processing attempts too", async () => {
     mocks.handle.mockResolvedValue(
       Response.json({ error: "busy" }, { status: 503 }),
