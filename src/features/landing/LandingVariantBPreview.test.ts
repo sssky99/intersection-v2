@@ -11,7 +11,7 @@ describe("landing variant B analytics", () => {
     expect(source).toContain("trackLandingView={false}");
   });
 
-  it("keeps the onboarding CTA usable before client hydration", () => {
+  it("uses a native onboarding link after the intro", () => {
     const source = fs.readFileSync(
       new URL("./LandingVariantBPreview.tsx", import.meta.url),
       "utf8",
@@ -29,10 +29,7 @@ describe("landing variant B analytics", () => {
 
     expect(source).toContain('landing_variant: instagramAd ? "instagram_ad" : "b"');
     expect(source).toContain('cta_position: instagramAd ? "upper_fold" : "bottom"');
-    expect(source).toContain("useState(instagramAd)");
-    expect(source).toContain("if (instagramAd) return;");
-    expect(source).toContain("const instagramTypingDurationMs = 360");
-    expect(source).toContain("? instagramTypingDurationMs");
+    expect(source).toContain("compact={compactInstagramViewport}");
     expect(source).toContain("setVisualViewportHeight");
     expect(source).toContain("compactInstagramViewport");
     expect(source).toContain("landing_page_visible_1s");
