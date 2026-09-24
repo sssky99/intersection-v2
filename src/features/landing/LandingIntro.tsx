@@ -8,7 +8,7 @@ export function LandingIntro({ onComplete, preview = false, instagramAd = false 
   const started = useRef(false);
   const track = (event: string) => {
     if (!preview) trackEvent(event, {
-      landing_version: "intro_sentence_20260924",
+      landing_version: "intro_sentence_returning_20260924",
       landing_variant: instagramAd ? "instagram_ad" : "b",
       video_seconds: video.current?.currentTime ?? 0,
     });

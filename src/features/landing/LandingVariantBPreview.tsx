@@ -3,6 +3,8 @@
 import { LandingSentence } from "./LandingSentence";
 import { LandingFooter } from "./LandingFooter";
 import { LandingIntro } from "./LandingIntro";
+import { landingEntry, type LandingEntry } from "./returnVisit";
+import { loadGuestOnboardingDraft } from "@/lib/guestOnboarding";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -23,11 +25,25 @@ type LandingVariantBProps = {
 export function LandingVariantB(props: LandingVariantBProps) {
   const { instagramAd = false, preview = false } = props;
   const [introComplete, setIntroComplete] = useState(false);
+  const [entry, setEntry] = useState<LandingEntry | null>(null);
   useEffect(() => {
-    if (!preview) {
+    if (preview) { setEntry("intro"); return; }
+    const cookies = document.cookie.split(";").map((value) => value.trim());
+    const draft = loadGuestOnboardingDraft();
+    const next = landingEntry({
+      hasAuthCookie: cookies.some((value) => /^sb-[a-z0-9]+-auth-token(?:\.\d+)?=/.test(value)),
+      hasSeenIntro: cookies.includes("intro_video_seen_v1=1"),
+      phase: draft.phase,
+      answerCount: draft.answers.length,
+    });
+    setEntry(next);
+    if (next === "resume") window.location.replace("/onboarding/start");
+  }, [preview]);
+  useEffect(() => {
+    if (!preview && (entry === "intro" || entry === "landing")) {
       const viewport = readLandingViewport();
       trackEvent("landing_view", {
-        landing_version: "intro_sentence_20260924",
+        landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
         landing_variant: instagramAd ? "instagram_ad" : "b",
         landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -41,11 +57,16 @@ export function LandingVariantB(props: LandingVariantBProps) {
       });
     }
 
-  }, [instagramAd, preview]);
+  }, [instagramAd, preview, entry]);
 
-  return introComplete
+  if (entry === null || entry === "resume") return <main className="flex h-dvh items-center justify-center bg-black text-white/70" role="status">불러오는 중…</main>;
+  if (entry === "member") return <FiftyQLandingClient initialHasSeenIntro trackLandingView={false} />;
+  return introComplete || entry === "landing"
     ? <LandingVariantBContent {...props} />
-    : <LandingIntro preview={preview} instagramAd={instagramAd} onComplete={() => setIntroComplete(true)} />;
+    : <LandingIntro preview={preview} instagramAd={instagramAd} onComplete={() => {
+        if (!preview) document.cookie = `intro_video_seen_v1=1; Path=/; Max-Age=31536000; SameSite=Lax${window.location.protocol === "https:" ? "; Secure" : ""}`;
+        setIntroComplete(true);
+      }} />;
 }
 
 function LandingVariantBContent({
@@ -67,7 +88,7 @@ function LandingVariantBContent({
     if (!preview) {
       const viewport = readLandingViewport();
       trackEvent("landing_content_view", {
-        landing_version: "intro_sentence_20260924",
+        landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
         landing_variant: instagramAd ? "instagram_ad" : "b",
         landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -135,7 +156,7 @@ function LandingVariantBContent({
       );
 
       return {
-        landing_version: "intro_sentence_20260924",
+        landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
         landing_variant: instagramAd ? "instagram_ad" : "b",
         landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -337,7 +358,7 @@ function LandingVariantBContent({
   const trackOnboardingStart = () => {
     ctaClickedRef.current = true;
     trackEvent("landing_cta_click", {
-      landing_version: "intro_sentence_20260924",
+      landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
       landing_variant: instagramAd ? "instagram_ad" : "b",
       landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -347,7 +368,7 @@ function LandingVariantBContent({
 
   const openMemberLogin = () => {
     trackEvent("existing_member_login_click", {
-      landing_version: "intro_sentence_20260924",
+      landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
       landing_variant: instagramAd ? "instagram_ad" : "b",
       landing_surface: instagramAd ? "instagram_paid" : "default",
