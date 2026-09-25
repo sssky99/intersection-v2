@@ -1,5 +1,46 @@
 import { type MembershipPlan } from "@/features/membership/membershipTypes";
 import { createAdminClient } from "./grobleContext";
+import { jsonRecord, type WebhookEnvelope } from "./grobleVerification";
+
+export async function recurringMembershipMatch(envelope: WebhookEnvelope) {
+  const subscription = jsonRecord(envelope.object.subscription);
+  if (
+    subscription?.billingReason !== "RENEWAL" &&
+    !(
+      typeof subscription?.currentRound === "number" &&
+      subscription.currentRound > 1
+    )
+  )
+    return null;
+  const { data, error } = await createAdminClient().rpc(
+    "match_groble_renewal_intent",
+    {
+      p_event_id: envelope.id,
+    },
+  );
+  if (error) throw error;
+  const matches = (data ?? []) as Array<{
+    user_id: string;
+    intent_id: number;
+    plan: MembershipPlan;
+    credit_amount: number;
+  }>;
+  if (matches.length !== 1)
+    return {
+      status: matches.length ? ("ambiguous" as const) : ("unmatched" as const),
+      userId: null,
+      intentId: null,
+      plan: null,
+      creditAmount: 0,
+    };
+  return {
+    status: "matched" as const,
+    userId: matches[0].user_id,
+    intentId: matches[0].intent_id,
+    plan: matches[0].plan,
+    creditAmount: matches[0].credit_amount,
+  };
+}
 
 export const activeApplicationStatuses = [
   "payment_pending",

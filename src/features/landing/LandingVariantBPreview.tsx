@@ -1,5 +1,10 @@
 "use client";
 
+import { LandingSentence } from "./LandingSentence";
+import { LandingFooter } from "./LandingFooter";
+import { LandingIntro } from "./LandingIntro";
+import { landingEntry, type LandingEntry } from "./returnVisit";
+import { loadGuestOnboardingDraft } from "@/lib/guestOnboarding";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -12,39 +17,33 @@ import {
   visualViewportOverlapRatio,
 } from "./landingViewport";
 
-const headline =
-  "아무나 만나지 않도록,\n당신에게 딱 맞는 사람들을 찾아줄게요.";
-const headlineLead = "아무나 만나지 않도록,\n";
-const contentCueFallbackDelayMs = 600;
-const instagramTypingDurationMs = 360;
-const defaultTypingDurationMs = 1300;
-
 type LandingVariantBProps = {
   instagramAd?: boolean;
   preview?: boolean;
 };
 
-export function LandingVariantB({
-  instagramAd = false,
-  preview = false,
-}: LandingVariantBProps) {
-  const [typedHeadline, setTypedHeadline] = useState(headlineLead);
-  const [isContentVisible, setIsContentVisible] = useState(instagramAd);
-  const [hasReachedContentCue, setHasReachedContentCue] = useState(instagramAd);
-  const [showMemberLogin, setShowMemberLogin] = useState(false);
-  const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(
-    null,
-  );
-  const ctaButtonRef = useRef<HTMLAnchorElement>(null);
-  const ctaClickedRef = useRef(false);
-
-  const compactInstagramViewport =
-    instagramAd && isCompactVisualViewport(visualViewportHeight);
-
+export function LandingVariantB(props: LandingVariantBProps) {
+  const { instagramAd = false, preview = false } = props;
+  const [introComplete, setIntroComplete] = useState(false);
+  const [entry, setEntry] = useState<LandingEntry | null>(null);
   useEffect(() => {
-    if (!preview) {
+    if (preview) { setEntry("intro"); return; }
+    const cookies = document.cookie.split(";").map((value) => value.trim());
+    const draft = loadGuestOnboardingDraft();
+    const next = landingEntry({
+      hasAuthCookie: cookies.some((value) => /^sb-[a-z0-9]+-auth-token(?:\.\d+)?=/.test(value)),
+      hasSeenIntro: cookies.includes("intro_video_seen_v1=1"),
+      phase: draft.phase,
+      answerCount: draft.answers.length,
+    });
+    setEntry(next);
+    if (next === "resume") window.location.replace("/onboarding/start");
+  }, [preview]);
+  useEffect(() => {
+    if (!preview && (entry === "intro" || entry === "landing")) {
       const viewport = readLandingViewport();
       trackEvent("landing_view", {
+        landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
         landing_variant: instagramAd ? "instagram_ad" : "b",
         landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -58,13 +57,51 @@ export function LandingVariantB({
       });
     }
 
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (!reduceMotion) return;
+  }, [instagramAd, preview, entry]);
 
-    setTypedHeadline(headline);
-    setIsContentVisible(true);
+  if (entry === null || entry === "resume") return <main className="flex h-dvh items-center justify-center bg-black text-white/70" role="status">불러오는 중…</main>;
+  if (entry === "member") return <FiftyQLandingClient initialHasSeenIntro trackLandingView={false} />;
+  return introComplete || entry === "landing"
+    ? <LandingVariantBContent {...props} />
+    : <LandingIntro preview={preview} instagramAd={instagramAd} onComplete={() => {
+        if (!preview) document.cookie = `intro_video_seen_v1=1; Path=/; Max-Age=31536000; SameSite=Lax${window.location.protocol === "https:" ? "; Secure" : ""}`;
+        setIntroComplete(true);
+      }} />;
+}
+
+function LandingVariantBContent({
+  instagramAd = false,
+  preview = false,
+}: LandingVariantBProps) {
+  const [showMemberLogin, setShowMemberLogin] = useState(false);
+  const previewDialogRef = useRef<HTMLDialogElement>(null);
+  const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(
+    null,
+  );
+  const ctaButtonRef = useRef<HTMLAnchorElement>(null);
+  const ctaClickedRef = useRef(false);
+
+  const compactInstagramViewport =
+    instagramAd && isCompactVisualViewport(visualViewportHeight);
+
+  useEffect(() => {
+    if (!preview) {
+      const viewport = readLandingViewport();
+      trackEvent("landing_content_view", {
+        landing_version: "intro_sentence_returning_20260924",
+        experiment_id: "landing_ab_2026_08",
+        landing_variant: instagramAd ? "instagram_ad" : "b",
+        landing_surface: instagramAd ? "instagram_paid" : "default",
+        viewport_height: viewport.layoutHeight,
+        visual_viewport_height: viewport.visualHeight,
+        visual_viewport_width: viewport.visualWidth,
+        visual_viewport_offset_top: viewport.offsetTop,
+        visual_viewport_scale: viewport.scale,
+        initial_visibility_state: document.visibilityState,
+        screen_height: window.screen.height,
+      });
+    }
+
   }, [instagramAd, preview]);
 
   useEffect(() => {
@@ -119,6 +156,7 @@ export function LandingVariantB({
       );
 
       return {
+        landing_version: "intro_sentence_returning_20260924",
         experiment_id: "landing_ab_2026_08",
         landing_variant: instagramAd ? "instagram_ad" : "b",
         landing_surface: instagramAd ? "instagram_paid" : "default",
@@ -307,37 +345,6 @@ export function LandingVariantB({
     };
   }, [instagramAd, preview]);
 
-  useEffect(() => {
-    if (!hasReachedContentCue) return;
-
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    let length = headlineLead.length;
-    const typingDuration = instagramAd
-      ? instagramTypingDurationMs
-      : defaultTypingDurationMs;
-    setIsContentVisible(true);
-    const interval = window.setInterval(() => {
-      length += 1;
-      setTypedHeadline(headline.slice(0, length));
-      if (length >= headline.length) {
-        window.clearInterval(interval);
-      }
-    }, typingDuration / (headline.length - headlineLead.length));
-
-    return () => window.clearInterval(interval);
-  }, [hasReachedContentCue, instagramAd]);
-
-  useEffect(() => {
-    if (instagramAd) return;
-
-    const fallbackTimer = window.setTimeout(() => {
-      setHasReachedContentCue(true);
-    }, contentCueFallbackDelayMs);
-
-    return () => window.clearTimeout(fallbackTimer);
-  }, [instagramAd]);
-
   if (showMemberLogin) {
     return (
       <FiftyQLandingClient
@@ -351,7 +358,8 @@ export function LandingVariantB({
   const trackOnboardingStart = () => {
     ctaClickedRef.current = true;
     trackEvent("landing_cta_click", {
-      experiment_id: "landing_ab_2026_08",
+      landing_version: "intro_sentence_returning_20260924",
+        experiment_id: "landing_ab_2026_08",
       landing_variant: instagramAd ? "instagram_ad" : "b",
       landing_surface: instagramAd ? "instagram_paid" : "default",
       cta_position: instagramAd ? "upper_fold" : "bottom",
@@ -360,7 +368,8 @@ export function LandingVariantB({
 
   const openMemberLogin = () => {
     trackEvent("existing_member_login_click", {
-      experiment_id: "landing_ab_2026_08",
+      landing_version: "intro_sentence_returning_20260924",
+        experiment_id: "landing_ab_2026_08",
       landing_variant: instagramAd ? "instagram_ad" : "b",
       landing_surface: instagramAd ? "instagram_paid" : "default",
       cta_position: instagramAd ? "upper_fold" : "bottom",
@@ -373,23 +382,23 @@ export function LandingVariantB({
       <Link
         ref={ctaButtonRef}
         href="/onboarding/start"
-        onClick={trackOnboardingStart}
-        className={`relative mx-auto flex w-full max-w-[320px] items-center justify-center rounded-full bg-black px-14 text-[16px] font-bold text-white shadow-[0_16px_42px_rgba(18,18,18,0.28)] transition-transform active:scale-[0.98] ${
-          compact ? "h-14" : "h-16"
+        onClick={(event) => { if (preview) { event.preventDefault(); previewDialogRef.current?.showModal(); return; } trackOnboardingStart(); }}
+        className={`relative mx-auto flex w-full max-w-[168px] items-center justify-center gap-4 rounded-full border border-white/10 bg-black px-8 font-["Nanum_Myeongjo"] text-[16px] font-normal text-white shadow-[0_12px_32px_rgba(0,0,0,0.22)] hover:bg-[#171717] transition-transform active:scale-[0.98] ${
+          compact ? "h-12" : "h-[48px]"
         }`}
       >
-        교집합 시작하기
+        시작하기
         <ArrowRight
-          size={20}
-          strokeWidth={2}
+          size={17}
+          strokeWidth={1.5}
           aria-hidden
-          className="absolute right-6"
+          className="shrink-0"
         />
       </Link>
       {!compact && (
         <button
           type="button"
-          onClick={openMemberLogin}
+          onClick={() => { if (preview) { previewDialogRef.current?.showModal(); return; } openMemberLogin(); }}
           className="mx-auto mt-4 block text-[12px] font-semibold text-white/70 underline decoration-white/35 underline-offset-4 transition hover:text-white"
         >
           이미 교집합 멤버예요
@@ -400,7 +409,7 @@ export function LandingVariantB({
 
   return (
     <main
-      className={`flex min-h-0 justify-center overflow-hidden bg-[#e9e9e5] text-[#121212] md:px-4 ${
+      className={`flex min-h-0 justify-center overflow-y-auto bg-[#e9e9e5] text-[#121212] md:px-4 ${
         instagramAd ? "h-svh" : "h-dvh"
       }`}
       style={
@@ -410,8 +419,9 @@ export function LandingVariantB({
       }
     >
       <section
-        aria-label="교집합 B 랜딩 미리보기"
-        className="relative h-full w-full max-w-[430px] overflow-hidden bg-black md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
+        style={!instagramAd ? { minHeight: 540 } : undefined}
+        aria-label="교집합 랜딩"
+        className="relative h-full w-full shrink-0 max-w-[430px] overflow-hidden bg-black md:my-4 md:h-[calc(100dvh-32px)] md:rounded-[32px] md:border md:border-black/[0.06] md:shadow-frame"
       >
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
           <div className="absolute inset-0 bg-[url('/videos/details-preview-poster.webp')] bg-cover bg-center motion-safe:hidden" />
@@ -423,17 +433,10 @@ export function LandingVariantB({
             preload="auto"
             poster="/videos/details-preview-poster.webp"
             className="absolute inset-0 h-full w-full object-cover motion-reduce:hidden"
-            onLoadedData={() => setHasReachedContentCue(true)}
-            onError={() => setHasReachedContentCue(true)}
-            onTimeUpdate={(event) => {
-              if (event.currentTarget.currentTime >= 0.8) {
-                setHasReachedContentCue(true);
-              }
-            }}
           >
             <source src="/videos/details-preview.mp4" type="video/mp4" />
           </video>
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/15 to-black/70" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/25 to-black/75" />
         </div>
 
         <div className="absolute inset-0">
@@ -443,26 +446,14 @@ export function LandingVariantB({
                 ? compactInstagramViewport
                   ? "top-3"
                   : "top-[17%]"
-                : "top-[56%] -translate-y-1/2"
+                : "top-[43%]"
             } ${
-              isContentVisible ? "opacity-100" : "opacity-0"
+              "opacity-100"
             }`}
           >
-            <h1
-              aria-label={headline.replace("\n", " ")}
-              className={`mx-auto whitespace-pre-line break-keep font-bold tracking-[-0.045em] text-white [text-shadow:0_2px_4px_rgba(0,0,0,0.95),0_6px_24px_rgba(0,0,0,0.75)] ${
-                compactInstagramViewport
-                  ? "min-h-0 text-[17px] leading-[1.3]"
-                  : "min-h-[76px] text-[22px] leading-[1.42]"
-              }`}
-            >
-              {typedHeadline}
-              {typedHeadline.length < headline.length && (
-                <span className="ml-0.5 inline-block h-[1em] w-px animate-pulse bg-white/70 align-[-0.12em]" />
-              )}
-            </h1>
-            {instagramAd && !compactInstagramViewport && (
-              <div className="mt-6">{primaryAction()}</div>
+            <LandingSentence compact={compactInstagramViewport} />
+            {!compactInstagramViewport && (
+              <div className="mt-9">{primaryAction()}</div>
             )}
           </div>
 
@@ -472,18 +463,22 @@ export function LandingVariantB({
             </div>
           )}
 
-          {!instagramAd && (
-            <div className="absolute inset-x-6 bottom-[max(64px,calc(8dvh+env(safe-area-inset-bottom)))]">
-              {primaryAction()}
-            </div>
-          )}
+
         </div>
 
+        {!compactInstagramViewport && <LandingFooter />}
+
         {preview && (
-          <div className="absolute left-5 top-5 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80 backdrop-blur-md">
-            B · PREVIEW
+          <div className="absolute left-5 bottom-3 rounded-full border border-white/25 bg-black/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/80 backdrop-blur-md">
+            LOCAL PREVIEW
           </div>
         )}
+        <dialog ref={previewDialogRef} className="m-auto w-[calc(100%-40px)] max-w-[360px] rounded-[28px] bg-white p-8 text-center text-[#121212] backdrop:bg-black/60">
+          <p className="text-[11px] tracking-[0.18em] text-black/50">교집합 · 미리보기</p>
+          <h2 className="mt-5 text-xl font-semibold">당신의 이야기가 궁금해요.</h2>
+          <p className="mt-3 text-sm leading-7 text-black/60">실제 서비스에서는 여기서<br />나를 알아가는 질문이 시작돼요.</p>
+          <form method="dialog"><button className="mt-7 w-full rounded-full bg-black py-4 text-sm font-semibold text-white">랜딩으로 돌아가기</button></form>
+        </dialog>
       </section>
     </main>
   );

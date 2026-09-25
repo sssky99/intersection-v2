@@ -72,7 +72,32 @@ grant all on all tables in schema public to service_role;
   await db.exec(
     "grant usage on schema public to service_role; grant all on all tables in schema public to service_role; grant usage,select on all sequences in schema public to service_role",
   );
-  await db.exec(readFileSync("supabase/migrations/20260919020543_membership_renewal_thirty_days.sql", "utf8"));
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20260919020543_membership_renewal_thirty_days.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(`
+    alter table profiles add phone_normalized text, add archived_at timestamptz;
+    alter table membership_payment_intents add seller_reference text;
+    alter table groble_webhook_events add id bigint generated always as identity,
+      add buyer_phone_normalized text, add matched_user_id uuid, add received_at timestamptz default now(),
+      add idempotency_key text, add processing_status text default 'received', add processing_token uuid,
+      add processing_lease_until timestamptz, add updated_at timestamptz;
+  `);
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20260922020939_reconcile_groble_refunded_charges.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20260922021058_normalize_groble_subscription_timestamp_precision.sql",
+      "utf8",
+    ),
+  );
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -397,6 +422,254 @@ async function refundEvent(
 async function refund() {
   return (await one("select apply_groble_refund('refund-1') as result")).result;
 }
+async function missingChargePair(round = 2) {
+  await db.query(
+    "update profiles set phone_normalized='01000000001', membership_status='active', membership_plan='three_months', membership_start_date=$1, membership_end_date=($1::date+90), membership_updated_at=now() where user_id=$2",
+    [today, user],
+  );
+  const object = {
+    merchantUid: "unlinked-charge",
+    content: { id: "monthly-product" },
+    pricing: { finalAmount: 10000, currency: "KRW" },
+    payment: { purchasedAt: today + "T09:00:00+09:00" },
+    subscription: {
+      currentRound: round,
+      billingReason: round > 1 ? "RENEWAL" : "INITIAL",
+      billingCycleMonths: 1,
+      activatedAt: "2026-01-01T09:00:00+09:00",
+    },
+  };
+  const refunded = {
+    ...object,
+    subscription: { ...object.subscription, refundedRound: round },
+    refund: {
+      amount: 10000,
+      currency: "KRW",
+      partialRefund: false,
+      refundedAt: today + "T10:00:00+09:00",
+    },
+  };
+  for (const [event, type, obj] of [
+    ["unlinked-complete", "subscription_payment.completed", object],
+    ["unlinked-refund", "subscription_payment.refunded", refunded],
+  ] as const) {
+    await db.query(
+      "insert into groble_webhook_events(event_id,event_type,merchant_uid,buyer_phone_normalized,payload) values($1,$2,'unlinked-charge','01000000001',$3)",
+      [event, type, JSON.stringify({ data: { object: obj } })],
+    );
+  }
+}
+describe("unlinked verified full refunds", () => {
+  it("matches a renewal to its original verified subscription, not a recent checkout", async () => {
+    await missingChargePair();
+    const source = await intent();
+    await pay(source, "source-completion", "source-charge");
+    await db.query(`insert into groble_webhook_events(event_id,event_type,merchant_uid,buyer_phone_normalized,payload)
+      select 'source-completion',event_type,'source-charge',buyer_phone_normalized,
+        jsonb_set(payload,'{data,object,subscription,currentRound}','1')
+      from groble_webhook_events where event_id='unlinked-complete'`);
+    await intent();
+    const rows = (
+      await db.query(
+        "select * from match_groble_renewal_intent('unlinked-complete')",
+      )
+    ).rows;
+    expect(rows).toEqual([
+      { user_id: user, intent_id: source, plan: "one_month", credit_amount: 0 },
+    ]);
+    await db.query(
+      `update groble_webhook_events set payload=jsonb_set(payload,'{data,object,subscription,activatedAt}','"2025-01-01T00:00:00Z"') where event_id='source-completion'`,
+    );
+    expect(
+      (
+        await db.query(
+          "select * from match_groble_renewal_intent('unlinked-complete')",
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+  it("matches an explicit renewal reference only to the same buyer", async () => {
+    await missingChargePair();
+    const source = await intent();
+    await db.query(
+      "update membership_payment_intents set seller_reference='known-ref' where id=$1",
+      [source],
+    );
+    await db.query(
+      `update groble_webhook_events set payload=jsonb_set(payload,'{data,object,sellerReference}','"known-ref"') where event_id='unlinked-complete'`,
+    );
+    expect(
+      (
+        await db.query(
+          "select * from match_groble_renewal_intent('unlinked-complete')",
+        )
+      ).rows,
+    ).toHaveLength(1);
+    await db.query("update profiles set phone_normalized='01000000002'");
+    expect(
+      (
+        await db.query(
+          "select * from match_groble_renewal_intent('unlinked-complete')",
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+  it("accepts provider-rounded activation times while retaining exact charge identity", async () => {
+    await missingChargePair(1);
+    await db.query(
+      `update groble_webhook_events set payload=jsonb_set(payload,'{data,object,subscription,activatedAt}','"2026-01-01T08:59:59.688419907+09:00"') where event_id='unlinked-complete'`,
+    );
+    expect(
+      (await one("select apply_groble_refund('unlinked-refund') result")).result
+        .payment_kind,
+    ).toBe("membership_initial");
+  });
+  it("allows an unmatched subscription retry while preserving leases and terminal states", async () => {
+    await missingChargePair();
+    await db.query(
+      "update groble_webhook_events set processing_status='unmatched',idempotency_key=event_id",
+    );
+    const claim = () =>
+      one(
+        "select * from claim_groble_webhook_event('unlinked-complete','unlinked-complete',$1)",
+        [user],
+      );
+    expect((await claim()).outcome).toBe("claimed");
+    expect((await claim()).outcome).toBe("busy");
+    await db.query(
+      "update groble_webhook_events set processing_status='processed' where event_id='unlinked-complete'",
+    );
+    expect((await claim()).outcome).toBe("done");
+    await db.query(
+      "update groble_webhook_events set processing_status='unmatched',event_type='payment.completed' where event_id='unlinked-complete'",
+    );
+    expect((await claim()).outcome).toBe("done");
+  });
+  it.each([1, 2])(
+    "records a refunded round %s without changing manually granted access",
+    async (round) => {
+      await missingChargePair(round);
+      const before = await one("select * from profiles");
+      const result = await one(
+        "select apply_groble_refund('unlinked-refund') result",
+      );
+      expect(result.result.payment_kind).toBe(
+        round === 2 ? "membership_renewal" : "membership_initial",
+      );
+      expect(await one("select * from profiles")).toEqual(before);
+      expect(
+        (await one("select status from payment_transactions")).status,
+      ).toBe("cancelled");
+      expect(
+        (await one("select status from membership_payment_intents")).status,
+      ).toBe("cancelled");
+      expect(
+        (await one("select count(*)::int n from membership_payment_effects")).n,
+      ).toBe(0);
+      expect(
+        (await one("select count(*)::int n from deposit_message_registrations"))
+          .n,
+      ).toBe(0);
+    },
+  );
+  it("converges across refund-first, completion retry and duplicate deliveries", async () => {
+    await missingChargePair();
+    await db.query("select apply_groble_refund('unlinked-refund')");
+    const result = (
+      await one(
+        "select reconcile_groble_refunded_completion('unlinked-complete') result",
+      )
+    ).result;
+    expect(result.outcome).toBe("cancelled");
+    await db.query("select apply_groble_refund('unlinked-refund')");
+    const tx = await one("select * from payment_transactions");
+    expect(
+      (
+        await pay(
+          tx.membership_payment_intent_id,
+          "unlinked-complete",
+          "unlinked-charge",
+          today + "T09:00:00+09:00",
+        )
+      ).outcome,
+    ).toBe("cancelled");
+    expect(
+      (await one("select count(*)::int n from payment_transactions")).n,
+    ).toBe(1);
+    expect(
+      (await one("select count(*)::int n from membership_payment_intents")).n,
+    ).toBe(1);
+  });
+  it.each([
+    ["refund amount", "{data,object,refund,amount}", "9000"],
+    ["partial refund", "{data,object,refund,partialRefund}", "true"],
+    ["round", "{data,object,subscription,refundedRound}", "1"],
+    [
+      "purchase time",
+      "{data,object,payment,purchasedAt}",
+      '"2020-01-01T00:00:00Z"',
+    ],
+    ["product", "{data,object,content,id}", '"different-product"'],
+  ])("rejects %s mismatch atomically", async (_, path, value) => {
+    await missingChargePair();
+    await db.query(
+      "update groble_webhook_events set payload=jsonb_set(payload,$1::text[],$2::jsonb) where event_id='unlinked-refund'",
+      [path, value],
+    );
+    await expect(
+      db.query("select apply_groble_refund('unlinked-refund')"),
+    ).rejects.toThrow(/review/);
+    expect(
+      (await one("select count(*)::int n from payment_transactions")).n,
+    ).toBe(0);
+    expect(
+      (await one("select count(*)::int n from membership_payment_intents")).n,
+    ).toBe(0);
+  });
+  it("rejects a seller reference belonging to another member", async () => {
+    await missingChargePair();
+    const other = "00000000-0000-4000-8000-000000000002";
+    await db.query("insert into profiles(user_id) values($1)", [other]);
+    await db.query(
+      "insert into membership_payment_intents(user_id,plan,expected_amount,credit_amount,status,opened_at,expires_at,seller_reference) values($1,'one_month',10000,0,'completed',now(),now()+interval '1 day','foreign-ref')",
+      [other],
+    );
+    await db.query(
+      `update groble_webhook_events set payload=jsonb_set(payload,'{data,object,sellerReference}','"foreign-ref"') where event_id='unlinked-complete'`,
+    );
+    await expect(
+      db.query("select apply_groble_refund('unlinked-refund')"),
+    ).rejects.toThrow(/reference identity/);
+  });
+  it("holds missing completions and ambiguous members for review", async () => {
+    await missingChargePair();
+    await db.query(
+      "insert into profiles(user_id,phone_normalized) values('00000000-0000-4000-8000-000000000002','01000000001')",
+    );
+    await expect(
+      db.query("select apply_groble_refund('unlinked-refund')"),
+    ).rejects.toThrow(/member match/);
+    await db.query(
+      "delete from groble_webhook_events where event_id='unlinked-complete'",
+    );
+    await expect(
+      db.query("select apply_groble_refund('unlinked-refund')"),
+    ).rejects.toThrow(/completion match/);
+  });
+  it("does not expose reconciliation RPCs to public clients", async () => {
+    for (const fn of [
+      "record_groble_refunded_charge",
+      "reconcile_groble_refunded_completion",
+      "match_groble_renewal_intent",
+    ]) {
+      const privileges = await one(
+        "select has_function_privilege('anon',$1,'execute') a,has_function_privilege('authenticated',$1,'execute') u,has_function_privilege('service_role',$1,'execute') s",
+        [fn + "(text)"],
+      );
+      expect(privileges).toEqual({ a: false, u: false, s: true });
+    }
+  });
+});
 describe("stored refund events", () => {
   async function setup() {
     await db.query(
@@ -499,43 +772,91 @@ describe("recurring membership credits", () => {
   it("deducts once across refund and cancellation notifications for the same renewal", async () => {
     const id = await intent();
     await pay(id);
-    const original = await one("select membership_end_date::text as e from profiles");
+    const original = await one(
+      "select membership_end_date::text as e from profiles",
+    );
     const renewed = await pay(id, "renew", "renew");
     await refundEvent("renew");
     await db.query("select apply_groble_refund('refund-1')");
     await db.query("select apply_groble_refund('refund-1')");
-    expect((await cancel(renewed.transaction_id)).outcome).toBe("already_cancelled");
-    expect(await one("select membership_end_date::text as e from profiles")).toEqual(original);
+    expect((await cancel(renewed.transaction_id)).outcome).toBe(
+      "already_cancelled",
+    );
+    expect(
+      await one("select membership_end_date::text as e from profiles"),
+    ).toEqual(original);
   });
   it("reuses a subscription reference for separate charges, but credits each charge once", async () => {
     const id = await intent();
     await pay(id);
-    const original = await one("select membership_end_date::text as e from profiles");
+    const original = await one(
+      "select membership_end_date::text as e from profiles",
+    );
     const renewed = await pay(id, "renew-1", "charge-2");
     expect(renewed.payment_kind).toBe("membership_renewal");
     expect(renewed.intent_id).not.toBe(id);
-    expect((await pay(id, "renew-redelivery", "charge-2")).outcome).toBe("already_applied");
-    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(30);
+    expect((await pay(id, "renew-redelivery", "charge-2")).outcome).toBe(
+      "already_applied",
+    );
+    expect(
+      (
+        await one("select membership_end_date-$1::date as days from profiles", [
+          original.e,
+        ])
+      ).days,
+    ).toBe(30);
     await pay(id, "renew-2", "charge-3");
-    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(60);
-    expect((await one("select count(*)::int as n from membership_payment_effects")).n).toBe(3);
+    expect(
+      (
+        await one("select membership_end_date-$1::date as days from profiles", [
+          original.e,
+        ])
+      ).days,
+    ).toBe(60);
+    expect(
+      (await one("select count(*)::int as n from membership_payment_effects"))
+        .n,
+    ).toBe(3);
     await cancel(renewed.transaction_id);
-    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(30);
-    expect((await cancel(renewed.transaction_id)).outcome).toBe("already_cancelled");
+    expect(
+      (
+        await one("select membership_end_date-$1::date as days from profiles", [
+          original.e,
+        ])
+      ).days,
+    ).toBe(30);
+    expect((await cancel(renewed.transaction_id)).outcome).toBe(
+      "already_cancelled",
+    );
     expect((await pay(id, "late", "charge-2")).outcome).toBe("cancelled");
     await pay(id, "renew-3", "charge-4", "2099-01-01T00:00:00Z");
-    expect((await one("select membership_end_date-$1::date as days from profiles", [original.e])).days).toBe(60);
+    expect(
+      (
+        await one("select membership_end_date-$1::date as days from profiles", [
+          original.e,
+        ])
+      ).days,
+    ).toBe(60);
   });
   it("preserves a future start, six-month plan and manual extension through renewal and cancellation", async () => {
     const id = await intent();
     await pay(id);
-    await db.exec("update profiles set membership_start_date='2099-01-20', membership_end_date='2099-07-19', membership_plan='six_months'");
+    await db.exec(
+      "update profiles set membership_start_date='2099-01-20', membership_end_date='2099-07-19', membership_plan='six_months'",
+    );
     const payment = await pay(id, "r", "r");
-    expect(await one("select membership_start_date::text as s,membership_end_date::text as e,membership_plan as p from profiles"))
-      .toEqual({s:"2099-01-20",e:"2099-08-18",p:"six_months"});
-    await db.exec("update profiles set membership_end_date=membership_end_date+14");
+    expect(
+      await one(
+        "select membership_start_date::text as s,membership_end_date::text as e,membership_plan as p from profiles",
+      ),
+    ).toEqual({ s: "2099-01-20", e: "2099-08-18", p: "six_months" });
+    await db.exec(
+      "update profiles set membership_end_date=membership_end_date+14",
+    );
     await cancel(payment.transaction_id);
-    expect((await one("select membership_end_date::text as e from profiles")).e).toBe("2099-08-02");
+    expect(
+      (await one("select membership_end_date::text as e from profiles")).e,
+    ).toBe("2099-08-02");
   });
   it("expires access only when the 30-day deduction removes all remaining time", async () => {
     const id = await intent();
@@ -543,7 +864,15 @@ describe("recurring membership credits", () => {
     await db.exec("update profiles set membership_end_date=current_date-1");
     const renewed = await pay(id, "r", "r");
     expect((await cancel(renewed.transaction_id)).revoked_access).toBe(true);
-    expect((await one("select membership_status as s from profiles")).s).toBe("expired");
-    expect((await one("select membership_end_date=current_date-1 as restored from profiles")).restored).toBe(true);
+    expect((await one("select membership_status as s from profiles")).s).toBe(
+      "expired",
+    );
+    expect(
+      (
+        await one(
+          "select membership_end_date=current_date-1 as restored from profiles",
+        )
+      ).restored,
+    ).toBe(true);
   });
 });
