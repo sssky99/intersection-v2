@@ -1151,8 +1151,15 @@ function WaitlistAccordion({
       row.source === "date_application" &&
       row.status === "waitlisted",
   );
-  const instanceOptions = distributableRows[0]
-    ? instancesForRow(distributableRows[0], instances)
+  const boardRows = group.rows.filter(
+    (row) => row.source === "date_application" && (
+      row.status === "waitlisted" ||
+      (Boolean(row.ticket_instance_id) &&
+        ["approved", "feedback_done", "completed"].includes(row.status))
+    ),
+  );
+  const instanceOptions = boardRows[0]
+    ? instancesForRow(boardRows[0], instances)
     : [];
   const selectedCount = distributableRows.filter((row) =>
     distributionSelection.has(rowKey(row)),
@@ -1161,12 +1168,12 @@ function WaitlistAccordion({
     { instance: null, rows: distributableRows.filter((row) => !row.ticket_instance_id) },
     ...instanceOptions.map((instance) => ({
       instance,
-      rows: distributableRows.filter(
+      rows: boardRows.filter(
         (row) => row.ticket_instance_id === instance.id,
       ),
     })),
   ];
-  const handledRowKeys = new Set(distributableRows.map(rowKey));
+  const handledRowKeys = new Set(boardRows.map(rowKey));
   const remainingRows = group.rows.filter(
     (row) => !handledRowKeys.has(rowKey(row)),
   );
@@ -1205,11 +1212,11 @@ function WaitlistAccordion({
 
       {open && (
         <div className="space-y-2 border-t border-black/10 bg-[#fcfcfb] p-3">
-          {distributableRows.length > 0 && (
+          {boardRows.length > 0 && (
             <div className="mb-3 overflow-hidden rounded-2xl border border-black/10 bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
                 <div>
-                  <p className="text-sm font-black">세부 티켓 작업 분배</p>
+                  <p className="text-sm font-black">조별 배정 · 확정 현황</p>
                   <p className="mt-1 text-xs font-semibold text-black/45">
                     신청자를 선택한 뒤 원하는 열로 배정하거나 다시 이동하세요.
                   </p>
@@ -1227,9 +1234,10 @@ function WaitlistAccordion({
                   }}
                 >
                   {columns.map(({ instance, rows: columnRows }) => {
+                    const selectableRows = columnRows.filter((row) => row.status === "waitlisted");
                     const allSelected =
-                      columnRows.length > 0 &&
-                      columnRows.every((row) =>
+                      selectableRows.length > 0 &&
+                      selectableRows.every((row) =>
                         distributionSelection.has(rowKey(row)),
                       );
                     const destinationId = instance?.id ?? null;
@@ -1239,7 +1247,7 @@ function WaitlistAccordion({
                         row.ticket_instance_id !== destinationId,
                     ).length;
                     const confirmableGroupCount = instance
-                      ? columnRows.length
+                      ? selectableRows.length
                       : 0;
 
                     return (
@@ -1273,9 +1281,9 @@ function WaitlistAccordion({
                           <div className="mt-3 grid grid-cols-2 gap-2">
                             <button
                               type="button"
-                              disabled={columnRows.length === 0 || bulkSaving}
+                              disabled={selectableRows.length === 0 || bulkSaving}
                               onClick={() =>
-                                onDistributionSelectMany(columnRows, !allSelected)
+                                onDistributionSelectMany(selectableRows, !allSelected)
                               }
                               className="h-8 rounded-lg border border-black/10 bg-white text-[11px] font-black text-black/55 transition hover:border-black/25 disabled:opacity-35"
                             >
@@ -1318,7 +1326,7 @@ function WaitlistAccordion({
                                 checked={distributionSelection.has(rowKey(row))}
                                 active={selectedId === rowKey(row)}
                                 saving={savingId === rowKey(row)}
-                                disabled={bulkSaving}
+                                disabled={bulkSaving || row.status !== "waitlisted"}
                                 onToggle={() => onDistributionToggle(row)}
                                 onOpen={() => onSelect(row)}
                               />
@@ -1411,6 +1419,11 @@ function DistributionApplicantCard({
             "신청자 미확인"
           )}
           <FriendBadge row={row} />
+          {row.status !== "waitlisted" && (
+            <span className="ml-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+              {statusMetricLabels[row.status]}
+            </span>
+          )}
         </p>
         <p className="mt-1 truncate text-[10px] font-semibold text-black/40">
           {[profile?.gender, profile?.birth_year, profile?.mbti]
