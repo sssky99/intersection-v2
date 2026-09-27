@@ -3,6 +3,7 @@
 import { startVisiblePolling } from "@/lib/visiblePolling";
 
 import { SafeImage } from "@/components/SafeImage";
+import { FriendsTab } from "./FriendsTab";
 import {
   preferenceQuestions,
   usesPreferenceProfile,
@@ -68,6 +69,7 @@ import {
   Sparkles,
   Ticket as TicketIcon,
   UserRound,
+  UsersRound,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -99,7 +101,7 @@ const LazyProfileTab = dynamic(
   },
 );
 
-export type AppTab = "browse" | "recommend" | "chat" | "profile";
+export type AppTab = "browse" | "recommend" | "friends" | "chat" | "profile";
 
 export type OperatorAccountSwitcher =
   | {
@@ -121,16 +123,18 @@ type AnswerRow = {
 
 type AnswerMap = Record<number, QuestionAnswer>;
 const tabItems: Array<{ id: AppTab; label: string; Icon: LucideIcon }> = [
+  { id: "friends", label: "친구", Icon: UsersRound },
   { id: "recommend", label: "신청", Icon: Sparkles },
   { id: "browse", label: "티켓", Icon: TicketIcon },
   { id: "chat", label: "채팅", Icon: MessageCircle },
 ];
 
 const appTabPositions: Record<AppTab, number> = {
-  recommend: 0,
-  browse: 1,
-  chat: 2,
-  profile: 3,
+  friends: 0,
+  recommend: 1,
+  browse: 2,
+  chat: 3,
+  profile: 4,
 };
 
 const algorithmQuestionSections = [
@@ -1393,6 +1397,13 @@ export function AppHome({
           />
         </div>
         <div
+          data-testid="app-tab-panel-friends"
+          hidden={activeTab !== "friends"}
+          className="absolute inset-0 overflow-y-auto scrollbar-none"
+        >
+          <FriendsTab />
+        </div>
+        <div
           data-testid="app-tab-panel-chat"
           aria-hidden={activeTab !== "chat"}
           className={cn(
@@ -1602,7 +1613,7 @@ export function AppHome({
               (activeTab === "browse" || activeTab === "recommend") && "pt-5",
             )}
           >
-            <div className="pointer-events-auto relative grid grid-cols-3 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
+            <div className="pointer-events-auto relative grid grid-cols-4 gap-1 rounded-full border border-white/[0.24] bg-black/[0.62] p-1.5 shadow-[0_18px_42px_rgba(0,0,0,0.18)] backdrop-blur-xl">
               {tabItems.map(({ id, label, Icon }) => {
                 const selected = activeTab === id;
 
