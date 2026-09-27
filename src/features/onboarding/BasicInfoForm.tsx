@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { identifyAnalyticsUser, trackEvent } from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
+import { fetchJsonWithTimeout } from "@/lib/fetchJsonWithTimeout";
 import { createClient } from "@/lib/supabase/client";
 import type { Gender } from "@/types/user";
 
@@ -279,7 +280,7 @@ export function BasicInfoForm({
     }
 
     if (isRegeneration) {
-      const response = await fetch("/api/profile/regeneration/complete", {
+      const result = await fetchJsonWithTimeout<{ error?: string; nextAvailableAt?: string }>("/api/profile/regeneration/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -292,13 +293,9 @@ export function BasicInfoForm({
         }),
       }).catch(() => null);
 
-      const responseBody = response
-        ? ((await response.json().catch(() => null)) as
-            | { error?: string; nextAvailableAt?: string }
-            | null)
-        : null;
+      const responseBody = result?.body;
 
-      if (!response?.ok) {
+      if (!result?.response.ok) {
         setError(
           responseBody?.error ??
             "프로필 새로 만들기에 실패했어요. 잠시 후 다시 시도해주세요.",
@@ -315,7 +312,7 @@ export function BasicInfoForm({
       return;
     }
 
-    const response = await fetch("/api/profile/onboarding/complete", {
+    const result = await fetchJsonWithTimeout("/api/profile/onboarding/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -330,7 +327,7 @@ export function BasicInfoForm({
       }),
     }).catch(() => null);
 
-    if (!response?.ok) {
+    if (!result?.response.ok) {
       setError("기본정보 저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       setSaving(false);
       return;

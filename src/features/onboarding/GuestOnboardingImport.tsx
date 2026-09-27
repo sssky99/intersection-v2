@@ -17,6 +17,7 @@ import {
   trackLoginSuccessFromUrl,
 } from "@/lib/analytics";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
+import { fetchJsonWithTimeout } from "@/lib/fetchJsonWithTimeout";
 import {
   isProfileArchetypeId,
   type ProfileArchetypeId,
@@ -61,14 +62,13 @@ export function GuestOnboardingImport({ userId, initialPhotoUrl = "" }: { userId
       }
 
       try {
-        const identityResponse = await fetch("/api/auth/phone/complete", {
+        const { response: identityResponse, body: identity } = await fetchJsonWithTimeout<{
+          loginType?: "new" | "existing"; nextPath?: string;
+        }>("/api/auth/phone/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ analyticsSessionId: analyticsSessionId() }),
         });
-        const identity = (await identityResponse.json().catch(() => null)) as
-          | { loginType?: "new" | "existing"; nextPath?: string }
-          | null;
         if (identityResponse.ok && identity?.loginType === "existing") {
           await clearGuestOnboardingDraft();
           router.replace(identity.nextPath ?? "/meetings?tab=recommend");
@@ -133,7 +133,9 @@ export function GuestOnboardingImport({ userId, initialPhotoUrl = "" }: { userId
           return;
         }
       }
-      const response = await fetch("/api/profile/onboarding/import", {
+      const { response, body } = await fetchJsonWithTimeout<{
+        error?: string; existing?: boolean; profileArchetypeId?: unknown;
+      }>("/api/profile/onboarding/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -144,13 +146,6 @@ export function GuestOnboardingImport({ userId, initialPhotoUrl = "" }: { userId
           analyticsSessionId: analyticsSessionId(),
         }),
       });
-      const body = (await response.json().catch(() => null)) as
-        | {
-            error?: string;
-            existing?: boolean;
-            profileArchetypeId?: unknown;
-          }
-        | null;
 
       if (response.status === 409 && body?.existing) {
         await clearGuestOnboardingDraft();

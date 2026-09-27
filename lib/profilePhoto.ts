@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { validateProfilePhoto } from "./profilePhotoValidation";
+import { fetchJsonWithTimeout } from "./fetchJsonWithTimeout";
 
 function sanitizeStorageFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -51,29 +52,30 @@ async function compressProfilePhoto(file: File) {
 
 async function finalizeProfilePhoto(storagePath: string) {
   const retryDelays = [0, 250, 700];
-  let lastResponse: Response | null = null;
+  let lastResult: Awaited<ReturnType<typeof fetchJsonWithTimeout<{ photoUrl?: string; error?: string }>>> | null = null;
 
   for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
     if (retryDelays[attempt] > 0) {
       await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt]));
     }
     try {
-      const response = await fetch("/api/profile/photo", {
+      const result = await fetchJsonWithTimeout<{ photoUrl?: string; error?: string }>("/api/profile/photo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storagePath }),
       });
 
-      lastResponse = response;
+      const { response } = result;
+      lastResult = result;
       if (response.ok || (response.status !== 409 && response.status < 502)) {
-        return response;
+        return result;
       }
     } catch (error) {
       if (attempt === retryDelays.length - 1) throw error;
     }
   }
 
-  if (lastResponse) return lastResponse;
+  if (lastResult) return lastResult;
   throw new Error("Profile photo finalization failed.");
 }
 
@@ -102,13 +104,11 @@ export async function uploadProfilePhoto(userId: string, file: File) {
     throw new Error("사진 업로드에 실패했어요. 다시 시도해주세요.");
   }
 
-  const response = await finalizeProfilePhoto(storagePath).catch(() => null);
-  if (!response) {
+  const finalized = await finalizeProfilePhoto(storagePath).catch(() => null);
+  if (!finalized) {
     throw new Error("사진 저장 중 연결이 끊겼어요. 다시 시도해주세요.");
   }
-  const result = (await response.json().catch(() => null)) as
-    | { photoUrl?: string; error?: string }
-    | null;
+  const { response, body: result } = finalized;
   if (!response.ok || !result?.photoUrl) {
     throw new Error("사진 정보를 저장하지 못했어요. 다시 시도해주세요.");
   }

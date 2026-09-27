@@ -38,6 +38,7 @@ import {
 } from "@/lib/onboardingResume";
 import { createClient } from "@/lib/supabase/client";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
+import { fetchJsonWithTimeout } from "@/lib/fetchJsonWithTimeout";
 import type {
   ProfileQuestion,
   QuestionAnswer,
@@ -1061,7 +1062,7 @@ export function QuestionFlow({
       throw new Error("QuestionFlow requires userId in onboarding mode.");
     }
 
-    const response = await fetch("/api/profile/questions/complete", {
+    const result = await fetchJsonWithTimeout<{ profileArchetypeId?: ProfileArchetypeId }>("/api/profile/questions/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1073,14 +1074,12 @@ export function QuestionFlow({
       }),
     }).catch(() => null);
 
-    if (!response?.ok) {
+    if (!result?.response.ok) {
       completionSubmittedRef.current = false;
       throw new Error("Profile question completion failed.");
     }
 
-    const responseBody = (await response.json().catch(() => null)) as
-      | { profileArchetypeId?: ProfileArchetypeId }
-      | null;
+    const responseBody = result.body;
 
     if (!isRegeneration) {
       trackEvent("questions_complete", {
