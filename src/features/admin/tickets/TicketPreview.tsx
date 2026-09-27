@@ -2,7 +2,6 @@
 import { IntersectionTicketCard } from "@/components/IntersectionTicketCard";
 import { StoredTicketDetailView } from "@/features/app/tickets/TicketProgress";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import { ticketBackgroundImageUrls } from "@/lib/ticketImages";
 import {
   type GatheringTicket,
@@ -237,7 +236,7 @@ export function TicketPreviewPanel({
             detail
           </p>
           <div className="mt-3 overflow-hidden border-t border-black/8">
-            <TicketDetailHero ticket={ticket} />
+
             <TicketDetailContent
               ticket={ticket}
               className="px-5 pb-5"

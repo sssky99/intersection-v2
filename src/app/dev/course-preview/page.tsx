@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { MobileFrame } from "@/components/MobileFrame";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { TicketDetailHero } from "@/features/meetings/TicketDetailHero";
 import type { GatheringTicket } from "@/types/ticket";
 
 const coursePreviewTicket: GatheringTicket = {
@@ -55,7 +54,7 @@ export default function CoursePreviewPage() {
           여정 미리보기
         </p>
         <div className="relative overflow-hidden border border-black/[0.11] bg-[#f8f4eb] shadow-[0_24px_70px_rgba(39,34,24,0.12)] before:pointer-events-none before:absolute before:inset-2 before:z-30 before:border before:border-black/[0.055]">
-          <TicketDetailHero ticket={coursePreviewTicket} backgroundImageUrls={[]} />
+
           <TicketDetailContent
             ticket={coursePreviewTicket}
             sections={["summary", "course"]}

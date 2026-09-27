@@ -6,7 +6,7 @@ import {
   RouletteDeadlineCountdown,
   TicketCoursePanel
 } from "@/features/meetings/TicketDetailContent";
-import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
+import { ticketFadeTransition } from "@/features/meetings/ticketTransitions";
 import { blindDateStartAtFromParts } from "@/lib/blindDateTiming";
 import type { BlindDateUserOffer } from "@/types/blindDate";
 import type { NaverPlace } from "@/types/place";

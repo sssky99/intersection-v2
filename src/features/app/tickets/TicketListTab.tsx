@@ -1,6 +1,6 @@
 "use client";
 import { MatchingLoader } from "@/features/meetings/MeetingRecommendation";
-import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
+import { ticketFadeTransition } from "@/features/meetings/ticketTransitions";
 import {
   canCancelMeetingDateApplication,
   meetingDateApplicationMatchesTicket,

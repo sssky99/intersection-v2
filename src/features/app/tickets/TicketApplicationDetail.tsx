@@ -4,7 +4,7 @@ import {
   formatTicketTimeLabel,
 } from "@/components/IntersectionTicketCard";
 import { TicketDetailContent } from "@/features/meetings/TicketDetailContent";
-import { ticketFadeTransition } from "@/features/meetings/TicketDetailHero";
+import { ticketFadeTransition } from "@/features/meetings/ticketTransitions";
 import type { GatheringTicket } from "@/types/ticket";
 import { motion } from "framer-motion";
 import { ChevronLeft, Loader2, X } from "lucide-react";
