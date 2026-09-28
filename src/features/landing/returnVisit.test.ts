@@ -2,17 +2,16 @@ import { describe, expect, it } from "vitest";
 import { landingEntry } from "./returnVisit";
 
 const fresh = { hasAuthCookie: false, hasSeenIntro: false, phase: "guide", answerCount: 0 };
-describe("returning landing visitors", () => {
+describe("landing visitors without a mandatory intro", () => {
   it("checks member state before stale guest drafts or video history", () => {
     expect(landingEntry({ ...fresh, hasAuthCookie: true, phase: "auth" })).toBe("member");
   });
-  it("resumes questions and completed guest questionnaires without replaying video", () => {
-    expect(landingEntry({ ...fresh, phase: "questions" })).toBe("resume");
-    expect(landingEntry({ ...fresh, phase: "auth" })).toBe("resume");
-    expect(landingEntry({ ...fresh, answerCount: 3 })).toBe("resume");
+  it.each([false, true])("preserves questionnaire progress with intro history %s", (hasSeenIntro) => {
+    expect(landingEntry({ ...fresh, hasSeenIntro, phase: "questions" })).toBe("resume");
+    expect(landingEntry({ ...fresh, hasSeenIntro, phase: "auth" })).toBe("resume");
+    expect(landingEntry({ ...fresh, hasSeenIntro, answerCount: 3 })).toBe("resume");
   });
-  it("shows the intro only when there is no progress or completed intro", () => {
-    expect(landingEntry(fresh)).toBe("intro");
-    expect(landingEntry({ ...fresh, hasSeenIntro: true })).toBe("landing");
+  it.each([false, true])("opens the landing immediately with intro history %s", (hasSeenIntro) => {
+    expect(landingEntry({ ...fresh, hasSeenIntro })).toBe("landing");
   });
 });
