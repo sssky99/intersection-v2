@@ -9,6 +9,18 @@ type FriendInvitationMessageInput = {
 
 const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
+export function friendGivenName(value: string) {
+  const name = oneLine(value);
+  if (!/^[가-힣]{3,4}$/.test(name)) return name;
+  return name.slice(/^(남궁|황보|제갈|선우|독고|서문|사공|동방)/.test(name) ? 2 : 1);
+}
+
+export function buildBoardInvitationMessage(input: FriendInvitationMessageInput) {
+  const recipient = friendGivenName(input.recipientName ?? "친구");
+  const inviter = friendGivenName(input.inviterName);
+  return `[교집합 | 함께하기 초대]\n\n${recipient}님, ${inviter}님이 지난 교집합에서 ${recipient}님과 즐거운 시간을 보냈어서 다음 교집합도 함께하고 싶어 해요!\n\n수락하면 두 분이서 같은 조로 다음 교집합에 참여하실 수 있어요 :)\n\n${input.eventDate} · ${input.eventTime.slice(0,5)}\n${oneLine(input.eventTitle)}\n\n웹사이트에서 초대를 확인하고 모임을 신청해주세요.\n초대는 모임 시작 24시간 전에 마감돼요.\n\n${input.invitationUrl}`;
+}
+
 export function friendInvitationDeadline(eventDate: string, eventTime: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(eventTime)) {
     throw new Error("invalid-invitation-schedule");

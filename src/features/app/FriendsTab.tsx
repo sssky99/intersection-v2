@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { buildBoardInvitationMessage, friendGivenName } from "@/lib/friendInvitationMessage";
 import { ArrowLeftRight, ArrowUpRight, Check, Images, Plus, UsersRound, X } from "lucide-react";
 
 export type FriendPreviewPerson = { id: string; name: string; met: string; image: string };
 type Person = FriendPreviewPerson;
 type Friend = Person & { x: number; y: number };
+type Meeting = { id: string; label: string; place: string; applicationId?: string; eventDate?: string; eventTime?: string; title?: string; status?: string };
 const samples: Person[] = [
   { id: "sample-1", name: "김준서", met: "9월 26일 토요일에 함께했어요", image: "/images/profile-archetypes/adventurer.jpg" },
   { id: "sample-2", name: "이도윤", met: "9월 26일 토요일에 함께했어요", image: "/images/profile-archetypes/sentimental.jpg" },
@@ -16,12 +18,7 @@ const previewMeetings = [
   { id: "preview-oct3", label: "10월 3일 토요일 · 오후 6시", place: "을지로 · 예시 모임" },
   { id: "preview-oct10", label: "10월 10일 토요일 · 오후 6시", place: "을지로 · 예시 모임" },
 ];
-function invitationName(fullName: string) {
-  const name = fullName.trim();
-  if (!/^[가-힣]{2,4}$/.test(name)) return name;
-  const compoundSurname = /^(남궁|황보|제갈|선우|독고|서문|사공|동방)/.test(name);
-  return name.slice(compoundSurname && name.length >= 3 ? 2 : 1);
-}
+const invitationName = friendGivenName;
 const serif = { fontFamily: '"Palatino Linotype", "Book Antiqua", Palatino, serif' };
 
 export function FriendsTab({ preview = false, initialFriends = [], ownerName }: { preview?: boolean; initialFriends?: Person[]; ownerName?: string }) {
@@ -32,19 +29,53 @@ export function FriendsTab({ preview = false, initialFriends = [], ownerName }: 
   const [sent, setSent] = useState<string[]>([]);
   const [requests, setRequests] = useState<Array<{ person: Person; meeting: typeof previewMeetings[number] }>>([]);
   const [meetingId, setMeetingId] = useState("");
+  const [realCandidates, setRealCandidates] = useState<Person[]>([]);
+  const [realMeetings, setRealMeetings] = useState<Meeting[]>([]);
+  const [realOwnerName, setRealOwnerName] = useState("");
+  const [inbox, setInbox] = useState<Array<{ id: string; name: string; label: string; title: string }>>([]);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(!preview);
+  const lock = useRef(false);
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    if (preview) return;
+    const controller = new AbortController();
+    setLoading(true);
+    fetch("/api/friends", { signal: controller.signal, cache: "no-store" }).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      if (controller.signal.aborted) return;
+      setSlots(data.slots); setRealCandidates(data.candidates); setRealMeetings(data.meetings); setRealOwnerName(data.ownerName); setInbox(data.inbox);
+    }).catch(e => { if (!controller.signal.aborted) setNotice(e.message || "친구 정보를 불러오지 못했어요."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [preview, reload]);
+  async function saveSlots(next: Array<Friend | null>) {
+    if (lock.current || loading) return false;
+    if (preview) { setSlots(next); return true; }
+    lock.current = true; setBusy(true);
+    try {
+      const response = await fetch("/api/friends", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slots: next.map(f => f && ({ id: f.id, x: f.x, y: f.y })) }) });
+      const data = await response.json(); if (!response.ok) throw new Error(data.error);
+      setSlots(next); return true;
+    } catch(e) { setNotice(e instanceof Error ? e.message : "저장하지 못했어요."); return false; }
+    finally { lock.current = false; setBusy(false); }
+  }
   const [demo, setDemo] = useState(preview);
   const [moving, setMoving] = useState(false);
   const [notice, setNotice] = useState("");
   const [draft, setDraft] = useState({ x: 50, y: 50 });
   const friends = slots.filter(Boolean);
-  const candidates = [...initialFriends, ...(demo ? samples : [])].filter((p, i, all) => all.findIndex(other => other.id === p.id) === i && !slots.some(f => f?.id === p.id));
+  const candidates = (preview ? [...initialFriends, ...(demo ? samples : [])] : realCandidates).filter((p, i, all) => all.findIndex(other => other.id === p.id) === i && !slots.some(f => f?.id === p.id));
   const selectedFriend = slots[selected];
-  const meeting = previewMeetings.find(item => item.id === meetingId);
+  const meetings: Meeting[] = preview ? previewMeetings : realMeetings;
+  const meeting = meetings.find(item => item.id === meetingId);
   const invitationKey = selectedFriend && meeting ? `${selectedFriend.id}:${meeting.id}` : "";
   const title = sheet === "add" ? "함께한 멤버" : sheet === "requests" ? "받은 모임 초대" : sheet === "meeting" ? "모임 함께하기" : sheet === "confirm" ? "초대 내용 확인" : "친구 사진과 모임 초대";
-  const openSlot = (index: number) => {
+  const openSlot = async (index: number) => {
+    if (busy || loading) return;
     if (moving) {
-      setSlots(current => { const next = [...current]; [next[selected], next[index]] = [next[index], next[selected]]; return next; });
+      const next = [...slots]; [next[selected], next[index]] = [next[index], next[selected]];
+      if (!await saveSlots(next)) return;
       setMoving(false); setNotice(""); return;
     }
     setSelected(index); setNotice("");
@@ -52,21 +83,41 @@ export function FriendsTab({ preview = false, initialFriends = [], ownerName }: 
     if (friend) { setDraft({ x: friend.x, y: friend.y }); setSheet("edit"); }
     else setSheet("add");
   };
-  const add = (person: Person) => {
+  const add = async (person: Person) => {
     const index = slots[selected] ? slots.findIndex(f => !f) : selected;
     if (index < 0) { setNotice("최대 9명까지 저장할 수 있어요."); return; }
-    setSlots(current => current.map((f, i) => i === index ? { ...person, x: 50, y: 50 } : f));
+    if (!await saveSlots(slots.map((f, i) => i === index ? { ...person, x: 50, y: 50 } : f))) return;
     setSheet(null);
     setNotice(`${person.name}님을 내 보드에 담았어요. 상대에게는 알려지지 않아요.`);
   };
+  const realMessage = selectedFriend && meeting && !preview ? buildBoardInvitationMessage({ recipientName: selectedFriend.name, inviterName: realOwnerName, eventDate: meeting.eventDate!, eventTime: meeting.eventTime!, eventTitle: meeting.title!, invitationUrl: "[개인별 초대 링크]" }) : "";
+  async function sendInvitation() {
+    if (!selectedFriend || !meeting || lock.current || sent.includes(invitationKey)) return;
+    if (preview) { setSent(current => [...current, invitationKey]); setSheet(null); setNotice("초대 흐름을 확인했어요. 실제 문자는 전송되지 않았어요."); return; }
+    lock.current = true; setBusy(true);
+    try {
+      const response = await fetch("/api/friend-invitations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ applicationId: meeting.applicationId, friendId: selectedFriend.id, consent: true }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setSent(current => [...current, invitationKey]);
+      setRealMeetings(current => current.map(m => m.id === meeting.id ? { ...m, status: data.status } : m));
+      setSheet(null); setNotice(data.status === "sent" ? "초대 문자가 발송됐어요." : data.status === "submitted" ? "초대 문자를 접수했어요. 발송 결과는 확인 중이에요." : "발송 결과를 확인 중이에요. 중복 전송하지 않았어요.");
+    } catch(e) {
+      // A network failure may follow provider acceptance. Lock this event locally;
+      // the server reservation prevents another SMS after refresh as well.
+      setSent(current => [...current, invitationKey]);
+      setRealMeetings(current => current.map(m => m.id === meeting.id ? { ...m, status: "unknown" } : m));
+      setNotice(e instanceof Error ? e.message : "발송 결과를 확인하지 못했어요. 새로고침 후 확인해 주세요.");
+    } finally { lock.current = false; setBusy(false); }
+  }
 
   return <section className="relative min-h-full bg-[#f2eee6] px-6 pb-28 pt-10 text-[#24211d]">
     <header className="flex flex-wrap items-center justify-between gap-3">
       <div role="tablist" aria-label="친구와 추억" className="inline-flex rounded-full border border-[#24211d]/10 bg-[#e8e1d5]/60 p-1">
       {([{ id: "friends", label: "친구들" }, { id: "memories", label: "추억들" }] as const).map(tab => <button key={tab.id} role="tab" id={`friends-tab-${tab.id}`} aria-selected={view === tab.id} aria-controls={`friends-panel-${tab.id}`} tabIndex={view === tab.id ? 0 : -1} onClick={() => { setView(tab.id); setMoving(false); setSheet(null); setNotice(""); }} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? "friends" : event.key === "End" ? "memories" : view === "friends" ? "memories" : "friends"; setView(next); setMoving(false); setSheet(null); setNotice(""); document.getElementById(`friends-tab-${next}`)?.focus(); } }} className={`min-w-0 rounded-full px-4 py-2 text-xs transition ${view === tab.id ? "bg-[#faf8f3] text-[#24211d] shadow-sm" : "text-[#938b80] hover:text-[#24211d]"}`}>{tab.label}</button>)}
     </div>
-      <button onClick={() => { setSheet("requests"); setNotice(""); }} className="flex min-h-10 items-center gap-2 rounded-full border border-[#24211d]/15 px-3 text-[11px]" aria-label={`받은 모임 초대 ${requests.length}개`}>
-        받은 모임 초대 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e8e1d5] text-[10px]">{requests.length}</span>
+      <button onClick={() => { setSheet("requests"); setNotice(""); }} className="flex min-h-10 items-center gap-2 rounded-full border border-[#24211d]/15 px-3 text-[11px]" aria-label={`받은 모임 초대 ${(preview ? requests.length : inbox.length)}개`}>
+        받은 모임 초대 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#e8e1d5] text-[10px]">{preview ? requests.length : inbox.length}</span>
       </button>
     </header>
     <div role="tabpanel" id="friends-panel-friends" aria-labelledby="friends-tab-friends" hidden={view !== "friends"}>
@@ -85,7 +136,7 @@ export function FriendsTab({ preview = false, initialFriends = [], ownerName }: 
       </button>)}
     </div>
     {moving && <button className="mx-auto mt-3 block text-xs underline" onClick={() => setMoving(false)}>자리 바꾸기 취소</button>}
-    <p role="status" className="mt-3 text-center text-xs text-[#625b50]">{notice}</p>
+    <p role="status" className="mt-3 text-center text-xs text-[#625b50]">{loading ? "친구를 불러오는 중이에요…" : notice}</p>{!preview && <button disabled={busy || loading} className="mx-auto mt-2 block text-xs underline" onClick={() => setReload(n => n + 1)}>새로고침</button>}
     {preview && <details className="mt-5 border-t border-[#24211d]/10 pt-3 text-[10px] text-[#82796d]"><summary className="cursor-pointer">미리보기 도구 · 실제 문자는 전송되지 않아요</summary><p className="mt-2">예시 이름과 샘플 이미지로 동작을 확인합니다.</p><div className="mt-3 flex flex-wrap gap-2"><button className="rounded-full border px-3 py-2" onClick={() => { setDemo(true); setNotice("빈 사진틀을 눌러 예시 멤버를 확인하세요."); }}>예시 멤버 보기</button><button className="rounded-full border px-3 py-2" onClick={() => { setDemo(true); setRequests([{ person: samples[0], meeting: previewMeetings[0] }]); }}>받은 모임 초대 시뮬레이션</button><button className="rounded-full border px-3 py-2" onClick={() => { setSlots(Array(9).fill(null)); setRequests([]); setSent([]); setDemo(false); setNotice(""); }}>초기화</button></div></details>}
 
     </div>
@@ -104,12 +155,13 @@ export function FriendsTab({ preview = false, initialFriends = [], ownerName }: 
       <div role="dialog" aria-modal="true" aria-label={title} className="max-h-[90%] w-full overflow-y-auto rounded-t-[28px] bg-[#faf8f3] px-6 pb-8 pt-3 shadow-xl" onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === "Escape") setSheet(null); }}>
         <div className="mx-auto mb-5 h-1 w-9 rounded-full bg-[#d0c7b9]" />
         <div className={`flex items-center ${sheet === "edit" ? "justify-end" : "justify-between"}`}>{sheet !== "edit" && <h2 style={serif} className="text-[25px]">{title}</h2>}<button autoFocus aria-label="닫기" onClick={() => setSheet(null)} className="rounded-full border border-black/10 p-2"><X size={16} /></button></div>
-        {(sheet === "add" || sheet === "requests") && <p className="mt-3 text-xs leading-6 text-[#82796d]">{sheet === "add" ? "함께 했던 동성 친구들만 표시됩니다. 최대 9명까지 자유롭게 담아보세요. 추가·삭제는 상대에게 알려지지 않아요." : "다음 교집합을 함께하고 싶은 분의 초대예요."}</p>}
+        {(sheet === "add" || sheet === "requests") && <p className="mt-3 text-xs leading-6 text-[#82796d]">{sheet === "add" ? "최근 2개월 안에 같은 조에서 함께한 동성 친구들이 표시됩니다. 최대 9명까지 자유롭게 담아보세요. 추가·삭제는 상대에게 알려지지 않아요." : "다음 교집합을 함께하고 싶은 분의 초대예요."}</p>}
         {preview && demo && sheet === "add" && <p className="mt-2 text-[10px] text-[#938b80]">화면 확인용 예시 멤버예요. 실제 문자는 전송되지 않아요.</p>}
-        {sheet === "add" && (candidates.length ? <div className="mt-5">{candidates.map(person => <div key={person.id} className="flex items-center gap-3 border-t border-black/5 py-4"><img src={person.image} alt="예시 이미지" className="h-12 w-10 object-cover" /><div className="min-w-0 flex-1"><p className="text-sm">{person.name}</p><p className="mt-1 text-[10px] text-[#938b80]">{person.met}</p></div><button className="rounded-full border border-[#a99c88]/30 px-3 py-2 text-[11px]" onClick={() => add(person)}>추가</button></div>)}</div> : <div className="py-14 text-center"><UsersRound size={25} strokeWidth={1} className="mx-auto mb-4 text-[#aa9b84]" /><p className="text-sm">함께한 멤버가 아직 없어요</p><p className="mt-2 text-xs leading-6 text-[#938b80]">모임에서 만난 인연을<br />이곳에서 다시 이어가세요.</p></div>)}
-        {sheet === "requests" && (requests.length ? <div className="mt-5">{requests.map(invitation => <div key={invitation.person.id} className="border-t border-black/5 py-4"><p className="text-sm">{invitation.person.name}님의 초대</p><p className="mt-2 text-xs text-[#938b80]">{invitation.meeting.label}<br />{invitation.meeting.place}</p><p className="mt-3 text-xs leading-6">함께 참여하려면 두 분 모두 모임 신청을 완료해야 해요.</p><div className="mt-3 flex gap-2"><button className="rounded-full bg-[#24211d] px-5 py-2 text-xs text-white" onClick={() => { setRequests(current => current.filter(p => p.person.id !== invitation.person.id)); setNotice("초대 수락을 미리 확인했어요. 실제 모임 신청은 진행되지 않았어요."); }}>초대 수락</button><button className="rounded-full border px-5 py-2 text-xs" onClick={() => setRequests(current => current.filter(p => p.person.id !== invitation.person.id))}>거절</button></div></div>)}</div> : <p className="py-16 text-center text-sm text-[#938b80]">새로운 모임 초대가 없어요.</p>)}
-        {sheet === "meeting" && selectedFriend && <div className="mt-5"><p className="text-sm leading-6">{selectedFriend.name}님과 함께할 모임을 선택해주세요.</p>{preview ? <><p className="mt-2 text-xs text-[#938b80]">화면 확인용 예시 일정이에요.</p><div className="mt-5 space-y-3">{previewMeetings.map(item => <button key={item.id} disabled={sent.includes(`${selectedFriend.id}:${item.id}`)} onClick={() => { setMeetingId(item.id); setNotice(""); setSheet("confirm"); }} className="w-full rounded-2xl border border-[#a99c88]/30 p-4 text-left disabled:opacity-40"><p className="text-sm">{item.label}</p><p className="mt-2 text-xs text-[#938b80]">{item.place}{sent.includes(`${selectedFriend.id}:${item.id}`) ? " · 초대 미리보기 완료" : ""}</p></button>)}</div></> : <p className="py-10 text-center text-sm text-[#938b80]">초대 가능한 모임을 준비하고 있어요.</p>}</div>}
-        {sheet === "confirm" && selectedFriend && meeting && <div className="mt-5"><p className="text-sm">{invitationName(selectedFriend.name)}님에게 보낼 초대예요.</p><div className="mt-4 rounded-2xl bg-[#e8e1d5]/60 p-5 text-sm leading-7"><p>[교집합 | 함께하기 초대]</p><p className="mt-3">{invitationName(selectedFriend.name)}님, {ownerName ? invitationName(ownerName) : "친구"}님이 지난 교집합에서 {invitationName(selectedFriend.name)}님과 즐거운 시간을 보냈어서 다음 교집합도 함께하고 싶어 해요!</p><p className="mt-3">수락하면 두 분이서 같은 조로 다음 교집합에 참여하실 수 있어요 :)</p><p className="mt-3">{meeting.label}<br />{meeting.place}</p><p className="mt-3">웹사이트에서 초대를 확인하고 모임을 신청해주세요.</p></div><p className="mt-4 text-xs leading-6 text-[#938b80]">미리보기에서는 실제 문자를 보내지 않아요. 실제 연결 시 초대 링크가 포함되며, 같은 모임 초대는 중복 전송하지 않아요.</p><button disabled={!preview || sent.includes(invitationKey)} className="mt-5 w-full rounded-full bg-[#24211d] py-3 text-sm text-white disabled:opacity-40" onClick={() => { if (!preview || sent.includes(invitationKey)) return; setSent(current => [...current, invitationKey]); setSheet(null); setNotice("초대 흐름을 확인했어요. 실제 문자는 전송되지 않았어요."); }}>초대 문자 보내기 · 미리보기</button><button className="mt-3 w-full py-2 text-xs" onClick={() => setSheet("meeting")}>다른 모임 선택</button></div>}
+        {sheet === "add" && (candidates.length ? <div className="mt-5">{candidates.map(person => <div key={person.id} className="flex items-center gap-3 border-t border-black/5 py-4"><img src={person.image} alt={`${person.name}님의 사진`} className="h-12 w-10 object-cover" /><div className="min-w-0 flex-1"><p className="text-sm">{person.name}</p><p className="mt-1 text-[10px] text-[#938b80]">{person.met}</p></div><button className="rounded-full border border-[#a99c88]/30 px-3 py-2 text-[11px]" onClick={() => add(person)}>추가</button></div>)}</div> : <div className="py-14 text-center"><UsersRound size={25} strokeWidth={1} className="mx-auto mb-4 text-[#aa9b84]" /><p className="text-sm">함께한 멤버가 아직 없어요</p><p className="mt-2 text-xs leading-6 text-[#938b80]">모임에서 만난 인연을<br />이곳에서 다시 이어가세요.</p></div>)}
+        {sheet === "requests" && !preview && (inbox.length ? <div className="mt-5">{inbox.map(i => <div key={i.id} className="border-t border-black/5 py-4"><p className="text-sm">{i.name}님의 초대</p><p className="mt-2 text-xs">{i.label}<br />{i.title}</p><a href={`/invite/${i.id}`} className="mt-4 inline-block rounded-full bg-[#24211d] px-5 py-2 text-xs text-white">초대 확인·신청</a></div>)}</div> : <p className="py-16 text-center text-sm text-[#938b80]">새로운 모임 초대가 없어요.</p>)}
+        {sheet === "requests" && preview && (requests.length ? <div className="mt-5">{requests.map(invitation => <div key={invitation.person.id} className="border-t border-black/5 py-4"><p className="text-sm">{invitation.person.name}님의 초대</p><p className="mt-2 text-xs text-[#938b80]">{invitation.meeting.label}<br />{invitation.meeting.place}</p><p className="mt-3 text-xs leading-6">함께 참여하려면 두 분 모두 모임 신청을 완료해야 해요.</p><div className="mt-3 flex gap-2"><button className="rounded-full bg-[#24211d] px-5 py-2 text-xs text-white" onClick={() => { setRequests(current => current.filter(p => p.person.id !== invitation.person.id)); setNotice("초대 수락을 미리 확인했어요. 실제 모임 신청은 진행되지 않았어요."); }}>초대 수락</button><button className="rounded-full border px-5 py-2 text-xs" onClick={() => setRequests(current => current.filter(p => p.person.id !== invitation.person.id))}>거절</button></div></div>)}</div> : <p className="py-16 text-center text-sm text-[#938b80]">새로운 모임 초대가 없어요.</p>)}
+        {sheet === "meeting" && selectedFriend && <div className="mt-5"><p className="text-sm leading-6">{selectedFriend.name}님과 함께할 모임을 선택해주세요.</p><p className="mt-2 text-xs text-[#938b80]">{preview ? "화면 확인용 예시 일정이에요." : "신청을 완료한 모임에서 친구 한 분을 초대할 수 있어요. 초대는 시작 24시간 전까지 가능해요."}</p><div className="mt-5 space-y-3">{meetings.map(item => <button key={item.id} disabled={busy || sent.includes(selectedFriend.id + ":" + item.id) || (!!item.status && item.status !== "not_sent")} onClick={() => { setMeetingId(item.id); setNotice(""); setSheet("confirm"); }} className="w-full rounded-2xl border border-[#a99c88]/30 p-4 text-left disabled:opacity-40"><p className="text-sm">{item.label}</p><p className="mt-2 text-xs text-[#938b80]">{item.place}{item.status && item.status !== "not_sent" ? " · 이미 초대를 요청한 모임" : ""}</p></button>)}</div>{!meetings.length && <p className="py-10 text-center text-sm text-[#938b80]">초대 가능한 모임이 없어요.<br />신청 탭에서 먼저 모임을 신청해 주세요.</p>}</div>}
+        {sheet === "confirm" && selectedFriend && meeting && <div className="mt-5"><p className="text-sm">{invitationName(selectedFriend.name)}님에게 보낼 초대예요.</p>{preview ? <div className="mt-4 rounded-2xl bg-[#e8e1d5]/60 p-5 text-sm leading-7"><p>[교집합 | 함께하기 초대]</p><p className="mt-3">{invitationName(selectedFriend.name)}님, {ownerName ? invitationName(ownerName) : "친구"}님이 지난 교집합에서 {invitationName(selectedFriend.name)}님과 즐거운 시간을 보냈어서 다음 교집합도 함께하고 싶어 해요!</p><p className="mt-3">수락하면 두 분이서 같은 조로 다음 교집합에 참여하실 수 있어요 :)</p><p className="mt-3">{meeting.label}<br />{meeting.place}</p><p className="mt-3">웹사이트에서 초대를 확인하고 모임을 신청해주세요.</p></div> : <p className="mt-4 whitespace-pre-wrap rounded-2xl bg-[#e8e1d5]/60 p-5 text-sm leading-7">{realMessage}</p>}<p className="mt-4 text-xs leading-6 text-[#938b80]">{preview ? "미리보기에서는 실제 문자를 보내지 않아요." : "버튼을 누르면 이 친구에게 실제 초대 문자가 전송돼요. 개인별 초대 링크가 함께 전달됩니다."}</p><button disabled={busy || sent.includes(invitationKey) || (!!meeting.status && meeting.status !== "not_sent")} className="mt-5 w-full rounded-full bg-[#24211d] py-3 text-sm text-white disabled:opacity-40" onClick={sendInvitation}>{busy ? "전송 요청 중…" : preview ? "초대 문자 보내기 · 미리보기" : "초대 문자 보내기"}</button><button disabled={busy} className="mt-3 w-full py-2 text-xs" onClick={() => setSheet("meeting")}>다른 모임 선택</button></div>}
         {sheet === "edit" && slots[selected] && <div className="mt-3">
           <div className="flex items-center gap-6">
             <div className="w-[43%] max-w-40 shrink-0 rotate-[-2deg] bg-[#fffdf8] p-2 pb-5 shadow-md"><div className="aspect-[1.05] overflow-hidden"><img src={slots[selected]!.image} alt="사진 구도 미리보기" className="h-full w-full object-cover" style={{ objectPosition: `${draft.x}% ${draft.y}%` }} /></div><p className="mt-3 text-center text-xs">{slots[selected]!.name}</p></div>
@@ -118,11 +170,11 @@ export function FriendsTab({ preview = false, initialFriends = [], ownerName }: 
               <p className="text-[10px] leading-5 text-[#938b80]">내 보드의 사진 구도만 바뀌어요.</p>
             </div>
           </div>
-          <div className="mt-6 flex gap-2"><button className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#a99c88]/25 py-3 text-xs text-[#7c7469]" onClick={() => { setSheet(null); setMoving(true); }}><ArrowLeftRight size={14} />자리 바꾸기</button><button className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#a99c88]/25 py-3 text-xs text-[#7c7469]" onClick={() => { setSlots(current => current.map((f, i) => i === selected && f ? { ...f, ...draft } : f)); setSheet(null); }}><Check size={14} />저장</button></div>
+          <div className="mt-6 flex gap-2"><button className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#a99c88]/25 py-3 text-xs text-[#7c7469]" onClick={() => { setSheet(null); setMoving(true); }}><ArrowLeftRight size={14} />자리 바꾸기</button><button className="flex flex-1 items-center justify-center gap-2 rounded-full border border-[#a99c88]/25 py-3 text-xs text-[#7c7469]" disabled={busy} onClick={async () => { if (await saveSlots(slots.map((f, i) => i === selected && f ? { ...f, ...draft } : f))) setSheet(null); }}><Check size={14} />저장</button></div>
           <div className="mt-6 border-t border-[#24211d]/10 pt-6">
             <button className="flex min-h-14 w-full items-center justify-center gap-3 rounded-full bg-[#24211d] px-5 py-4 text-sm font-medium text-[#fffdf8] shadow-sm transition hover:bg-[#39352f]" onClick={() => { setNotice(""); setMeetingId(""); setSheet("meeting"); }}>다음 모임 함께하기 <ArrowUpRight size={18} /></button>
           </div>
-          <button className="mt-3 block w-full py-2 text-[11px] text-[#938b80] underline underline-offset-4" onClick={() => { setSlots(current => current.map((f, i) => i === selected ? null : f)); setSheet(null); setNotice("내 보드에서 삭제했어요. 상대에게는 알려지지 않아요."); }}>내 보드에서 삭제</button>
+          <button className="mt-3 block w-full py-2 text-[11px] text-[#938b80] underline underline-offset-4" disabled={busy} onClick={async () => { if (await saveSlots(slots.map((f, i) => i === selected ? null : f))) { setSheet(null); setNotice("내 보드에서 삭제했어요. 상대에게는 알려지지 않아요."); } }}>내 보드에서 삭제</button>
         </div>}
         <p role="status" className="mt-3 text-center text-xs text-[#625b50]">{notice}</p>
       </div>

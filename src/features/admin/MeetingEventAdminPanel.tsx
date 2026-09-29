@@ -1,4 +1,5 @@
 "use client";
+import { SecondStageGroups } from "./SecondStageGroups";
 import { readMeetingEventOptions } from "@/lib/meetingEventOptions";
 
 import {
@@ -452,6 +453,7 @@ export function MeetingEventAdminPanel({
               </div>
             </section>
 
+            <SecondStageGroups key={selectedEvent.id} eventId={selectedEvent.id} />
             <EventCommonContent
               event={selectedEvent}
               saving={saving}

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { friendSmsDelivered, readFriendSms, sendFriendSms, solapiConfigured } from "@/lib/solapi";
-import { buildFriendInvitationMessage, friendInvitationDeadline } from "@/lib/friendInvitationMessage";
+import { buildBoardInvitationMessage, buildFriendInvitationMessage, friendInvitationDeadline } from "@/lib/friendInvitationMessage";
+import { canInviteToFriendEvent, eligibleBoardFriend } from "@/lib/friendBoard";
 
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 async function currentUser() {
@@ -15,18 +16,29 @@ export async function POST(request: NextRequest) {
   if (!user) return reply({ error: "로그인 후 초대해 주세요." }, 401);
   if (!solapiConfigured()) return reply({ error: "문자 발송 설정을 확인 중이에요." }, 503);
   const body = await request.json().catch(() => null);
-  const phone = typeof body?.phone === "string" ? body.phone.replace(/\D/g, "") : "";
-  if (!/^010\d{8}$/.test(phone) || !/^\d+$/.test(String(body?.applicationId ?? "")) || body?.consent !== true) {
+  let phone = typeof body?.phone === "string" ? body.phone.replace(/\D/g, "") : "";
+  const boardRequest = body?.friendId !== undefined;
+  if ((!boardRequest && !/^010\d{8}$/.test(phone)) || !/^\d+$/.test(String(body?.applicationId ?? "")) || body?.consent !== true) {
     return reply({ error: "초대 번호와 동의를 확인해 주세요." }, 400);
   }
   const admin = createAdminClient();
+  if (boardRequest) {
+    if (typeof body.friendId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.friendId)) return reply({ error: "친구를 확인해 주세요." }, 400);
+    try {
+      if (!await eligibleBoardFriend(admin, user.id, body.friendId)) return reply({ error: "함께한 동성 친구만 초대할 수 있어요." }, 403);
+      const { data: friend, error } = await admin.from("profiles").select("phone_normalized").eq("user_id", body.friendId).is("archived_at", null).single();
+      if (error || !/^010\d{8}$/.test(friend?.phone_normalized ?? "")) return reply({ error: "친구의 연락처를 확인하지 못했어요." }, 409);
+      phone = friend.phone_normalized;
+    } catch { return reply({ error: "친구 정보를 확인하지 못했어요." }, 503); }
+  }
   const { data: profile, error: profileError } = await admin.from("profiles").select("name,phone_normalized").eq("user_id", user.id).is("archived_at", null).single();
   if (profileError || !profile?.phone_normalized || profile.phone_normalized === phone) return reply({ error: "본인 인증과 초대할 친구의 번호를 확인해 주세요." }, 400);
   // Resolve trusted event copy before reserving; recipient/text cannot be supplied by the client.
   const { data: application } = await admin.from("meeting_date_applications").select("event_id,meeting_date,meeting_time").eq("id", body.applicationId).eq("user_id", user.id).single();
   if (!application?.event_id) return reply({ error: "신청을 먼저 완료해 주세요." }, 400);
-  const { data: event } = await admin.from("meeting_events").select("title,event_date,starts_at").eq("id", application.event_id).single();
+  const { data: event } = await admin.from("meeting_events").select("title,event_date,starts_at,visibility").eq("id", application.event_id).single();
   if (!event) return reply({ error: "모임을 확인할 수 없어요." }, 400);
+  if (boardRequest && !canInviteToFriendEvent(event)) return reply({ error: "초대가 마감되었거나 공개되지 않은 모임이에요." }, 409);
   const { data: recipients, error: recipientError } = await admin.from("profiles").select("name").eq("phone_normalized", phone).is("archived_at", null).limit(2);
   if (recipientError) return reply({ error: "초대 정보를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." }, 503);
   const base = process.env.FRIEND_INVITE_SITE_URL || "https://interv2.netlify.app";
@@ -36,7 +48,7 @@ export async function POST(request: NextRequest) {
     if (Date.now() >= friendInvitationDeadline(event.event_date, event.starts_at).getTime()) {
       return reply({ error: "친구 초대는 모임 시작 24시간 전에 마감돼요." }, 409);
     }
-    text = buildFriendInvitationMessage({
+    text = (boardRequest ? buildBoardInvitationMessage : buildFriendInvitationMessage)({
       recipientName: recipients?.length === 1 ? recipients[0].name : null,
       inviterName: profile.name,
       eventDate: event.event_date,
