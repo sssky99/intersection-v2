@@ -205,7 +205,10 @@ function rowTemplateId(row: AdminWaitlistRow) {
 }
 
 function ticketTitle(row: AdminWaitlistRow) {
-  if (row.source === "date_application") return "날짜 대기 신청";
+  if (row.source === "date_application") {
+    const time = formatTime(row.meeting_time ?? row.ticket_instance?.event_time);
+    return [time, row.event_title ?? "날짜 대기 신청"].filter(Boolean).join(" · ");
+  }
 
   return (
     row.ticket_template?.title ??
@@ -217,12 +220,18 @@ function ticketTitle(row: AdminWaitlistRow) {
 }
 
 function rowGroupId(row: AdminWaitlistRow) {
-  if (row.source === "date_application") return "date-applications";
+  if (row.source === "date_application") return `date-applications:${row.event_id ?? row.meeting_time ?? "unknown"}`;
   return rowTemplateId(row) || `ticket:${row.ticket_id || rowKey(row)}`;
 }
 
 function formatTime(value: string | null | undefined) {
   return value ? value.slice(0, 5) : "";
+}
+
+function rowSession(row: AdminWaitlistRow) {
+  const time = row.meeting_time ?? row.ticket_instance?.event_time;
+  if (!time || !/^\d{2}:\d{2}/.test(time)) return "unknown";
+  return Number(time.slice(0, 2)) < 17 ? "lunch" : "dinner";
 }
 
 function instanceText(instance: WaitlistTicketInstance | null) {
@@ -410,6 +419,7 @@ export function WaitlistAdminPanel() {
   const [membershipFilter, setMembershipFilter] =
     useState<MembershipFilter>("all");
   const [query, setQuery] = useState("");
+  const [sessionFilter, setSessionFilter] = useState("all");
   const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
   const [distributionSelection, setDistributionSelection] = useState<Set<string>>(
     new Set(),
@@ -481,19 +491,32 @@ export function WaitlistAdminPanel() {
   );
 
   const today = useMemo(() => todayInSeoul(), []);
+  const sessionRows = useMemo(
+    () => rows.filter((row) => sessionFilter === "all" || rowSession(row) === sessionFilter),
+    [rows, sessionFilter],
+  );
   const dateOptions = useMemo(
-    () => waitlistDateOptions(rows, (date) => date >= today),
-    [rows, today],
+    () => waitlistDateOptions(sessionRows, (date) => date >= today),
+    [sessionRows, today],
   );
   const dateReadiness = useMemo(() => {
     const grouped = new Map<string, AdminWaitlistRow[]>();
-    for (const row of rows) {
+    for (const row of sessionRows) {
       const date = rowDate(row);
       if (date) grouped.set(date, [...(grouped.get(date) ?? []), row]);
     }
     return new Map(Array.from(grouped, ([date, members]) => [date, summarizeReadiness(members)]));
-  }, [rows]);
-  const selectedReadiness = dateReadiness.get(selectedDate);
+  }, [sessionRows]);
+  const selectedSessionReadiness = useMemo(() => {
+    const grouped = new Map<string, { title: string; rows: AdminWaitlistRow[] }>();
+    for (const row of sessionRows.filter((member) => rowDate(member) === selectedDate)) {
+      const key = rowGroupId(row);
+      const group = grouped.get(key) ?? { title: ticketTitle(row), rows: [] };
+      group.rows.push(row);
+      grouped.set(key, group);
+    }
+    return Array.from(grouped, ([id, group]) => ({ id, title: group.title, ...summarizeReadiness(group.rows) }));
+  }, [sessionRows, selectedDate]);
   const showingAllDates = selectedDate === allDatesValue;
   const showingActionableDates = selectedDate === actionableDatesValue;
   const showingPastDates = selectedDate === pastDatesValue;
@@ -507,31 +530,31 @@ export function WaitlistAdminPanel() {
   );
   const pastCount = useMemo(
     () =>
-      rows.filter((row) => {
+      sessionRows.filter((row) => {
         const date = rowDate(row);
         return Boolean(date) && date < today;
       }).length,
-    [rows, today],
+    [sessionRows, today],
   );
 
   const dateScopedRows = useMemo(() => {
-    if (showingAllDates) return rows;
+    if (showingAllDates) return sessionRows;
     if (showingActionableDates) {
-      return rows.filter((row) => {
+      return sessionRows.filter((row) => {
         const date = rowDate(row);
         return date >= today && isPaidUnassigned(row);
       });
     }
     if (showingPastDates) {
-      return rows.filter((row) => {
+      return sessionRows.filter((row) => {
         const date = rowDate(row);
         return Boolean(date) && date < today;
       });
     }
     if (!selectedDate) return [];
-    return rows.filter((row) => rowDate(row) === selectedDate);
+    return sessionRows.filter((row) => rowDate(row) === selectedDate);
   }, [
-    rows,
+    sessionRows,
     selectedDate,
     showingActionableDates,
     showingAllDates,
@@ -583,7 +606,8 @@ export function WaitlistAdminPanel() {
 
   useEffect(() => {
     setOpenGroupIds(new Set());
-  }, [genderFilter, membershipFilter, query, selectedDate, statusFilter]);
+    setDistributionSelection(new Set());
+  }, [genderFilter, membershipFilter, query, selectedDate, statusFilter, sessionFilter]);
 
   const patchRow = async (
     row: AdminWaitlistRow,
@@ -776,7 +800,7 @@ export function WaitlistAdminPanel() {
             <div>
               <h2 className="text-lg font-bold">대기열 관리</h2>
               <p className="mt-1 text-xs leading-5 text-black/45">
-                날짜별 초대장과 신청자 상태를 확인합니다.
+                날짜와 점심·저녁 모임별로 신청자 상태를 확인합니다.
               </p>
             </div>
             <button
@@ -868,6 +892,15 @@ export function WaitlistAdminPanel() {
             </FilterField>
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-2" aria-label="모임 시간대">
+            {[["all", "전체 모임"], ["lunch", "점심"], ["dinner", "저녁"], ["unknown", "시간 미정"]].map(([value, label]) => (
+              <button key={value} type="button" aria-pressed={sessionFilter === value}
+                onClick={() => setSessionFilter(value)}
+                className={cn("rounded-full border px-4 py-2 text-sm font-semibold", sessionFilter === value ? "border-black bg-black text-white" : "border-black/15 text-black/60")}>
+                {label}
+              </button>
+            ))}
+          </div>
           {(notice || error) && (
             <p
               className={cn(
@@ -980,7 +1013,7 @@ export function WaitlistAdminPanel() {
                       : "bg-black/5 text-black/45",
                   )}
                 >
-                  {rows.length}
+                  {sessionRows.length}
                 </span>
               </button>
             </div>
@@ -989,14 +1022,16 @@ export function WaitlistAdminPanel() {
 
         <div className="shrink-0 border-b border-black/10 px-5 py-2 text-xs text-black/55">
           <p>처리 필요·날짜 숫자: 결제된 미배정 인원 · 등급: 미배정 + 확정 인원 중 남녀가 적은 쪽 기준 (상 7명 이상 / 중 5~6명 / 하 4명 이하)</p>
-          {showingExactDate && selectedReadiness && (
-            <p className="mt-1 font-semibold text-black/75">
+          {sessionFilter === "all" && <p>전체 모임의 날짜 숫자는 합계입니다. 진행 가능 여부는 아래 행사별로 확인해주세요.</p>}
+          {showingExactDate && selectedSessionReadiness.map((selectedReadiness) => (
+            <p key={selectedReadiness.id} className="mt-1 font-semibold text-black/75">
+              {selectedReadiness.title} · {" "}
               {selectedReadiness.womenNeeded === 0 && selectedReadiness.menNeeded === 0
                 ? "진행 최소 인원 충족 (여성 6명 · 남성 6명)"
                 : `진행 최소 인원까지 여성 ${selectedReadiness.womenNeeded}명 · 남성 ${selectedReadiness.menNeeded}명 부족`}
               {selectedReadiness.unknown > 0 && ` · 성별 미입력 ${selectedReadiness.unknown}명은 등급에서 제외`}
             </p>
-          )}
+          ))}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto bg-[#fbfbfa] px-5 py-4">

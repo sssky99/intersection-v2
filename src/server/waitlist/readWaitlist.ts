@@ -373,6 +373,13 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
   const profilesMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const eventIds = uniqueText(dateApplicationRows.map((row) => row.event_id));
+  const eventMap = new Map<string, { title: string; starts_at: string | null }>();
+  for (let start = 0; start < eventIds.length; start += 100) {
+    const { data, error } = await supabase.from("meeting_events")
+      .select("id,title,starts_at").in("id", eventIds.slice(start, start + 100));
+    if (error) throw error;
+    for (const event of data ?? []) eventMap.set(event.id, event);
+  }
   const friendInvitations: WaitlistFriendInvitation[] = [];
   for (let start = 0; start < eventIds.length; start += 100) {
     for (let offset = 0; ; offset += 1000) {
@@ -436,6 +443,9 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
       return {
         id: `date:${row.id}`,
+        event_id: row.event_id,
+        event_title: row.event_id ? eventMap.get(row.event_id)?.title ?? null : null,
+        meeting_time: (row.event_id ? eventMap.get(row.event_id)?.starts_at : null) ?? row.meeting_time,
         source: "date_application",
         is_friend_application: friendNames.has(String(row.id)),
         friend_name: friendNames.get(String(row.id)) ?? null,

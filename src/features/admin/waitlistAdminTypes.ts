@@ -48,6 +48,9 @@ export type WaitlistTicketInstance = {
 };
 
 export type AdminWaitlistRow = {
+  event_id?: string | null;
+  event_title?: string | null;
+  meeting_time?: string | null;
   is_friend_application?: boolean;
   friend_name?: string | null;
   id: number | string;
