@@ -1,5 +1,6 @@
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
+import { preferenceProfileVersion } from "@/data/preferenceQuestions";
 
 const DRAFT_KEY = "intersection-guest-onboarding-v5";
 const PHOTO_DATABASE = "intersection-guest-onboarding";
@@ -17,6 +18,7 @@ export type GuestBasicInfo = {
 
 export type GuestOnboardingDraft = {
   version: 5;
+  questionnaireVersion: string;
   id: string;
   phase: "guide" | "questions" | "auth";
   answers: StoredAnswerRow[];
@@ -45,6 +47,7 @@ export const emptyGuestBasicInfo: GuestBasicInfo = {
 export function emptyGuestOnboardingDraft(): GuestOnboardingDraft {
   return {
     version: 5,
+    questionnaireVersion: preferenceProfileVersion,
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     phase: "guide",
     answers: [],
@@ -93,6 +96,7 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
 
     return {
       version: 5,
+      questionnaireVersion: parsed.questionnaireVersion === preferenceProfileVersion ? preferenceProfileVersion : "preferences-v14",
       id: parsed.id,
       phase:
         parsed.phase === "auth"

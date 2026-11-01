@@ -34,12 +34,15 @@ export function shouldResumeAtPhotoStep({
   initialPhotoStep,
   explicitQuestionIndex,
   firstIncompleteIndex,
+  identityPending = false,
 }: {
   mode: QuestionFlowMode;
+  identityPending?: boolean;
   initialPhotoStep: boolean;
   explicitQuestionIndex?: number;
   firstIncompleteIndex: number;
 }) {
+  if (identityPending) return false;
   if (initialPhotoStep) return true;
   if (explicitQuestionIndex !== undefined) return false;
   if (mode === "preview" || mode === "guest") return false;

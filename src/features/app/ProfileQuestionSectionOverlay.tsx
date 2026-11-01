@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Camera, ChevronLeft, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
+import { countryExperiencesLabel } from "@/lib/signupQuestionValues";
 import type {
   ProfileQuestion,
   QuestionOption,
@@ -27,6 +28,7 @@ function answerValues(question: ProfileQuestion, rows: StoredAnswerRow[]) {
   if (!row) return [];
 
   if (question.type === "text") {
+    if (question.id === 36) return [countryExperiencesLabel(row.answer_text) ?? row.answer_text ?? ""].filter(Boolean);
     return [row.answer_text ?? row.answer_value ?? ""].filter(Boolean);
   }
 
@@ -74,7 +76,7 @@ export function ProfileQuestionSectionOverlay({
   const savedScrollTopRef = useRef(0);
   const answeredCount = useMemo(
     () =>
-      questions.filter((question) => answerValues(question, answerRows).length > 0)
+      questions.filter((question) => question.optional || answerValues(question, answerRows).length > 0)
         .length,
     [answerRows, questions],
   );

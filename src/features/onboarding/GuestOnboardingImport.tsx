@@ -140,6 +140,7 @@ export function GuestOnboardingImport({ userId, initialPhotoUrl = "" }: { userId
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           answers: draft.answers,
+          questionnaireVersion: draft.questionnaireVersion,
           profile: draft.profile,
           photoUrl: uploadedPhotoUrl,
           allowMissingPhotoDueToUploadFailure: allowMissingPhoto,

@@ -71,6 +71,8 @@ export type ProfileQuestion = {
   prompt?: string;
   allowPrivate?: boolean;
   allowOther?: boolean;
+  optional?: boolean;
+  detailPrompt?: string;
 };
 
 export type QuestionAnswer = {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   preferenceProfileVersion,
   preferenceQuestions,
+  preferenceQuestionsForVersion,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
 import { profileQuestions } from "@/data/profileQuestions";
@@ -17,6 +18,7 @@ import { safelyRecordServerFunnelEvent } from "@/lib/funnelAnalytics";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { ProfileRow } from "@/types/profile";
+import { validQuestionAnswer } from "@/lib/questionAnswerValidation";
 
 type AnswerRow = {
   question_order: number;
@@ -25,49 +27,6 @@ type AnswerRow = {
   answer_text: string | null;
   other_text: string | null;
 };
-
-function validBirthDate(value: string | null | undefined) {
-  const match = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
-  if (!match) return false;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (year < 1980 || year > new Date().getFullYear() - 19) return false;
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-function validPreferenceAnswer(
-  question: (typeof preferenceQuestions)[number],
-  answer: AnswerRow | undefined,
-) {
-  if (!answer) return false;
-  const allowedValues = new Set(
-    (question.options ?? []).map((option) =>
-      typeof option === "string" ? option : option.value,
-    ),
-  );
-
-  if (question.type === "single_choice") {
-    return Boolean(answer.answer_value && allowedValues.has(answer.answer_value));
-  }
-
-  if (question.type === "text") {
-    if (question.id === 17) return validBirthDate(answer.answer_text);
-    return Boolean(answer.answer_text?.trim());
-  }
-
-  const values = answer.answer_values ?? [];
-  return (
-    values.length >= (question.minSelections ?? 1) &&
-    (!question.maxSelections || values.length <= question.maxSelections) &&
-    values.every((value) => allowedValues.has(value))
-  );
-}
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -122,7 +81,7 @@ export async function POST(request: Request) {
     );
   }
   const questions = isPreferenceFlow
-    ? preferenceQuestions
+    ? isRegeneration ? preferenceQuestions : preferenceQuestionsForVersion(profile?.profile_experience_version)
     : profileQuestions;
   const { data, error } = await admin
     .from(answerTable)
@@ -135,7 +94,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Answers could not be verified." }, { status: 500 });
   }
 
-  const requiredOrders = new Set(questions.map((question) => question.order ?? question.id));
+  const requiredOrders = new Set(questions.filter((question) => !question.optional).map((question) => question.order ?? question.id));
   const answers = data ?? [];
   const answeredOrders = new Set(answers.map((answer) => answer.question_order));
   if ([...requiredOrders].some((order) => !answeredOrders.has(order))) {
@@ -143,8 +102,8 @@ export async function POST(request: Request) {
   }
   if (
     isPreferenceFlow &&
-    preferenceQuestions.some((question) =>
-      !validPreferenceAnswer(
+    questions.some((question) =>
+      !validQuestionAnswer(
         question,
         answers.find(
           (answer) =>
@@ -283,7 +242,7 @@ export async function POST(request: Request) {
       profileId: user.id,
       eventName: "questions_complete",
       path: "/api/profile/questions/complete",
-      metadata: { mode: typeof body?.mode === "string" ? body.mode : "onboarding" },
+      metadata: { mode: typeof body?.mode === "string" ? body.mode : "onboarding", ...(isPreferenceFlow ? { questionnaire_version: isRegeneration ? preferenceProfileVersion : profile?.profile_experience_version ?? "unknown" } : {}) },
       createdAt: completionAt,
     });
   }

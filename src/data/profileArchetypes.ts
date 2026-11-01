@@ -207,7 +207,7 @@ function emptyScores(): ScoreMap {
 }
 
 function valuesByOrder(rows: StoredAnswerRow[]) {
-  return new Map(
+  const values = new Map(
     rows.map((row) => [
       row.question_order,
       row.answer_values?.length
@@ -217,6 +217,9 @@ function valuesByOrder(rows: StoredAnswerRow[]) {
           : [],
     ]),
   );
+  // Same option codes; the new hobby prompt has its own historical storage ID.
+  if (values.has(37)) values.set(13, values.get(37)!);
+  return values;
 }
 
 function add(

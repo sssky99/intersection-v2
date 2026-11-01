@@ -161,6 +161,7 @@ export function GuestOnboardingFlow() {
   if (draft.phase === "questions") {
     return (
       <PreferenceQuestionFlow
+        questionnaireVersion={draft.questionnaireVersion}
         initialName={draft.profile.name}
         initialGender={draft.profile.gender}
         initialRows={draft.answers}

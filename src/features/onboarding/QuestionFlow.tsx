@@ -19,7 +19,8 @@ import {
   conversationResults,
   type ConversationResultCode,
 } from "@/data/conversationResults";
-import { preferenceQuestions } from "@/data/preferenceQuestions";
+import { isPreferenceQuestionSet, preferenceQuestions, preferenceProfileVersion } from "@/data/preferenceQuestions";
+import { validQuestionAnswer } from "@/lib/questionAnswerValidation";
 import {
   classifyProfileArchetype,
   type ProfileArchetypeId,
@@ -46,6 +47,7 @@ import type {
   StoredAnswerRow,
 } from "@/types/question";
 import type { Gender } from "@/types/user";
+import { countryAnswerText } from "@/lib/signupQuestionValues";
 
 type AnswerMap = Record<number, QuestionAnswer>;
 type QuestionFlowMode = "guest" | "onboarding" | "preview" | "regeneration";
@@ -499,12 +501,19 @@ function rowToAnswer(
 
   return {
     questionId: question?.id ?? row.question_order,
-    value,
+    value: question?.id === 36 && typeof value === "string" ? countryAnswerText(value) : value,
     otherText: row.other_text ?? undefined,
   };
 }
 
 function isComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
+  if (question.optional) {
+    return validQuestionAnswer(question, answer ? {
+      question_order: question.order ?? question.id,
+      ...toAnswerPayload(question, answer),
+      other_text: answer.otherText ?? null,
+    } : undefined);
+  }
   if (!answer) return false;
 
   const value = answer.value;
@@ -539,7 +548,7 @@ function toAnswerPayload(question: ProfileQuestion, answer: QuestionAnswer) {
     return {
       answer_value: null,
       answer_values: null,
-      answer_text: String(answer.value),
+      answer_text: question.id === 36 ? countryAnswerText(String(answer.value)) : String(answer.value),
     };
   }
 
@@ -658,6 +667,7 @@ export function QuestionFlow({
   const isPreview = mode === "preview";
   const isGuest = mode === "guest";
   const isRegeneration = mode === "regeneration";
+  const deferIdentity = !namePreview && questionSet === preferenceQuestions;
   const shouldCollectName =
     namePreview || (mode === "onboarding" && !initialName.trim());
   const shouldCollectGender =
@@ -706,11 +716,13 @@ export function QuestionFlow({
         }),
       ) as AnswerMap)
     : null;
+  const resumeAtIdentityStep = deferIdentity && mode === "onboarding" && firstIncomplete === -1 && (shouldCollectName || shouldCollectGender);
   const resumeAtPhotoStep = shouldResumeAtPhotoStep({
     mode,
     initialPhotoStep,
     explicitQuestionIndex: initialQuestionIndex,
     firstIncompleteIndex: firstIncomplete,
+    identityPending: resumeAtIdentityStep,
   });
   const [questionIndex, setQuestionIndex] = useState(() =>
     isPreview && initialQuestionIndex === undefined
@@ -724,16 +736,16 @@ export function QuestionFlow({
         }),
   );
   const [answers, setAnswers] = useState<AnswerMap>(initialAnswers);
-  const [collectingName, setCollectingName] = useState(shouldCollectName);
+  const [collectingName, setCollectingName] = useState((!deferIdentity || resumeAtIdentityStep) && shouldCollectName);
   const [name, setName] = useState(namePreview ? "" : initialName);
   const [collectingGender, setCollectingGender] =
-    useState(shouldCollectGender);
+    useState((!deferIdentity || resumeAtIdentityStep) && shouldCollectGender);
   const [collectingPhoto, setCollectingPhoto] = useState(resumeAtPhotoStep);
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
   const [pendingFinalAnswers, setPendingFinalAnswers] =
-    useState<AnswerMap | null>(resumeAtPhotoStep ? initialAnswers : null);
+    useState<AnswerMap | null>(resumeAtPhotoStep || resumeAtIdentityStep ? initialAnswers : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultAnswers, setResultAnswers] = useState<AnswerMap | null>(
@@ -767,22 +779,20 @@ export function QuestionFlow({
     isNamePromptComplete &&
     normalizedName.length >= 2 &&
     normalizedName.length <= 30;
-  const isPreferenceFlow = questions === preferenceQuestions;
+  const isPreferenceFlow = isPreferenceQuestionSet(questions);
   const identityStepCount = isPreferenceFlow ? 2 : 0;
   const photoStepCount = isPreferenceFlow && !isGuest ? 1 : 0;
   const totalFlowSteps =
     questions.length + identityStepCount + photoStepCount;
+  const identityAfterQuestions = isGuest || deferIdentity;
+  const questionFlowOffset = identityAfterQuestions ? 0 : identityStepCount;
+  const nameFlowOrder = identityAfterQuestions ? questions.length + 1 : 1;
+  const genderFlowOrder = identityAfterQuestions ? questions.length + 2 : 2;
   const nameProgressPercent = isPreferenceFlow
-    ? isGuest
-      ? ((questions.length + Math.min(normalizedName.length / 2, 1)) /
-          totalFlowSteps) *
-        100
-      : (Math.min(normalizedName.length / 2, 1) / totalFlowSteps) * 100
+    ? ((nameFlowOrder - 1 + Math.min(normalizedName.length / 2, 1)) / totalFlowSteps) * 100
     : 0;
   const genderProgressPercent = isPreferenceFlow
-    ? isGuest
-      ? 100
-      : (1 / totalFlowSteps) * 100
+    ? ((genderFlowOrder - 1) / totalFlowSteps) * 100
     : 0;
   const photoProgressPercent = isPreferenceFlow
     ? ((identityStepCount + questions.length + (photoUrl ? 1 : 0)) /
@@ -792,9 +802,10 @@ export function QuestionFlow({
   const answer = answers[question.id];
   const selectedValues = Array.isArray(answer?.value) ? answer.value : [];
   const progressPercent = isPreferenceFlow
-    ? (((isGuest ? 0 : identityStepCount) + questionIndex) / totalFlowSteps) *
+    ? ((questionFlowOffset + questionIndex) / totalFlowSteps) *
       100
     : perceivedProgress(questionIndex, questions.length);
+  const textAnswer = typeof answer?.value === "string" ? (question.id === 36 ? countryAnswerText(answer.value) : answer.value) : "";
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
   const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
@@ -846,6 +857,7 @@ export function QuestionFlow({
     questionStartTrackedRef.current = true;
     trackEvent("question_start", {
       question_count: totalFlowSteps,
+      ...(questions === preferenceQuestions ? { questionnaire_version: preferenceProfileVersion } : {}),
     });
   }, [
     isPreview,
@@ -868,7 +880,7 @@ export function QuestionFlow({
     if (collectingName) {
       trackView("name", {
         question_key: "name",
-        flow_order: 1,
+        flow_order: nameFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       return;
@@ -877,7 +889,7 @@ export function QuestionFlow({
     if (collectingGender) {
       trackView("gender", {
         question_key: "gender",
-        flow_order: 2,
+        flow_order: genderFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       return;
@@ -900,7 +912,7 @@ export function QuestionFlow({
       question_order: question.order ?? question.id,
       question_type: question.type,
       category: question.category,
-      flow_order: identityStepCount + questionIndex + 1,
+      flow_order: questionFlowOffset + questionIndex + 1,
       total_flow_steps: totalFlowSteps,
     });
   }, [
@@ -922,7 +934,7 @@ export function QuestionFlow({
       question_order: targetQuestion.order ?? targetQuestion.id,
       question_type: targetQuestion.type,
       category: targetQuestion.category,
-      flow_order: identityStepCount + questionIndex + 1,
+      flow_order: questionFlowOffset + questionIndex + 1,
       total_flow_steps: totalFlowSteps,
     });
   };
@@ -1143,6 +1155,11 @@ export function QuestionFlow({
 
       if (!isGuest) {
         setPendingFinalAnswers(nextAnswers);
+        if (deferIdentity && (shouldCollectName || shouldCollectGender)) {
+          setCollectingName(shouldCollectName);
+          setCollectingGender(shouldCollectGender);
+          return;
+        }
         setCollectingPhoto(true);
         return;
       }
@@ -1196,12 +1213,17 @@ export function QuestionFlow({
   const selectSingle = async (value: string) => {
     if (!beginSaving()) return;
 
-    const nextAnswer = { questionId: question.id, value };
+    const nextAnswer = { questionId: question.id, value, otherText: answer?.value === value ? answer.otherText : undefined };
     const nextAnswers = answerMapWith(nextAnswer);
     const nextDelay = 420;
 
     updateLocalAnswer(nextAnswer);
     setError(null);
+
+    if (optionMeta(question, value)?.hasTextInput) {
+      endSaving();
+      return;
+    }
 
     if (isGuest) {
       trackQuestionAnswered(question);
@@ -1289,9 +1311,9 @@ export function QuestionFlow({
     updateLocalAnswer({
       questionId: question.id,
       value: nextValues,
-      otherText: nextValues.some(
+      otherText: (question.detailPrompt || nextValues.some(
         (item) => optionMeta(question, item)?.hasTextInput,
-      )
+      ))
         ? answer?.otherText
         : undefined,
     });
@@ -1299,7 +1321,7 @@ export function QuestionFlow({
 
   const continueQuestion = async () => {
     const answerToContinue =
-      answer ?? (isAgeRange ? defaultAgeRangeAnswer(question) : undefined);
+      answer ?? (isAgeRange ? defaultAgeRangeAnswer(question) : question.optional ? { questionId: question.id, value: "" } : undefined);
 
     if (!answerToContinue || !canContinue || !beginSaving()) return;
 
@@ -1342,7 +1364,7 @@ export function QuestionFlow({
     if (isGuest) {
       trackEvent("question_answered", {
         question_key: "name",
-        flow_order: 1,
+        flow_order: nameFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       setName(normalizedName);
@@ -1363,11 +1385,15 @@ export function QuestionFlow({
       if (!response.ok) throw new Error("Profile name save failed.");
       trackEvent("question_answered", {
         question_key: "name",
-        flow_order: 1,
+        flow_order: nameFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       setName(normalizedName);
       setCollectingName(false);
+      if (deferIdentity) {
+        if (shouldCollectGender) setCollectingGender(true);
+        else setCollectingPhoto(true);
+      }
     } catch (nameError) {
       console.error("Failed to save profile name:", nameError);
       setError("이름을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -1388,7 +1414,7 @@ export function QuestionFlow({
     if (isGuest) {
       trackEvent("question_answered", {
         question_key: "gender",
-        flow_order: 2,
+        flow_order: genderFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       onGuestIdentityChange?.({ gender });
@@ -1409,10 +1435,11 @@ export function QuestionFlow({
       if (!response.ok) throw new Error("Profile gender save failed.");
       trackEvent("question_answered", {
         question_key: "gender",
-        flow_order: 2,
+        flow_order: genderFlowOrder,
         total_flow_steps: totalFlowSteps,
       });
       setCollectingGender(false);
+      if (deferIdentity) setCollectingPhoto(true);
     } catch (genderError) {
       console.error("Failed to save profile gender:", genderError);
       setError("성별을 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -1976,6 +2003,9 @@ export function QuestionFlow({
                 {question.description}
               </p>
             )}
+            {question.prompt && question.prompt !== question.description && (deferIdentity || question.id === 37) && (
+              <p className="mx-auto mt-2 max-w-[340px] text-[12px] leading-5 text-black/45">{question.prompt}</p>
+            )}
           </div>
 
           {isBirthDate && (
@@ -1990,6 +2020,7 @@ export function QuestionFlow({
               }}
             />
           )}
+
 
           {isMbtiQuestion(question) && (
             <div className="mx-auto my-auto w-full max-w-[340px] pb-16 pt-10">
@@ -2091,7 +2122,7 @@ export function QuestionFlow({
 
           {!isBirthDate && question.type === "multi_choice" && (
             <div className="mt-8 pb-24">
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn("grid gap-3", question.optionColumns === 1 ? "grid-cols-1" : "grid-cols-2")}>
                 {(question.options ?? []).map((option) => {
                   const value = optionValue(option);
                   const priorityIndex = selectedValues.indexOf(value);
@@ -2104,8 +2135,9 @@ export function QuestionFlow({
                       whileTap={{ scale: 0.97 }}
                       onClick={() => toggleMultiple(value)}
                       className={cn(
-                        "relative flex min-h-[76px] items-center justify-center rounded-[22px] border px-3 py-4 text-center backdrop-blur transition",
-                        exclusive && "col-span-2 min-h-[58px]",
+                        "relative flex items-center justify-center rounded-[22px] border px-3 py-4 text-center backdrop-blur transition",
+                        question.optionColumns === 1 ? "min-h-[58px]" : "min-h-[76px]",
+                        exclusive && question.optionColumns === undefined && "col-span-2 min-h-[58px]",
                         selected
                           ? "border-black bg-[#FCFAF6] font-extrabold text-black shadow-[0_14px_32px_rgba(39,34,24,0.09)]"
                           : "border-black/[0.07] bg-[#FCFAF6] text-black/65 shadow-[0_10px_28px_rgba(39,34,24,0.04)]",
@@ -2125,13 +2157,15 @@ export function QuestionFlow({
                 })}
               </div>
 
-              {selectedValues.some(
+              {(question.detailPrompt || selectedValues.some(
                 (value) => optionMeta(question, value)?.hasTextInput,
-              ) && (
+              )) && (
+                <label className="mt-4 block text-[13px] text-black/60">
+                  {question.detailPrompt}
                 <input
                   value={answer?.otherText ?? ""}
                   maxLength={80}
-                  placeholder="직접 입력해주세요"
+                  placeholder={question.placeholder ?? "직접 입력해주세요"}
                   onChange={(event) =>
                     updateLocalAnswer({
                       questionId: question.id,
@@ -2141,8 +2175,20 @@ export function QuestionFlow({
                   }
                   className="mt-3 h-14 w-full rounded-[20px] border border-black/[0.09] bg-[#FCFAF6] px-5 text-[13px] font-semibold text-black/72 outline-none placeholder:text-black/28 focus:border-black/25"
                 />
+                </label>
               )}
             </div>
+          )}
+
+          {question.type === "single_choice" && typeof answer?.value === "string" && optionMeta(question, answer.value)?.hasTextInput && (
+            <input
+              aria-label="직접 입력"
+              value={answer.otherText ?? ""}
+              maxLength={80}
+              placeholder="직접 입력해주세요"
+              onChange={(event) => updateLocalAnswer({ ...answer, otherText: event.target.value })}
+              className="mb-28 w-full rounded-2xl border border-black/15 bg-[#FCFAF6] px-4 py-3 text-base text-black/80"
+            />
           )}
 
           {!isBirthDate && question.type === "text" && (
@@ -2151,9 +2197,7 @@ export function QuestionFlow({
                 value={
                   answer?.value === PRIVATE_TEXT_ANSWER
                     ? ""
-                    : typeof answer?.value === "string"
-                      ? answer.value
-                      : ""
+                    : textAnswer
                 }
                 placeholder={question.placeholder ?? "편하게 적어주세요."}
                 maxLength={300}
@@ -2207,7 +2251,7 @@ export function QuestionFlow({
                 <p className="shrink-0 text-[10px] font-semibold text-black/30">
                   {typeof answer?.value === "string" &&
                   answer.value !== PRIVATE_TEXT_ANSWER
-                    ? answer.value.length
+                    ? textAnswer.length
                     : 0}
                   /300
                 </p>
@@ -2223,7 +2267,7 @@ export function QuestionFlow({
         </p>
       )}
 
-      {question.type !== "single_choice" && (
+      {(question.type !== "single_choice" || (typeof answer?.value === "string" && optionMeta(question, answer.value)?.hasTextInput)) && (
         <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[430px] bg-gradient-to-t from-[#F5F1E8] via-[#F5F1E8]/96 to-transparent px-6 pb-[calc(16px+env(safe-area-inset-bottom))] pt-7">
           <button
             type="button"
@@ -2235,7 +2279,7 @@ export function QuestionFlow({
               ? isPreview
                 ? "답변 저장하기"
                 : "결과 확인하기"
-              : "다음"}
+              : question.optional && !String(answer?.value ?? "").trim() ? "건너뛰기" : "다음"}
             <ChevronRight size={17} aria-hidden />
           </button>
         </div>

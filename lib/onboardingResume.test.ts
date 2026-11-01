@@ -59,4 +59,8 @@ describe("onboarding resume", () => {
       }),
     ).toBe(false);
   });
+
+  it("does not skip deferred name or gender after resuming completed answers", () => {
+    expect(shouldResumeAtPhotoStep({ mode: "onboarding", initialPhotoStep: false, firstIncompleteIndex: -1, identityPending: true })).toBe(false);
+  });
 });

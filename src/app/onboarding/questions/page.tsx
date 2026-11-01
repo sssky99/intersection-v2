@@ -5,6 +5,7 @@ import {
 } from "@/features/onboarding/TableCardSurveyPreview";
 import { getAuthenticatedProfile } from "@/lib/onboarding";
 import type { StoredAnswerRow } from "@/types/question";
+import { preferenceProfileVersion } from "@/data/preferenceQuestions";
 
 type QuestionsPageProps = {
   searchParams?: Promise<{
@@ -59,6 +60,7 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
   return (
     <MobileFrame>
       <PreferenceQuestionFlow
+        questionnaireVersion={isRegeneration || isPreferenceUpgrade ? preferenceProfileVersion : profile.profile_experience_version ?? undefined}
         userId={user.id}
         initialName={profile.name ?? ""}
         initialGender={profile.gender ?? ""}

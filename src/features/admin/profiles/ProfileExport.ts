@@ -19,6 +19,7 @@ import {
 } from "@/features/membership/membershipTypes";
 import { parseTicketRatingAnswer } from "@/features/onboarding/ticketRating";
 import type { ProfileQuestion, QuestionOption } from "@/types/question";
+import { countryExperiencesLabel } from "@/lib/signupQuestionValues";
 
 export const dateFormatter = new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Seoul",
@@ -107,6 +108,7 @@ export function answerDisplayForExport(
   if (ticketRating) return `${ticketRating.title} (${ticketRating.rating}점)`;
 
   const question = questionForOrder(answer.question_order, questions);
+  if (question?.id === 36) return countryExperiencesLabel(answer.answer_text) ?? answerText(answer);
   if (!question || question.type === "text") return answerText(answer);
 
   const values = selectedValues(answer);

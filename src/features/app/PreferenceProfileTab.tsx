@@ -22,7 +22,7 @@ import { createPortal } from "react-dom";
 import Image from "next/image";
 import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { SafeImage } from "@/components/SafeImage";
-import { preferenceQuestions } from "@/data/preferenceQuestions";
+import { preferenceQuestionsForVersion } from "@/data/preferenceQuestions";
 import {
   isProfileArchetypeId,
   profileArchetypeBackgrounds,
@@ -391,6 +391,7 @@ function ProfileQuestionCard({
 }
 
 function BasicQuestionsSection({
+  questionnaireVersion,
   answers,
   backgroundAnsweredCount,
   activityAnsweredCount,
@@ -411,6 +412,7 @@ function BasicQuestionsSection({
   onOpenSelf,
   photoCompleted,
 }: {
+  questionnaireVersion?: string | null;
   answers: Record<number, QuestionAnswer>;
   backgroundAnsweredCount: number;
   activityAnsweredCount: number;
@@ -431,6 +433,7 @@ function BasicQuestionsSection({
   onOpenSelf: () => void;
   photoCompleted: boolean;
 }) {
+  const preferenceQuestions = preferenceQuestionsForVersion(questionnaireVersion).filter((question) => !question.optional);
   const answeredCount = preferenceQuestions.filter((question) => {
     const value = answers[question.id]?.value;
     return Array.isArray(value)
@@ -1343,6 +1346,7 @@ export function PreferenceProfileTab({
         </section>
 
         <BasicQuestionsSection
+          questionnaireVersion={profile.profile_experience_version}
           answers={answers}
           backgroundAnsweredCount={backgroundAnsweredCount}
           activityAnsweredCount={activityAnsweredCount}

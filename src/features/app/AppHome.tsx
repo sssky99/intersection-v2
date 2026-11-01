@@ -5,7 +5,7 @@ import { startVisiblePolling } from "@/lib/visiblePolling";
 import { SafeImage } from "@/components/SafeImage";
 import { FriendsTab } from "./FriendsTab";
 import {
-  preferenceQuestions,
+  preferenceQuestionsForVersion,
   usesPreferenceProfile,
 } from "@/data/preferenceQuestions";
 import {
@@ -274,6 +274,7 @@ export function AppHome({
   previewOtherMemberPhotoUrls?: string[];
 }) {
   const readOnly = Boolean(readOnlyView);
+  const preferenceQuestions = preferenceQuestionsForVersion(profile.profile_experience_version);
   const [activeTab, setActiveTab] = useState<AppTab>(initialTab);
   const [waitlistedTickets, setWaitlistedTickets] = useState<UserTicket[]>([]);
   const [waitlistedTicketCount, setWaitlistedTicketCount] = useState<

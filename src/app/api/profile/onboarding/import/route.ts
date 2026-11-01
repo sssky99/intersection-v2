@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { preferenceQuestions, usesPreferenceProfile } from "@/data/preferenceQuestions";
+import { preferenceProfileVersion, preferenceQuestionsForVersion, usesPreferenceProfile } from "@/data/preferenceQuestions";
+import { validQuestionAnswer } from "@/lib/questionAnswerValidation";
 import { profileQuestions } from "@/data/profileQuestions";
 import {
   calculateConversationResultCode,
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as
     | {
         answers?: unknown;
+        questionnaireVersion?: unknown;
         profile?: Record<string, unknown>;
         photoUrl?: unknown;
         allowMissingPhotoDueToUploadFailure?: unknown;
@@ -90,17 +92,22 @@ export async function POST(request: Request) {
   }
 
   const isPreferenceOnboarding = usesPreferenceProfile(existingProfile);
-  const questions = isPreferenceOnboarding
-    ? preferenceQuestions
-    : profileQuestions;
   const rows = Array.isArray(body?.answers)
     ? body.answers.filter(isStoredAnswerRow)
     : [];
+  // A guest draft begun before deployment must still be importable after login.
+  const questionnaireVersion = typeof body?.questionnaireVersion === "string"
+    ? body.questionnaireVersion
+    : rows.some((row) => row.question_order === 37) ? preferenceProfileVersion : "preferences-v14";
+  if (isPreferenceOnboarding && ![preferenceProfileVersion, "preferences-v14", "preferences-v13"].includes(questionnaireVersion)) {
+    return NextResponse.json({ error: "Unsupported questionnaire version." }, { status: 400 });
+  }
+  const questions = isPreferenceOnboarding ? preferenceQuestionsForVersion(questionnaireVersion) : profileQuestions;
   const rowsByOrder = new Map(rows.map((row) => [row.question_order, row]));
   const answersValid = questions.every((question) => {
     const order = question.order ?? question.id;
     const row = rowsByOrder.get(order);
-    return Boolean(row && validAnswer(question, row));
+    return isPreferenceOnboarding ? validQuestionAnswer(question, row) : Boolean(row && validAnswer(question, row));
   });
 
   if (!answersValid) {
@@ -144,10 +151,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const answerRows = questions.map((question) => {
+  const answerRows = questions.flatMap((question) => {
     const order = question.order ?? question.id;
-    const row = rowsByOrder.get(order)!;
-    return {
+    const row = rowsByOrder.get(order);
+    if (!row) return [];
+    return [{
       user_id: user.id,
       question_order: order,
       category: question.category,
@@ -158,7 +166,7 @@ export async function POST(request: Request) {
         question.type === "text" ? row.answer_text?.trim() ?? null : null,
       other_text: row.other_text?.trim() || null,
       updated_at: new Date().toISOString(),
-    };
+    }];
   });
   const resultCode = isPreferenceOnboarding
     ? null
@@ -200,6 +208,7 @@ export async function POST(request: Request) {
       profile_completed_at: completionAt,
       ...(isPreferenceOnboarding
         ? {
+            profile_experience_version: questionnaireVersion,
             profile_archetype_id: profileArchetypeId,
             profile_archetype_version: profileArchetypeVersion,
             profile_archetype_assigned_at: new Date().toISOString(),
@@ -227,7 +236,7 @@ export async function POST(request: Request) {
     profileId: user.id,
     eventName: "questions_complete",
     path: "/api/profile/onboarding/import",
-    metadata: { mode: "guest_import" },
+    metadata: { mode: "guest_import", ...(isPreferenceOnboarding ? { questionnaire_version: questionnaireVersion } : {}) },
     createdAt: completionAt,
   });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { preferenceQuestions } from "@/data/preferenceQuestions";
+import { preferenceProfileVersion, preferenceQuestionsForVersion } from "@/data/preferenceQuestions";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
@@ -20,6 +20,7 @@ export function PreferenceQuestionFlow({
   namePreview = false,
   initialRows = [],
   mode = "preview",
+  questionnaireVersion = preferenceProfileVersion,
   onGuestDraftChange,
   onGuestComplete,
   onGuestIdentityChange,
@@ -32,6 +33,7 @@ export function PreferenceQuestionFlow({
   namePreview?: boolean;
   initialRows?: StoredAnswerRow[];
   mode?: PreferenceQuestionFlowMode;
+  questionnaireVersion?: string;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
   onGuestIdentityChange?: (identity: { name?: string; gender?: Gender }) => void;
@@ -57,7 +59,7 @@ export function PreferenceQuestionFlow({
       namePreview={namePreview}
       initialRows={initialRows}
       mode={questionFlowMode}
-      questionSet={preferenceQuestions}
+      questionSet={preferenceQuestionsForVersion(questionnaireVersion)}
       completionRequestMode={completionRequestMode}
       skipConversationResult
       showProfileArchetypeResult={mode !== "guest"}

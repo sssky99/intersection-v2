@@ -1,10 +1,11 @@
 import type { ProfileQuestion, QuestionAnswer } from "@/types/question";
 import { mbtiOptions } from "@/data/mbti";
 
-export const preferenceProfileVersion = "preferences-v14";
+export const preferenceProfileVersion = "preferences-v16";
 
 const supportedPreferenceProfileVersions = new Set([
   "preferences-v13",
+  "preferences-v14",
   preferenceProfileVersion,
 ]);
 
@@ -577,8 +578,7 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
     "order": 17,
     "category": "자기정보",
     "type": "text",
-    "question": "생년월일을 입력해주세요.",
-    "prompt": "교집합은 기본적으로 4살차이 이내 사람들과 만날 수 있도록 준비합니다"
+    "question": "생년월일을 입력해주세요."
   },
   {
     "id": 18,
@@ -1065,12 +1065,85 @@ export const preferenceQuestionCatalog: ProfileQuestion[] = [
 
 const coreExcludedQuestionIds = new Set([9, 10, 14, 16, 20, 24]);
 
-export const preferenceQuestions: ProfileQuestion[] =
+export const legacyPreferenceQuestions: ProfileQuestion[] =
   preferenceQuestionCatalog.filter(
     (question) =>
       (question.order ?? question.id) > 5 &&
       !coreExcludedQuestionIds.has(question.id),
   );
+
+export const matchingSignupQuestions: ProfileQuestion[] = [
+  ...[32, 33].map((id): ProfileQuestion => ({
+    id,
+    order: id,
+    category: "관계 기대",
+    type: "single_choice",
+    question: id === 32
+      ? "상대와 어떤 깊이의 대화를 할 때\n편하게 느끼나요?"
+      : "상대가 새로운 사람과\n어느 정도 속도로 가까워지는 게 편한가요?",
+    scaleMinLabel: id === 32 ? "가볍고 편안한 일상 대화" : "천천히 알아가는 편",
+    scaleMaxLabel: id === 32 ? "깊이 있는 개인적 대화" : "빠르게 가까워지는 편",
+    options: Array.from({ length: 7 }, (_, index) => ({ value: String(index + 1), label: String(index + 1) })),
+  })),
+  {
+    id: 34, order: 34, category: "관계 기대", type: "multi_choice", maxSelections: 2, optionColumns: 2,
+    question: "처음 만난 자리에서\n어떤 대화 방식의 상대가 편한가요?",
+    description: "최대 2개까지 골라주세요.",
+    options: [
+      { value: "group_role_listener", label: "내 이야기를 차분히 들어주는 사람" },
+      { value: "group_role_reactor", label: "반응을 표현하며 대화하는 사람" },
+      { value: "group_role_questioner", label: "질문을 던지며 대화를 이어가는 사람" },
+      { value: "group_role_leader", label: "먼저 이야깃거리를 꺼내주는 사람" },
+      { value: "group_role_moodmaker", label: "농담이나 유머로 분위기를 편하게 하는 사람" },
+      { value: "no_preference", label: "특별한 선호가 없어요.", exclusive: true },
+      { value: "unsure", label: "아직 잘 모르겠어요.", exclusive: true },
+    ],
+  },
+  {
+    id: 35, order: 35, category: "관계 기대", type: "single_choice",
+    question: "상대와 취미·관심사가 겹치는 것은\n나에게 얼마나 중요한가요?",
+    options: [
+      { value: "shared_topics_important", label: "공통으로 이야기할 주제가 있는 것이 중요해요." },
+      { value: "shared_topics_nice", label: "겹치는 주제가 있으면 좋지만, 없어도 괜찮아요." },
+      { value: "shared_topics_not_needed", label: "공통점이 없어도 괜찮아요." },
+      { value: "unsure", label: "아직 잘 모르겠어요." },
+    ],
+  },
+  {
+    ...preferenceQuestionCatalog.find((question) => question.id === 30)!,
+    id: 36, order: 36,
+  },
+  {
+    ...preferenceQuestionCatalog.find((question) => question.id === 13)!,
+    id: 37, order: 37,
+    maxSelections: 3,
+    prompt: "최대 3개까지 골라주세요.",
+    description: "요즘 특별히 즐기는 취미가 없다면, 관심이 가는 취미를 골라주세요.",
+    detailPrompt: "선택한 취미에 대해 조금 더 알려주세요. (선택)",
+    placeholder: "예: 운동 → 러닝·헬스 / 음악 → 재즈·인디 음악",
+  },
+];
+
+// Changed meanings get new storage IDs; historical answers keep their IDs.
+preferenceQuestionCatalog.push(...matchingSignupQuestions);
+
+const signupOrder = [6, 7, 8, 19, 25, 26, 27, 11, 12, 37, 14, 28, 36, 32, 33, 34, 35, 18, 17, 31];
+export const preferenceQuestions: ProfileQuestion[] = signupOrder.map((id) => {
+  const question = preferenceQuestionCatalog.find((item) => item.id === id)!;
+  return id === 18 ? {
+    ...question,
+    optional: true,
+    description: "앞의 질문으로 표현하기 어려웠던 점이나 대화가 잘 통했던 경험을 알려주세요. (선택)",
+  } : question;
+});
+
+export function preferenceQuestionsForVersion(version: string | null | undefined = preferenceProfileVersion) {
+  return version === preferenceProfileVersion ? preferenceQuestions : legacyPreferenceQuestions;
+}
+
+export function isPreferenceQuestionSet(questions: ProfileQuestion[]) {
+  return questions === preferenceQuestions || questions === legacyPreferenceQuestions;
+}
 
 function selectedLabels(answer: QuestionAnswer | undefined, questionId: number) {
   if (!answer || !Array.isArray(answer.value)) return [];
@@ -1114,7 +1187,7 @@ export function preferencePreferredActivities(
   const directValues = selectedValues(answers[4]);
   if (directValues.length > 0) return directValues.slice(0, 3);
 
-  const labels = selectedLabels(answers[13], 13).join(" ");
+  const labels = selectedLabels(answers[37] ?? answers[13], 13).join(" ");
   const matches: Array<[string, RegExp]> = [
     ["meal", /카페|맛집|요리|베이킹/],
     ["culture", /영화|드라마|음악|공연|독서|전시|미술관|사진|영상|글쓰기/],
