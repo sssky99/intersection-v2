@@ -20,6 +20,7 @@ import {
 type LandingVariantBProps = {
   instagramAd?: boolean;
   preview?: boolean;
+  specialInvitation?: boolean;
 };
 
 export function LandingVariantB(props: LandingVariantBProps) {
@@ -69,9 +70,10 @@ export function LandingVariantB(props: LandingVariantBProps) {
       }} />;
 }
 
-function LandingVariantBContent({
+export function LandingVariantBContent({
   instagramAd = false,
   preview = false,
+  specialInvitation = false,
 }: LandingVariantBProps) {
   const [showMemberLogin, setShowMemberLogin] = useState(false);
   const previewDialogRef = useRef<HTMLDialogElement>(null);
@@ -381,7 +383,7 @@ function LandingVariantBContent({
     <>
       <Link
         ref={ctaButtonRef}
-        href="/onboarding/start"
+        href={specialInvitation ? "/special-invitation/continue" : "/onboarding/start"}
         onClick={(event) => { if (preview) { event.preventDefault(); previewDialogRef.current?.showModal(); return; } trackOnboardingStart(); }}
         className={`relative mx-auto flex w-full max-w-[168px] items-center justify-center gap-4 rounded-full border border-white/10 bg-black px-8 font-["Nanum_Myeongjo"] text-[16px] font-normal text-white shadow-[0_12px_32px_rgba(0,0,0,0.22)] hover:bg-[#171717] transition-transform active:scale-[0.98] ${
           compact ? "h-12" : "h-[48px]"
@@ -440,6 +442,12 @@ function LandingVariantBContent({
         </div>
 
         <div className="absolute inset-0">
+          {specialInvitation && (
+            <div className="absolute inset-x-6 top-[17%] text-center text-white" style={{ fontFamily: '"Nanum Myeongjo", serif' }}>
+              <p className="text-[14px] font-bold leading-7 text-white [text-shadow:0_2px_12px_rgba(0,0,0,0.85)]">축하드립니다. 교집합에 초대받으셨습니다.</p>
+              <h2 className="mt-3 text-[25px] font-bold leading-[1.55] tracking-[-0.035em] [text-shadow:0_2px_14px_rgba(0,0,0,0.8)]">멤버십 1개월을 선물합니다.</h2>
+            </div>
+          )}
           <div
             className={`absolute inset-x-6 text-center transition-opacity duration-500 ${
               instagramAd
@@ -475,8 +483,8 @@ function LandingVariantBContent({
         )}
         <dialog ref={previewDialogRef} className="m-auto w-[calc(100%-40px)] max-w-[360px] rounded-[28px] bg-white p-8 text-center text-[#121212] backdrop:bg-black/60">
           <p className="text-[11px] tracking-[0.18em] text-black/50">교집합 · 미리보기</p>
-          <h2 className="mt-5 text-xl font-semibold">당신의 이야기가 궁금해요.</h2>
-          <p className="mt-3 text-sm leading-7 text-black/60">실제 서비스에서는 여기서<br />나를 알아가는 질문이 시작돼요.</p>
+          <h2 className="mt-5 text-xl font-semibold">{specialInvitation ? "특별 초대 화면 미리보기" : "당신의 이야기가 궁금해요."}</h2>
+          <p className="mt-3 text-sm leading-7 text-black/60">{specialInvitation ? "실제 혜택 지급은 아직 연결하지 않았어요. 질문과 회원가입은 기존 과정을 이어가게 됩니다." : <>실제 서비스에서는 여기서<br />나를 알아가는 질문이 시작돼요.</>}</p>
           <form method="dialog"><button className="mt-7 w-full rounded-full bg-black py-4 text-sm font-semibold text-white">랜딩으로 돌아가기</button></form>
         </dialog>
       </section>

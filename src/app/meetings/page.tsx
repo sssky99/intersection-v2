@@ -24,6 +24,8 @@ import {
   normalizeMeetingEventId,
 } from "@/lib/meetingDeepLink";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { membershipInvitationCookie } from "@/lib/membershipInvitationToken";
+import { MembershipInvitationClaim } from "@/features/invitations/MembershipInvitationClaim";
 
 type MeetingsPageProps = {
   searchParams?: Promise<{
@@ -238,6 +240,7 @@ export default async function MeetingsPage({ searchParams }: MeetingsPageProps) 
 
   return (
     <MobileFrame>
+      <MembershipInvitationClaim key={user.id} pending={Boolean(cookieStore.get(membershipInvitationCookie)?.value) && !cookieStore.has("inter_admin_user_view") && profile.profile_completed === true} />
       <AppHome
         userId={user.id}
         profile={profile}

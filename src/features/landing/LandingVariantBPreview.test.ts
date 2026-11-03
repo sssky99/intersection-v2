@@ -17,7 +17,8 @@ describe("landing variant B analytics", () => {
       "utf8",
     );
 
-    expect(source).toContain('href="/onboarding/start"');
+    expect(source).toMatch(/<Link\s[^>]*href=/);
+    expect(source).toContain('"/onboarding/start"');
     expect(source).not.toContain('window.location.assign("/onboarding/start")');
   });
 
