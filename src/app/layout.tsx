@@ -10,6 +10,13 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://interv2.netlify.app"),
   title: "교집합",
   description: "나와 잘 맞는 사람들을 찾아주는 교집합",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32 48x48", type: "image/x-icon" },
+      { url: "/icon.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
   openGraph: {
     type: "website",
     url: "/",
