@@ -12,7 +12,6 @@ import {
 } from "@/lib/guestOnboarding";
 import { trackEvent } from "@/lib/analytics";
 import type { StoredAnswerRow } from "@/types/question";
-import type { Gender } from "@/types/user";
 
 function GuestOnboardingGuide({ onComplete }: { onComplete: () => void }) {
   const [page, setPage] = useState(0);
@@ -99,40 +98,12 @@ export function GuestOnboardingFlow() {
 
   const handleQuestionsComplete = useCallback(
     (answers: StoredAnswerRow[]) => {
-      const birthDate = answers.find((answer) => answer.question_order === 17)?.answer_text?.trim() ?? "";
-      const mbti = answers.find((answer) => answer.question_order === 31)?.answer_value?.trim().toUpperCase() ?? "";
-      updateDraft((current) => ({
-        ...current,
-        answers,
-        phase: "auth",
-        profile: {
-          ...current.profile,
-          birthDate,
-          birthYear: birthDate.slice(0, 4),
-          mbti,
-        },
-      }));
+      updateDraft(current => ({ ...current, answers, phase: "auth" }));
       trackEvent("guest_profile_ready_for_auth", { source: "guest_onboarding" });
       trackEvent("questions_complete", {
         question_count: answers.length,
         mode: "guest",
       });
-    },
-    [updateDraft],
-  );
-
-  const handleIdentityChange = useCallback(
-    (identity: { name?: string; gender?: Gender }) => {
-      updateDraft((current) => ({
-        ...current,
-        profile: {
-          ...current.profile,
-          ...(identity.name ? { name: identity.name } : {}),
-          ...(identity.gender === "여성" || identity.gender === "남성"
-            ? { gender: identity.gender }
-            : {}),
-        },
-      }));
     },
     [updateDraft],
   );
@@ -168,7 +139,6 @@ export function GuestOnboardingFlow() {
         mode="guest"
         onGuestDraftChange={handleAnswerDraftChange}
         onGuestComplete={handleQuestionsComplete}
-        onGuestIdentityChange={handleIdentityChange}
       />
     );
   }

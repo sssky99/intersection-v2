@@ -1,8 +1,8 @@
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
-import { preferenceProfileVersion } from "@/data/preferenceQuestions";
+import { signupQuestionnaireVersion } from "@/data/localSignupQuestions";
 
-const DRAFT_KEY = "intersection-guest-onboarding-v5";
+const DRAFT_KEY = "intersection-guest-onboarding-v17";
 const PHOTO_DATABASE = "intersection-guest-onboarding";
 const PHOTO_STORE = "draft-files";
 const PHOTO_KEY = "profile-photo";
@@ -47,7 +47,7 @@ export const emptyGuestBasicInfo: GuestBasicInfo = {
 export function emptyGuestOnboardingDraft(): GuestOnboardingDraft {
   return {
     version: 5,
-    questionnaireVersion: preferenceProfileVersion,
+    questionnaireVersion: signupQuestionnaireVersion,
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     phase: "guide",
     answers: [],
@@ -90,13 +90,13 @@ export function loadGuestOnboardingDraft(): GuestOnboardingDraft {
     const parsed = JSON.parse(stored ?? "null") as
       | Partial<GuestOnboardingDraft>
       | null;
-    if (!parsed || parsed.version !== 5 || typeof parsed.id !== "string") {
+    if (!parsed || parsed.version !== 5 || parsed.questionnaireVersion !== signupQuestionnaireVersion || typeof parsed.id !== "string") {
       return emptyGuestOnboardingDraft();
     }
 
     return {
       version: 5,
-      questionnaireVersion: parsed.questionnaireVersion === preferenceProfileVersion ? preferenceProfileVersion : "preferences-v14",
+      questionnaireVersion: signupQuestionnaireVersion,
       id: parsed.id,
       phase:
         parsed.phase === "auth"

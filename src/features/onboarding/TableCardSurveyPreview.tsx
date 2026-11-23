@@ -2,6 +2,8 @@
 
 import { preferenceProfileVersion, preferenceQuestionsForVersion } from "@/data/preferenceQuestions";
 import { QuestionFlow } from "@/features/onboarding/QuestionFlow";
+import { localSignupQuestions } from "@/data/localSignupQuestions";
+import { LocalSignupQuestions } from "./LocalSignupQuestions";
 import type { StoredAnswerRow } from "@/types/question";
 import type { Gender } from "@/types/user";
 
@@ -39,8 +41,16 @@ export function PreferenceQuestionFlow({
   onGuestIdentityChange?: (identity: { name?: string; gender?: Gender }) => void;
   onGuestPhotoChange?: (file: File) => Promise<void>;
 }) {
+  if (mode === "guest") {
+    return <QuestionFlow mode="guest" initialRows={initialRows} questionSet={localSignupQuestions}
+      skipConversationResult conversationQuestionCount={0}
+      onGuestDraftChange={onGuestDraftChange} onGuestComplete={onGuestComplete} />;
+  }
+  if (process.env.NODE_ENV === "development" && mode === "preview") {
+    return <LocalSignupQuestions />;
+  }
   const questionFlowMode =
-    mode === "preview" || mode === "guest" || mode === "onboarding"
+    mode === "preview" || mode === "onboarding"
       ? mode
       : "regeneration";
   const completionRequestMode =
@@ -62,7 +72,7 @@ export function PreferenceQuestionFlow({
       questionSet={preferenceQuestionsForVersion(questionnaireVersion)}
       completionRequestMode={completionRequestMode}
       skipConversationResult
-      showProfileArchetypeResult={mode !== "guest"}
+      showProfileArchetypeResult
       conversationQuestionCount={0}
       onGuestDraftChange={onGuestDraftChange}
       onGuestComplete={onGuestComplete}

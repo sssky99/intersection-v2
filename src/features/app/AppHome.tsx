@@ -1174,9 +1174,9 @@ export function AppHome({
         !replayedDeclinedTicket && (
           <button
             type="button"
-            onClick={() => setAlgorithmParametersOpen(true)}
-            title="알고리즘 조절"
-            aria-label="알고리즘 파라미터 조절"
+            disabled
+            title="추가 질문 개편 중"
+            aria-label="추가 질문 개편 중"
             className="absolute right-[72px] top-[calc(14px+env(safe-area-inset-top))] z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#d8d1c4] bg-[#f8f4eb] text-[#5f594f] shadow-[0_5px_14px_rgba(71,62,48,0.1)] transition hover:-translate-y-0.5 hover:text-[#24211d] hover:shadow-[0_8px_18px_rgba(71,62,48,0.14)]"
           >
             <WandSparkles size={20} strokeWidth={1.7} aria-hidden />

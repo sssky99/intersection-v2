@@ -1,64 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { legacyPreferenceQuestions, preferenceProfileVersion, preferenceQuestions } from "@/data/preferenceQuestions";
-import type { ProfileQuestion, StoredAnswerRow } from "@/types/question";
-
-const mocks = vi.hoisted(() => ({ upsert: vi.fn(), update: vi.fn(), getUser: vi.fn() }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: mocks.getUser } }) }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: (table: string) => table === "user_answers" ? { upsert: mocks.upsert } : {
-  select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { profile_experience_version: "preferences-v16", profile_completed: false } }) }) }),
-  update: (value: unknown) => { mocks.update(value); return { eq: async () => ({ error: null }) }; },
-} }) }));
-vi.mock("@/lib/funnelAnalytics", () => ({ safelyRecordServerFunnelEvent: vi.fn(async () => undefined) }));
+import { localSignupQuestions, signupQuestionnaireVersion } from "@/data/localSignupQuestions";
 import { POST } from "./route";
 
-function answersFor(questions: ProfileQuestion[]) {
-  return questions.filter((question) => !question.optional).map((question): StoredAnswerRow => ({
-    question_order: question.id,
-    answer_value: question.type === "single_choice" ? typeof question.options?.[0] === "string" ? question.options[0] : question.options?.[0].value ?? null : null,
-    answer_values: question.type === "multi_choice" ? [typeof question.options?.[0] === "string" ? question.options[0] : question.options?.[0].value ?? ""] : null,
-    answer_text: question.type === "text" ? question.id === 17 ? "2000-02-29" : question.id === 36 ? "일본, 프랑스, 태국" : "테스트 답변" : null,
-    other_text: null,
-  }));
-}
-function request(answers: StoredAnswerRow[], questionnaireVersion?: string) {
-  return new Request("http://localhost/api/profile/onboarding/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers, questionnaireVersion, profile: { name: "테스트", gender: "여성" }, photoUrl: "https://example.com/test.jpg" }) });
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), getUser: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: mocks.getUser } }) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: mocks.rpc }) }));
+vi.mock("@/lib/funnelAnalytics", () => ({ safelyRecordServerFunnelEvent: vi.fn() }));
+const answers = localSignupQuestions.filter(q => !q.optional).map(q => ({
+  question_order: q.id, answer_text: q.inputKind === "name" ? "김테스트" : q.inputKind === "birthday" ? "2000-02-29" : null,
+  answer_value: q.type === "single_choice" ? q.options![0] : null,
+  answer_values: q.type === "multi_choice" ? [q.inputKind === "searchable_choices" ? "직접 입력" : q.options![0]] : null,
+}));
+function request(rows = answers, version = signupQuestionnaireVersion as string) {
+  return new Request("http://localhost/api/profile/onboarding/import", {method: "POST", body: JSON.stringify({ answers: rows, questionnaireVersion: version })});
 }
 beforeEach(() => {
-  vi.clearAllMocks();
-  mocks.getUser.mockResolvedValue({ data: { user: { id: "test-user", phone: "+821000000000" } } });
-  mocks.upsert.mockResolvedValue({ error: null });
+  vi.resetAllMocks();
+  mocks.getUser.mockResolvedValue({ data: { user: { id: "member", phone: "+821000000000", phone_confirmed_at: "2026-11-23" } } });
+  mocks.rpc.mockResolvedValue({data: true});
 });
-
-describe("guest signup import compatibility", () => {
-  it("saves new structured answers and completes signup without optional free text", async () => {
-    const response = await POST(request(answersFor(preferenceQuestions), preferenceProfileVersion));
+describe("signup after phone verification", () => {
+  it("stores custom choices, basic details and a type without requiring a photo or MBTI", async () => {
+    const response = await POST(request());
     expect(response.status).toBe(200);
-    const saved = mocks.upsert.mock.calls[0][0] as Array<{ question_order: number }>;
-    expect(saved.map((row) => row.question_order)).toContain(37);
-    expect(saved.map((row) => row.question_order)).toContain(36);
-    expect(saved.map((row) => row.question_order)).not.toContain(18);
-    expect(saved).toContainEqual(expect.objectContaining({ question_order: 36, answer_text: "일본, 프랑스, 태국" }));
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ profile_experience_version: preferenceProfileVersion, questions_completed: true }));
+    expect(mocks.rpc).toHaveBeenCalledWith("complete_signup_v17", expect.objectContaining({
+      p_phone:"01000000000", p_name:"김테스트", p_gender:"남성", p_birth_date:"2000-02-29",
+      p_type:(await response.json()).profileArchetypeId,
+      p_answers:expect.arrayContaining([expect.objectContaining({question_order:2019, answer_values:["직접 입력"]})]),
+    }));
   });
-  it("still accepts a pre-deployment guest draft without a version field", async () => {
-    const response = await POST(request(answersFor(legacyPreferenceQuestions)));
-    expect(response.status).toBe(200);
-    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ profile_experience_version: "preferences-v14" }));
+  it("requires a verified phone before saving", async () => {
+    mocks.getUser.mockResolvedValue({data:{user:{id:"member",phone:"+821000000000"}}});
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
-  it("rejects invalid preference ranges before writing answers", async () => {
-    const answers = answersFor(preferenceQuestions);
-    answers.find((row) => row.question_order === 32)!.answer_value = "range_7_1";
-    expect((await POST(request(answers, preferenceProfileVersion))).status).toBe(400);
-    expect(mocks.upsert).not.toHaveBeenCalled();
+  it("rejects old drafts, missing required answers and invalid dates", async () => {
+    for (const req of [request(answers,"preferences-v16"),request(answers.slice(1)),request(answers.map(r => r.question_order === 2029 ? {...r,answer_text:"2000-02-31"} : r))]) {
+      expect((await POST(req)).status).toBe(400);
+    }
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
-  it("rejects a blank country answer before writing answers", async () => {
-    const answers = answersFor(preferenceQuestions);
-    answers.find((row) => row.question_order === 36)!.answer_text = "   ";
-    expect((await POST(request(answers, preferenceProfileVersion))).status).toBe(400);
-    expect(mocks.upsert).not.toHaveBeenCalled();
-  });
-  it("does not accept old required answers as a complete new questionnaire", async () => {
-    expect((await POST(request(answersFor(legacyPreferenceQuestions), preferenceProfileVersion))).status).toBe(400);
-    expect(mocks.upsert).not.toHaveBeenCalled();
+  it("preserves an existing completed account", async () => {
+    mocks.rpc.mockResolvedValue({data:false});
+    expect((await POST(request())).status).toBe(409);
   });
 });

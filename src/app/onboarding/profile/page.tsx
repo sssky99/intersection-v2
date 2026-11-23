@@ -33,6 +33,7 @@ export default async function OnboardingProfilePage({
   ) {
     redirect("/onboarding/questions?regenerate=1&start=1");
   }
+  if (!profile.profile_completed && !isRegeneration) redirect("/onboarding/start");
   if (!profile.questions_completed && !isRegeneration) {
     redirect("/onboarding/questions");
   }

@@ -424,7 +424,7 @@ async function refund() {
 }
 async function missingChargePair(round = 2) {
   await db.query(
-    "update profiles set phone_normalized='01000000001', membership_status='active', membership_plan='three_months', membership_start_date=$1, membership_end_date=($1::date+90), membership_updated_at=now() where user_id=$2",
+    "update profiles set phone_normalized='01000000001', membership_status='active', membership_plan='three_months', membership_start_date=$1, membership_end_date=($1::date+90), membership_updated_at=($1::date + time '08:00') at time zone 'Asia/Seoul' where user_id=$2",
     [today, user],
   );
   const object = {

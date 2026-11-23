@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, Volume2, VolumeX } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { onboardingGuides } from "@/data/onboardingGuides";
 import { analyticsSessionId, trackEvent } from "@/lib/analytics";
+import { clearGuestOnboardingDraft } from "@/lib/guestOnboarding";
 import { safeInternalPath } from "@/lib/authRedirect";
 import {
   isProfileSetupFailure,
@@ -124,7 +125,11 @@ export function FiftyQLandingClient({
     string | undefined
   >(undefined);
   const resolvedCompletionPath = completionPath ?? queryCompletionPath;
-  const prompt = step === "phone" ? phonePrompt : otpPrompt;
+  const signupAuth = authSource === "guest_onboarding_complete";
+  const prompt = step === "phone" && signupAuth
+    ? "마지막으로 휴대폰 번호를 인증하고, 나의 유형을 확인해 보세요."
+    : step === "phone" ? phonePrompt : otpPrompt;
+  const submitLabel = step === "phone" ? "인증번호 받기" : signupAuth ? "인증하고 내 유형 보기" : "인증하고 계속하기";
   const typedPrompt = useTypedText(prompt, isAuthContentVisible, 55);
   const guideText = guidePage === null ? "" : onboardingGuides[guidePage];
   const typedGuide = useTypedText(guideText, guidePage !== null, 32);
@@ -179,10 +184,15 @@ export function FiftyQLandingClient({
             body: JSON.stringify({ analyticsSessionId: analyticsSessionId() }),
           });
           const body = (await response.json().catch(() => null)) as
-            | { nextPath?: string; errorCode?: PhoneAuthFailureCode }
+            | { nextPath?: string; loginType?: string; errorCode?: PhoneAuthFailureCode }
             | null;
           if (!mounted) return;
           if (response.ok && body?.nextPath) {
+            if (resolvedCompletionPath === "/onboarding/import" && body.loginType === "existing") {
+              await clearGuestOnboardingDraft();
+              window.location.replace(body.nextPath);
+              return;
+            }
             window.location.replace(
               phoneAuthDestination(body.nextPath, resolvedCompletionPath),
             );
@@ -315,6 +325,11 @@ export function FiftyQLandingClient({
       source: authSource,
     });
 
+    if (resolvedCompletionPath === "/onboarding/import" && body.loginType === "existing") {
+      await clearGuestOnboardingDraft();
+      window.location.replace(body.nextPath);
+      return;
+    }
     if (resolvedCompletionPath) {
       window.location.replace(
         phoneAuthDestination(body.nextPath, resolvedCompletionPath),
@@ -583,14 +598,14 @@ export function FiftyQLandingClient({
             <button
               type="submit"
               disabled={!canContinue || isSubmitting || isRecoveringProfile}
-              aria-label={step === "phone" ? "인증 번호 받기" : "인증하고 계속하기"}
-              className={`ml-auto mt-10 flex h-12 w-12 items-center justify-center transition-all duration-300 ${
+              aria-label={submitLabel}
+              className={`ml-auto mt-10 flex h-12 ${signupAuth ? "w-full rounded-full bg-[#252320] disabled:opacity-35" : "w-12"} items-center justify-center transition-all duration-300 ${
                 canContinue && !isSubmitting && !isRecoveringProfile
                   ? "text-black active:translate-x-0.5"
                   : "cursor-not-allowed text-black/20"
               }`}
             >
-              <ArrowRight size={28} strokeWidth={1.8} />
+              {signupAuth ? <span className="font-semibold text-white">{submitLabel}</span> : <ArrowRight size={28} strokeWidth={1.8} />}
             </button>
             </form>
           ) : (

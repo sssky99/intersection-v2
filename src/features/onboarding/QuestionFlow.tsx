@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { MbtiSelect } from "@/components/MbtiSelect";
+import { SearchableSignupChoices } from "./SearchableSignupChoices";
 import {
   conversationResultImageSrc,
   conversationResultOverview,
@@ -229,7 +230,7 @@ function useTypedText(text: string, active: boolean, interval = 55) {
 }
 
 function isBirthDateQuestion(question: ProfileQuestion) {
-  return question.id === 17 && question.question === "생년월일을 입력해주세요.";
+  return question.inputKind === "birthday" || (question.id === 17 && question.question === "생년월일을 입력해주세요.");
 }
 
 function isMbtiQuestion(question: ProfileQuestion) {
@@ -496,7 +497,7 @@ function rowToAnswer(
       : question?.type === "multi_choice"
         ? (Array.isArray(storedValue) ? storedValue : [storedValue])
             .filter((item): item is string => typeof item === "string")
-            .filter((item) => optionValues(question).has(item))
+            .filter((item) => question.inputKind === "searchable_choices" || optionValues(question).has(item))
         : storedValue;
 
   return {
@@ -507,6 +508,12 @@ function rowToAnswer(
 }
 
 function isComplete(question: ProfileQuestion, answer?: QuestionAnswer) {
+  if (question.inputKind === "name") return typeof answer?.value === "string" && answer.value.trim().length >= 2;
+  if (question.inputKind === "email") return typeof answer?.value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answer.value.trim());
+  if (question.inputKind === "searchable_choices") {
+    const count = Array.isArray(answer?.value) ? answer.value.length : 0;
+    return (count > 0 || !!question.optional) && count <= (question.maxSelections ?? Infinity);
+  }
   if (question.optional) {
     return validQuestionAnswer(question, answer ? {
       question_order: question.order ?? question.id,
@@ -630,6 +637,7 @@ export function QuestionFlow({
   initialPhotoStep = false,
   onPhotoChanged,
   onPreviewComplete,
+  classifyPreviewAnswers = classifyProfileArchetype,
   onGuestDraftChange,
   onGuestComplete,
   onGuestIdentityChange,
@@ -657,6 +665,7 @@ export function QuestionFlow({
   initialPhotoStep?: boolean;
   onPhotoChanged?: (photoUrl: string) => void;
   onPreviewComplete?: () => void | Promise<void>;
+  classifyPreviewAnswers?: (rows: StoredAnswerRow[]) => ProfileArchetypeId;
   onGuestDraftChange?: (rows: StoredAnswerRow[]) => void;
   onGuestComplete?: (rows: StoredAnswerRow[]) => void;
   onGuestIdentityChange?: (identity: { name?: string; gender?: Gender }) => void;
@@ -824,7 +833,14 @@ export function QuestionFlow({
     { value: 18, label: "8" },
     { value: 20, label: "10" },
   ];
-  const canContinue = isAgeRange || isComplete(question, answer);
+  const [choiceSearch, setChoiceSearch] = useState("");
+  const typedChoice = choiceSearch.trim();
+  const matchingChoice = [...selectedValues, ...(question.options ?? []).map(optionValue)]
+    .find(value => value.toLowerCase() === typedChoice.toLowerCase()) ?? typedChoice;
+  const pendingChoices = question.inputKind === "searchable_choices" && typedChoice
+    ? { questionId: question.id, value: selectedValues.includes(matchingChoice) ? selectedValues : [...selectedValues, matchingChoice] }
+    : undefined;
+  const canContinue = isAgeRange || isComplete(question, pendingChoices ?? answer);
   const scaleOptions =
     question.type === "single_choice"
       ? (question.options ?? []).filter((option) =>
@@ -832,7 +848,7 @@ export function QuestionFlow({
         )
       : [];
   const usesNumericScale =
-    scaleOptions.length >= 5 &&
+    (scaleOptions.length >= 5 || (scaleOptions.length === 4 && !!question.scaleMinLabel)) &&
     scaleOptions.length === (question.options?.length ?? 0);
 
   useEffect(() => {
@@ -1140,7 +1156,7 @@ export function QuestionFlow({
         if (showProfileArchetypeResult) {
           const completedRows = answersToStoredRows(nextAnswers, questions);
           setCompletedProfileRows(completedRows);
-          setProfileArchetypeResultId(classifyProfileArchetype(completedRows));
+          setProfileArchetypeResultId(classifyPreviewAnswers(completedRows));
           return;
         }
         await onPreviewComplete?.();
@@ -1321,7 +1337,7 @@ export function QuestionFlow({
 
   const continueQuestion = async () => {
     const answerToContinue =
-      answer ?? (isAgeRange ? defaultAgeRangeAnswer(question) : question.optional ? { questionId: question.id, value: "" } : undefined);
+      pendingChoices ?? answer ?? (isAgeRange ? defaultAgeRangeAnswer(question) : question.optional ? { questionId: question.id, value: "" } : undefined);
 
     if (!answerToContinue || !canContinue || !beginSaving()) return;
 
@@ -1329,6 +1345,7 @@ export function QuestionFlow({
       ...answers,
       [answerToContinue.questionId]: answerToContinue,
     };
+    setChoiceSearch("");
     updateLocalAnswer(answerToContinue);
     setError(null);
 
@@ -1949,6 +1966,7 @@ export function QuestionFlow({
             disabled={questionIndex === 0 || saving}
             onClick={() => {
               setError(null);
+              setChoiceSearch("");
               setQuestionIndex((current) => Math.max(0, current - 1));
             }}
             className="flex h-10 w-10 items-center justify-center rounded-full text-black/55 transition hover:bg-black/[0.04] disabled:opacity-0"
@@ -2120,7 +2138,10 @@ export function QuestionFlow({
             )
           )}
 
-          {!isBirthDate && question.type === "multi_choice" && (
+          {question.inputKind === "searchable_choices" && (
+            <SearchableSignupChoices key={question.id} question={question} selected={selectedValues} search={choiceSearch} setSearch={setChoiceSearch} onToggle={toggleMultiple} />
+          )}
+          {!isBirthDate && question.type === "multi_choice" && question.inputKind !== "searchable_choices" && (
             <div className="mt-8 pb-24">
               <div className={cn("grid gap-3", question.optionColumns === 1 ? "grid-cols-1" : "grid-cols-2")}>
                 {(question.options ?? []).map((option) => {
@@ -2191,7 +2212,14 @@ export function QuestionFlow({
             />
           )}
 
-          {!isBirthDate && question.type === "text" && (
+          {(question.inputKind === "email" || question.inputKind === "name") && (
+            <input key={question.id} type={question.inputKind === "email" ? "email" : "text"}
+              autoComplete={question.inputKind} aria-label={question.question}
+              value={textAnswer} placeholder={question.placeholder}
+              onChange={event => updateLocalAnswer({ questionId: question.id, value: event.target.value })}
+              className="mt-8 h-14 w-full rounded-[20px] border border-black/10 bg-[#FCFAF6] px-5 text-base" />
+          )}
+          {!isBirthDate && question.type === "text" && !question.inputKind && (
             <div className="mt-8 pb-24">
               <textarea
                 value={
@@ -2279,7 +2307,7 @@ export function QuestionFlow({
               ? isPreview
                 ? "답변 저장하기"
                 : "결과 확인하기"
-              : question.optional && !String(answer?.value ?? "").trim() ? "건너뛰기" : "다음"}
+              : question.optional && !pendingChoices && !String(answer?.value ?? "").trim() ? "건너뛰기" : "다음"}
             <ChevronRight size={17} aria-hidden />
           </button>
         </div>

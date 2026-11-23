@@ -563,7 +563,7 @@ export function ApplicantCards({
                   <InfoPill label="MBTI" value={display(profile.mbti)} />
                   <InfoPill
                     label="성향 유형"
-                    value={adminProfileArchetypeLabel(profile)}
+                    value={<span className={profile.profile_experience_version === "preferences-v17" ? "text-blue-600" : undefined}>{adminProfileArchetypeLabel(profile)}</span>}
                   />
                   <InfoPill
                     label="결제"
@@ -620,7 +620,7 @@ export function TableCell({
   );
 }
 
-export function InfoPill({ label, value }: { label: string; value: string }) {
+export function InfoPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="min-w-0 rounded-xl bg-[#f7f7f5] px-3 py-2">
       <p className="text-[10px] font-bold uppercase tracking-wide text-black/35">

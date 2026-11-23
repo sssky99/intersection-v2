@@ -310,7 +310,7 @@ export function ProfileDetailPanel({
           <DetailItem label="전화번호" value={display(profile.phone)} />
           <DetailItem
             label="성향 유형"
-            value={adminProfileArchetypeLabel(profile)}
+            value={<span className={profile.profile_experience_version === "preferences-v17" ? "text-blue-600" : undefined}>{adminProfileArchetypeLabel(profile)}</span>}
           />
           <DetailItem
             label="가입일"
@@ -890,7 +890,7 @@ export function DetailItem({
   highlight = false,
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   highlight?: boolean;
 }) {
   return (

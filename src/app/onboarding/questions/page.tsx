@@ -46,6 +46,7 @@ export default async function QuestionsPage({ searchParams }: QuestionsPageProps
     redirect("/onboarding/profile");
   }
 
+  if (!isRegeneration && !isPreferenceUpgrade && !isNamePreview) redirect("/onboarding/start");
   const { data } = await supabase
     .from(
       isRegeneration || isPreferenceUpgrade

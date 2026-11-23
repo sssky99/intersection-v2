@@ -20,7 +20,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { MbtiSelect, mbtiOptions } from "@/components/MbtiSelect";
 import { SafeImage } from "@/components/SafeImage";
 import { preferenceQuestionsForVersion } from "@/data/preferenceQuestions";
 import {
@@ -40,7 +39,6 @@ import {
 } from "@/data/profileDetailQuestions";
 import type { ProfileRow } from "@/types/profile";
 import type { QuestionAnswer } from "@/types/question";
-import type { Gender } from "@/types/user";
 import {
   activityLabels,
   interestLabels,
@@ -57,19 +55,6 @@ import { membershipStoreUrls } from "@/lib/membershipStore";
 import { uploadProfilePhoto } from "@/lib/profilePhoto";
 
 export { activityLabels, interestLabels } from "@/data/recommendationAudience";
-
-type ProfileDraft = {
-  name: string;
-  phone: string;
-  gender: Gender;
-  birthYear: string;
-  mbti: string;
-};
-
-const birthYearOptions = Array.from(
-  { length: 2007 - 1980 + 1 },
-  (_, index) => String(1980 + index),
-);
 
 export const activityIcons: Record<string, string> = {
   meal: "🍽️",
@@ -97,25 +82,6 @@ export const interestIcons: Record<string, string> = {
 
 function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
-}
-
-function normalizePhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("8210")) return `0${digits.slice(2)}`;
-  if (digits.startsWith("82") && digits.length > 10) {
-    return `0${digits.slice(2)}`;
-  }
-  return digits;
-}
-
-function initialProfileDraft(profile: ProfileRow): ProfileDraft {
-  return {
-    name: profile.name ?? "",
-    phone: profile.phone ?? profile.phone_normalized ?? "",
-    gender: profile.gender ?? "",
-    birthYear: profile.birth_year == null ? "" : String(profile.birth_year),
-    mbti: profile.mbti ?? "",
-  };
 }
 
 function formatMembershipDate(value: string | null) {
@@ -648,38 +614,6 @@ export function SelectionColumn({
   );
 }
 
-function TextField({
-  label,
-  value,
-  onChange,
-  inputMode,
-  maxLength,
-  hint,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  inputMode?: "text" | "tel";
-  maxLength?: number;
-  hint?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="flex items-baseline justify-between gap-3 text-[11px] font-bold text-black/48">
-        <span>{label}</span>
-        {hint && <span className="text-[10px] font-semibold text-black/28">{hint}</span>}
-      </span>
-      <input
-        value={value}
-        inputMode={inputMode}
-        maxLength={maxLength}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 h-12 w-full rounded-[16px] border border-black/10 bg-white px-4 text-[13px] font-bold text-black outline-none transition focus:border-black/35 focus:ring-4 focus:ring-black/[0.035]"
-      />
-    </label>
-  );
-}
-
 export function PreferenceProfileTab({
   profile,
   initialAccountOpen = false,
@@ -739,17 +673,12 @@ export function PreferenceProfileTab({
   onLogout: () => Promise<void>;
   previewMode?: boolean;
 }) {
-  const initialDraft = useMemo(() => initialProfileDraft(profile), [profile]);
   const [editing, setEditing] = useState(false);
   const [accountOpen, setAccountOpen] = useState(initialAccountOpen);
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [membershipPurchaseOpen, setMembershipPurchaseOpen] = useState(false);
   const [membershipPurchaseSaving, setMembershipPurchaseSaving] = useState(false);
   const [membershipPurchaseError, setMembershipPurchaseError] = useState<string | null>(null);
-  const [draft, setDraft] = useState(initialDraft);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
@@ -758,10 +687,6 @@ export function PreferenceProfileTab({
     ? profile.profile_archetype_id
     : null;
   const archetype = archetypeId ? profileArchetypes[archetypeId] : null;
-
-  useEffect(() => {
-    if (!editing) setDraft(initialDraft);
-  }, [editing, initialDraft]);
 
   useEffect(() => {
     onBottomNavHiddenChange(howItWorksOpen);
@@ -776,61 +701,6 @@ export function PreferenceProfileTab({
     },
     [previewPhotoUrl],
   );
-
-  const canSave = useMemo(
-    () =>
-      draft.name.trim().length > 1 &&
-      normalizePhone(draft.phone).length >= 10 &&
-      (draft.gender === "여성" || draft.gender === "남성") &&
-      birthYearOptions.includes(draft.birthYear) &&
-      mbtiOptions.includes(draft.mbti.toUpperCase()),
-    [draft],
-  );
-
-  const save = async () => {
-    if (!canSave || saving) return;
-
-    setSaving(true);
-    setSaved(false);
-    setSaveError(null);
-
-    const normalizedPhone = normalizePhone(draft.phone);
-    const nextProfile: ProfileRow = {
-      ...profile,
-      name: draft.name.trim(),
-      phone: draft.phone.trim(),
-      phone_normalized: normalizedPhone,
-      gender: draft.gender,
-      birth_year: draft.birthYear,
-      mbti: draft.mbti.toUpperCase(),
-    };
-
-    const response = previewMode
-      ? null
-      : await fetch("/api/profile/preferences", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: nextProfile.name,
-            phone: nextProfile.phone,
-            gender: nextProfile.gender,
-            birthYear: nextProfile.birth_year,
-            mbti: nextProfile.mbti,
-          }),
-        }).catch(() => null);
-
-    if (!previewMode && !response?.ok) {
-      setSaveError("정보를 저장하지 못했어요. 잠시 후 다시 시도해주세요.");
-      setSaving(false);
-      return;
-    }
-
-    onProfileUpdated(nextProfile);
-    setSaving(false);
-    setEditing(false);
-    setSaved(true);
-    window.setTimeout(() => setSaved(false), 1600);
-  };
 
   const changePhoto = async (file: File | null) => {
     if (!file || photoUploading) return;
@@ -985,7 +855,6 @@ export function PreferenceProfileTab({
               <button
                 type="button"
                 onClick={() => {
-                  setSaved(false);
                   setEditing((current) => !current);
                 }}
                 className="flex min-h-16 w-full items-center gap-4 py-4 text-left"
@@ -993,7 +862,7 @@ export function PreferenceProfileTab({
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee6] text-black/55">
                   <PenLine size={17} aria-hidden />
                 </span>
-                <span className="text-[14px] font-black text-black">프로필 정보 수정</span>
+                <span className="text-[14px] font-black text-black">프로필 사진 변경</span>
                 <ChevronRight size={18} aria-hidden className="ml-auto text-black/32" />
               </button>
             </div>
@@ -1015,7 +884,7 @@ export function PreferenceProfileTab({
                     </span>
                     <div className="mt-3 flex items-center gap-4 rounded-[18px] border border-black/[0.07] bg-white p-3">
                       <span className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#f1eee6] text-black/28">
-                        <UserRound size={22} aria-hidden />
+                        {profile.name?.trim().slice(-2) || <UserRound size={22} aria-hidden />}
                         <SafeImage
                           src={previewPhotoUrl ?? profile.photo_url}
                           alt="현재 프로필 사진"
@@ -1055,85 +924,10 @@ export function PreferenceProfileTab({
                       </p>
                     )}
                   </div>
-                  <TextField
-                    label="이름"
-                    value={draft.name}
-                    onChange={(name) => setDraft((current) => ({ ...current, name }))}
-                  />
-                  <TextField
-                    label="전화번호"
-                    value={draft.phone}
-                    inputMode="tel"
-                    onChange={(phone) => setDraft((current) => ({ ...current, phone }))}
-                  />
-                  <fieldset>
-                    <legend className="text-[11px] font-bold text-black/48">성별</legend>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {(["여성", "남성"] as Gender[]).map((gender) => (
-                        <button
-                          key={gender}
-                          type="button"
-                          onClick={() => setDraft((current) => ({ ...current, gender }))}
-                          className={cn(
-                            "h-12 rounded-[16px] border text-[12px] font-extrabold transition",
-                            draft.gender === gender
-                              ? "border-[#171714] bg-[#171714] text-white"
-                              : "border-black/10 bg-white text-black/45",
-                          )}
-                        >
-                          {gender}
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block">
-                      <span className="text-[11px] font-bold text-black/48">출생연도</span>
-                      <select
-                        value={draft.birthYear}
-                        onChange={(event) =>
-                          setDraft((current) => ({ ...current, birthYear: event.target.value }))
-                        }
-                        className="mt-2 h-12 w-full appearance-none rounded-[16px] border border-black/10 bg-white px-4 text-[13px] font-bold text-black outline-none"
-                      >
-                        <option value="">선택</option>
-                        {birthYearOptions.map((year) => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div>
-                      <span className="text-[11px] font-bold text-black/48">MBTI</span>
-                      <MbtiSelect
-                        value={draft.mbti}
-                        onChange={(mbti) => setDraft((current) => ({ ...current, mbti }))}
-                      />
-                    </div>
-                  </div>
-                  {saveError && (
-                    <p className="rounded-[16px] bg-red-50 px-4 py-3 text-[11px] font-bold leading-5 text-red-600">
-                      {saveError}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    disabled={!canSave || saving}
-                    onClick={() => void save()}
-                    className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[#171714] text-sm font-semibold text-white transition active:scale-[0.98] disabled:bg-black/[0.07] disabled:text-black/25"
-                  >
-                    {saving ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Check size={16} aria-hidden />}
-                    {saving ? "저장 중..." : "변경사항 저장"}
-                  </button>
                 </div>
               </motion.section>
             )}
           </AnimatePresence>
-
-          {saved && (
-            <p className="mt-3 rounded-[16px] bg-accent/10 px-4 py-3 text-center text-[11px] font-bold text-accent">
-              정보가 저장됐어요.
-            </p>
-          )}
 
           <AccountSettingsCard
             profile={profile}
@@ -1345,28 +1139,7 @@ export function PreferenceProfileTab({
 
         </section>
 
-        <BasicQuestionsSection
-          questionnaireVersion={profile.profile_experience_version}
-          answers={answers}
-          backgroundAnsweredCount={backgroundAnsweredCount}
-          activityAnsweredCount={activityAnsweredCount}
-          interestAnsweredCount={interestAnsweredCount}
-          valuesAnsweredCount={valuesAnsweredCount}
-          preferenceAnsweredCount={preferenceAnsweredCount}
-          valueAnsweredCount={valueAnsweredCount}
-          traitsAnsweredCount={traitsAnsweredCount}
-          selfAnsweredCount={selfAnsweredCount}
-          onOpenBasic={onOpenBasicQuestions}
-          onOpenBackground={onOpenBackgroundQuestions}
-          onOpenActivity={onOpenActivityQuestions}
-          onOpenInterest={onOpenInterestQuestions}
-          onOpenValues={onOpenValuesQuestions}
-          onOpenPreference={onOpenPreferenceQuestions}
-          onOpenValue={onOpenValueQuestions}
-          onOpenTraits={onOpenTraitsQuestions}
-          onOpenSelf={onOpenSelfQuestions}
-          photoCompleted={Boolean(profile.photo_url)}
-        />
+        <p className="mt-5 rounded-2xl bg-[#faf8f2] px-5 py-4 text-sm font-semibold text-black/60">프로필 진행도 · 추가 질문 개편 중</p>
 
         {showOperatorQuestionReview && (
           <button

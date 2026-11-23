@@ -53,6 +53,7 @@ export type TicketRatingAnswer = {
 };
 
 export type ProfileQuestion = {
+  inputKind?: "name" | "email" | "birthday" | "searchable_choices";
   id: number;
   order?: number;
   category: QuestionCategory;

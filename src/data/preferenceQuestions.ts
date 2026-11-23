@@ -4,6 +4,7 @@ import { mbtiOptions } from "@/data/mbti";
 export const preferenceProfileVersion = "preferences-v16";
 
 const supportedPreferenceProfileVersions = new Set([
+  "preferences-v17",
   "preferences-v13",
   "preferences-v14",
   preferenceProfileVersion,
