@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   if (!authorized(request)) return unauthorized();
   try {
     const client = createAdminClient();
-    const [events, effects] = await Promise.all([
+    const [events, effects, orphaned] = await Promise.all([
       client
         .from("groble_webhook_events")
         .select(
@@ -41,11 +41,21 @@ export async function GET(request: NextRequest) {
         )
         .order("applied_at", { ascending: false })
         .limit(30),
+      client
+        .from("payment_transactions")
+        .select("id,provider_event_id,merchant_uid,amount,occurred_at")
+        .eq("provider", "groble")
+        .in("payment_kind", ["membership_initial", "membership_upgrade", "membership_renewal"])
+        .in("status", ["completed", "cancel_requested"])
+        .or("user_id.is.null,membership_payment_intent_id.is.null")
+        .order("occurred_at", { ascending: false })
+        .limit(30),
     ]);
+    if (orphaned.error) throw orphaned.error;
     if (events.error) throw events.error;
     if (effects.error) throw effects.error;
     return NextResponse.json(
-      { events: events.data ?? [], effects: effects.data ?? [] },
+      { events: events.data ?? [], effects: effects.data ?? [], orphaned: orphaned.data ?? [] },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

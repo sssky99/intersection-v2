@@ -7,6 +7,7 @@ type EventRow = {
   last_error: string | null;
   received_at: string;
 };
+type OrphanedRow = { id: number; merchant_uid: string | null; amount: number; occurred_at: string };
 type EffectRow = {
   transaction_id: number;
   merchant_uid: string | null;
@@ -28,6 +29,7 @@ export function MembershipPaymentHistory() {
     [error, setError] = useState("");
   const [events, setEvents] = useState<EventRow[]>([]),
     [effects, setEffects] = useState<EffectRow[]>([]);
+  const [orphaned, setOrphaned] = useState<OrphanedRow[]>([]);
   const [target, setTarget] = useState<EventRow | null>(null),
     [notice, setNotice] = useState("");
   async function load() {
@@ -38,6 +40,7 @@ export function MembershipPaymentHistory() {
     if (!response.ok) throw new Error(data.error);
     setEvents(data.events);
     setEffects(data.effects);
+    setOrphaned(data.orphaned ?? []);
   }
   async function show() {
     setOpen(true);
@@ -163,6 +166,18 @@ export function MembershipPaymentHistory() {
                     재처리
                   </button>
                 )}
+              </article>
+            ))}
+            <h4 className="mt-6 font-bold">회원 연결이 사라진 결제</h4>
+            <p className="mt-2 text-sm text-black/55">
+              탈퇴 등으로 연결이 삭제됐을 수 있습니다. 그로블의 구독·환불 상태와
+              원래 계정을 확인하세요. 전화번호만으로 재가입 계정에 연결하지 않습니다.
+            </p>
+            {!busy && !orphaned.length && <p className="mt-2 text-sm">표시할 결제가 없습니다.</p>}
+            {orphaned.map((row) => (
+              <article key={row.id} className="mt-3 rounded-xl border p-3 text-sm">
+                <p>주문 {row.merchant_uid ?? row.id} · {row.amount.toLocaleString("ko-KR")}원</p>
+                <p className="mt-1 text-xs text-black/55">{new Date(row.occurred_at).toLocaleString("ko-KR")} · 수동 확인 필요</p>
               </article>
             ))}
             <h4 className="mt-6 font-bold">최근 반영 이력</h4>

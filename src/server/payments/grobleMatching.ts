@@ -51,6 +51,7 @@ export const activeApplicationStatuses = [
 
 export type ProfileRow = {
   user_id: string;
+  created_at?: string;
 };
 
 export type ApplicationRow = {
@@ -82,7 +83,7 @@ export async function pendingMembershipMatch({
   finalAmount: number | null;
   paidAt: string | null;
 }) {
-  if (sellerReference && finalAmount !== null) {
+  if (sellerReference) {
     const { data: referencedIntent, error: referenceError } =
       await createAdminClient()
         .from("membership_payment_intents")
@@ -98,6 +99,7 @@ export async function pendingMembershipMatch({
     if (referenceError) throw referenceError;
     if (
       referencedIntent &&
+      finalAmount !== null &&
       (referencedIntent.expected_amount === finalAmount ||
         referencedIntent.expected_amount - referencedIntent.credit_amount ===
           finalAmount)
@@ -110,6 +112,9 @@ export async function pendingMembershipMatch({
         creditAmount: referencedIntent.credit_amount,
       };
     }
+    // A supplied reference is authoritative. It may belong to a deleted
+    // account; phone reuse or a new checkout cannot replace that identity.
+    throw new Error("Membership seller reference is missing or amount mismatched; review required");
   }
 
   if (!buyerPhone || finalAmount === null || !paidAt) {
@@ -136,7 +141,7 @@ export async function pendingMembershipMatch({
   const admin = createAdminClient();
   const { data: profiles, error: profileError } = await admin
     .from("profiles")
-    .select("user_id")
+    .select("user_id,created_at")
     .eq("phone_normalized", buyerPhone)
     .is("archived_at", null)
     .limit(2)
@@ -161,6 +166,10 @@ export async function pendingMembershipMatch({
     };
   }
 
+  const createdAt = Date.parse(profiles[0].created_at ?? "");
+  if (!Number.isFinite(createdAt) || createdAt > paidAtDate.getTime()) {
+    throw new Error("Membership buyer account postdates payment or has no creation time; review required");
+  }
   const userId = profiles[0].user_id;
   const { data: intents, error: intentError } = await admin.rpc(
     "match_membership_payment_intent",
