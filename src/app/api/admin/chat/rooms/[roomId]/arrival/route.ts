@@ -38,8 +38,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const status = body?.status;
 
   if (
-    !roomId ||
-    !participationId ||
+    !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(roomId) ||
+    !/^[1-9]\d{0,18}$/.test(participationId) ||
     typeof status !== "string" ||
     !selections.has(status as AdminArrivalSelection)
   ) {
@@ -53,32 +53,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       : selected === "late"
         ? "late_10"
         : selected;
-  const updatedAt = new Date().toISOString();
-
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("ticket_participations")
-      .update({
-        arrival_status: arrivalStatus,
-        arrival_status_updated_at: arrivalStatus ? updatedAt : null,
-        updated_at: updatedAt,
-      })
-      .eq("id", participationId)
-      .eq("ticket_instance_id", roomId)
-      .select("id")
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("record_admin_meeting_arrival", {
+      p_participation_id: participationId,
+      p_room_id: roomId,
+      p_arrival_status: arrivalStatus,
+    });
 
     if (error) throw error;
     if (!data) {
       return NextResponse.json({ error: "해당 그룹 멤버를 찾지 못했습니다." }, { status: 404 });
     }
 
-    return NextResponse.json({
-      participationId,
-      arrivalStatus,
-      arrivalStatusUpdatedAt: arrivalStatus ? updatedAt : null,
-    });
+    return NextResponse.json(data);
   } catch (error) {
     console.error("[admin room arrival]", error);
     return NextResponse.json(

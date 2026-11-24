@@ -2930,7 +2930,11 @@ export function MembershipPurchaseBottomSheet({
                       ? `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`
                       : ""}
                 </p>
-                {!membershipSelected && ticket && (
+                {membershipSelected ? (
+                  <p className="mt-1.5 break-keep text-[11px] font-semibold text-black/48">
+                    첫 모임 참석이 확인되면 그날부터 한 달을 보장해요.
+                  </p>
+                ) : ticket && (
                   <p className="mt-1.5 text-[11px] font-semibold text-black/38">
                     {ticket.title}
                   </p>
