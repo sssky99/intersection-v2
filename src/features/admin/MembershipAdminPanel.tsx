@@ -120,6 +120,7 @@ async function fetchMemberships(force = false) {
 }
 
 export function MembershipAdminPanel() {
+  const [view, setView] = useState<"groble" | "members">("groble");
   const [memberships, setMemberships] = useState<AdminMembership[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(false);
@@ -282,235 +283,246 @@ export function MembershipAdminPanel() {
   };
 
   return (
-    <section className="flex h-[calc(100dvh-190px)] min-h-[620px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-      <header className="shrink-0 border-b border-black/10 px-5 py-4">
+    <section className="flex h-[calc(100dvh-190px)] min-h-[520px] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white font-[family-name:system-ui] shadow-sm">
+      <header className="shrink-0 border-b border-stone-200 px-4 pt-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-bold">멤버십 관리</h2>
-            <p className="mt-1 text-xs leading-5 text-black/45">
-              결제 확인 전, 적용중, 만료 상태를 운영자가 직접 관리합니다. 취소
-              상태는 저장 후 목록에서 제외됩니다.
-            </p>
-            {loading && memberships.length > 0 && (
-              <p className="mt-1 text-[11px] font-semibold text-accent">
-                새로고침 중입니다.
+          <h2 className="text-lg font-bold text-stone-950">멤버십 관리</h2>
+          <MembershipPaymentHistory />
+        </div>
+
+        <div role="group" aria-label="멤버십 화면 선택" className="mt-3 flex gap-4">
+          {([["groble", "그로블 구독"], ["members", "교집합 회원"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              onClick={() => setView(id)}
+              className={cn(
+                "border-b-2 px-1 py-2.5 text-sm font-semibold transition",
+                view === id ? "border-stone-900 text-stone-950" : "border-transparent text-stone-600 hover:text-stone-950",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
+      <div hidden={view !== "groble"} className="min-h-0 flex-1 overflow-auto">
+        <GrobleSubscriptionOverview />
+      </div>
+      {view === "members" && (
+        <>
+          <div className="shrink-0 border-b border-stone-200 px-4 py-3 sm:px-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_170px_auto]">
+              <label className="relative block">
+                <Search
+                  size={16}
+                  aria-hidden
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="이름 검색"
+                  className="h-10 w-full rounded-xl border border-black/10 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
+                />
+              </label>
+
+              <select
+                aria-label="멤버십 상태"
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as MembershipStatusFilter)
+                }
+                className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
+              >
+                {visibleStatusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "all" ? "전체" : membershipStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void loadMemberships(true)}
+                className="col-span-2 h-10 justify-self-end rounded-lg border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:col-span-1"
+              >
+                {loading ? "불러오는 중" : "새로고침"}
+              </button>
+            </div>
+
+            {notice && (
+              <p
+                className={cn(
+                  "mt-3 rounded-xl px-4 py-2 text-sm font-semibold",
+                  notice === "저장되었습니다."
+                    ? "bg-accent/12 text-black/65"
+                    : "bg-red-50 text-red-600",
+                )}
+              >
+                {notice}
+              </p>
+            )}
+            {error && memberships.length > 0 && (
+              <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
+                {error}
               </p>
             )}
           </div>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => void loadMemberships(true)}
-            className="h-10 rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-black/55 transition hover:border-black/20 hover:text-black disabled:opacity-40"
-          >
-            새로고침
-          </button>
-        </div>
-
-        <div className="mt-3 grid gap-2">
-          <GrobleSubscriptionOverview />
-          <MembershipPaymentHistory />
-        </div>
-        <div className="mt-4 grid grid-cols-[minmax(300px,1fr)_180px] gap-2">
-          <label className="relative block">
-            <Search
-              size={16}
-              aria-hidden
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-black/35"
-            />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="이름 검색"
-              className="h-10 w-full rounded-xl border border-black/10 bg-white pl-9 pr-3 text-sm outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
-            />
-          </label>
-
-          <select
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as MembershipStatusFilter)
-            }
-            className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/65 outline-none focus:border-accent"
-          >
-            {visibleStatusOptions.map((status) => (
-              <option key={status} value={status}>
-                {status === "all" ? "전체" : membershipStatusLabels[status]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {notice && (
-          <p
-            className={cn(
-              "mt-3 rounded-xl px-4 py-2 text-sm font-semibold",
-              notice === "저장되었습니다."
-                ? "bg-accent/12 text-black/65"
-                : "bg-red-50 text-red-600",
-            )}
-          >
-            {notice}
-          </p>
-        )}
-        {error && memberships.length > 0 && (
-          <p className="mt-3 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
-            {error}
-          </p>
-        )}
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-auto">
-        {loading && memberships.length === 0 ? (
-          <StateMessage message="멤버십 목록을 불러오는 중입니다." />
-        ) : error && memberships.length === 0 ? (
-          <StateMessage tone="error" message={error} />
-        ) : filteredMemberships.length === 0 ? (
-          <StateMessage message="관리할 멤버십 내역이 없습니다." />
-        ) : (
-          <table className="min-w-[1180px] w-full border-separate border-spacing-0 text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
-              <tr>
-                <TableHead>이름</TableHead>
-                <TableHead>상태</TableHead>
-                <TableHead>플랜</TableHead>
-                <TableHead>기간</TableHead>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMemberships.map((row) => {
-                const draft = drafts[row.user_id] ?? initialDraft(row);
-                const saving = savingId === row.user_id;
-
-                return (
-                  <tr
-                    key={row.user_id}
-                    className="border-b border-black/5 align-top transition hover:bg-accent/10"
-                  >
-                    <td className="border-b border-black/5 px-5 py-4">
-                      <AdminMemberName
-                        profile={{
-                          name: row.name,
-                          public_intro_model: row.public_intro_model,
-                          membership_status: statusForDisplay(row),
-                          membership_end_date: row.membership_end_date,
-                        }}
-                      />
-                      {row.phone && (
-                        <p className="mt-1 text-xs font-semibold text-black/38">
-                          {row.phone}
-                        </p>
-                      )}
-                    </td>
-                    <td className="border-b border-black/5 px-5 py-4">
-                      <select
-                        value={statusForDisplay(row) ?? "pending"}
-                        disabled={saving}
-                        onChange={(event) =>
-                          void changeStatus(
-                            row,
-                            event.target.value as MembershipStatus,
-                          )
-                        }
-                        className="h-10 w-40 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                      >
-                        {statusSelectOptions.map((status) => (
-                          <option key={status} value={status}>
-                            {membershipStatusLabels[status]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="border-b border-black/5 px-5 py-4">
-                      <select
-                        value={draft.plan}
-                        disabled={saving}
-                        onChange={(event) =>
-                          changeDraft(row.user_id, {
-                            plan: event.target.value as MembershipPlan,
-                          })
-                        }
-                        className="h-10 w-44 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                      >
-                        <option value="">-</option>
-                        {membershipPlans.map((plan) => (
-                          <option key={plan} value={plan}>
-                            {membershipPlanLabels[plan]}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="mt-2 flex gap-1.5">
-                        {membershipPlans.map((plan) => (
-                          <button
-                            key={plan}
-                            type="button"
-                            disabled={saving}
-                            onClick={() => applyPlanDuration(row, plan)}
-                            className="h-8 rounded-lg border border-black/10 bg-white px-2.5 text-xs font-bold text-black/50 transition hover:border-accent/60 hover:text-black disabled:opacity-45"
-                          >
-                            {membershipPlanLabels[plan].replace(" 멤버십", "")}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="border-b border-black/5 px-5 py-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="date"
-                          value={draft.startDate}
-                          disabled={saving}
-                          onChange={(event) => {
-                            const startDate = event.target.value;
-                            changeDraft(row.user_id, {
-                              startDate,
-                              endDate: draft.plan
-                                ? calculateMembershipEndDate(
-                                    startDate,
-                                    draft.plan,
-                                  )
-                                : draft.endDate,
-                            });
-                          }}
-                          className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                        />
-                        <span className="text-black/30">~</span>
-                        <input
-                          type="date"
-                          value={draft.endDate}
-                          disabled={saving}
-                          onChange={(event) =>
-                            changeDraft(row.user_id, {
-                              endDate: event.target.value,
-                            })
-                          }
-                          className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
-                        />
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() =>
-                            void saveMembership(
-                              row,
-                              row.membership_status ?? "pending",
-                              draft,
-                            )
-                          }
-                          className="h-10 rounded-xl bg-black px-4 text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/35"
-                        >
-                          {saving ? "저장 중" : "저장"}
-                        </button>
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-black/38">
-                        {periodText(row)}
-                      </p>
-                    </td>
+          <div className="min-h-0 flex-1 overflow-auto">
+            {loading && memberships.length === 0 ? (
+              <StateMessage message="멤버십 목록을 불러오는 중입니다." />
+            ) : error && memberships.length === 0 ? (
+              <StateMessage tone="error" message={error} />
+            ) : filteredMemberships.length === 0 ? (
+              <StateMessage message="관리할 멤버십 내역이 없습니다." />
+            ) : (
+              <table className="min-w-[1180px] w-full border-separate border-spacing-0 text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-[#f8f8f6] text-xs font-bold uppercase tracking-wide text-black/45">
+                  <tr>
+                    <TableHead>이름</TableHead>
+                    <TableHead>상태</TableHead>
+                    <TableHead>플랜</TableHead>
+                    <TableHead>기간</TableHead>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                </thead>
+                <tbody>
+                  {filteredMemberships.map((row) => {
+                    const draft = drafts[row.user_id] ?? initialDraft(row);
+                    const saving = savingId === row.user_id;
+
+                    return (
+                      <tr
+                        key={row.user_id}
+                        className="border-b border-black/5 align-top transition hover:bg-accent/10"
+                      >
+                        <td className="border-b border-black/5 px-5 py-4">
+                          <AdminMemberName
+                            profile={{
+                              name: row.name,
+                              public_intro_model: row.public_intro_model,
+                              membership_status: statusForDisplay(row),
+                              membership_end_date: row.membership_end_date,
+                            }}
+                          />
+                          {row.phone && (
+                            <p className="mt-1 text-xs font-semibold text-black/38">
+                              {row.phone}
+                            </p>
+                          )}
+                        </td>
+                        <td className="border-b border-black/5 px-5 py-4">
+                          <select
+                            value={statusForDisplay(row) ?? "pending"}
+                            disabled={saving}
+                            onChange={(event) =>
+                              void changeStatus(
+                                row,
+                                event.target.value as MembershipStatus,
+                              )
+                            }
+                            className="h-10 w-40 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+                          >
+                            {statusSelectOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {membershipStatusLabels[status]}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="border-b border-black/5 px-5 py-4">
+                          <select
+                            value={draft.plan}
+                            disabled={saving}
+                            onChange={(event) =>
+                              changeDraft(row.user_id, {
+                                plan: event.target.value as MembershipPlan,
+                              })
+                            }
+                            className="h-10 w-44 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+                          >
+                            <option value="">-</option>
+                            {membershipPlans.map((plan) => (
+                              <option key={plan} value={plan}>
+                                {membershipPlanLabels[plan]}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="mt-2 flex gap-1.5">
+                            {membershipPlans.map((plan) => (
+                              <button
+                                key={plan}
+                                type="button"
+                                disabled={saving}
+                                onClick={() => applyPlanDuration(row, plan)}
+                                className="h-8 rounded-lg border border-black/10 bg-white px-2.5 text-xs font-bold text-black/50 transition hover:border-accent/60 hover:text-black disabled:opacity-45"
+                              >
+                                {membershipPlanLabels[plan].replace(" 멤버십", "")}
+                              </button>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="border-b border-black/5 px-5 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              type="date"
+                              value={draft.startDate}
+                              disabled={saving}
+                              onChange={(event) => {
+                                const startDate = event.target.value;
+                                changeDraft(row.user_id, {
+                                  startDate,
+                                  endDate: draft.plan
+                                    ? calculateMembershipEndDate(
+                                        startDate,
+                                        draft.plan,
+                                      )
+                                    : draft.endDate,
+                                });
+                              }}
+                              className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+                            />
+                            <span className="text-black/30">~</span>
+                            <input
+                              type="date"
+                              value={draft.endDate}
+                              disabled={saving}
+                              onChange={(event) =>
+                                changeDraft(row.user_id, {
+                                  endDate: event.target.value,
+                                })
+                              }
+                              className="h-10 rounded-xl border border-black/10 bg-white px-3 text-sm font-semibold text-black/72 outline-none focus:border-accent disabled:bg-black/5"
+                            />
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() =>
+                                void saveMembership(
+                                  row,
+                                  row.membership_status ?? "pending",
+                                  draft,
+                                )
+                              }
+                              className="h-10 rounded-xl bg-black px-4 text-sm font-bold text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/35"
+                            >
+                              {saving ? "저장 중" : "저장"}
+                            </button>
+                          </div>
+                          <p className="mt-2 text-xs font-semibold text-black/38">
+                            {periodText(row)}
+                          </p>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
     </section>
   );
 }
