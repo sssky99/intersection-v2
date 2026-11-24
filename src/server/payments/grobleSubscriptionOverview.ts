@@ -29,6 +29,8 @@ export type GrobleSubscriptionEvent = {
   buyer_phone_normalized: string | null;
   occurred_at: string | null;
   payload: unknown;
+  received_at?: string;
+  processing_status?: string;
 };
 
 type Row = {
@@ -209,6 +211,40 @@ export type GrobleMemberAccess = {
   archived_at: string | null;
 };
 type MembershipResult = "applied" | "unlinked" | "missing" | "review" | "refunded";
+type AccessStatus = "active" | "scheduled" | "ended" | "inactive";
+
+export function grobleSeriesReference(event: GrobleSubscriptionEvent) {
+  return parse(event).reference;
+}
+
+export function unpostedGrobleRounds(
+  latest: GrobleSubscriptionEvent,
+  series: GrobleSubscriptionEvent[],
+  accountedOrders: ReadonlySet<string>,
+) {
+  const anchor = parse(latest);
+  if (!anchor.reference || !latest.buyer_phone_normalized || !Number.isFinite(anchor.activation)) return [];
+  const rounds = new Map<string, { order: string; round: number; paidAt: string | null; amount: number }>();
+  for (const event of series) {
+    const charge = parse(event);
+    if (
+      event.event_type !== "subscription_payment.completed" ||
+      !charge.order || !charge.round || charge.round > anchor.round ||
+      accountedOrders.has(charge.order) ||
+      charge.product !== grobleMembershipProduct ||
+      charge.reference !== anchor.reference ||
+      !(Math.abs(charge.activation - anchor.activation) < 1000) ||
+      event.buyer_phone_normalized !== latest.buyer_phone_normalized
+    ) continue;
+    rounds.set(charge.order, {
+      order: charge.order,
+      round: charge.round,
+      paidAt: event.occurred_at,
+      amount: charge.amount,
+    });
+  }
+  return [...rounds.values()].sort((a, b) => a.round - b.round || a.order.localeCompare(b.order));
+}
 
 export function reconcileGrobleMemberships(
   orders: Order[],
@@ -249,14 +285,25 @@ export function reconcileGrobleMemberships(
     } else membership = "applied";
 
     const profile = transaction?.user_id ? profilesByUser.get(transaction.user_id) : undefined;
-    if (
-      membership === "applied" && (row.payment === "paid" || row.payment === "requested") &&
+    const active = Boolean(
       profile && !profile.archived_at && hasMembershipAccessOnDate({
         status: profile.membership_status,
         startDate: profile.membership_start_date,
         endDate: profile.membership_end_date,
         date,
-      })
+      }),
+    );
+    let access: AccessStatus | null = null;
+    if (membership === "applied") {
+      access = active ? "active" : "inactive";
+      if (!active && profile?.membership_status === "active" && !profile.archived_at) {
+        if (profile.membership_start_date && profile.membership_start_date > date) access = "scheduled";
+        else if (profile.membership_end_date && profile.membership_end_date < date) access = "ended";
+      }
+    }
+    if (
+      membership === "applied" && (row.payment === "paid" || row.payment === "requested") &&
+      profile && active
     ) {
       const existing = subscribers.get(profile.user_id);
       if (existing && existing.order.localeCompare(row.order) > 0) {
@@ -270,7 +317,7 @@ export function reconcileGrobleMemberships(
         });
       }
     }
-    return { ...row, membership };
+    return { ...row, membership, access };
   });
 
   return {
