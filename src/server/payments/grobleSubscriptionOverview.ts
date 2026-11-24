@@ -31,6 +31,9 @@ export type GrobleSubscriptionEvent = {
   payload: unknown;
   received_at?: string;
   processing_status?: string;
+  payment_kind?: string | null;
+  matched_user_id?: string | null;
+  matched_membership_payment_intent_id?: number | null;
 };
 
 type Row = {
@@ -196,6 +199,12 @@ export type GrobleLedgerEntry = {
   user_id: string | null;
   status: string;
 };
+export type GrobleAccountLedgerEntry = GrobleLedgerEntry & {
+  provider_event_id: string;
+  payment_kind: string;
+  product_code: string;
+  membership_payment_intent_id: number | null;
+};
 export type GrobleMembershipEffect = {
   transaction_id: number;
   merchant_uid: string;
@@ -217,31 +226,54 @@ export function grobleSeriesReference(event: GrobleSubscriptionEvent) {
   return parse(event).reference;
 }
 
+function completedSubscriptionRounds(latest: GrobleSubscriptionEvent, series: GrobleSubscriptionEvent[]) {
+  const anchor = parse(latest);
+  if (!anchor.order || !anchor.reference || !latest.buyer_phone_normalized || !Number.isFinite(anchor.activation)) return [];
+  return series.flatMap((event) => {
+    const charge = parse(event);
+    return event.event_type === "subscription_payment.completed" &&
+      charge.order && charge.round > 0 && charge.round <= anchor.round &&
+      charge.product === grobleMembershipProduct && charge.reference === anchor.reference &&
+      Math.abs(charge.activation - anchor.activation) < 1000 &&
+      event.buyer_phone_normalized === latest.buyer_phone_normalized
+      ? [{ event, order: charge.order, round: charge.round, amount: charge.amount }]
+      : [];
+  });
+}
+
+export function grobleAccountWasRemoved(
+  latest: GrobleSubscriptionEvent,
+  series: GrobleSubscriptionEvent[],
+  ledgerByOrder: ReadonlyMap<string, GrobleAccountLedgerEntry[]>,
+) {
+  if (latest.matched_user_id !== null || latest.matched_membership_payment_intent_id !== null) return false;
+  let previouslyLinked = false;
+  for (const { event, order } of completedSubscriptionRounds(latest, series)) {
+    const payments = ledgerByOrder.get(order) ?? [];
+    if (event.matched_user_id || event.matched_membership_payment_intent_id || payments.length > 1) return false;
+    const [payment] = payments;
+    if (!payment) continue;
+    if (payment.user_id !== null || payment.membership_payment_intent_id !== null) return false;
+
+    // A processed membership charge was written with both foreign keys. Their
+    // removal, along with both webhook links, is evidence of account deletion.
+    if (payment.provider_event_id === event.event_id && payment.status === "completed" &&
+      payment.product_code === "membership:one_month" && payment.payment_kind === event.payment_kind &&
+      ["membership_initial", "membership_upgrade", "membership_renewal"].includes(payment.payment_kind) &&
+      event.processing_status === "processed" && event.matched_user_id === null &&
+      event.matched_membership_payment_intent_id === null) previouslyLinked = true;
+  }
+  return previouslyLinked;
+}
+
 export function unpostedGrobleRounds(
   latest: GrobleSubscriptionEvent,
   series: GrobleSubscriptionEvent[],
   accountedOrders: ReadonlySet<string>,
 ) {
-  const anchor = parse(latest);
-  if (!anchor.reference || !latest.buyer_phone_normalized || !Number.isFinite(anchor.activation)) return [];
   const rounds = new Map<string, { order: string; round: number; paidAt: string | null; amount: number }>();
-  for (const event of series) {
-    const charge = parse(event);
-    if (
-      event.event_type !== "subscription_payment.completed" ||
-      !charge.order || !charge.round || charge.round > anchor.round ||
-      accountedOrders.has(charge.order) ||
-      charge.product !== grobleMembershipProduct ||
-      charge.reference !== anchor.reference ||
-      !(Math.abs(charge.activation - anchor.activation) < 1000) ||
-      event.buyer_phone_normalized !== latest.buyer_phone_normalized
-    ) continue;
-    rounds.set(charge.order, {
-      order: charge.order,
-      round: charge.round,
-      paidAt: event.occurred_at,
-      amount: charge.amount,
-    });
+  for (const { event, order, round, amount } of completedSubscriptionRounds(latest, series)) {
+    if (!accountedOrders.has(order)) rounds.set(order, { order, round, paidAt: event.occurred_at, amount });
   }
   return [...rounds.values()].sort((a, b) => a.round - b.round || a.order.localeCompare(b.order));
 }

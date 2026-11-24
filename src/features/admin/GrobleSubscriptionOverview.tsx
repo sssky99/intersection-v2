@@ -11,7 +11,9 @@ type Subscription = {
   state: "open" | "ending" | "past_due";
   payment: "paid" | "refunded" | "partial" | "requested";
   buyer: string | null;
+  nextBillingDate?: string | null;
   membership: "applied" | "unlinked" | "missing" | "review" | "refunded";
+  withdrawnAccount?: boolean;
   access?: "active" | "scheduled" | "ended" | "inactive" | null;
   noticeStatus?: string | null;
   unpostedRounds?: Array<{ order: string; round: number; paidAt: string | null; amount: number }>;
@@ -33,6 +35,7 @@ type Overview = {
 const filters = [
   { key: "subscribers", label: "구독자" },
   { key: "paid", label: "유료 주문" },
+  { key: "withdrawn", label: "탈퇴(결제 유지중)" },
   { key: "review", label: "확인 필요" },
   { key: "ending", label: "해지 예정" },
   { key: "refunded", label: "환불" },
@@ -63,8 +66,9 @@ const dateFormat = new Intl.DateTimeFormat("ko-KR", {
 });
 const pageSize = 15;
 
-function needsReview({ membership }: Subscription) {
-  return membership === "missing" || membership === "unlinked" || membership === "review";
+function needsReview({ membership, state, withdrawnAccount }: Subscription) {
+  return !(withdrawnAccount && state !== "past_due") &&
+    (membership === "missing" || membership === "unlinked" || membership === "review");
 }
 
 function Badge({ children, tone = "neutral" }: {
@@ -112,13 +116,16 @@ export function GrobleSubscriptionOverview() {
   const groups = {
     subscribers,
     paid,
+    withdrawn: paid.filter((row) => row.withdrawnAccount && row.state === "open"),
     review: paid.filter(needsReview),
     ending: paid.filter((row) => row.state === "ending"),
     refunded: rows.filter((row) => row.payment === "refunded" || row.payment === "partial"),
   };
   const activeOrders = paid.filter((row) => row.access === "active").length;
   const scheduledOrders = paid.filter((row) => row.access === "scheduled").length;
-  const otherOrders = paid.length - activeOrders - scheduledOrders - groups.review.length;
+  const withdrawnEnding = groups.ending.filter((row) => row.withdrawnAccount).length;
+  const otherOrders = paid.length - activeOrders - scheduledOrders - groups.review.length -
+    groups.withdrawn.length - withdrawnEnding;
   const needsReconciliation = data && (data.incomplete || data.unresolvedEvents > 0);
   const isSubscriberList = filter === "subscribers";
   const filtered = groups[filter];
@@ -165,22 +172,28 @@ export function GrobleSubscriptionOverview() {
               {data.unresolvedEvents > 0 && ` 연결을 확인할 알림 ${data.unresolvedEvents}건이 있습니다.`}
             </p>
           )}
-          <dl className="grid grid-cols-1 divide-y divide-stone-200 rounded-xl border border-stone-200 bg-stone-50 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <div className="px-4 py-3">
+          <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-stone-200 bg-stone-200 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="bg-stone-50 px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">멤버십 구독자</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">
                 {needsReconciliation ? "확인 중" : `${subscribers.length}명`}
               </dd>
             </div>
-            <div className="px-4 py-3">
+            <div className="bg-stone-50 px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">그로블 유료 주문</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{data.paidSubscriptions}건</dd>
               <dd className="mt-1 text-xs leading-5 text-stone-600">
-                이용 중 {activeOrders} · 시작 전 {scheduledOrders} · 확인 필요 {groups.review.length}
+                이용 중 {activeOrders}
+                {scheduledOrders > 0 && ` · 시작 전 ${scheduledOrders}`}
+                {withdrawnEnding > 0 && ` · 탈퇴·해지 예정 ${withdrawnEnding}`}
                 {otherOrders > 0 && ` · 그 외 ${otherOrders}`}
               </dd>
             </div>
-            <div className="px-4 py-3">
+            <div className="bg-stone-50 px-4 py-3">
+              <dt className="text-xs font-medium text-stone-600">탈퇴(결제 유지중)</dt>
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{groups.withdrawn.length}건</dd>
+            </div>
+            <div className="bg-stone-50 px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">확인 필요</dt>
               <dd className={cn("mt-1 text-2xl font-semibold tabular-nums", groups.review.length ? "text-amber-800" : "text-stone-950")}>{groups.review.length}건</dd>
             </div>
@@ -233,7 +246,15 @@ export function GrobleSubscriptionOverview() {
                         </a>
                       ) : <p className="mt-0.5 break-all text-xs tabular-nums text-stone-600">{row.order}</p>}
                     </div>
-                    <div><span className="sr-only">구독 상태 </span><Badge tone={row.state === "open" ? "neutral" : "attention"}>{subscriptionLabels[row.state]}</Badge></div>
+                    <div>
+                      <span className="sr-only">구독 상태 </span>
+                      <Badge tone={row.state === "open" ? "neutral" : "attention"}>{subscriptionLabels[row.state]}</Badge>
+                      {row.withdrawnAccount && row.state === "open" && row.nextBillingDate && (
+                        <p className="mt-1 text-xs tabular-nums text-stone-600">
+                          다음 결제 <time dateTime={row.nextBillingDate}>{row.nextBillingDate}</time>
+                        </p>
+                      )}
+                    </div>
                     <div><span className="sr-only">최근 결제 </span><Badge tone={row.payment === "paid" ? "positive" : "neutral"}>{paymentLabels[row.payment]}</Badge></div>
                     {isSubscriberList ? (
                       <div className="text-xs tabular-nums text-stone-700 sm:text-sm">
@@ -244,9 +265,9 @@ export function GrobleSubscriptionOverview() {
                       <div>
                         <span className="sr-only">교집합 반영 </span>
                         <Badge tone={needsReview(row) ? "attention" : "neutral"}>
-                          {row.access ? accessLabels[row.access] : membershipLabels[row.membership]}
+                          {row.withdrawnAccount ? "탈퇴" : row.access ? accessLabels[row.access] : membershipLabels[row.membership]}
                         </Badge>
-                        {row.membership === "missing" && (
+                        {row.membership === "missing" && !row.withdrawnAccount && (
                           <p className="mt-1 text-xs leading-5 text-stone-600">
                             {row.noticeStatus ? noticeLabels[row.noticeStatus] ?? "결제 알림 수신" : "결제 알림 미수신"}
                           </p>

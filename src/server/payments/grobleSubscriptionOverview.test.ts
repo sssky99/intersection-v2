@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  grobleAccountWasRemoved,
   projectGrobleSubscriptions,
   reconcileGrobleMemberships,
   unpostedGrobleRounds,
+  type GrobleAccountLedgerEntry,
   type GrobleLedgerEntry,
   type GrobleMemberAccess,
   type GrobleMembershipEffect,
@@ -55,6 +57,47 @@ function event(
 const first = event("subscription_payment.completed", "first");
 const another = event("subscription_payment.completed", "another", {
   ref: "another-ref", activeSince: "2026-10-25T09:00:00+09:00",
+});
+
+describe("paid subscriptions from deleted accounts", () => {
+  const processed = {
+    ...first, processing_status: "processed", payment_kind: "membership_initial",
+    matched_user_id: null, matched_membership_payment_intent_id: null,
+  };
+  const newest = {
+    ...event("subscription_payment.completed", "unmatched-renewal", { round: 2 }),
+    processing_status: "unmatched", matched_user_id: null, matched_membership_payment_intent_id: null,
+  };
+  const formerPayment: GrobleAccountLedgerEntry = {
+    id: 1, merchant_uid: "first", provider_event_id: processed.event_id, user_id: null,
+    membership_payment_intent_id: null, status: "completed",
+    payment_kind: "membership_initial", product_code: "membership:one_month",
+  };
+  const oneOrder = (payment: GrobleAccountLedgerEntry) => new Map([[payment.merchant_uid, [payment]]]);
+
+  it("recognizes an orphaned processed payment and the later unmatched charge on its exact subscription", () => {
+    expect(grobleAccountWasRemoved(processed, [processed], oneOrder(formerPayment))).toBe(true);
+    expect(grobleAccountWasRemoved(newest, [processed, newest], oneOrder(formerPayment))).toBe(true);
+  });
+
+  it("requires the earlier applied payment evidence and rejects another subscription using the same reference", () => {
+    const different = { ...newest, ...event("subscription_payment.completed", "other-subscription", {
+      round: 2, activeSince: "2026-10-25T09:00:00.380+09:00",
+    }) };
+    expect(grobleAccountWasRemoved(newest, [newest], new Map())).toBe(false);
+    expect(grobleAccountWasRemoved(newest, [processed, newest], oneOrder({
+      ...formerPayment, provider_event_id: "different-event",
+    }))).toBe(false);
+    expect(grobleAccountWasRemoved(different, [processed, different], oneOrder(formerPayment))).toBe(false);
+  });
+
+  it("keeps a missing renewal for review if the original membership or payment intent is still linked", () => {
+    expect(grobleAccountWasRemoved(newest, [processed, newest], oneOrder({
+      ...formerPayment, user_id: "member", membership_payment_intent_id: 5,
+    }))).toBe(false);
+    expect(grobleAccountWasRemoved(newest, [{ ...processed, matched_user_id: "member" }, newest],
+      oneOrder(formerPayment))).toBe(false);
+  });
 });
 
 describe("paid members with a current entitlement", () => {
