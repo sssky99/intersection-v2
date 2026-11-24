@@ -1,5 +1,6 @@
 "use client";
 import { MembershipPaymentHistory } from "./MembershipPaymentHistory";
+import { GrobleSubscriptionOverview } from "./GrobleSubscriptionOverview";
 
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -306,7 +307,8 @@ export function MembershipAdminPanel() {
           </button>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 grid gap-2">
+          <GrobleSubscriptionOverview />
           <MembershipPaymentHistory />
         </div>
         <div className="mt-4 grid grid-cols-[minmax(300px,1fr)_180px] gap-2">
