@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { todayKoreaDateString } from "@/features/membership/membershipTypes";
 import {
   grobleMembershipProduct,
   grobleSubscriptionEvents,
   projectGrobleSubscriptions,
+  reconcileGrobleMemberships,
+  type GrobleLedgerEntry,
+  type GrobleMemberAccess,
+  type GrobleMembershipEffect,
   type GrobleSnapshotRow,
   type GrobleSubscriptionEvent,
 } from "@/server/payments/grobleSubscriptionOverview";
@@ -76,32 +81,25 @@ export async function GET(request: NextRequest) {
       readOrders(currentOrders, (orders) => db.from("payment_transactions")
         .select("id,merchant_uid,user_id,status")
         .eq("provider", "groble").in("merchant_uid", orders)
-        .returns<Array<{ id: number; merchant_uid: string; user_id: string | null; status: string }>>()),
+        .returns<GrobleLedgerEntry[]>()),
       readOrders(currentOrders, (orders) => db.from("membership_payment_effects")
-        .select("transaction_id,merchant_uid,cancelled_at").in("merchant_uid", orders)
-        .returns<Array<{ transaction_id: number; merchant_uid: string; cancelled_at: string | null }>>()),
+        .select("transaction_id,merchant_uid,user_id,cancelled_at").in("merchant_uid", orders)
+        .returns<GrobleMembershipEffect[]>()),
     ]);
-    const byOrder = new Map<string, typeof ledger>();
-    for (const item of ledger) byOrder.set(item.merchant_uid, [...(byOrder.get(item.merchant_uid) ?? []), item]);
-    const applied = new Set(effects.filter((effect) => !effect.cancelled_at).map((effect) => effect.transaction_id));
+    const userIds = [...new Set(ledger.flatMap(({ user_id }) => user_id ? [user_id] : []))];
+    const profiles = await readOrders(userIds, (ids) => db.from("profiles")
+      .select("user_id,name,membership_status,membership_start_date,membership_end_date,archived_at")
+      .in("user_id", ids).returns<GrobleMemberAccess[]>());
+    const membership = reconcileGrobleMemberships(
+      overview.rows, ledger, effects, profiles, todayKoreaDateString(new Date(checkedAt)),
+    );
 
     return NextResponse.json({
       snapshot: snapshot.captured_at,
       checkedAt,
       incomplete,
       ...overview,
-      rows: overview.rows.map((row) => {
-        const payments = byOrder.get(row.order) ?? [];
-        const transaction = payments[0];
-        const membership = row.payment === "refunded" && !applied.has(transaction?.id)
-          ? "refunded"
-          : payments.length > 1 ? "review"
-          : !transaction ? "missing"
-          : !transaction.user_id ? "unlinked"
-          : row.payment === "refunded" || transaction.status !== "completed" || !applied.has(transaction.id)
-            ? "review" : "applied";
-        return { ...row, membership };
-      }),
+      ...membership,
     }, { headers });
   } catch (error) {
     console.error("[admin groble subscriptions] read", error);

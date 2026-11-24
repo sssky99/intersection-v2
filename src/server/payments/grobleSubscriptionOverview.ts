@@ -1,4 +1,5 @@
 import { jsonRecord, text } from "./grobleVerification";
+import { hasMembershipAccessOnDate } from "@/features/membership/membershipTypes";
 
 export const grobleMembershipProduct = "pMT39R";
 export const grobleSubscriptionEvents = [
@@ -183,5 +184,97 @@ export function projectGrobleSubscriptions(
     rows: active.map(({ externalId, order, round, state, payment, buyer, nextBillingDate }) =>
       ({ externalId, order, round, state, payment, buyer, nextBillingDate }))
       .sort((a, b) => b.order.localeCompare(a.order)),
+  };
+}
+
+type Order = ReturnType<typeof projectGrobleSubscriptions>["rows"][number];
+export type GrobleLedgerEntry = {
+  id: number;
+  merchant_uid: string;
+  user_id: string | null;
+  status: string;
+};
+export type GrobleMembershipEffect = {
+  transaction_id: number;
+  merchant_uid: string;
+  user_id: string;
+  cancelled_at: string | null;
+};
+export type GrobleMemberAccess = {
+  user_id: string;
+  name: string | null;
+  membership_status: string | null;
+  membership_start_date: string | null;
+  membership_end_date: string | null;
+  archived_at: string | null;
+};
+type MembershipResult = "applied" | "unlinked" | "missing" | "review" | "refunded";
+
+export function reconcileGrobleMemberships(
+  orders: Order[],
+  ledger: GrobleLedgerEntry[],
+  effects: GrobleMembershipEffect[],
+  profiles: GrobleMemberAccess[],
+  date: string,
+) {
+  const byOrder = new Map<string, GrobleLedgerEntry[]>();
+  for (const payment of ledger) {
+    const matches = byOrder.get(payment.merchant_uid) ?? [];
+    matches.push(payment);
+    byOrder.set(payment.merchant_uid, matches);
+  }
+  const effectsByTransaction = new Map(effects.map((entry) => [entry.transaction_id, entry]));
+  const profilesByUser = new Map(profiles.map((profile) => [profile.user_id, profile]));
+  const subscribers = new Map<string, Order & {
+    memberName: string | null;
+    accessEndsOn: string | null;
+    orderCount: number;
+  }>();
+
+  const rows = orders.map((row) => {
+    const payments = byOrder.get(row.order) ?? [];
+    const transaction = payments[0];
+    const effect = transaction ? effectsByTransaction.get(transaction.id) : undefined;
+    const receiptApplies = Boolean(
+      effect && effect.user_id === transaction.user_id &&
+      effect.merchant_uid === row.order && !effect.cancelled_at,
+    );
+    let membership: MembershipResult;
+    if (payments.length > 1) membership = "review";
+    else if (row.payment === "refunded") membership = receiptApplies ? "review" : "refunded";
+    else if (!transaction) membership = "missing";
+    else if (!transaction.user_id) membership = "unlinked";
+    else if (!["completed", "cancel_requested"].includes(transaction.status) || !receiptApplies) {
+      membership = "review";
+    } else membership = "applied";
+
+    const profile = transaction?.user_id ? profilesByUser.get(transaction.user_id) : undefined;
+    if (
+      membership === "applied" && (row.payment === "paid" || row.payment === "requested") &&
+      profile && !profile.archived_at && hasMembershipAccessOnDate({
+        status: profile.membership_status,
+        startDate: profile.membership_start_date,
+        endDate: profile.membership_end_date,
+        date,
+      })
+    ) {
+      const existing = subscribers.get(profile.user_id);
+      if (existing && existing.order.localeCompare(row.order) > 0) {
+        existing.orderCount += 1;
+      } else {
+        subscribers.set(profile.user_id, {
+          ...row,
+          memberName: profile.name ?? row.buyer,
+          accessEndsOn: profile.membership_end_date,
+          orderCount: (existing?.orderCount ?? 0) + 1,
+        });
+      }
+    }
+    return { ...row, membership };
+  });
+
+  return {
+    rows,
+    subscribers: [...subscribers.values()].sort((a, b) => b.order.localeCompare(a.order)),
   };
 }
