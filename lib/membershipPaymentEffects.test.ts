@@ -98,6 +98,12 @@ grant all on all tables in schema public to service_role;
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261124052419_groble_credited_subscription_renewals.sql",
+      "utf8",
+    ),
+  );
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -237,7 +243,7 @@ describe("atomic membership payment effects", () => {
       (await one("select count(*)::int as n from payment_transactions")).n,
     ).toBe(1);
   });
-  it("rejects reuse of a discounted upgrade intent and a wrong amount", async () => {
+  it("rejects a wrong amount and reuse of an upgrade intent without a verified renewal", async () => {
     const id = await intent("one_month", 5000);
     await expect(pay(id, "p", "p", undefined, 9)).rejects.toThrow("amount");
     await pay(id);
@@ -459,6 +465,147 @@ async function missingChargePair(round = 2) {
     );
   }
 }
+
+describe("renewals after a credited first payment", () => {
+  async function creditedSubscription(initialAmount = 5000) {
+    const source = await intent("one_month", 5000);
+    const firstDay = (await one("select ($1::date - 30)::text as day", [today])).day;
+    const firstPaidAt = firstDay + "T09:00:00.123456+09:00";
+    const nextPaidAt = today + "T09:00:00+09:00";
+    await db.query("update profiles set phone_normalized='01000000001'");
+    await db.query(
+      "update membership_payment_intents set seller_reference='credited-ref',opened_at=$2::timestamptz-interval '1 minute',expires_at=$2::timestamptz+interval '15 minutes' where id=$1",
+      [source, firstPaidAt],
+    );
+    const base = {
+      sellerReference: "credited-ref",
+      content: { id: "monthly-product" },
+      pricing: { finalAmount: 10000, currency: "KRW" },
+    };
+    const initial = {
+      ...base,
+      merchantUid: "credited-initial",
+      pricing: { ...base.pricing, finalAmount: initialAmount },
+      payment: { purchasedAt: firstPaidAt },
+      subscription: {
+        currentRound: 1,
+        billingReason: "INITIAL",
+        billingCycleMonths: 1,
+        activatedAt: firstPaidAt,
+      },
+    };
+    const renewal = {
+      ...base,
+      merchantUid: "credited-renewal",
+      payment: { purchasedAt: nextPaidAt },
+      subscription: {
+        currentRound: 2,
+        billingReason: "RENEWAL",
+        billingCycleMonths: 1,
+        activatedAt: firstDay + "T09:00:00+09:00",
+      },
+    };
+    const insertEvent = <T extends { merchantUid: string }>(event: string, type: string, object: T) =>
+      db.query(
+        "insert into groble_webhook_events(event_id,event_type,merchant_uid,buyer_phone_normalized,payload) values($1,$2,$3,'01000000001',$4)",
+        [event, type, object.merchantUid, JSON.stringify({ data: { object } })],
+      );
+    await insertEvent("credited-initial", "subscription_payment.completed", initial);
+    const first = await pay(source, "credited-initial", "credited-initial", firstPaidAt, initialAmount);
+    expect(first.payment_kind).toBe("membership_upgrade");
+    await insertEvent("credited-renewal", "subscription_payment.completed", renewal);
+    const beforeEnd = (await one("select membership_end_date::text as day from profiles")).day;
+    const extendedEnd = (await one("select ($1::date + 30)::text as day", [beforeEnd])).day;
+    const match = async () =>
+      (await db.query("select * from match_groble_renewal_intent('credited-renewal')")).rows;
+    const apply = (event = "credited-renewal", id = source) =>
+      pay(id, event, "credited-renewal", nextPaidAt);
+    const addRefund = () => insertEvent("credited-refund", "subscription_payment.refunded", {
+      ...renewal,
+      subscription: { ...renewal.subscription, refundedRound: 2 },
+      refund: {
+        amount: 10000,
+        currency: "KRW",
+        partialRefund: false,
+        refundedAt: today + "T10:00:00+09:00",
+      },
+    });
+    return { source, beforeEnd, extendedEnd, match, apply, insertEvent, renewal, addRefund };
+  }
+
+  it.each([5000, 10000])("applies a full-price renewal exactly once after an initial charge of %i", async (amount) => {
+    const payment = await creditedSubscription(amount);
+    expect(await payment.match()).toEqual([
+      { user_id: user, intent_id: payment.source, plan: "one_month", credit_amount: 5000 },
+    ]);
+    const first = await payment.apply();
+    expect(first).toMatchObject({ outcome: "applied", payment_kind: "membership_renewal" });
+    expect(await payment.apply("credited-renewal", first.intent_id)).toMatchObject({
+      outcome: "already_applied", transaction_id: first.transaction_id,
+    });
+    await payment.insertEvent("credited-duplicate", "subscription_payment.completed", payment.renewal);
+    expect(await payment.apply("credited-duplicate")).toMatchObject({
+      outcome: "already_applied", transaction_id: first.transaction_id,
+    });
+    expect(await one("select membership_status as status,membership_end_date::text as day from profiles")).toEqual({
+      status: "active", day: payment.extendedEnd,
+    });
+    expect(await one(`
+      select count(*)::int as charges, count(e.transaction_id)::int as effects,
+        max(e.extension_days) as days,max(i.credit_amount) as credit,
+        max(i.renewal_source_intent_id)::int as source
+      from payment_transactions t
+      join membership_payment_intents i on i.id=t.membership_payment_intent_id
+      left join membership_payment_effects e on e.transaction_id=t.id
+      where t.merchant_uid='credited-renewal'`
+    )).toEqual({ charges: 1, effects: 1, days: 30, credit: 0, source: payment.source });
+
+    await payment.addRefund();
+    expect((await one("select apply_groble_refund('credited-refund') as result")).result).toMatchObject({
+      payment_kind: "membership_renewal",
+    });
+    await one("select apply_groble_refund('credited-refund')");
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(payment.beforeEnd);
+  });
+
+  it.each([
+    ["wrong amount", "{data,object,pricing,finalAmount}", "5000"],
+    ["wrong product", "{data,object,content,id}", '"different-product"'],
+    ["wrong activation date", "{data,object,subscription,activatedAt}", '"2020-01-01T00:00:00Z"'],
+    ["missing reference", "{data,object,sellerReference}", "null"],
+  ])("leaves membership unchanged with %s", async (_, path, value) => {
+    const payment = await creditedSubscription();
+    await db.query("update groble_webhook_events set payload=jsonb_set(payload,$1::text[],$2::jsonb) where event_id='credited-renewal'", [path, value]);
+    expect(await payment.match()).toEqual([]);
+    await expect(payment.apply()).rejects.toThrow(/requires review/);
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(payment.beforeEnd);
+    expect((await one("select count(*)::int as n from payment_transactions")).n).toBe(1);
+  });
+
+  it("requires the original membership effect before accepting a credited renewal", async () => {
+    const payment = await creditedSubscription();
+    await db.query("delete from membership_payment_effects where intent_id=$1", [payment.source]);
+    expect(await payment.match()).toEqual([]);
+    await expect(payment.apply()).rejects.toThrow(/requires review/);
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(payment.beforeEnd);
+  });
+
+  it("records a verified refund that arrives before the renewal was applied", async () => {
+    const payment = await creditedSubscription();
+    await payment.addRefund();
+    await one("select apply_groble_refund('credited-refund')");
+    await one("select reconcile_groble_refunded_completion('credited-renewal')");
+    expect(await payment.apply()).toMatchObject({ outcome: "cancelled" });
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(payment.beforeEnd);
+    expect(await one(`
+      select t.status, count(e.transaction_id)::int as effects
+      from payment_transactions t
+      left join membership_payment_effects e on e.transaction_id=t.id
+      where t.merchant_uid='credited-renewal' group by t.status`
+    )).toEqual({ status: "cancelled", effects: 0 });
+  });
+});
+
 describe("unlinked verified full refunds", () => {
   it("matches a renewal to its original verified subscription, not a recent checkout", async () => {
     await missingChargePair();
