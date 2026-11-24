@@ -117,6 +117,12 @@ grant all on all tables in schema public to service_role;
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261124084325_preserve_reported_arrival_during_confirmation.sql",
+      "utf8",
+    ),
+  );
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -203,15 +209,17 @@ describe("first monthly membership attendance", () => {
     const meetingDay = await dateRelativeToToday(-3);
     const participant = await addMeeting(meetingDay);
     // The member-facing arrival button does not constitute confirmation.
-    await db.query("update ticket_participations set arrival_status='on_time' where id=$1", [participant]);
+    const reportedAt = `${meetingDay}T11:00:00+09:00`;
+    await db.query("update ticket_participations set arrival_status='late_20',arrival_status_updated_at=$2 where id=$1", [participant, reportedAt]);
     expect(await one("select membership_start_date::text as s, membership_end_date::text as e from profiles")).toEqual({
       s: paidDate,
       e: calculateMembershipEndDate(paidDate, "one_month"),
     });
 
     const endDate = calculateMembershipEndDate(meetingDay, "one_month");
-    expect(await recordArrival(participant, "on_time")).toMatchObject({ membershipEndsOn: endDate });
-    expect(await recordArrival(participant, "on_time")).toMatchObject({ membershipEndsOn: endDate });
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ arrivalStatus: "late_20", membershipEndsOn: endDate });
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ membershipEndsOn: endDate });
+    expect((await one("select arrival_status_updated_at=$2::timestamptz as preserved from ticket_participations where id=$1", [participant, reportedAt])).preserved).toBe(true);
     const nextMeeting = await addMeeting(await dateRelativeToToday(-1), secondRoom);
     expect(await recordArrival(nextMeeting, "late_10", secondRoom)).not.toHaveProperty("membershipEndsOn");
     expect((await pay(id)).outcome).toBe("already_applied");
