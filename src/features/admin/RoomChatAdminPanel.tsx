@@ -126,6 +126,7 @@ export function RoomChatAdminPanel() {
   const [sending, setSending] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [updatingArrivalId, setUpdatingArrivalId] = useState<string | null>(null);
+  const [confirmedMembershipEnds, setConfirmedMembershipEnds] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -336,9 +337,14 @@ export function RoomChatAdminPanel() {
       );
       const result = (await response.json().catch(() => null)) as {
         error?: string;
+        membershipEndsOn?: string;
       } | null;
       if (!response.ok) {
         throw new Error(result?.error ?? "arrival-status-update-failed");
+      }
+      if (result?.membershipEndsOn) {
+        const membershipEndsOn = result.membershipEndsOn;
+        setConfirmedMembershipEnds((previous) => ({ ...previous, [participationId]: membershipEndsOn }));
       }
       await loadRooms();
     } catch (error) {
@@ -359,6 +365,8 @@ export function RoomChatAdminPanel() {
     draft.trim().length <= 100 &&
     !sending;
   const selectedOperatorId = operatorId(selectedRoom);
+  const meetingStarted = selectedRoom &&
+    new Date(`${selectedRoom.eventDate}T${selectedRoom.eventTime}:00+09:00`).getTime() <= Date.now();
 
   return (
     <div className="flex h-[calc(100dvh-190px)] min-h-[680px] flex-col overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
@@ -501,7 +509,7 @@ export function RoomChatAdminPanel() {
                   <div>
                     <h4 className="text-sm font-black">그룹별 도착 현황</h4>
                     <p className="mt-1 text-[11px] font-semibold text-black/42">
-                      사용자 티켓의 도착 상태와 바로 연동됩니다.
+                      모임 시작 후 정상 도착이나 지각을 확인하면 첫 참석 기준으로 멤버십 기간이 적용됩니다.
                     </p>
                   </div>
                   <ArrivalSummary room={selectedRoom} />
@@ -522,11 +530,13 @@ export function RoomChatAdminPanel() {
                               ? "late"
                               : "pending";
                       const saving = updatingArrivalId === member.participationId;
+                      const attendance = value === "on_time" || value === "late" ? value : null;
+                      const endDate = confirmedMembershipEnds[member.participationId!];
 
                       return (
-                        <label
+                        <div
                           key={member.participationId}
-                          className="flex items-center gap-2 rounded-xl border border-black/8 bg-white px-3 py-2"
+                          className="flex flex-wrap items-center gap-2 rounded-xl border border-black/8 bg-white px-3 py-2"
                         >
                           <span className="min-w-0 flex-1 truncate text-xs font-bold text-black/72">
                             {member.name || member.nickname}
@@ -555,7 +565,23 @@ export function RoomChatAdminPanel() {
                             <option value="late">지각</option>
                             <option value="no_show">불참</option>
                           </select>
-                        </label>
+                          {attendance && meetingStarted && (
+                            endDate ? (
+                              <span className="basis-full text-[11px] font-semibold text-black/55">
+                                멤버십 종료일 {endDate}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={Boolean(updatingArrivalId)}
+                                onClick={() => void updateArrivalStatus(member.participationId!, attendance)}
+                                className="rounded-md border border-black/10 px-2 py-1 text-[11px] font-bold"
+                              >
+                                참석 확인
+                              </button>
+                            )
+                          )}
+                        </div>
                       );
                     })}
                 </div>

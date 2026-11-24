@@ -80,6 +80,7 @@ grant all on all tables in schema public to service_role;
   );
   await db.exec(`
     alter table profiles add phone_normalized text, add archived_at timestamptz;
+    alter table ticket_participations add arrival_status text, add arrival_status_updated_at timestamptz;
     alter table membership_payment_intents add seller_reference text;
     alter table groble_webhook_events add id bigint generated always as identity,
       add buyer_phone_normalized text, add matched_user_id uuid, add received_at timestamptz default now(),
@@ -110,6 +111,18 @@ grant all on all tables in schema public to service_role;
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261124084036_membership_first_meeting_attendance.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261124084325_preserve_reported_arrival_during_confirmation.sql",
+      "utf8",
+    ),
+  );
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -119,7 +132,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.exec(
-    "truncate membership_payment_effects,payment_transactions,membership_payment_intents,profiles,meeting_date_applications,ticket_user_interactions,deposit_message_registrations,groble_webhook_events restart identity cascade",
+    "truncate membership_payment_effects,payment_transactions,membership_payment_intents,profiles,meeting_date_applications,ticket_instances,ticket_participations,ticket_user_interactions,deposit_message_registrations,groble_webhook_events restart identity cascade",
   );
   await db.query("insert into profiles(user_id,name) values($1,'Original')", [
     user,
@@ -159,6 +172,132 @@ async function cancel(id: number) {
     )
   ).result;
 }
+
+describe("first monthly membership attendance", () => {
+  const firstRoom = "00000000-0000-4000-8000-000000000010";
+  const secondRoom = "00000000-0000-4000-8000-000000000020";
+
+  const dateRelativeToToday = async (days: number) =>
+    (await one("select ($1::date+$2::integer)::text as day", [today, days])).day as string;
+
+  async function addMeeting(day: string, room = firstRoom) {
+    await db.query("insert into ticket_instances(id,event_date,event_time) values($1,$2,'12:00')", [room, day]);
+    return (await one(`insert into ticket_participations(user_id,ticket_instance_id,meeting_date,status)
+      values($1,$2,$3,'approved') returning id`, [user, room, day])).id;
+  }
+
+  async function recordArrival(id: number, status: string, room = firstRoom) {
+    return (await one("select record_admin_meeting_arrival($1,$2,$3) as result", [id, room, status])).result;
+  }
+
+  async function monthlyCheckout(days: number) {
+    const paidDate = await dateRelativeToToday(days);
+    const paidAt = `${paidDate}T12:00:00+09:00`;
+    const id = await intent();
+    await db.query("update membership_payment_intents set opened_at=$2::timestamptz-interval '5 minutes' where id=$1", [id, paidAt]);
+    return { paidDate, paidAt, id };
+  }
+
+  async function buyMonthlyMembership(days = -7) {
+    const checkout = await monthlyCheckout(days);
+    const firstPayment = await pay(checkout.id, "payment-1", "payment-1", checkout.paidAt);
+    return { ...checkout, firstPayment };
+  }
+
+  it("starts at checkout and extends once after the admin confirms attendance", async () => {
+    const { paidDate, id, firstPayment } = await buyMonthlyMembership();
+    const meetingDay = await dateRelativeToToday(-3);
+    const participant = await addMeeting(meetingDay);
+    // The member-facing arrival button does not constitute confirmation.
+    const reportedAt = `${meetingDay}T11:00:00+09:00`;
+    await db.query("update ticket_participations set arrival_status='late_20',arrival_status_updated_at=$2 where id=$1", [participant, reportedAt]);
+    expect(await one("select membership_start_date::text as s, membership_end_date::text as e from profiles")).toEqual({
+      s: paidDate,
+      e: calculateMembershipEndDate(paidDate, "one_month"),
+    });
+
+    const endDate = calculateMembershipEndDate(meetingDay, "one_month");
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ arrivalStatus: "late_20", membershipEndsOn: endDate });
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ membershipEndsOn: endDate });
+    expect((await one("select arrival_status_updated_at=$2::timestamptz as preserved from ticket_participations where id=$1", [participant, reportedAt])).preserved).toBe(true);
+    const nextMeeting = await addMeeting(await dateRelativeToToday(-1), secondRoom);
+    expect(await recordArrival(nextMeeting, "late_10", secondRoom)).not.toHaveProperty("membershipEndsOn");
+    expect((await pay(id)).outcome).toBe("already_applied");
+    expect(await one("select membership_start_date::text as s, membership_end_date::text as e from profiles")).toEqual({
+      s: paidDate,
+      e: endDate,
+    });
+    expect((await cancel(firstPayment.transaction_id)).revoked_access).toBe(true);
+  });
+
+  it("preserves already paid renewal days when attendance is confirmed later", async () => {
+    await buyMonthlyMembership();
+    const renewal = await pay(await intent(), "renewal");
+    const meetingDay = await dateRelativeToToday(-3);
+    const participant = await addMeeting(meetingDay);
+    const baseEnd = calculateMembershipEndDate(meetingDay, "one_month");
+    const endDate = (await one("select ($1::date+30)::text as day", [baseEnd])).day;
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ membershipEndsOn: endDate });
+    expect(await recordArrival(participant, "late_10")).toMatchObject({ membershipEndsOn: endDate });
+    expect((await cancel(renewal.transaction_id)).deducted_days).toBe(30);
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(baseEnd);
+  });
+
+  it("starts a verified round-one checkout after expiry from its new payment date", async () => {
+    await buyMonthlyMembership(-60);
+    const { paidAt, paidDate, id } = await monthlyCheckout(-7);
+    await db.query(`insert into groble_webhook_events(event_id,merchant_uid,event_type,payload)
+      values('new-checkout','new-checkout','subscription_payment.completed',$1)`, [
+        { data: { object: { subscription: { billingReason: "INITIAL", currentRound: 1 } } } },
+      ]);
+    expect(await pay(id, "new-checkout", "new-checkout", paidAt)).toMatchObject({ payment_kind: "membership_initial" });
+    expect(await one("select membership_start_date::text as s, membership_end_date::text as e from profiles")).toEqual({
+      s: paidDate,
+      e: calculateMembershipEndDate(paidDate, "one_month"),
+    });
+    const meetingDay = await dateRelativeToToday(-3);
+    expect(await recordArrival(await addMeeting(meetingDay), "on_time")).toMatchObject({
+      membershipEndsOn: calculateMembershipEndDate(meetingDay, "one_month"),
+    });
+  });
+
+  it("ignores a no-show, an unstarted meeting and an unrelated room", async () => {
+    const { paidDate } = await buyMonthlyMembership();
+    const missed = await addMeeting(await dateRelativeToToday(-3));
+    const future = await addMeeting(await dateRelativeToToday(1), secondRoom);
+    expect(await recordArrival(missed, "late_10", secondRoom)).toBeNull();
+    expect(await recordArrival(missed, "no_show")).toMatchObject({ arrivalStatus: "no_show" });
+    expect(await recordArrival(future, "on_time", secondRoom)).not.toHaveProperty("membershipEndsOn");
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(
+      calculateMembershipEndDate(paidDate, "one_month"),
+    );
+  });
+
+  it("does not extend a previously purchased membership or a manual membership change", async () => {
+    await buyMonthlyMembership();
+    const participant = await addMeeting(await dateRelativeToToday(-3));
+    await db.exec("update profiles set membership_end_date=membership_end_date+2");
+    expect(await recordArrival(participant, "on_time")).not.toHaveProperty("membershipEndsOn");
+    await db.exec("update profiles set membership_end_date=membership_end_date-2; update membership_payment_effects set after_state=after_state - 'first_attendance'");
+    expect(await recordArrival(participant, "on_time")).not.toHaveProperty("membershipEndsOn");
+    expect(await one(`select has_function_privilege('anon','record_admin_meeting_arrival(bigint,uuid,text)','execute') as anon,
+      has_function_privilege('authenticated','record_admin_meeting_arrival(bigint,uuid,text)','execute') as member,
+      has_function_privilege('service_role','record_admin_meeting_arrival(bigint,uuid,text)','execute') as service`)).toEqual({
+      anon: false, member: false, service: true,
+    });
+  });
+
+  it("does not extend a membership while its refund notification is pending", async () => {
+    const { paidDate } = await buyMonthlyMembership();
+    const participant = await addMeeting(await dateRelativeToToday(-3));
+    await refundEvent();
+    expect(await recordArrival(participant, "on_time")).not.toHaveProperty("membershipEndsOn");
+    expect((await one("select membership_end_date::text as day from profiles")).day).toBe(
+      calculateMembershipEndDate(paidDate, "one_month"),
+    );
+  });
+});
+
 describe("atomic membership payment effects", () => {
   it("starts on the Korean payment date and advances a future linked meeting application", async () => {
     await db.query(
