@@ -3,12 +3,14 @@ import { ADMIN_SESSION_COOKIE, isAdminSessionTokenValid } from "@/lib/adminAuth"
 import { createAdminClient } from "@/lib/supabase/admin";
 import { todayKoreaDateString } from "@/features/membership/membershipTypes";
 import {
+  grobleAccountWasRemoved,
   grobleMembershipProduct,
   grobleSeriesReference,
   grobleSubscriptionEvents,
   projectGrobleSubscriptions,
   reconcileGrobleMemberships,
   unpostedGrobleRounds,
+  type GrobleAccountLedgerEntry,
   type GrobleLedgerEntry,
   type GrobleMemberAccess,
   type GrobleMembershipEffect,
@@ -18,7 +20,7 @@ import {
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
-const eventFields = "event_id,event_type,merchant_uid,buyer_phone_normalized,occurred_at,received_at,processing_status,payload";
+const eventFields = "event_id,event_type,merchant_uid,buyer_phone_normalized,occurred_at,received_at,processing_status,payment_kind,matched_user_id,matched_membership_payment_intent_id,payload";
 const pageSize = 250;
 const maxPages = 8;
 
@@ -111,33 +113,48 @@ export async function GET(request: NextRequest) {
         receivedPayments.set(event.merchant_uid, event);
       }
     }
-    const missingOrders = membership.rows.filter((row) =>
-      row.membership === "missing" && row.payment !== "refunded");
-    const references = [...new Set(missingOrders.flatMap((row) => {
+    const historyCandidates = membership.rows.filter((row) =>
+      (row.membership === "missing" || row.membership === "unlinked") && row.payment !== "refunded");
+    const references = [...new Set(historyCandidates.flatMap((row) => {
       const event = receivedPayments.get(row.order);
       const reference = event && grobleSeriesReference(event);
       return reference && /^[A-Za-z0-9_.:=~-]{1,128}$/.test(reference) ? [reference] : [];
     }))];
-    const series = await readOrders(references, (refs) => db.from("groble_webhook_events")
-      .select(eventFields).eq("event_type", "subscription_payment.completed")
-      .eq("payload->data->object->content->>id", grobleMembershipProduct)
-      .in("payload->data->object->>sellerReference", refs)
-      .returns<GrobleSubscriptionEvent[]>());
+    const series = await readOrders(references, async (refs) => {
+      const history: GrobleSubscriptionEvent[] = [];
+      for (let page = 0; page < maxPages; page++) {
+        const { data, error } = await db.from("groble_webhook_events")
+          .select(eventFields).eq("event_type", "subscription_payment.completed")
+          .eq("payload->data->object->content->>id", grobleMembershipProduct)
+          .in("payload->data->object->>sellerReference", refs).order("id")
+          .range(page * pageSize, page * pageSize + pageSize - 1)
+          .returns<GrobleSubscriptionEvent[]>();
+        if (error) return { data: null, error };
+        history.push(...(data ?? []));
+        if (!data || data.length < pageSize) return { data: history, error: null };
+      }
+      incomplete = true;
+      return { data: [], error: null };
+    });
     const seriesOrders = [...new Set(series.flatMap(({ merchant_uid }) => merchant_uid ? [merchant_uid] : []))];
     const [posted, refunded] = await Promise.all([
       readOrders(seriesOrders, (orders) => db.from("payment_transactions")
-        .select("merchant_uid").eq("provider", "groble").in("merchant_uid", orders)
-        .returns<Array<{ merchant_uid: string }>>()),
+        .select("id,merchant_uid,user_id,status,provider_event_id,payment_kind,product_code,membership_payment_intent_id")
+        .eq("provider", "groble").in("merchant_uid", orders)
+        .returns<GrobleAccountLedgerEntry[]>()),
       readOrders(seriesOrders, (orders) => db.from("groble_webhook_events")
         .select("merchant_uid").in("event_type", ["subscription_payment.refunded", "subscription_payment.cancelled"])
         .in("merchant_uid", orders).returns<Array<{ merchant_uid: string }>>()),
     ]);
     // Refunded rounds belong in refund history, even if their ledger has not been written.
     const accounted = new Set([...posted, ...refunded].map(({ merchant_uid }) => merchant_uid));
-    const historyByOrder = new Map(missingOrders.map((row) => {
-      const event = receivedPayments.get(row.order);
-      return [row.order, event ? unpostedGrobleRounds(event, series, accounted) : []];
-    }));
+    const ledgerByOrder = new Map<string, GrobleAccountLedgerEntry[]>();
+    for (const payment of posted) {
+      const matches = ledgerByOrder.get(payment.merchant_uid) ?? [];
+      matches.push(payment);
+      ledgerByOrder.set(payment.merchant_uid, matches);
+    }
+    const historyOrders = new Set(historyCandidates.map(({ order }) => order));
 
     return NextResponse.json({
       snapshot: snapshot.captured_at,
@@ -148,10 +165,14 @@ export async function GET(request: NextRequest) {
       ...membership,
       rows: membership.rows.map((row) => {
         const notice = receivedPayments.get(row.order);
+        const historyAnchor = historyOrders.has(row.order) ? notice : undefined;
         return {
           ...row,
           noticeStatus: notice?.processing_status ?? null,
-          unpostedRounds: historyByOrder.get(row.order) ?? [],
+          withdrawnAccount: Boolean(historyAnchor && row.payment === "paid" &&
+            grobleAccountWasRemoved(historyAnchor, series, ledgerByOrder)),
+          unpostedRounds: historyAnchor && row.membership === "missing"
+            ? unpostedGrobleRounds(historyAnchor, series, accounted) : [],
         };
       }),
     }, { headers });
