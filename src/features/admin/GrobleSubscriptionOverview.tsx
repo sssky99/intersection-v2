@@ -24,7 +24,7 @@ type Overview = {
 };
 
 const filters = [
-  { key: "all", label: "전체" },
+  { key: "paid", label: "유료 주문" },
   { key: "review", label: "확인 필요" },
   { key: "ending", label: "해지 예정" },
   { key: "refunded", label: "환불" },
@@ -71,7 +71,7 @@ export function GrobleSubscriptionOverview() {
   const [data, setData] = useState<Overview | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("paid");
   const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
@@ -91,13 +91,14 @@ export function GrobleSubscriptionOverview() {
   useEffect(() => { void load(); }, [load]);
 
   const rows = data?.rows ?? [];
+  const paid = rows.filter((row) => row.payment !== "refunded");
   const groups = {
-    all: rows,
-    review: rows.filter(needsReview),
-    ending: rows.filter((row) => row.state === "ending"),
+    paid,
+    review: paid.filter(needsReview),
+    ending: paid.filter((row) => row.state === "ending"),
     refunded: rows.filter((row) => row.payment === "refunded" || row.payment === "partial"),
   };
-  const applied = rows.filter((row) => row.membership === "applied").length;
+  const applied = paid.filter((row) => row.membership === "applied").length;
   const needsReconciliation = data && (data.incomplete || data.unresolvedEvents > 0);
   const filtered = groups[filter];
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -157,7 +158,7 @@ export function GrobleSubscriptionOverview() {
             </div>
           </dl>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div role="group" aria-label="구독 목록 필터" className="flex flex-wrap gap-1">
               {filters.map(({ key, label }) => (
                 <button
@@ -174,7 +175,6 @@ export function GrobleSubscriptionOverview() {
                 </button>
               ))}
             </div>
-            <p className="text-xs leading-5 text-stone-600">유료 집계는 전액 환불·해지 완료를 제외합니다.</p>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-stone-200">
