@@ -145,36 +145,6 @@ const localDateApplicationsStoragePrefix =
 const guestDeclinedTicketStorageKey =
   "intersection:guest-declined-ticket-ids";
 
-function oneMonthMembershipPeriod(meetingDate: string) {
-  const schedule = meetingDateSchedule(meetingDate);
-  if (!schedule) return { start: meetingDate, end: meetingDate };
-
-  const nextMonth = schedule.month === 12 ? 1 : schedule.month + 1;
-  const nextYear = schedule.month === 12 ? schedule.year + 1 : schedule.year;
-  const lastDayOfNextMonth = new Date(
-    Date.UTC(nextYear, nextMonth, 0),
-  ).getUTCDate();
-  const sameDayNextMonth = new Date(
-    Date.UTC(
-      nextYear,
-      nextMonth - 1,
-      Math.min(schedule.day, lastDayOfNextMonth),
-    ),
-  );
-  sameDayNextMonth.setUTCDate(sameDayNextMonth.getUTCDate() - 1);
-  const format = (year: number, month: number, day: number) =>
-    `${year}.${String(month).padStart(2, "0")}.${String(day).padStart(2, "0")}`;
-
-  return {
-    start: format(schedule.year, schedule.month, schedule.day),
-    end: format(
-      sameDayNextMonth.getUTCFullYear(),
-      sameDayNextMonth.getUTCMonth() + 1,
-      sameDayNextMonth.getUTCDate(),
-    ),
-  };
-}
-
 function koreanTicketTimeLabel(value: string) {
   const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
   if (!match) return formatTicketTimeLabel(value);
@@ -2773,8 +2743,6 @@ export function MembershipPurchaseBottomSheet({
   onSingleUseSubmit?: () => void;
   onClose: () => void;
 }) {
-  const membershipReferenceDate = ticket?.date ?? todayInKst();
-  const period = oneMonthMembershipPeriod(membershipReferenceDate);
   const [purchaseType, setPurchaseType] = useState<"membership" | "single">(
     "membership",
   );
@@ -2957,18 +2925,14 @@ export function MembershipPurchaseBottomSheet({
                 </p>
                 <p className="mt-1.5 tabular-nums text-[15px] font-bold tracking-[-0.015em] text-black">
                   {membershipSelected
-                    ? standalone
-                      ? "첫 모임 시작일부터 1개월"
-                      : `${period.start} – ${period.end}`
+                    ? "결제일부터 1개월"
                     : ticket
                       ? `${meetingDateLabel(ticket.date)} · ${formatTicketTimeLabel(ticket.time)}`
                       : ""}
                 </p>
-                {!(membershipSelected && standalone) && (
+                {!membershipSelected && ticket && (
                   <p className="mt-1.5 text-[11px] font-semibold text-black/38">
-                    {membershipSelected
-                      ? `${meetingDateLabel(ticket!.date)} 모임 시작 기준`
-                      : ticket?.title}
+                    {ticket.title}
                   </p>
                 )}
               </div>

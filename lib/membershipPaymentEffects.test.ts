@@ -104,6 +104,12 @@ grant all on all tables in schema public to service_role;
       "utf8",
     ),
   );
+  await db.exec(
+    readFileSync(
+      "supabase/migrations/20261124082103_groble_membership_start_on_payment.sql",
+      "utf8",
+    ),
+  );
   today = (
     await one("select (now() at time zone 'Asia/Seoul')::date::text as day")
   ).day;
@@ -154,9 +160,9 @@ async function cancel(id: number) {
   ).result;
 }
 describe("atomic membership payment effects", () => {
-  it("commits membership, intent, transaction, linked application, interaction and counter together", async () => {
+  it("starts on the Korean payment date and advances a future linked meeting application", async () => {
     await db.query(
-      "insert into meeting_date_applications(id,user_id,status,meeting_date,deposit_status) values(10,$1,'payment_pending',$2,'payment_pending')",
+      "insert into meeting_date_applications(id,user_id,status,meeting_date,deposit_status) values(10,$1,'payment_pending',$2::date+7,'payment_pending')",
       [user, today],
     );
     await db.query(
@@ -164,14 +170,16 @@ describe("atomic membership payment effects", () => {
       [user, user],
     );
     const id = await intent("one_month", 0, 10);
-    const result = await pay(id);
+    const result = await pay(id, "payment-1", "payment-1", today + "T00:05:00+09:00");
     expect(result.outcome).toBe("applied");
     expect(
-      await one("select membership_end_date::text as e,name from profiles"),
+      await one("select membership_start_date::text as s,membership_end_date::text as e,name from profiles"),
     ).toEqual({
+      s: today,
       e: calculateMembershipEndDate(today, "one_month"),
       name: "Updated",
     });
+    expect((await one("select after_state->>'start_date' as start from membership_payment_effects")).start).toBe(today);
     expect(
       (await one("select status from membership_payment_intents")).status,
     ).toBe("completed");
@@ -255,10 +263,10 @@ describe("atomic membership payment effects", () => {
     "preserves month-end rules for %s",
     async (plan) => {
       await db.query(
-        "insert into meeting_date_applications(id,user_id,status,meeting_date) values(10,$1,'waitlisted','2028-01-31')",
+        "insert into meeting_date_applications(id,user_id,status,meeting_date) values(10,$1,'waitlisted','2028-02-02')",
         [user],
       );
-      await pay(await intent(plan, 0, 10));
+      await pay(await intent(plan, 0, 10), "payment-1", "payment-1", "2028-01-31T12:00:00+09:00");
       expect(
         (await one("select membership_end_date::text as e from profiles")).e,
       ).toBe(calculateMembershipEndDate("2028-01-31", plan));
