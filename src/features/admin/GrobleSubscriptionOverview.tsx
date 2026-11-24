@@ -12,18 +12,22 @@ type Subscription = {
   payment: "paid" | "refunded" | "partial" | "requested";
   buyer: string | null;
   membership: "applied" | "unlinked" | "missing" | "review" | "refunded";
+  memberName?: string | null;
+  accessEndsOn?: string | null;
+  orderCount?: number;
 };
 
 type Overview = {
   snapshot: string;
   incomplete: boolean;
-  paidBuyers: number;
   paidSubscriptions: number;
   unresolvedEvents: number;
   rows: Subscription[];
+  subscribers: Array<Omit<Subscription, "membership">>;
 };
 
 const filters = [
+  { key: "subscribers", label: "구독자" },
   { key: "paid", label: "유료 주문" },
   { key: "review", label: "확인 필요" },
   { key: "ending", label: "해지 예정" },
@@ -71,7 +75,7 @@ export function GrobleSubscriptionOverview() {
   const [data, setData] = useState<Overview | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<Filter>("paid");
+  const [filter, setFilter] = useState<Filter>("subscribers");
   const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
@@ -91,15 +95,17 @@ export function GrobleSubscriptionOverview() {
   useEffect(() => { void load(); }, [load]);
 
   const rows = data?.rows ?? [];
+  const subscribers = (data?.subscribers ?? []).map((row) => ({ ...row, membership: "applied" as const }));
   const paid = rows.filter((row) => row.payment !== "refunded");
   const groups = {
+    subscribers,
     paid,
     review: paid.filter(needsReview),
     ending: paid.filter((row) => row.state === "ending"),
     refunded: rows.filter((row) => row.payment === "refunded" || row.payment === "partial"),
   };
-  const applied = paid.filter((row) => row.membership === "applied").length;
   const needsReconciliation = data && (data.incomplete || data.unresolvedEvents > 0);
+  const isSubscriberList = filter === "subscribers";
   const filtered = groups[filter];
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -114,10 +120,10 @@ export function GrobleSubscriptionOverview() {
     <section aria-labelledby="groble-overview-heading" className="min-w-0 space-y-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 id="groble-overview-heading" className="text-base font-bold text-stone-950">그로블 구독 현황</h3>
+          <h3 id="groble-overview-heading" className="text-base font-bold text-stone-950">멤버십 구독자</h3>
           {data && (
             <p className="mt-1 text-xs text-stone-600">
-              원본 확인 <time dateTime={data.snapshot}>{dateFormat.format(new Date(data.snapshot))}</time>
+              그로블 원본 확인 <time dateTime={data.snapshot}>{dateFormat.format(new Date(data.snapshot))}</time>
             </p>
           )}
         </div>
@@ -143,14 +149,14 @@ export function GrobleSubscriptionOverview() {
           )}
           <dl className="grid grid-cols-1 divide-y divide-stone-200 rounded-xl border border-stone-200 bg-stone-50 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="px-4 py-3">
-              <dt className="text-xs font-medium text-stone-600">유료 구매자</dt>
+              <dt className="text-xs font-medium text-stone-600">멤버십 구독자</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">
-                {needsReconciliation ? "확인 중" : <>{data.paidBuyers}명 <span className="text-sm font-normal text-stone-600">· {data.paidSubscriptions}건</span></>}
+                {needsReconciliation ? "확인 중" : `${subscribers.length}명`}
               </dd>
             </div>
             <div className="px-4 py-3">
-              <dt className="text-xs font-medium text-stone-600">멤버십 반영</dt>
-              <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{applied}건</dd>
+              <dt className="text-xs font-medium text-stone-600">그로블 유료 주문</dt>
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{data.paidSubscriptions}건</dd>
             </div>
             <div className="px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">확인 필요</dt>
@@ -179,14 +185,21 @@ export function GrobleSubscriptionOverview() {
 
           <div className="overflow-hidden rounded-xl border border-stone-200">
             <div aria-hidden className="hidden grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] gap-4 bg-stone-50 px-4 py-2.5 text-xs font-semibold text-stone-600 md:grid">
-              <span>구매자 · 주문</span><span>구독 상태</span><span>최근 결제</span><span>교집합 반영</span>
+              <span>{isSubscriberList ? "회원 · 주문" : "구매자 · 주문"}</span>
+              <span>구독 상태</span><span>최근 결제</span>
+              <span>{isSubscriberList ? "이용 종료일" : "교집합 반영"}</span>
             </div>
             {shown.length ? (
               <ul aria-label="그로블 구독 목록" className="divide-y divide-stone-100">
                 {shown.map((row) => (
                   <li key={row.order} className="grid grid-cols-3 items-center gap-x-2 gap-y-3 px-4 py-3 text-sm hover:bg-stone-50/60 md:grid-cols-[minmax(0,1.6fr)_repeat(3,minmax(0,1fr))] md:gap-x-4">
                     <div className="col-span-3 min-w-0 md:col-span-1">
-                      <p className="break-words font-semibold text-stone-950">{row.buyer ?? "이름 미제공"}</p>
+                      <p className="break-words font-semibold text-stone-950">
+                        {row.memberName ?? row.buyer ?? "이름 미제공"}
+                        {isSubscriberList && (row.orderCount ?? 0) > 1 && (
+                          <span className="ml-2 text-xs font-normal text-stone-600">주문 {row.orderCount}건</span>
+                        )}
+                      </p>
                       {row.externalId && /^[a-zA-Z0-9]+$/.test(row.externalId) ? (
                         <a
                           className="mt-0.5 inline-flex min-w-0 items-center gap-1 break-all text-xs tabular-nums text-stone-600 underline-offset-4 hover:text-stone-950 hover:underline"
@@ -200,7 +213,14 @@ export function GrobleSubscriptionOverview() {
                     </div>
                     <div><span className="sr-only">구독 상태 </span><Badge tone={row.state === "open" ? "neutral" : "attention"}>{subscriptionLabels[row.state]}</Badge></div>
                     <div><span className="sr-only">최근 결제 </span><Badge tone={row.payment === "paid" ? "positive" : "neutral"}>{paymentLabels[row.payment]}</Badge></div>
-                    <div><span className="sr-only">교집합 반영 </span><Badge tone={needsReview(row) ? "attention" : "neutral"}>{membershipLabels[row.membership]}</Badge></div>
+                    {isSubscriberList ? (
+                      <div className="text-xs tabular-nums text-stone-700 sm:text-sm">
+                        <span className="sr-only">이용 종료일 </span>
+                        <time dateTime={row.accessEndsOn ?? undefined}>{row.accessEndsOn}</time>
+                      </div>
+                    ) : (
+                      <div><span className="sr-only">교집합 반영 </span><Badge tone={needsReview(row) ? "attention" : "neutral"}>{membershipLabels[row.membership]}</Badge></div>
+                    )}
                   </li>
                 ))}
               </ul>

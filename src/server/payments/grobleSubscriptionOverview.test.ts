@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   projectGrobleSubscriptions,
+  reconcileGrobleMemberships,
+  type GrobleLedgerEntry,
+  type GrobleMemberAccess,
+  type GrobleMembershipEffect,
   type GrobleSnapshotRow,
   type GrobleSubscriptionEvent,
 } from "./grobleSubscriptionOverview";
@@ -50,6 +54,51 @@ function event(
 const first = event("subscription_payment.completed", "first");
 const another = event("subscription_payment.completed", "another", {
   ref: "another-ref", activeSince: "2026-10-25T09:00:00+09:00",
+});
+
+describe("paid members with a current entitlement", () => {
+  it("counts the same current member once and excludes refunds, missing dates, future starts, expiry and archived accounts", () => {
+    const date = "2026-11-24";
+    const order = (id: string, payment: "paid" | "refunded" | "partial" = "paid") => ({
+      externalId: null, order: id, round: 1, state: "ending" as const, payment,
+      buyer: "Provider name", nextBillingDate: null,
+    });
+    const cases = [
+      ["01", "current", "paid"],
+      ["09", "current", "paid"],
+      ["02", "refunded", "refunded"],
+      ["03", "future", "paid"],
+      ["04", "expired", "paid"],
+      ["05", "archived", "paid"],
+      ["06", "undated", "paid"],
+      ["07", "partial", "partial"],
+      ["08", "mismatch", "paid"],
+    ] as const;
+    const ledger: GrobleLedgerEntry[] = cases.map(([id, user], index) => ({
+      id: index + 1, merchant_uid: id, user_id: user, status: "completed",
+    }));
+    const effects: GrobleMembershipEffect[] = ledger.map(({ id, merchant_uid, user_id }) => ({
+      transaction_id: id, merchant_uid, user_id: user_id === "mismatch" ? "current" : user_id!,
+      cancelled_at: user_id === "refunded" ? date : null,
+    }));
+    const profiles: GrobleMemberAccess[] = [...new Set(cases.map(([, user]) => user))].map((user) => ({
+      user_id: user, name: "Member name", membership_status: "active",
+      membership_start_date: user === "future" ? "2026-11-25" : "2026-11-01",
+      membership_end_date: user === "expired" ? "2026-11-23" : user === "undated" ? null
+        : user === "future" ? "2026-12-24" : date,
+      archived_at: user === "archived" ? date : null,
+    }));
+    const { subscribers, rows } = reconcileGrobleMemberships(
+      [...cases.map(([id, , payment]) => order(id, payment)), order("unmatched")],
+      ledger, effects, profiles, date,
+    );
+    expect(subscribers).toEqual([
+      { ...order("09"), memberName: "Member name", accessEndsOn: date, orderCount: 2 },
+    ]);
+    expect(rows).toContainEqual({ ...order("unmatched"), membership: "missing" });
+    expect(rows).toContainEqual({ ...order("08"), membership: "review" });
+    expect(rows).toContainEqual({ ...order("02", "refunded"), membership: "refunded" });
+  });
 });
 const renew = event("subscription_payment.completed", "renewal", {
   round: 2, activeSince: "2026-10-24T09:00:00+09:00",

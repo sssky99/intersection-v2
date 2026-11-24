@@ -291,7 +291,7 @@ export function MembershipAdminPanel() {
         </div>
 
         <div role="group" aria-label="멤버십 화면 선택" className="mt-3 flex gap-4">
-          {([["groble", "그로블 구독"], ["members", "교집합 회원"]] as const).map(([id, label]) => (
+          {([["groble", "멤버십 구독자"], ["members", "교집합 회원"]] as const).map(([id, label]) => (
             <button
               key={id}
               type="button"
