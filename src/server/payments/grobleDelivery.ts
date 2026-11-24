@@ -8,7 +8,7 @@ import {
   processOneTimePaymentCancelled,
   processPaymentCompleted,
 } from "./groblePayments";
-import { WebhookEnvelope } from "./grobleVerification";
+import { parseEnvelope, WebhookEnvelope } from "./grobleVerification";
 import { processPaymentRefunded } from "./grobleRefunds";
 
 export async function handleVerifiedGrobleWebhook(
@@ -74,12 +74,25 @@ export async function handleVerifiedGrobleWebhook(
     );
   }
   const eventKey = claim.event_key;
-  const event = envelope;
   // Abort this worker's DB requests well before its five-minute claim expires.
   return webhookScope.run(
     { token, signal: AbortSignal.timeout(60_000) },
     async () => {
       try {
+        // First stored, signature-verified payload is authoritative on replay.
+        // Never mix incoming payment details with RPCs reading the original row.
+        const { data: stored, error: storedError } = await createAdminClient()
+          .from("groble_webhook_events")
+          .select("event_id,event_type,payload")
+          .eq("idempotency_key", eventKey)
+          .eq("processing_token", token)
+          .maybeSingle();
+        if (storedError) throw storedError;
+        const event = stored ? parseEnvelope(JSON.stringify(stored.payload)) : null;
+        if (!stored || !event || event.id !== envelope.id || event.id !== stored.event_id ||
+            event.type !== stored.event_type) {
+          throw new Error("Stored webhook identity is missing or inconsistent");
+        }
         let status: string;
         if (
           event.type === "payment.completed" ||

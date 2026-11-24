@@ -76,6 +76,9 @@ export async function processPaymentCompleted(
     await eventStatus(idempotencyKey, {
       processing_status: membershipMatch.status,
       matched_user_id: membershipMatch.userId,
+      last_error: membershipMatch.status === "ambiguous"
+        ? "Multiple membership identities require review"
+        : "No verified membership identity; original reference/account may be missing",
       processed_at: new Date().toISOString(),
     });
     return membershipMatch.status;

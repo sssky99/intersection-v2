@@ -120,3 +120,26 @@ describe("membership payment retry authorization", () => {
     expect(mocks.handle).not.toHaveBeenCalled();
   });
 });
+
+it("lists orphaned completed memberships separately from retryable events", async () => {
+  const filters: unknown[][] = [];
+  mocks.from.mockImplementation((table: string) => {
+    const q = {
+      select: () => q,
+      eq: (...args: unknown[]) => { filters.push(args); return q; },
+      in: (...args: unknown[]) => { filters.push(args); return q; },
+      or: (...args: unknown[]) => { filters.push(args); return q; },
+      order: () => q, limit: () => q,
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({
+        data: table === "payment_transactions" ? [{ id: 1245, amount: 20000 }] : [], error: null,
+      }).then(resolve),
+    };
+    return q;
+  });
+  const response = await GET(new NextRequest("http://localhost"));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ events: [], effects: [], orphaned: [{ id: 1245, amount: 20000 }] });
+  expect(filters).toContainEqual(["user_id.is.null,membership_payment_intent_id.is.null"]);
+  expect(filters).toContainEqual(["status", ["completed", "cancel_requested"]]);
+  expect(mocks.handle).not.toHaveBeenCalled();
+});

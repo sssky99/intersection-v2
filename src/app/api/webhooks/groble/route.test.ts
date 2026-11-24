@@ -25,7 +25,9 @@ describe("webhook redelivery", () => {
     const q = {
       insert: vi.fn(async () => ({ error: { code: "23505" } })),
       update: vi.fn(() => q), eq: vi.fn(() => q),
-      select: vi.fn(async () => ({ data: statusWriteFails ? null : [{ id: 1 }], error: statusWriteFails ? { message: "DB unavailable" } : null })),
+      select: vi.fn(() => q),
+      maybeSingle: vi.fn(async () => ({ data: { event_id: "event-1", event_type: "unsupported.event", payload: { id: "event-1", type: "unsupported.event", data: { object: {} } } }, error: null })),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: statusWriteFails ? null : [{ id: 1 }], error: statusWriteFails ? { message: "DB unavailable" } : null }).then(resolve),
     };
     const rpc = vi.fn(async () => ({ data: [{ outcome, event_key: "stored-key" }], error: null }));
     createAdminClientMock.mockReturnValue({ from: vi.fn(() => q), rpc });
@@ -55,6 +57,23 @@ describe("webhook redelivery", () => {
       expect((await POST(request())).status).toBe(500);
     } finally { errorLog.mockRestore(); }
   });
+  it("uses the stored payload even when a redelivery changes event type and amount", async () => {
+    const { q, rpc } = client("claimed");
+    const { POST } = await import("./route");
+    expect((await POST(request("subscription_payment.completed", { pricing: { finalAmount: 99999 } }))).status).toBe(200);
+    expect(q.update).toHaveBeenCalledWith(expect.objectContaining({ processing_status: "ignored" }));
+    expect(rpc).toHaveBeenCalledTimes(1); // claim only; no membership mutation
+  });
+  it("fails closed when the stored payload identity is inconsistent", async () => {
+    const { q, rpc } = client("claimed");
+    q.maybeSingle.mockResolvedValue({ data: { event_id: "wrong", event_type: "unsupported.event", payload: { id: "wrong", type: "unsupported.event", data: { object: {} } } }, error: null });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { POST } = await import("./route");
+      expect((await POST(request())).status).toBe(500);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    } finally { log.mockRestore(); }
+  });
   it("recovers a partly recorded one-time payment without rematching a pending checkout", async () => {
     const applicationWrites: Array<{ value: Record<string, unknown>; filters: unknown[][] }> = [];
     const rpc = vi.fn(async () => ({ data: [{ outcome: "claimed", event_key: "stored-key" }], error: null }));
@@ -69,7 +88,8 @@ describe("webhook redelivery", () => {
           in: (...args: unknown[]) => { filters.push(args); return q; },
           not: () => q, order: () => q, limit: () => q,
           maybeSingle: async () => ({ error: null, data: table === "payment_transactions"
-            ? { user_id: "user-1", application_group_id: "group-1" } : null }),
+            ? { user_id: "user-1", application_group_id: "group-1" } : table === "groble_webhook_events"
+            ? { event_id: "event-1", event_type: "payment.completed", payload: { id: "event-1", type: "payment.completed", data: { object: { pricing: { finalAmount: 20000 } } } } } : null }),
           upsert: () => q,
           update: (value: Record<string, unknown>) => {
             if (table === "meeting_date_applications") applicationWrites.push({ value, filters });

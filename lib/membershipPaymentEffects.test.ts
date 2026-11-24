@@ -876,3 +876,14 @@ describe("recurring membership credits", () => {
     ).toBe(true);
   });
 });
+
+// Reproduce the observed production shape without changing retention policy.
+it("account deletion removes receipts and leaves a completed orphaned ledger", async () => {
+  const id = await intent();
+  const result = await pay(id);
+  await db.query("delete from profiles where user_id=$1", [user]);
+  expect(await one("select user_id,membership_payment_intent_id,status from payment_transactions where id=$1", [result.transaction_id]))
+    .toEqual({ user_id: null, membership_payment_intent_id: null, status: "completed" });
+  expect((await one("select count(*)::int as n from membership_payment_effects")).n).toBe(0);
+  expect((await one("select count(*)::int as n from membership_payment_intents")).n).toBe(0);
+});
