@@ -12,6 +12,9 @@ type Subscription = {
   payment: "paid" | "refunded" | "partial" | "requested";
   buyer: string | null;
   membership: "applied" | "unlinked" | "missing" | "review" | "refunded";
+  access?: "active" | "scheduled" | "ended" | "inactive" | null;
+  noticeStatus?: string | null;
+  unpostedRounds?: Array<{ order: string; round: number; paidAt: string | null; amount: number }>;
   memberName?: string | null;
   accessEndsOn?: string | null;
   orderCount?: number;
@@ -19,6 +22,7 @@ type Subscription = {
 
 type Overview = {
   snapshot: string;
+  lastNoticeAt: string | null;
   incomplete: boolean;
   paidSubscriptions: number;
   unresolvedEvents: number;
@@ -39,10 +43,18 @@ const subscriptionLabels = { open: "유지 중", ending: "해지 예정", past_d
 const paymentLabels = { paid: "결제 완료", refunded: "환불 완료", partial: "부분 환불", requested: "환불 요청" };
 const membershipLabels = {
   applied: "반영 완료",
-  unlinked: "회원 연결 없음",
+  unlinked: "장부 있음 · 회원 연결 없음",
   missing: "장부 미반영",
   review: "확인 필요",
   refunded: "환불",
+};
+const accessLabels = { active: "이용 중", scheduled: "이용 시작 전", ended: "이용 종료", inactive: "현재 이용 불가" };
+const noticeLabels: Record<string, string> = {
+  unmatched: "알림 수신 · 회원 연결 실패",
+  ambiguous: "알림 수신 · 연결할 회원 확인 필요",
+  failed: "알림 수신 · 처리 실패",
+  received: "알림 수신 · 처리 대기",
+  processed: "알림 처리 완료 · 장부 확인 필요",
 };
 const dateFormat = new Intl.DateTimeFormat("ko-KR", {
   dateStyle: "medium",
@@ -104,6 +116,9 @@ export function GrobleSubscriptionOverview() {
     ending: paid.filter((row) => row.state === "ending"),
     refunded: rows.filter((row) => row.payment === "refunded" || row.payment === "partial"),
   };
+  const activeOrders = paid.filter((row) => row.access === "active").length;
+  const scheduledOrders = paid.filter((row) => row.access === "scheduled").length;
+  const otherOrders = paid.length - activeOrders - scheduledOrders - groups.review.length;
   const needsReconciliation = data && (data.incomplete || data.unresolvedEvents > 0);
   const isSubscriberList = filter === "subscribers";
   const filtered = groups[filter];
@@ -123,7 +138,10 @@ export function GrobleSubscriptionOverview() {
           <h3 id="groble-overview-heading" className="text-base font-bold text-stone-950">멤버십 구독자</h3>
           {data && (
             <p className="mt-1 text-xs text-stone-600">
-              그로블 원본 확인 <time dateTime={data.snapshot}>{dateFormat.format(new Date(data.snapshot))}</time>
+              그로블 원본 대조 <time dateTime={data.snapshot}>{dateFormat.format(new Date(data.snapshot))}</time>
+              {data.lastNoticeAt && (
+                <> · 마지막 알림 <time dateTime={data.lastNoticeAt}>{dateFormat.format(new Date(data.lastNoticeAt))}</time></>
+              )}
             </p>
           )}
         </div>
@@ -157,6 +175,10 @@ export function GrobleSubscriptionOverview() {
             <div className="px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">그로블 유료 주문</dt>
               <dd className="mt-1 text-2xl font-semibold tabular-nums text-stone-950">{data.paidSubscriptions}건</dd>
+              <dd className="mt-1 text-xs leading-5 text-stone-600">
+                이용 중 {activeOrders} · 시작 전 {scheduledOrders} · 확인 필요 {groups.review.length}
+                {otherOrders > 0 && ` · 그 외 ${otherOrders}`}
+              </dd>
             </div>
             <div className="px-4 py-3">
               <dt className="text-xs font-medium text-stone-600">확인 필요</dt>
@@ -219,7 +241,32 @@ export function GrobleSubscriptionOverview() {
                         <time dateTime={row.accessEndsOn ?? undefined}>{row.accessEndsOn}</time>
                       </div>
                     ) : (
-                      <div><span className="sr-only">교집합 반영 </span><Badge tone={needsReview(row) ? "attention" : "neutral"}>{membershipLabels[row.membership]}</Badge></div>
+                      <div>
+                        <span className="sr-only">교집합 반영 </span>
+                        <Badge tone={needsReview(row) ? "attention" : "neutral"}>
+                          {row.access ? accessLabels[row.access] : membershipLabels[row.membership]}
+                        </Badge>
+                        {row.membership === "missing" && (
+                          <p className="mt-1 text-xs leading-5 text-stone-600">
+                            {row.noticeStatus ? noticeLabels[row.noticeStatus] ?? "결제 알림 수신" : "결제 알림 미수신"}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {(row.unpostedRounds?.length ?? 0) > 1 && (
+                      <details className="col-span-full text-xs text-stone-600">
+                        <summary className="cursor-pointer font-semibold text-stone-800">
+                          같은 구독의 장부 미반영 {row.unpostedRounds?.length}건
+                        </summary>
+                        <ul className="mt-1 space-y-1 pl-4">
+                          {row.unpostedRounds?.map((charge) => (
+                            <li key={charge.order} className="break-words">
+                              {charge.round}회차 · {charge.paidAt && dateFormat.format(new Date(charge.paidAt))}
+                              {" · "}{charge.amount.toLocaleString("ko-KR")}원 · {charge.order}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
                     )}
                   </li>
                 ))}

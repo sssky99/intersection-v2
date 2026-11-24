@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   projectGrobleSubscriptions,
   reconcileGrobleMemberships,
+  unpostedGrobleRounds,
   type GrobleLedgerEntry,
   type GrobleMemberAccess,
   type GrobleMembershipEffect,
@@ -95,10 +96,27 @@ describe("paid members with a current entitlement", () => {
     expect(subscribers).toEqual([
       { ...order("09"), memberName: "Member name", accessEndsOn: date, orderCount: 2 },
     ]);
-    expect(rows).toContainEqual({ ...order("unmatched"), membership: "missing" });
-    expect(rows).toContainEqual({ ...order("08"), membership: "review" });
-    expect(rows).toContainEqual({ ...order("02", "refunded"), membership: "refunded" });
+    expect(rows).toContainEqual({ ...order("unmatched"), membership: "missing", access: null });
+    expect(rows).toContainEqual({ ...order("08"), membership: "review", access: null });
+    expect(rows).toContainEqual({ ...order("02", "refunded"), membership: "refunded", access: null });
+    expect(rows).toContainEqual({ ...order("03"), membership: "applied", access: "scheduled" });
+    expect(rows).toContainEqual({ ...order("04"), membership: "applied", access: "ended" });
   });
+});
+
+it("finds both missing rounds without counting duplicates, refunds, or a different contract using the same reference", () => {
+  const firstGap = event("subscription_payment.completed", "missing-2", { round: 2 });
+  const latest = event("subscription_payment.completed", "missing-3", { round: 3 });
+  const unrelated = event("subscription_payment.completed", "different", {
+    round: 2, activeSince: "2026-10-25T09:00:00+09:00",
+  });
+  const reimbursed = event("subscription_payment.completed", "refunded", { round: 2 });
+  const history = unpostedGrobleRounds(latest, [
+    first, unrelated, reimbursed, firstGap, { ...firstGap, event_id: "redelivery" }, latest,
+  ], new Set(["first", "refunded"]));
+  expect(history.map(({ order, round }) => ({ order, round }))).toEqual([
+    { order: "missing-2", round: 2 }, { order: "missing-3", round: 3 },
+  ]);
 });
 const renew = event("subscription_payment.completed", "renewal", {
   round: 2, activeSince: "2026-10-24T09:00:00+09:00",
