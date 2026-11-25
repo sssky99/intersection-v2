@@ -253,7 +253,7 @@ export function FriendJourneyPreview({ ticket, participantPhotoUrl, friendPhotoU
         withFriend
         matchMemberCount={4}
         previewMatchPhotoUrls={photos.slice(0, 4)}
-        previewOtherMemberPhotoUrls={photos.slice(5, 11)}
+        previewOtherMemberPhotoUrls={photos.slice(defaultMatchMemberCount, defaultMatchMemberCount + 6)}
         showFeedbackTime={false}
         showJoinCountdown={false}
         showActivityTimes={false}
@@ -296,10 +296,10 @@ export function TicketDetailContent({
 }) {
   const randomPreviewPhotoUrls = randomMemberPhotoUrls(ticket);
   const resolvedMatchPhotoUrls = matchMemberCount === undefined || withFriend
-    ? randomPreviewPhotoUrls.slice(0, withFriend ? 4 : 5)
+    ? randomPreviewPhotoUrls.slice(0, defaultMatchMemberCount)
     : previewMatchPhotoUrls;
   const resolvedOtherMemberPhotoUrls = matchMemberCount === undefined || withFriend
-    ? randomPreviewPhotoUrls.slice(5, 11)
+    ? randomPreviewPhotoUrls.slice(defaultMatchMemberCount, defaultMatchMemberCount + 6)
     : previewOtherMemberPhotoUrls;
   const visibleSections = new Set(sections);
   const courseSteps = cleanCourseSteps(ticket.courseSteps);
@@ -417,6 +417,8 @@ function ticketStartAt(ticket: GatheringTicket) {
   );
   return Number.isFinite(startAt.getTime()) ? startAt : null;
 }
+
+const defaultMatchMemberCount = 4;
 
 function formatKstDateLabel(value: Date) {
   const kstDate = new Date(value.getTime() + kstOffsetMs);
@@ -626,13 +628,7 @@ export function TicketCoursePanel({
         </ol>
 
         {showFeedbackTime && ticketStartAt(ticket) && (
-          <>
-            <FeedbackTimeCard ticket={ticket} />
-            <BlindDateFollowupCard
-              ticket={ticket}
-              participantPhotoUrl={participantPhotoUrl}
-            />
-          </>
+          <FeedbackTimeCard ticket={ticket} />
         )}
       </div>
 
@@ -644,7 +640,7 @@ export function TicketCoursePanel({
             ticket={ticket}
             steps={steps}
             participantPhotoUrl={participantPhotoUrl}
-            matchPhotoUrls={previewMatchPhotoUrls.slice(0, 5)}
+            matchPhotoUrls={previewMatchPhotoUrls.slice(0, matchMemberCount ?? defaultMatchMemberCount)}
             otherMemberPhotoUrls={previewOtherMemberPhotoUrls.slice(0, 6)}
             matchMemberCount={matchMemberCount}
             onClose={() => setMatchSheetOpen(false)}
@@ -701,94 +697,11 @@ function FeedbackTimeCard({ ticket }: { ticket: GatheringTicket }) {
             paragraphs={[
               "이번 만남에서 더 알아가보고 싶은 사람을 고를 수 있어요.",
               "친구가 되고 싶거나, 단 둘이 만나고 싶은 사람을 선택하세요.",
-              "서로 선택한 경우 1:1 블라인드 데이트가 열려요.",
             ]}
           />
           <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
             피드백 시간
           </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BlindDateFollowupCard({
-  ticket,
-  participantPhotoUrl,
-}: {
-  ticket: GatheringTicket;
-  participantPhotoUrl?: string | null;
-}) {
-  const startAt = ticketStartAt(ticket);
-  if (!startAt) return null;
-
-  const feedbackAt = new Date(startAt.getTime() + 3 * hourMs);
-  const blindDateWindowStart = new Date(feedbackAt.getTime() + dayMs);
-  const blindDateWindowEnd = new Date(
-    blindDateWindowStart.getTime() + 13 * dayMs,
-  );
-  const blindDateDateFormatter = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    month: "long",
-    day: "numeric",
-  });
-  const blindDateWindowLabel = `${blindDateDateFormatter.format(blindDateWindowStart)}~${blindDateDateFormatter.format(blindDateWindowEnd)}`;
-
-  return (
-    <div className="relative mt-8 pt-1">
-      <span
-        aria-hidden
-        className="absolute -left-[20px] top-[10px] z-10 h-[11px] w-[11px] rounded-full border-[3px] border-[#f8f4eb] bg-[#8f8778] shadow-[0_0_0_1px_rgba(23,23,19,0.14)]"
-      />
-      <p className="mb-3 text-[11px] font-black tracking-[0.08em] text-black/40">
-        {blindDateWindowLabel}
-      </p>
-      <div className="overflow-hidden rounded-[12px] border border-black/[0.07] bg-[#f1ebe0]">
-        <div className="flex items-center justify-between gap-4 px-4 py-4">
-          <span className="text-[12px] font-bold text-black/42">
-            서로 선택한 경우
-          </span>
-          <div className="flex items-center gap-1.5">
-            <JourneyInfoButton
-              label="1:1 블라인드 데이트 안내"
-              paragraphs={[
-                "누가 올지는 공개되지 않아요. 현장에서 직접 확인해보세요.",
-                "한 가지 확실한 건 나도 상대방을 선택했고, 상대방도 나를 선택했어요.",
-                "여러 명과 서로 선택한 경우, 여러 번의 블라인드 데이트를 할 수 있어요.",
-              ]}
-            />
-            <span className="font-ticket-display text-[17px] font-bold tracking-[-0.03em] text-black">
-              1:1 블라인드 데이트
-            </span>
-          </div>
-        </div>
-
-        <div className="mx-3.5 mb-3.5 overflow-hidden rounded-[10px] border border-black/[0.06] bg-[#f8f4eb]/70">
-          <div className="flex min-h-12 items-center gap-2.5 px-3.5">
-            <span className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border border-black/10 bg-[#eee8dc] text-black/48">
-              <UserRound size={13} strokeWidth={2} aria-hidden />
-              <SafeImage
-                src={participantPhotoUrl}
-                alt=""
-                draggable={false}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </span>
-            <span className="text-[11px] font-black text-black/68">나</span>
-
-          </div>
-          <div className="flex min-h-12 items-center gap-2.5 border-t border-black/[0.06] px-3.5">
-            <span
-              aria-hidden
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-[#ded8cc] text-[14px] font-black text-black/44"
-            >
-              ?
-            </span>
-            <span className="text-[11px] font-black text-black/68">
-              나를 선택한 상대방
-            </span>
-          </div>
         </div>
       </div>
     </div>
@@ -1173,7 +1086,7 @@ function JourneyPeoplePanel({
   onOpenMatches: () => void;
 }) {
   if (stepIndex === 0 || keepDinnerGroup) {
-    const matchCount = matchMemberCount ?? 5;
+    const matchCount = matchMemberCount ?? defaultMatchMemberCount;
     const matchPhotos = previewMatchPhotoUrls.slice(0, matchCount);
     const matchRowContent = (
       <>
@@ -1243,7 +1156,7 @@ function JourneyPeoplePanel({
         <JourneyAvatarStack
           tone="warm"
           photoUrls={[
-            ...previewMatchPhotoUrls.slice(0, matchMemberCount ?? 5),
+            ...previewMatchPhotoUrls.slice(0, matchMemberCount ?? defaultMatchMemberCount),
             ...(withFriend
               ? [friendPhotoUrl ?? "", participantPhotoUrl ?? ""]
               : participantPhotoUrl ? [participantPhotoUrl] : []),
@@ -1389,7 +1302,7 @@ function MatchMembersSheet({
                   </span>
                   <span className="mt-2 text-[12px] font-black text-black/[0.62]">나</span>
                 </div>
-                {matchPhotoUrls.slice(0, matchMemberCount ?? 5).map((photoUrl, index) => (
+                {matchPhotoUrls.slice(0, matchMemberCount ?? defaultMatchMemberCount).map((photoUrl, index) => (
                   <button
                     key={photoUrl}
                     type="button"
