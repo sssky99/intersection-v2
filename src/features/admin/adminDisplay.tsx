@@ -67,6 +67,7 @@ export function AdminMemberName({
   oneTimePaid?: boolean;
 }) {
   const active = hasActiveMembershipForDisplay(profile);
+  const staff = active && profile.membership_end_date === "9999-12-31";
   const expired = hasExpiredMembershipForDisplay(profile);
   const fallbackIntro = hasFallbackPublicIntro(profile);
 
@@ -74,7 +75,9 @@ export function AdminMemberName({
     <span className="inline-flex min-w-0 items-center gap-1 font-bold text-black">
       <span className="truncate">{profileName(profile)}</span>
       {fallbackIntro && <span aria-label="폴백 자기소개">❌</span>}
-      {active && <span aria-label="멤버십 적용중">💎</span>}
+      {staff ? (
+        <span role="img" aria-label="스태프 무기한 멤버십" title="스태프 무기한 멤버십" className="text-red-600">◆</span>
+      ) : active && <span aria-label="멤버십 적용중">💎</span>}
       {oneTimePaid && <span aria-label="1회권 결제 완료">🥇</span>}
       {expired && (
         <span
