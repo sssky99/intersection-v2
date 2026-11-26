@@ -373,12 +373,16 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
 
   const profilesMap = new Map(profiles.map((profile) => [profile.user_id, profile]));
   const eventIds = uniqueText(dateApplicationRows.map((row) => row.event_id));
+  const hiddenWaitlistEventIds = new Set<string>();
   const eventMap = new Map<string, { title: string; starts_at: string | null }>();
   for (let start = 0; start < eventIds.length; start += 100) {
     const { data, error } = await supabase.from("meeting_events")
-      .select("id,title,starts_at").in("id", eventIds.slice(start, start + 100));
+      .select("id,title,starts_at,waitlist_hidden:detail_snapshot->>admin_waitlist_hidden").in("id", eventIds.slice(start, start + 100));
     if (error) throw error;
-    for (const event of data ?? []) eventMap.set(event.id, event);
+    for (const event of data ?? []) {
+      eventMap.set(event.id, event);
+      if (event.waitlist_hidden === "true") hiddenWaitlistEventIds.add(event.id);
+    }
   }
   const friendInvitations: WaitlistFriendInvitation[] = [];
   for (let start = 0; start < eventIds.length; start += 100) {
@@ -433,7 +437,10 @@ export async function loadWaitlistData(): Promise<AdminWaitlistData> {
     },
   );
 
-  const dateApplications = dateApplicationRows.map(
+  const visibleDateApplications = dateApplicationRows.filter(
+    (row) => !row.event_id || !hiddenWaitlistEventIds.has(row.event_id),
+  );
+  const dateApplications = visibleDateApplications.map(
     (row): AdminWaitlistRow => {
       const linkedParticipation = linkedParticipationForApplication(row);
       const instance = row.assigned_ticket_instance_id
