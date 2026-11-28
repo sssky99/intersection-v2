@@ -53,7 +53,7 @@ export type TicketRatingAnswer = {
 };
 
 export type ProfileQuestion = {
-  inputKind?: "name" | "email" | "birthday" | "searchable_choices";
+  inputKind?: "name" | "email" | "birthday" | "searchable_choices" | "activity_choices";
   id: number;
   order?: number;
   category: QuestionCategory;
@@ -63,6 +63,8 @@ export type ProfileQuestion = {
   examples?: string[];
   type: QuestionType;
   options?: Array<string | QuestionOption>;
+  /** Previously offered values accepted when importing older answers. */
+  legacyOptions?: string[];
   optionColumns?: 1 | 2;
   minSelections?: number;
   maxSelections?: number;
