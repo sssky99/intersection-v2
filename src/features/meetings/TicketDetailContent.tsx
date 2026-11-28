@@ -471,6 +471,10 @@ export function TicketCoursePanel({
   showActivityTimes?: boolean;
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
+  const matchPhotoSlots = Array.from(
+    { length: matchMemberCount ?? defaultMatchMemberCount },
+    (_, index) => previewMatchPhotoUrls[index] ?? "",
+  );
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
   const [blindDateMapPlace, setBlindDateMapPlace] =
     useState<NaverPlace | null>(null);
@@ -616,7 +620,7 @@ export function TicketCoursePanel({
               participantPhotoUrl={participantPhotoUrl}
               participantArrivalStatus={participantArrivalStatus}
               counterpartArrivalStatus={counterpartArrivalStatus}
-              previewMatchPhotoUrls={previewMatchPhotoUrls}
+              previewMatchPhotoUrls={matchPhotoSlots}
               previewOtherMemberPhotoUrls={previewOtherMemberPhotoUrls}
               matchMemberCount={matchMemberCount}
               variant={variant}
@@ -640,7 +644,7 @@ export function TicketCoursePanel({
             ticket={ticket}
             steps={steps}
             participantPhotoUrl={participantPhotoUrl}
-            matchPhotoUrls={previewMatchPhotoUrls.slice(0, matchMemberCount ?? defaultMatchMemberCount)}
+            matchPhotoUrls={matchPhotoSlots}
             otherMemberPhotoUrls={previewOtherMemberPhotoUrls.slice(0, 6)}
             matchMemberCount={matchMemberCount}
             onClose={() => setMatchSheetOpen(false)}
@@ -1090,7 +1094,7 @@ function JourneyPeoplePanel({
     const matchPhotos = previewMatchPhotoUrls.slice(0, matchCount);
     const matchRowContent = (
       <>
-        <JourneyAvatarStack tone="warm" photoUrls={matchPhotos} />
+        {matchCount > 0 && <JourneyAvatarStack tone="warm" photoUrls={matchPhotos} />}
         <p className="text-[10px] font-bold text-black/44">
           {variant === "blind-date" ? (
             <strong className="font-black text-black/72">블라인드 데이트 상대</strong>
@@ -1304,13 +1308,18 @@ function MatchMembersSheet({
                 </div>
                 {matchPhotoUrls.slice(0, matchMemberCount ?? defaultMatchMemberCount).map((photoUrl, index) => (
                   <button
-                    key={photoUrl}
+                    key={`${index}:${photoUrl}`}
                     type="button"
                     onClick={() => setNoticeOpen(true)}
                     aria-label={`매칭 멤버 ${index + 1} 안내 보기`}
                     className="group flex min-w-0 flex-col items-center"
                   >
                     <span className="relative h-16 w-16 overflow-hidden rounded-full border border-black/10 bg-black/[0.04] shadow-[0_9px_22px_rgba(0,0,0,0.1)]">
+                      {!photoUrl && (
+                        <span className="absolute inset-0 flex items-center justify-center bg-[#eee8dc] text-black/48">
+                          <UserRound size={22} strokeWidth={1.8} aria-hidden />
+                        </span>
+                      )}
                       <SafeImage
                         src={photoUrl}
                         alt=""
