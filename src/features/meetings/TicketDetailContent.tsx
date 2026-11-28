@@ -471,9 +471,10 @@ export function TicketCoursePanel({
   showActivityTimes?: boolean;
 }) {
   const [mapStepIndex, setMapStepIndex] = useState<number | null>(null);
+  const fallbackPhotos = variant === "default" ? randomMemberPhotoUrls(ticket) : [];
   const matchPhotoSlots = Array.from(
     { length: matchMemberCount ?? defaultMatchMemberCount },
-    (_, index) => previewMatchPhotoUrls[index] ?? "",
+    (_, index) => previewMatchPhotoUrls[index]?.trim() || (fallbackPhotos.length ? fallbackPhotos[index % fallbackPhotos.length] : ""),
   );
   const [matchSheetOpen, setMatchSheetOpen] = useState(false);
   const [blindDateMapPlace, setBlindDateMapPlace] =
