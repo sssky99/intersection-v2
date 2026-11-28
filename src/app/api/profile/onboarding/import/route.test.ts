@@ -29,6 +29,20 @@ describe("signup after phone verification", () => {
       p_answers:expect.arrayContaining([expect.objectContaining({question_order:2019, answer_values:["직접 입력"]})]),
     }));
   });
+  it.each([
+    { activities: ["볼링", "보드게임"] },
+    { activities: ["원데이 클래스", "맛집 탐방", "액티비티"] },
+    { activities: ["산책", "런치"] },
+  ])(
+    "accepts current and previously offered activity choices ($activities)",
+    async ({ activities }) => {
+      const rows = answers.map(row => row.question_order === 2023 ? { ...row, answer_values: activities } : row);
+      expect((await POST(request(rows))).status).toBe(200);
+      expect(mocks.rpc.mock.calls[0][1].p_answers).toContainEqual(expect.objectContaining({
+        question_order: 2023, answer_values: activities,
+      }));
+    },
+  );
   it("requires a verified phone before saving", async () => {
     mocks.getUser.mockResolvedValue({data:{user:{id:"member",phone:"+821000000000"}}});
     expect((await POST(request())).status).toBe(403);

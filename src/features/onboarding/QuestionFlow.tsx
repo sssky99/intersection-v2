@@ -815,6 +815,7 @@ export function QuestionFlow({
       100
     : perceivedProgress(questionIndex, questions.length);
   const textAnswer = typeof answer?.value === "string" ? (question.id === 36 ? countryAnswerText(answer.value) : answer.value) : "";
+  const isActivityChoice = question.inputKind === "activity_choices";
   const isAgeRange = isAgeRangeQuestion(question);
   const ageRangeYears = ageRangeYearsFromAnswer(answer?.value);
   const ageRangeDownTrackValue = AGE_RANGE_MAX_YEARS - ageRangeYears.down;
@@ -2155,19 +2156,22 @@ export function QuestionFlow({
                       type="button"
                       whileTap={{ scale: 0.97 }}
                       onClick={() => toggleMultiple(value)}
+                      aria-pressed={selected}
                       className={cn(
                         "relative flex items-center justify-center rounded-[22px] border px-3 py-4 text-center backdrop-blur transition",
                         question.optionColumns === 1 ? "min-h-[58px]" : "min-h-[76px]",
                         exclusive && question.optionColumns === undefined && "col-span-2 min-h-[58px]",
-                        selected
-                          ? "border-black bg-[#FCFAF6] font-extrabold text-black shadow-[0_14px_32px_rgba(39,34,24,0.09)]"
-                          : "border-black/[0.07] bg-[#FCFAF6] text-black/65 shadow-[0_10px_28px_rgba(39,34,24,0.04)]",
+                        !selected && "border-black/[0.07] bg-[#FCFAF6] text-black/65 shadow-[0_10px_28px_rgba(39,34,24,0.04)]",
+                        selected && (isActivityChoice
+                          ? "border-[#302D29] bg-[#302D29] text-white"
+                          : "border-black bg-[#FCFAF6] font-extrabold text-black shadow-[0_14px_32px_rgba(39,34,24,0.09)]"),
                       )}
                     >
+                      {selected && isActivityChoice && <Check aria-hidden="true" size={15} strokeWidth={2.5} className="mr-1.5 shrink-0" />}
                       <span className="font-question-option text-[15px] font-normal leading-[1.6] tracking-normal">
                         {optionLabel(option)}
                       </span>
-                      {selected && !exclusive && (
+                      {selected && !exclusive && !isActivityChoice && (
                         <span className="absolute right-2 top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-black px-1 text-[9px] font-black text-[#FCFAF6]">
                           {priorityIndex + 1}
                         </span>

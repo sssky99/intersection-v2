@@ -50,6 +50,25 @@ const musicianSuggestions = [
   "오아시스", "라디오헤드", "요네즈 켄시",
 ];
 
+const jobSuggestions = [
+  "기획자", "디자이너", "개발자", "마케터",
+  "연구원", "경영지원 담당자", "영업 담당자", "매장 판매원",
+  "간호사", "교사", "인사 담당자", "회계 담당자",
+  "구매 담당자", "홍보 담당자", "상품기획자(MD)", "고객상담사",
+  "데이터 분석가", "정보보안 전문가", "시스템 엔지니어", "프로덕트 매니저(PM)",
+  "UX 리서처", "의사", "약사", "물리치료사",
+  "임상병리사", "치과위생사", "심리상담사", "사회복지사",
+  "요양보호사", "보육교사", "학원 강사", "교수",
+  "사서", "공무원", "경찰관", "소방관",
+  "은행원", "보험설계사", "회계사", "세무사",
+  "변호사", "공인중개사", "건축가", "토목 엔지니어",
+  "전기기사", "생산직 근로자", "품질관리 담당자", "자동차 정비사",
+  "물류 담당자", "운전기사", "요리사", "바리스타",
+  "제과제빵사", "미용사", "호텔리어", "운동 지도자",
+  "영상 편집자", "사진작가", "방송 PD", "작가",
+  "공연기획자", "농업인",
+];
+
 // Keep the reference numbering; its three location questions (24–26) are omitted.
 export const localSignupQuestions = [
   question(1, "이름을 입력해 주세요.", { inputKind: "name", placeholder: "이름" }),
@@ -72,9 +91,13 @@ export const localSignupQuestions = [
   scale(18, "여럿이 모인 자리에서 얼마나 자주 말하는 편인가요?", 7, "듣기만 한다", "주로 내가 말한다"),
   question(19, "좋아하는 영화는 무엇인가요?", { type: "multi_choice", inputKind: "searchable_choices", maxSelections: 5, description: "최대 5개까지 골라주세요.", placeholder: "영화 제목 검색 또는 직접 입력", options: movieSuggestions }),
   question(20, "좋아하는 뮤지션은 누구인가요?", { type: "multi_choice", inputKind: "searchable_choices", maxSelections: 5, description: "최대 5명까지 골라주세요.", placeholder: "뮤지션 검색 또는 직접 입력", options: musicianSuggestions }),
-  question(21, "현재 어떤 일을 하고 있나요?", { type: "multi_choice", inputKind: "searchable_choices", optional: true, description: "직무를 여러 개 입력할 수 있어요. 학생이거나 현재 일하지 않는다면 건너뛰어도 돼요.", placeholder: "직무 검색 또는 직접 입력", options: ["기획자", "디자이너", "개발자", "마케터", "연구원", "경영지원 담당자", "영업 담당자", "매장 판매원", "간호사", "교사"] }),
+  question(21, "현재 어떤 일을 하고 있나요?", { type: "multi_choice", inputKind: "searchable_choices", optional: true, description: "직무를 여러 개 입력할 수 있어요. 학생이거나 현재 일하지 않는다면 건너뛰어도 돼요.", placeholder: "직무 검색 또는 직접 입력", options: jobSuggestions }),
   question(22, "어느 쪽이 더 좋나요?", { type: "single_choice", options: ["클럽 가기", "낮에 피크닉하기"] }),
-  question(23, "어떤 종류의 모임이나 활동에 초대받고 싶나요?", { type: "multi_choice", options: ["디너", "칵테일바", "산책", "색깔수집", "런치", "퇴근 게더링"] }),
+  question(23, "어떤 종류의 모임이나 활동에 초대받고 싶나요?", {
+    type: "multi_choice", inputKind: "activity_choices",
+    options: ["디너", "칵테일바", "볼링", "보드게임", "원데이 클래스", "맛집 탐방", "액티비티", "색깔수집", "퇴근 게더링"],
+    legacyOptions: ["산책", "런치"],
+  }),
   question(27, "현재 연애·결혼 상태는 어떤가요?", { type: "single_choice", options: ["싱글", "복잡함(애매한 관계)", "연애 중", "기혼"] }),
   question(29, "생년월일을 입력해 주세요.", { inputKind: "birthday" }),
   question(30, "성별은 무엇인가요?", { type: "single_choice", options: ["남자", "여자"] }),
