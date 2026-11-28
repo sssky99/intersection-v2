@@ -207,13 +207,7 @@ button {
 }
 
 .font-question-option {
-  font-family:
-    "Pretendard",
-    "SUIT",
-    "Noto Sans KR",
-    "Apple SD Gothic Neo",
-    "Malgun Gothic",
-    sans-serif;
+  font-family: inherit;
 }
 
 .text-balance {
