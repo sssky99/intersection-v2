@@ -4,7 +4,7 @@ export function validQuestionAnswer(question: ProfileQuestion, row?: StoredAnswe
   if (!row) return Boolean(question.optional);
   if (question.optional && question.type === "text" && !row.answer_text?.trim()) return true;
   const options = (question.options ?? []).map((option) => typeof option === "string" ? { value: option } : option);
-  const allowed = new Set(options.map((option) => option.value));
+  const allowed = new Set([...options.map((option) => option.value), ...(question.legacyOptions ?? [])]);
   if (question.type === "text") {
     if (question.inputKind === "name") return typeof row.answer_text === "string" && row.answer_text.trim().length >= 2;
     if (question.id === 17 || question.inputKind === "birthday") {
