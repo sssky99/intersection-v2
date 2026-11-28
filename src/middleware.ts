@@ -106,6 +106,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
+  // This isolated deploy-preview fixture renders example choices without a session.
+  if (isNetlifyBranchDeploy(origin) && nextUrl.pathname === '/review-signup-choices') {
+    return NextResponse.next();
+  }
+
   const isAdminPreviewPath =
     nextUrl.pathname === '/admin' ||
     nextUrl.pathname.startsWith('/admin/') ||
