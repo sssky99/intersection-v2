@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { Check, Plus, X } from "lucide-react";
 import type { ProfileQuestion } from "@/types/question";
 
-const pageSize = 12;
 const pill = "inline-flex min-h-11 max-w-full items-center justify-center gap-1.5 rounded-[20px] border px-4 py-3 text-[14px] leading-5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black";
 
 export function SearchableSignupChoices({ question, selected, onToggle, search, setSearch }: {
@@ -14,7 +13,10 @@ export function SearchableSignupChoices({ question, selected, onToggle, search, 
   selected: string[];
   onToggle: (value: string) => void;
 }) {
-  const [visibleCount, setVisibleCount] = useState(pageSize);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [question.id]);
+
   const term = search.trim();
   const suggestions = (question.options ?? []).map(option => typeof option === "string" ? option : option.label);
   const available = suggestions.filter(label =>
@@ -22,7 +24,6 @@ export function SearchableSignupChoices({ question, selected, onToggle, search, 
   );
   const matching = [...selected, ...suggestions].find(label => label.toLowerCase() === term.toLowerCase());
   if (term && !matching) available.unshift(term);
-  const visible = term ? available : available.slice(0, visibleCount);
   const full = question.maxSelections !== undefined && selected.length >= question.maxSelections;
 
   function add(value: string) {
@@ -32,7 +33,7 @@ export function SearchableSignupChoices({ question, selected, onToggle, search, 
   }
 
   return (
-    <div className="mt-8 space-y-4 pb-24">
+    <div className="mt-8 space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
       <input aria-label={question.placeholder} placeholder={question.placeholder} value={search}
         disabled={full} maxLength={100} onChange={e => setSearch(e.target.value)}
         onKeyDown={e => {
@@ -60,22 +61,19 @@ export function SearchableSignupChoices({ question, selected, onToggle, search, 
           </div>
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        {visible.map(value => (
-          <button key={value} type="button" disabled={full} aria-label={value + " 추가"} aria-pressed={false}
-            onClick={() => add(value)}
-            className={pill + " border-black/10 bg-[#FCFAF6] text-black/80 disabled:opacity-40"}>
-            <Plus size={14} className="shrink-0" aria-hidden="true" />
-            <span className="min-w-0 break-words">{value}</span>
-          </button>
-        ))}
+      <div className="space-y-2">
+        {!term && <p className="text-[12px] text-black/65">후보 {suggestions.length}개</p>}
+        <div className="flex flex-wrap gap-2">
+          {available.map(value => (
+            <button key={value} type="button" disabled={full} aria-label={value + " 추가"} aria-pressed={false}
+              onClick={() => add(value)}
+              className={pill + " border-black/10 bg-[#FCFAF6] text-black/80 disabled:opacity-40"}>
+              <Plus size={14} className="shrink-0" aria-hidden="true" />
+              <span className="min-w-0 break-words">{value}</span>
+            </button>
+          ))}
+        </div>
       </div>
-      {!term && !full && available.length > visibleCount && (
-        <button type="button" onClick={() => setVisibleCount(count => count + pageSize)}
-          className="min-h-11 px-1 text-[13px] font-bold text-black/65 underline underline-offset-4">
-          후보 더 보기
-        </button>
-      )}
     </div>
   );
 }
